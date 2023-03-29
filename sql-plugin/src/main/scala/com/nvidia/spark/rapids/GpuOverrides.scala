@@ -524,11 +524,32 @@ object GpuOverrides extends Logging {
   }
 
   /**
+   * On some Spark platforms, AQE planning can result in old CPU exchanges being placed in the
+   * plan even after they have been replaced previously. This looks for subquery reuses of CPU
+   * exchanges that can be replaced with recently planned GPU exchanges that match the original
+   * CPU plan
+   */
+  def fixupCpuReusedExchanges(plan: SparkPlan): SparkPlan = {
+    plan.transformUp {
+      case bqse: BroadcastQueryStageExec =>
+        bqse.plan match {
+          case ReusedExchangeExec(output, b: BroadcastExchangeExec) =>
+            val cpuCanonical = b.canonicalized.asInstanceOf[BroadcastExchangeExec]
+            val gpuExchange = ExchangeMappingCache.findGpuExchangeReplacement(cpuCanonical)
+            gpuExchange.map { g =>
+              SparkShimImpl.newBroadcastQueryStageExec(bqse, ReusedExchangeExec(output, g))
+            }.getOrElse(bqse)
+          case _ => bqse
+        }
+    }
+  }
+
+  /**
    * Searches the plan for ReusedExchangeExec instances containing a GPU shuffle where the
    * output types between the two plan nodes do not match. In such a case the ReusedExchangeExec
    * will be updated to match the GPU shuffle output types.
    */
-  def fixupReusedExchangeExecs(plan: SparkPlan): SparkPlan = {
+  def fixupReusedExchangeOutputs(plan: SparkPlan): SparkPlan = {
     def outputTypesMatch(a: Seq[Attribute], b: Seq[Attribute]): Boolean =
       a.corresponds(b)((x, y) => x.dataType == y.dataType)
     plan.transformUp {
@@ -3344,7 +3365,7 @@ object GpuOverrides extends Logging {
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
     expr[JsonTuple](
-      "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
+      "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
       ExprChecks.projectOnly(
         TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
@@ -3354,13 +3375,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (childExprs.length >= 50) {
-            // If the number of field parameters is too large, fall back to CPU to avoid 
+            // If the number of field parameters is too large, fall back to CPU to avoid
             // potential performance problems.
             willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
           }
           // If any field argument contains special characters as follows, fall back to CPU.
           (a.children.tail).map { fieldExpr =>
-            extractLit(fieldExpr).foreach { field => 
+            extractLit(fieldExpr).foreach { field =>
               if (field.value != null) {
                 val fieldStr = field.value.asInstanceOf[UTF8String].toString
                 val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
@@ -3599,7 +3620,7 @@ object GpuOverrides extends Logging {
         (a, conf, p, r) => new SaveIntoDataSourceCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
 
-  val runnableCmds = commonRunnableCmds ++ 
+  val runnableCmds = commonRunnableCmds ++
     GpuHiveOverrides.runnableCmds ++
       ExternalSource.runnableCmds ++
       SparkShimImpl.getRunnableCmds
@@ -4243,11 +4264,17 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (plan.conf.adaptiveExecutionEnabled) {
       // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
       // distribution expressions are not semantically equal.
-      val newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+      var newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+
+      // Some Spark implementations are caching CPU exchanges for reuse which can be problematic
+      // when the RAPIDS Accelerator replaces the original exchange.
+      if (conf.isAqeExchangeReuseFixupEnabled && plan.conf.exchangeReuseEnabled) {
+        newPlan = GpuOverrides.fixupCpuReusedExchanges(newPlan)
+      }
 
       // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
       // compared to the desired buffer type from a reused GPU shuffle.
-      GpuOverrides.fixupReusedExchangeExecs(newPlan)
+      GpuOverrides.fixupReusedExchangeOutputs(newPlan)
     } else {
       plan
     }

@@ -311,9 +311,20 @@ class PartitionPair(
     (build, stream)
   }
 
+  /**
+   * Release the batches from two sides as a Tuple(build, stream).
+   * Callers should close the returned batches.
+   */
+  def release: (Option[SpillableColumnarBatch], Seq[SpillableColumnarBatch]) = {
+    val ret = (build, stream)
+    build = None
+    stream = Seq.empty
+    ret
+  }
+
   override def close(): Unit = {
     stream.safeClose()
-    stream = Seq.empty[SpillableColumnarBatch]
+    stream = Seq.empty
     build.foreach(_.safeClose())
     build = None
   }
@@ -516,12 +527,15 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
           // Skip it due to optimization
           None
         } else {
-          val (build, stream) = pair.get
-          val buildCb = build.map(_.getColumnarBatch())
-            .getOrElse(GpuColumnVector.emptyBatch(buildSchema))
+          val (build, stream) = pair.release
+          val buildCb = closeOnExcept(stream) { _ =>
+            withResource(build) { _ =>
+              build.map(_.getColumnarBatch()).getOrElse(GpuColumnVector.emptyBatch(buildSchema))
+            }
+          }
           val streamIter = closeOnExcept(buildCb) { _ =>
-            closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
-              GpuSubPartitionHashJoin.safeIteratorFromSeq(streamCbs)
+            GpuSubPartitionHashJoin.safeIteratorFromSeq(stream).map { spill =>
+              withResource(spill)(_.getColumnarBatch())
             }
           }
           // Leverage the original join iterators
