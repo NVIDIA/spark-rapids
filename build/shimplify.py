@@ -447,25 +447,6 @@ def __shimplify_layout():
            "Adding and deleting a shim in a single invocation is not supported!"
     # map file -> [shims it's part of]
     files2bv = {}
-    for buildver in __all_shims_arr:
-        src_roots = __csv_ant_prop_as_arr("spark%s.sources" % buildver)
-        test_src_roots = __csv_ant_prop_as_arr("spark%s.test.sources" % buildver)
-        __log.debug("check %s sources: %s", buildver, src_roots)
-        __log.debug("check %s test sources: %s", buildver, test_src_roots)
-        main_and_test_roots = src_roots + test_src_roots
-        # alternatively we can use range dirs instead of files, which is more efficient.
-        # file level provides flexibility until/unless the shim layer becomes unexpectedly
-        # large
-        for src_root in main_and_test_roots:
-            __log.debug("os.walk looking for shim files from %s", src_root)
-            for dir, _, shim_source_files in os.walk(src_root):
-                for shim_file in shim_source_files:
-                    shim_path = os.path.join(dir, shim_file)
-                    __log.debug("updating files2bv %s -> %s", shim_path, buildver)
-                    if shim_path in files2bv.keys():
-                        files2bv[shim_path] += [buildver]
-                    else:
-                        files2bv[shim_path] = [buildver]
 
     # if the user allows to overwrite / reorganize shimplified shims,
     # commonly while adding or removing shims we must include new shim locations

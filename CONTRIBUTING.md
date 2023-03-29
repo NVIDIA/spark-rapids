@@ -187,30 +187,6 @@ The following acronyms may appear in directory names:
 
 The version-specific directory names have one of the following forms / use cases:
 
-#### Version range directories
-
-The following source directory system is deprecated. See below and [shimplify.md][1]
-
-* `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
-* `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
-   only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
-   among the supported versions
-* `src/main/311until320-all` contains code that applies to all shims between 3.1.1 *inclusive*,
-3.2.0 *exclusive*
-* `src/main/pre320-treenode` contains shims for the Catalyst `TreeNode` class before the
-  [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
-* `src/main/post320-treenode` contains shims for the Catalyst `TreeNode` class after the
-  [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
-
-For each Spark shim, we use Ant path patterns to compute the property
-`spark${buildver}.sources` in [sql-plugin/pom.xml](./sql-plugin/pom.xml) that is
-picked up as additional source code roots. When possible path patterns are reused using
-the conventions outlined in the pom.
-
-#### Simplified version directory structure
-
-Going forward new shim files should be added under:
-
 * `src/main/spark${buildver}`, example: `src/main/spark330db`
 * `src/test/spark${buildver}`, example: `src/test/spark340`
 
@@ -253,13 +229,8 @@ is changed to `process-test-resources`. In the Maven tool window hit `Reload all
 Known Issues:
 
 * There is a known issue that the test sources added via the `build-helper-maven-plugin` are not handled
-[properly](https://youtrack.jetbrains.com/issue/IDEA-100532). The workaround is to `mark` the affected folders
-such as
-
-  * `tests/src/test/320+-noncdh-nondb`
-  * `tests/src/test/spark340`
-
-manually as `Test Sources Root`
+[properly](https://youtrack.jetbrains.com/issue/IDEA-100532). The workaround is to `mark` the affected
+folders such as `tests/src/test/spark3*` manually as `Test Sources Root`
 
 * There is a known issue where, even after selecting a different Maven profile in the Maven submenu,
 the source folders from a previously selected profile may remain active. As a workaround,
