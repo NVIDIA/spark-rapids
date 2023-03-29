@@ -105,12 +105,7 @@ For manual installation, you need to setup your environment:
 You can install all the dependencies using `pip` by running the following command:
 
   ```shell script
-  pip install pytest \
-              sre_yield \
-              pandas \
-              pyarrow \
-              pytest-xdist \
-              findspark
+  pip install -r requirements.txt
   ```
 
 ### Installing Spark
