@@ -1246,6 +1246,13 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
+  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
+         "once per invocation.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1995,6 +2002,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
