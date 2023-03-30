@@ -404,6 +404,40 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             data_path,
             'DataWritingCommandExec')
 
+
+@ignore_order
+@allow_non_gpu('DataWritingCommandExec')
+def test_parquet_write_bloom_filter_with_options_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_fallback_write(
+      lambda spark, path: spark.range(10e4).write.mode('overwrite')
+                               .option("parquet.bloom.filter.enabled#id", "true")
+                               .parquet(path),
+      lambda spark, path: spark.read.parquet(path),
+      data_path,
+      'DataWritingCommandExec')
+
+
+@ignore_order
+@allow_non_gpu('DataWritingCommandExec')
+def test_parquet_write_bloom_filter_sql_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    base_table_name = spark_tmp_table_factory.get()
+
+    def sql_write(spark, path):
+        is_gpu = path.endswith('GPU')
+        table_name = base_table_name + '_GPU' if is_gpu else base_table_name + '_CPU'
+        spark.sql('CREATE TABLE `{}` STORED AS PARQUET location \'{}\' '
+                  'TBLPROPERTIES("parquet.bloom.filter.enabled#id"="true") '
+                  'AS SELECT id from range(100)'.format(table_name, path))
+
+    assert_gpu_fallback_write(
+        sql_write,
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        'DataWritingCommandExec')
+
+
 # This test is testing how the parquet_writer will behave if column has a validity mask without having any nulls.
 # There is no straight forward to do it besides creating a vector with nulls and then dropping nulls
 # cudf will create a vector with a null_mask even though we have just filtered them
