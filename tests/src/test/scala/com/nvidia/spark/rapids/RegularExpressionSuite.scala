@@ -39,8 +39,9 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
       val df = spark.sql("SELECT t._c0, regexp_extract(t._c0, '(.*) (.*) (.*)', 2) FROM t")
       df.collect()
       val planString = df.queryExecution.executedPlan.toString()
-      assert(planString.contains(
-        "regexp_extract(_c0#16, (.*) (.*) (.*), 2) AS regexp_extract(_c0, (.*) (.*) (.*), 2)"))
+      val planStringWithoutAttrRefs = planString.replaceAll("#[0-9]+", "")
+      assert(planStringWithoutAttrRefs.contains(
+        "regexp_extract(_c0, (.*) (.*) (.*), 2) AS regexp_extract(_c0, (.*) (.*) (.*), 2)"))
     }, conf)
   }
 
