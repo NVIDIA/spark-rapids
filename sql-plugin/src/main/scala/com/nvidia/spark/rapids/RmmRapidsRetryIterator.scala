@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -426,14 +426,21 @@ object RmmRapidsRetryIterator extends Arm with Logging {
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
+    // this is true if the OOM was cleared after it was injected (only for tests)
+    private var injectedOOMCleared = false
 
     override def hasNext: Boolean = attemptIter.hasNext
 
     private def clearInjectedOOMIfNeeded(): Unit = {
-      if (injectedOOM) {
+      if (injectedOOM && !injectedOOMCleared) {
+        val threadId = RmmSpark.getCurrentThreadId
         // if for some reason we don't throw, or we throw something that isn't a RetryOOM
         // we want to remove the retry we registered before we leave the withRetry block.
-        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 0)
+        // If the thread is in an UNKNOWN state, then it is already cleared.
+        if (RmmSpark.getStateOf(threadId) != RmmSparkThreadState.UNKNOWN) {
+          RmmSpark.forceRetryOOM(threadId, 0)
+        }
+        injectedOOMCleared = true
       }
     }
 
