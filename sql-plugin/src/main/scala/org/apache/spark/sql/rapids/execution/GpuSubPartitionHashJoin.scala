@@ -200,7 +200,7 @@ class GpuBatchSubPartitioner(
     closeOnExcept(Array.fill(numParts)(ArrayBuffer.empty[SpillableColumnarBatch])) { subParts =>
       val hashSeed = seedGenerator.nextSeed
       while (batchesIter.hasNext) {
-        val gpuBatch = inputIter.next()
+        val gpuBatch = batchesIter.next()
         if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
           val types = closeOnExcept(gpuBatch)(GpuColumnVector.extractTypes)
           // 1) Hash partition on the batch
@@ -255,22 +255,18 @@ class GpuBatchSizeAwareSubPartitioner(
     seedGenerator: SeedGenerator = new SimpleSeedGenerator())
   extends GpuBatchSubPartitioner(inputIter, inputBoundKeys, numPartitions, seedGenerator) {
 
-  // FIXME how many times do we need to repartition batches?
-  private var retryCount = 3
+  private var retryCount = 0
   private var actualNumPartitions = 0
 
   private[this] def computeNumPartitions(parts: SubPartitionBuffer): Int = {
     val totalSize = parts.flatten.map(_.sizeInBytes).sum
-    Math.floorDiv(totalSize, targetBatchSize).toInt + 1
+    Math.floorDiv(totalSize, math.max(targetBatchSize, 1)).toInt + 1
   }
 
   private[this] def needRepartition(parts: SubPartitionBuffer): Boolean = {
     // FIXME Is it good enough to ask for repartitioning when there exists any sub
-    //       partition that its size > target batch size ?
-    closeOnExcept(parts) { _ =>
-      retryCount -= 1
-      retryCount >= 0 && parts.exists(_.map(_.sizeInBytes).sum > targetBatchSize)
-    }
+    //       partition whose size > target batch size ?
+    closeOnExcept(parts)(_.exists(_.map(_.sizeInBytes).sum > targetBatchSize))
   }
 
   override protected def partitionBatches(numParts: Int): SubPartitionBuffer = {
@@ -283,12 +279,14 @@ class GpuBatchSizeAwareSubPartitioner(
       math.max(computeNumPartitions(parts), numParts)
     }
 
-    while (needRepartition(parts)) {
+    // FIXME how many times do we need to repartition batches?
+    while (retryCount < 3 && needRepartition(parts)) {
       val batches = closeOnExcept(parts) { _ =>
         GpuSubPartitionHashJoin.safeIteratorFromSeq(parts.flatten.toSeq)
           .map(withResource(_)(_.getColumnarBatch()))
       }
       parts = partitionBatchesOnceAndClose(batches, actualNumParts)
+      retryCount += 1
     }
     actualNumPartitions = actualNumParts
     parts
@@ -298,6 +296,9 @@ class GpuBatchSizeAwareSubPartitioner(
     initPartitions()
     actualNumPartitions
   }
+
+  /** For test only */
+  def getRetryCount: Int = retryCount
 }
 
 /**
