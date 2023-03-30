@@ -1166,7 +1166,9 @@ case class GpuRegExpReplace(
 }
 
 case class GpuRegExpReplaceWithBackref(
-    override val child: Expression)
+    override val child: Expression,
+    searchExpr: Expression,
+    replaceExpr: Expression)
     (cudfRegexPattern: String,
     cudfReplacementString: String)
   extends GpuUnaryExpression with ImplicitCastInputTypes {

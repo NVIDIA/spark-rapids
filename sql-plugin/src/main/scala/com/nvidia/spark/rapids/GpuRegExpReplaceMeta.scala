@@ -88,7 +88,7 @@ class GpuRegExpReplaceMeta(
       (javaPattern, cudfPattern, replacement) match {
         case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
           if (containsBackref) {
-            GpuRegExpReplaceWithBackref(lhs)(cudfPattern, cudfReplacement)
+            GpuRegExpReplaceWithBackref(lhs, regexp, rep)(cudfPattern, cudfReplacement)
           } else {
             GpuRegExpReplace(lhs, regexp, rep)(javaPattern, cudfPattern, cudfReplacement)
           }
