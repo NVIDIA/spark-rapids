@@ -24,11 +24,12 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.jni.RmmSpark
 import java.{lang => jl}
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
-import org.apache.spark.util.{AccumulatorV2, Utils}
+import org.apache.spark.util.{AccumulatorV2, LongAccumulator, Utils}
 
 case class NanoTime(value: java.lang.Long) {
   override def toString: String = {
@@ -80,15 +81,24 @@ class GpuTaskMetrics extends Arm with Serializable {
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val spillBlockTimeNs = new NanoSecondAccumulator
   private val readSpillTimeNs = new NanoSecondAccumulator
+  private val retryCount = new LongAccumulator
+  private val splitAndRetryCount = new LongAccumulator
+  private val retryBlockTime = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
     "gpuSpillBlockTime" -> spillBlockTimeNs,
-    "gpuReadSpillTime" -> readSpillTimeNs)
+    "gpuReadSpillTime" -> readSpillTimeNs,
+    "gpuRetryCount" -> retryCount,
+    "gpuSplitAndRetryCount" -> splitAndRetryCount,
+    "gpuRetryBlockTime" -> retryBlockTime)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
-        sc.register(m, k)
+      // This is not a public API, but the only way to get failed task
+      // If we run into problems we can use use sc.register(m, k), but
+      // it would not allow us to collect metrics for failed tasks.
+      m.register(sc, Some(k), true)
     }
   }
 
@@ -122,6 +132,23 @@ class GpuTaskMetrics extends Arm with Serializable {
   def spillTime[A](f: => A): A = timeIt(spillBlockTimeNs, "OnAllocFailure", NvtxColor.RED, f)
 
   def readSpillTime[A](f: => A): A = timeIt(readSpillTimeNs, "Read Spill", NvtxColor.ORANGE, f)
+
+  def updateRetry(taskAttemptId: Long): Unit = {
+    val rc = RmmSpark.getAndResetNumRetryThrow(taskAttemptId)
+    if (rc > 0) {
+      retryCount.add(rc)
+    }
+
+    val src = RmmSpark.getAndResetNumSplitRetryThrow(taskAttemptId)
+    if (src > 0) {
+      splitAndRetryCount.add(src)
+    }
+
+    val timeNs = RmmSpark.getAndResetBlockTimeNs(taskAttemptId)
+    if (timeNs > 0) {
+      retryBlockTime.add(timeNs)
+    }
+  }
 }
 
 /**
