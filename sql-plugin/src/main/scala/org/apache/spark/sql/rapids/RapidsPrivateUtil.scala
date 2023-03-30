@@ -26,6 +26,7 @@ object RapidsPrivateUtil extends Arm {
     withResource(Source.fromResource("spark-rapids-extra-configs-classes").bufferedReader()) { r =>
       val className = r.readLine().trim
       Class.forName(className)
+        .getDeclaredConstructor()
         .newInstance()
         .asInstanceOf[Iterable[ConfigEntry[_]]]
         .map(convert).toSeq
