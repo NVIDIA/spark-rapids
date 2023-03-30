@@ -63,10 +63,18 @@ object GpuOrcFileFormat extends Logging {
     val encrypt = options.getOrElse("orc.encrypt", "")
     val mask = options.getOrElse("orc.mask", "")
 
-    if (!keyProvider.isEmpty || !keyProviderPath.isEmpty || !encrypt.isEmpty || !mask.isEmpty) {
+    if (keyProvider.nonEmpty || keyProviderPath.nonEmpty || encrypt.nonEmpty || mask.nonEmpty) {
       meta.willNotWorkOnGpu("Encryption is not yet supported on GPU. If encrypted ORC " +
           "writes are not required unset the \"hadoop.security.key.provider.path\" and " +
           "\"orc.key.provider\" and \"orc.encrypt\" and \"orc.mask\"")
+    }
+
+    // Check if bloom filter is enabled. If yes, then disable GPU.
+    // Refer to https://orc.apache.org/docs/spark-config.html for the description of ORC configs.
+    val bloomFilterColumns = options.getOrElse("orc.bloom.filter.columns", "")
+    if (bloomFilterColumns.nonEmpty) {
+      meta.willNotWorkOnGpu("Bloom filter write for ORC is not yet supported on GPU. " +
+        "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)

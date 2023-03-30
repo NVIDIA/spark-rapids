@@ -79,6 +79,18 @@ object GpuParquetFileFormat {
         s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
     }
 
+    // Check if bloom filter is enabled for any columns. If yes, then disable GPU write.
+    // For Parquet tables, bloom filters are enabled for column `col` by setting
+    // `parquet.bloom.filter.enabled#col` to `true` in `options` or table properties.
+    // Refer to https://spark.apache.org/docs/3.2.0/sql-data-sources-load-save-functions.html
+    // for further details.
+    options.foreach {
+      case (key, _) if key.startsWith("parquet.bloom.filter.enabled#") =>
+        meta.willNotWorkOnGpu(s"Bloom filter write for Parquet is not yet supported on GPU. " +
+          s"If bloom filter is not required, unset $key")
+      case _ =>
+    }
+
     FileFormatChecks.tag(meta, schema, ParquetFormatType, WriteFileOp)
 
     parseCompressionType(parquetOptions.compressionCodecClassName)
