@@ -21,6 +21,7 @@ import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
@@ -302,8 +303,8 @@ trait GpuExec extends SparkPlan with Arm {
     val orig = internalDoExecuteColumnar()
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
-      // This is really ugly, but I hope it will make it a simpler transition everywhere
-      orig.mapPartitions { iter =>
+      // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
+      LocationPreservingMapPartitionsRDD(orig) { iter =>
         gpuMetrics.makeSureRegistered()
         iter
       }

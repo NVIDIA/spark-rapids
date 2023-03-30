@@ -722,7 +722,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           insertStageLevelMetrics(sc, child, newStageId, stageIdGen, allMetrics)
         }
       case gpu: GpuExec if gpu.supportsColumnar =>
-        // We only want to insert the metrics the for the first one, but that can
+        // We only want to insert the metrics only for the first one, but that can
         // have problems because we want it to be deserialized before any of the metrics
         // are used, but depending on how the iterators work, that might not happen, so to
         // be safe for now we are going to include it everywhere
