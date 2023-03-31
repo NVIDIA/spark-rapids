@@ -198,7 +198,7 @@ class GpuCoalesceBatchesRetrySuite
   test("coalesce gpu batches throws if SplitAndRetryOOM with non-splittable goal") {
     val iters = getIters(injectSplitAndRetry = 1, goal = RequireSingleBatch)
     iters.foreach { iter =>
-      assertThrows[OutOfMemoryError] {
+      assertThrows[SplitAndRetryOOM] {
         iter.next()
       }
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()

@@ -133,7 +133,7 @@ class WithRetrySuite
 
   test("withRetry closes input on missing split policy") {
     val myItems = Seq(buildBatch, buildBatch)
-    assertThrows[OutOfMemoryError] {
+    assertThrows[SplitAndRetryOOM] {
       try {
         withRetry(myItems.iterator, splitPolicy = null) { _ =>
           throw new SplitAndRetryOOM("unhandled split-and-retry")

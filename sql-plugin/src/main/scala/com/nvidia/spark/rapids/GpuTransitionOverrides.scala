@@ -722,14 +722,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           insertStageLevelMetrics(sc, child, newStageId, stageIdGen, allMetrics)
         }
       case gpu: GpuExec if gpu.supportsColumnar =>
-        // We only want to insert the metrics the for the first one
-        // This is to reduce the overhead of inserting a mapPartitions everywhere.
-        if (!allMetrics.contains(currentStageId)) {
-          val metrics = new GpuTaskMetrics
-          metrics.register(sc)
-          allMetrics.put(currentStageId, metrics)
-          gpu.setTaskMetrics(metrics)
-        }
+        // We only want to insert metrics for one of the execs per stage, but that can
+        // have problems because we want it to be deserialized before any of the metrics
+        // are used, but depending on how the iterators work, that might not happen, so to
+        // be safe for now we are going to include it everywhere
+        val metrics = allMetrics.getOrElse(currentStageId, {
+          val newMetrics = new GpuTaskMetrics
+          newMetrics.register(sc)
+          allMetrics.put(currentStageId, newMetrics)
+          newMetrics
+        })
+        gpu.setTaskMetrics(metrics)
         gpu.children.foreach { child =>
           insertStageLevelMetrics(sc, child, currentStageId, stageIdGen, allMetrics)
         }
