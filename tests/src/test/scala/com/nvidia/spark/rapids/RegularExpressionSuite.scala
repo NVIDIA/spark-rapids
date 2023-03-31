@@ -25,6 +25,26 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
   private val conf = new SparkConf()
     .set(RapidsConf.ENABLE_REGEXP.key, "true")
 
+  test("Plan toString should not leak internal details of ternary expressions") {
+    assume(isUnicodeEnabled())
+    // see https://github.com/NVIDIA/spark-rapids/issues/7924 for background, but our ternary
+    // operators, such as GpuRegexpExtract have additional attributes (cuDF patterns) that we
+    // do not want displayed when printing a plan
+    val conf = new SparkConf()
+      .set(RapidsConf.ENABLE_REGEXP.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "FileSourceScanExec,CollectLimitExec,DeserializeToObjectExec")
+    withGpuSparkSession(spark => {
+      spark.read.csv("src/test/resources/strings.csv").createTempView("t")
+      val df = spark.sql("SELECT t._c0, regexp_extract(t._c0, '(.*) (.*) (.*)', 2) FROM t")
+      df.collect()
+      val planString = df.queryExecution.executedPlan.toString()
+      val planStringWithoutAttrRefs = planString.replaceAll("#[0-9]+", "")
+      assert(planStringWithoutAttrRefs.contains(
+        "regexp_extract(_c0, (.*) (.*) (.*), 2) AS regexp_extract(_c0, (.*) (.*) (.*), 2)"))
+    }, conf)
+  }
+
   testGpuFallback(
     "String regexp_replace replace str columnar fall back",
     "RegExpReplace",
