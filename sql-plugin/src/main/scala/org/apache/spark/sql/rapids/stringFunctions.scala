@@ -1019,11 +1019,7 @@ object GpuRegExpUtils {
   def getChoicesFromRegex(regex: RegexAST): Option[Seq[String]] = {
     regex match {
       case RegexGroup(_, t, None) =>
-        if (GpuOverrides.isSupportedStringReplacePattern(t.toRegexString)) {
-          Some(Seq(t.toRegexString))
-        } else {
-          None
-        }
+        getChoicesFromRegex(t)
       case RegexChoice(a, b) =>
         getChoicesFromRegex(a) match {
           case Some(la) => 
@@ -1045,7 +1041,11 @@ object GpuRegExpUtils {
           }
         }
       case _ =>
-        None
+        if (GpuOverrides.isSupportedStringReplacePattern(regex.toRegexString)) {
+          Some(Seq(regex.toRegexString))
+        } else {
+          None
+        }
     }
   }
 
