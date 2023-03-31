@@ -289,12 +289,15 @@ abstract class BaseHashJoinIterator(
   override def createGatherer(
       cb: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
+    // cb will be closed by the caller, so use a spill-only version here
+    val spillOnlyCb = LazySpillableColumnarBatch.spillOnly(cb)
     try {
-      val batches = Seq(built, cb)
+      val batches = Seq(built, spillOnlyCb)
       batches.foreach(_.checkpoint())
       withRetryNoSplit {
         withRestoreOnRetry(batches) {
-          closeOnExcept(LazySpillableColumnarBatch(cb.getBatch, "stream_data")) {
+          // We need a new LSCB that will be taken over by the gatherer, or closed
+          closeOnExcept(LazySpillableColumnarBatch(spillOnlyCb.getBatch, "stream_data")) {
             streamBatch =>
               withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
                 joinGatherer(builtKeys, built, streamBatch)
@@ -312,10 +315,10 @@ abstract class BaseHashJoinIterator(
           || joinType == FullOuter =>
         // Because this is just an estimate, it is possible for us to get this wrong, so
         // make sure we at least split the batch in half.
-        val numBatches = Math.max(2, estimatedNumBatches(cb))
+        val numBatches = Math.max(2, estimatedNumBatches(spillOnlyCb))
 
         // Split batch and return no gatherer so the outer loop will try again
-        splitAndSave(cb.getBatch, numBatches, Some(oom))
+        splitAndSave(spillOnlyCb.getBatch, numBatches, Some(oom))
         None
     }
   }

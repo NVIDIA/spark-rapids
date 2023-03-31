@@ -203,13 +203,16 @@ class ConditionalNestedLoopJoinIterator(
       // nothing matched
       return None
     }
-    val batches = Seq(builtBatch, cb)
+    // cb will be closed by the caller, so use a spill-only version here
+    val spillOnlyCb = LazySpillableColumnarBatch.spillOnly(cb)
+    val batches = Seq(builtBatch, spillOnlyCb)
     batches.foreach(_.checkpoint())
     withRetryNoSplit {
       withRestoreOnRetry(batches) {
         withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
           withResource(GpuColumnVector.from(cb.getBatch)) { streamTable =>
-            closeOnExcept(LazySpillableColumnarBatch(cb.getBatch, "stream_data")) {
+          // We need a new LSCB that will be taken over by the gatherer, or closed
+          closeOnExcept(LazySpillableColumnarBatch(spillOnlyCb.getBatch, "stream_data")) {
               streamBatch =>
                 val builtSpillOnly = LazySpillableColumnarBatch.spillOnly(builtBatch)
                 val (leftTable, leftBatch, rightTable, rightBatch) = buildSide match {
