@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -297,7 +297,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
     override def hasNext: Boolean = !wasCalledSuccessfully
 
     override def split(): Unit = {
-      throw new OutOfMemoryError(
+      throw new SplitAndRetryOOM(
         "Attempted to handle a split, but was not initialized with a splitPolicy.")
     }
 
@@ -349,7 +349,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        throw new OutOfMemoryError(
+        throw new SplitAndRetryOOM(
           "Attempted to handle a split, but was not initialized with a splitPolicy.")
       }
       // splitPolicy must take ownership of the argument
@@ -426,14 +426,21 @@ object RmmRapidsRetryIterator extends Arm with Logging {
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
+    // this is true if the OOM was cleared after it was injected (only for tests)
+    private var injectedOOMCleared = false
 
     override def hasNext: Boolean = attemptIter.hasNext
 
     private def clearInjectedOOMIfNeeded(): Unit = {
-      if (injectedOOM) {
+      if (injectedOOM && !injectedOOMCleared) {
+        val threadId = RmmSpark.getCurrentThreadId
         // if for some reason we don't throw, or we throw something that isn't a RetryOOM
         // we want to remove the retry we registered before we leave the withRetry block.
-        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 0)
+        // If the thread is in an UNKNOWN state, then it is already cleared.
+        if (RmmSpark.getStateOf(threadId) != RmmSparkThreadState.UNKNOWN) {
+          RmmSpark.forceRetryOOM(threadId, 0)
+        }
+        injectedOOMCleared = true
       }
     }
 
@@ -523,7 +530,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
   /**
    * Common split function from a single SpillableColumnarBatch to a sequence of them,
    * that tries to split the input into two chunks. If the input cannot be split in two,
-   * because we are down to 1 row, this function throws `OutOfMemoryError`.
+   * because we are down to 1 row, this function throws `SplitAndRetryOOM`.
    *
    * Note how this function closes the input `spillable` that is passed in.
    *
@@ -534,7 +541,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {
-          throw new OutOfMemoryError(s"A batch of $toSplitRows cannot be split!")
+          throw new SplitAndRetryOOM(s"A batch of $toSplitRows cannot be split!")
         }
         val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
           withResource(GpuColumnVector.from(src)) { tbl =>
