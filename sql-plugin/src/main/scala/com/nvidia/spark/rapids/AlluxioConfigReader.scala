@@ -27,7 +27,14 @@ import scala.io.BufferedSource
 class AlluxioConfigReader {
 
   def readAlluxioMasterAndPort(conf: RapidsConf): (String, String) = {
-    readMasterAndPort(conf.getAlluxioHome)
+    if(conf.getAlluxioMaster.isEmpty) {
+      // Read from local Alluxio home
+      readMasterAndPort(conf.getAlluxioHome)
+    } else {
+      // Alluxio master separately deployed and not co-located with Spark Driver.
+      // Like: EKS Env,
+      (conf.getAlluxioMaster, "19998")
+    }
   }
 
   // By default, read from /opt/alluxio, refer to `spark.rapids.alluxio.home` config in `RapidsConf`
