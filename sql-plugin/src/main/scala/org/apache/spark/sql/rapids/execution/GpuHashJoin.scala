@@ -291,9 +291,9 @@ abstract class BaseHashJoinIterator(
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
     // cb will be closed by the caller, so use a spill-only version here
     val spillOnlyCb = LazySpillableColumnarBatch.spillOnly(cb)
+    val batches = Seq(built, spillOnlyCb)
+    batches.foreach(_.checkpoint())
     try {
-      val batches = Seq(built, spillOnlyCb)
-      batches.foreach(_.checkpoint())
       withRetryNoSplit {
         withRestoreOnRetry(batches) {
           // We need a new LSCB that will be taken over by the gatherer, or closed
