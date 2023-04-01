@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RapidsPrivateUtil
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -1246,6 +1247,13 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
+  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
+         "once per invocation.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1886,7 +1894,9 @@ object RapidsConf {
     } else {
       println("Rapids Configs:")
     }
-    registeredConfs.sortBy(_.key).foreach(_.help(asTable))
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    allConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
@@ -1995,6 +2005,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 

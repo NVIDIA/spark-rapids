@@ -102,9 +102,9 @@ class GpuRegExpReplaceMeta(
         (javaPattern, cudfPattern, replacement) match {
           case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
             if (containsBackref) {
-              GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)
+              GpuRegExpReplaceWithBackref(lhs, regexp, rep)(cudfPattern, cudfReplacement)
             } else {
-              GpuRegExpReplace(lhs, regexp, rep, javaPattern, cudfPattern, cudfReplacement,
+              GpuRegExpReplace(lhs, regexp, rep)(javaPattern, cudfPattern, cudfReplacement,
                   None, None)
             }
           case _ =>
@@ -113,7 +113,7 @@ class GpuRegExpReplaceMeta(
       case _ =>
         (javaPattern, replacement) match {
           case (Some(javaPattern), Some(replacement)) =>
-            GpuRegExpReplace(lhs, regexp, rep, javaPattern, javaPattern, replacement,
+            GpuRegExpReplace(lhs, regexp, rep)(javaPattern, javaPattern, replacement,
                 searchList, replaceOpt)
           case _ =>
             throw new IllegalStateException("Expression has not been tagged correctly")

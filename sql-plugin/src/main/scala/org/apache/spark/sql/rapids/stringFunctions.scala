@@ -1165,24 +1165,26 @@ abstract class GpuRegExpTernaryBase extends GpuTernaryExpression {
 case class GpuRegExpReplace(
     srcExpr: Expression,
     searchExpr: Expression,
-    replaceExpr: Expression,
-    javaRegexpPattern: String,
+    replaceExpr: Expression)
+    (javaRegexpPattern: String,
     cudfRegexPattern: String,
     cudfReplacementString: String,
     searchList: Option[Seq[String]],
     replaceOpt: Option[GpuRegExpReplaceOpt])
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with HasGpuStringReplace {
 
+  override def otherCopyArgs: Seq[AnyRef] = Seq(javaRegexpPattern,
+    cudfRegexPattern, cudfReplacementString, searchList, replaceOpt)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
   override def first: Expression = srcExpr
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
 
-  def this(srcExpr: Expression, searchExpr: Expression, javaRegexpPattern: String,
+  def this(srcExpr: Expression, searchExpr: Expression)(javaRegexpPattern: String,
     cudfRegexPattern: String, cudfReplacementString: String) = {
 
-    this(srcExpr, searchExpr, GpuLiteral("", StringType), javaRegexpPattern,
+    this(srcExpr, searchExpr, GpuLiteral("", StringType))(javaRegexpPattern,
       cudfRegexPattern, cudfReplacementString, None, None)
   }
 
@@ -1234,10 +1236,13 @@ case class GpuRegExpReplace(
 
 case class GpuRegExpReplaceWithBackref(
     override val child: Expression,
-    cudfRegexPattern: String,
+    searchExpr: Expression,
+    replaceExpr: Expression)
+    (cudfRegexPattern: String,
     cudfReplacementString: String)
   extends GpuUnaryExpression with ImplicitCastInputTypes {
 
+  override def otherCopyArgs: Seq[AnyRef] = Seq(cudfRegexPattern, cudfReplacementString)
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
   override def dataType: DataType = StringType
@@ -1312,17 +1317,17 @@ class GpuRegExpExtractMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtract(str, regexp, idx, cudfPattern)
+    GpuRegExpExtract(str, regexp, idx)(cudfPattern)
   }
 }
 
 case class GpuRegExpExtract(
     subject: Expression,
     regexp: Expression,
-    idx: Expression,
-    cudfRegexPattern: String)
+    idx: Expression)(cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
 
+  override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = subject
   override def second: Expression = regexp
@@ -1440,17 +1445,17 @@ class GpuRegExpExtractAllMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtractAll(str, regexp, idx, cudfPattern)
+    GpuRegExpExtractAll(str, regexp, idx)(cudfPattern)
   }
 }
 
 case class GpuRegExpExtractAll(
     str: Expression,
     regexp: Expression,
-    idx: Expression,
-    cudfRegexPattern: String)
+    idx: Expression)(cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
 
+  override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def dataType: DataType = ArrayType(StringType, containsNull = true)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = str

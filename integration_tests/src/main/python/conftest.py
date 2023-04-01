@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -102,6 +102,12 @@ def skip_unless_precommit_tests(description):
 
 _limit = -1
 
+_inject_oom = None
+
+def should_inject_oom():
+    global _inject_oom
+    return _inject_oom != None
+
 def get_limit():
     return _limit
 
@@ -114,6 +120,8 @@ def _get_limit_from_mark(mark):
 def pytest_runtest_setup(item):
     global _sort_on_spark
     global _sort_locally
+    global _inject_oom
+    _inject_oom = item.get_closest_marker('inject_oom')
     order = item.get_closest_marker('ignore_order')
     if order:
         if order.kwargs.get('local', False):
@@ -211,10 +219,30 @@ def pytest_configure(config):
     elif "developer" != test_type:
         raise Exception("not supported test type {}".format(test_type))
 
+# For OOM injection: we expect a seed to be provided by the environment, or default to 1.
+# This is done such that any worker started by the xdist plugin for pytest will
+# have the same seed. Since each worker creates a list of tests independently and then
+# pytest expects this starting list to match for all workers, it is important that the same seed
+# is set for all, either from the environment or as a constant.
+oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1))
+print(f"Starting with OOM injection seed: {oom_random_injection_seed}. " 
+      "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
+
 def pytest_collection_modifyitems(config, items):
+    r = random.Random(oom_random_injection_seed)
     for item in items:
         extras = []
         order = item.get_closest_marker('ignore_order')
+        # decide if OOMs should be injected, and when
+        injection_mode = config.getoption('test_oom_injection_mode').lower()
+        inject_choice = False
+        if injection_mode == 'random':
+            inject_choice = r.randrange(0, 2) == 1
+        elif injection_mode == 'always':
+            inject_choice = True
+        if inject_choice:
+            extras.append('INJECT_OOM')
+            item.add_marker('inject_oom', append=True)
         if order:
             if order.kwargs:
                 extras.append('IGNORE_ORDER(' + str(order.kwargs) + ')')
