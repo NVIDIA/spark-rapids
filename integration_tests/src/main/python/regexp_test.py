@@ -28,7 +28,7 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-_regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
+_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -889,7 +889,7 @@ def test_regexp_memory_fallback():
         ),
         cpu_fallback_class_name='RLike',
         conf={ 
-            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
@@ -911,7 +911,7 @@ def test_regexp_memory_ok():
             'a rlike "1|2|3|4|5|6"'
         ),
         conf={ 
-            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
