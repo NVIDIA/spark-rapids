@@ -1538,6 +1538,22 @@ object RapidsConf {
         .createWithDefault(20)
 
   // ALLUXIO CONFIGS
+  val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
+    .doc("The Alluxio master hostname. If not set, read Alluxio master URL from " +
+      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
+      "and Spark driver are not co-located.")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("")
+
+  val ALLUXIO_MASTER_PORT = conf("spark.rapids.alluxio.master.port")
+    .doc("The Alluxio master port. If not set, read Alluxio master port from " +
+      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
+      "and Spark driver are not co-located.")
+    .startupOnly()
+    .integerConf
+    .createWithDefault(19998)
+
   val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
     .doc("The Alluxio installation home path or link to the installation home path. ")
     .startupOnly()
@@ -2383,6 +2399,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioHome: String = get(ALLUXIO_HOME)
+
+  lazy val getAlluxioMaster: String = get(ALLUXIO_MASTER)
+
+  lazy val getAlluxioMasterPort: Int = get(ALLUXIO_MASTER_PORT)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
