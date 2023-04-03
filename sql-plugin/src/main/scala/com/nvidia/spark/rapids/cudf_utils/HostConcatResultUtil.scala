@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.cudf_utils
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
-import com.nvidia.spark.rapids.{Arm,  GpuColumnVectorFromBuffer}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVectorFromBuffer, RmmRapidsRetryIterator}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -49,8 +49,10 @@ object HostConcatResultUtil extends Arm {
       // that it is acquired in the coalesce code.
       new ColumnarBatch(Array.empty, hostConcatResult.getTableHeader.getNumRows)
     } else {
-      withResource(hostConcatResult.toContiguousTable) { ct =>
-        GpuColumnVectorFromBuffer.from(ct, sparkSchema)
+      RmmRapidsRetryIterator.withRetryNoSplit {
+        withResource(hostConcatResult.toContiguousTable) { ct =>
+          GpuColumnVectorFromBuffer.from(ct, sparkSchema)
+        }
       }
     }
   }

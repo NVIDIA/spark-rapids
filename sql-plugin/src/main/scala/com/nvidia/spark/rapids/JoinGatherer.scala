@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -370,7 +371,12 @@ class LazySpillableGatherMapImpl(
   private def getBuffer = {
     if (cached.isEmpty) {
       withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
-        cached = spill.map(_.getDeviceBuffer())
+        cached = spill.map { sb =>
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            sb.getDeviceBuffer()
+          }
+        }
       }
     }
     cached.get
