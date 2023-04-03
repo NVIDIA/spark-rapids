@@ -58,10 +58,6 @@ The number of GPUs per node dictates the number of Spark executors that can run 
    of DecimalTypes with precision greater than 38. There is a bug filed in Apache Spark for it 
    [here](https://issues.apache.org/jira/browse/SPARK-41793), whereas when using the plugin the 
    correct result will be returned.
-
-6. A query may fail when Dynamic File Pruning is enabled. As a workaround, please
-   disable the feature by setting `spark.databricks.optimizer.dynamicFilePruning false`. More details
-   are in [issue-7648](https://github.com/NVIDIA/spark-rapids/issues/7648).
    
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
@@ -70,9 +66,7 @@ cluster meets the prerequisites above by configuring it as follows:
    Prerequisites section.
 2. Choose the number of workers that matches the number of GPUs you want to use.
 3. Select a worker type. On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
-   p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker
-   (although they can be used for the driver node).  For Azure, choose GPU nodes such as
-   Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
+   For Azure, choose GPU nodes such as Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
 4. Select the driver type. Generally this can be set to be the same as the worker.
 5. Start the cluster.
 
@@ -128,7 +122,6 @@ cluster.
     spark.task.resource.gpu.amount 0.1
     spark.rapids.memory.pinnedPool.size 2G
     spark.rapids.sql.concurrentGpuTasks 2
-    spark.databricks.optimizer.dynamicFilePruning false
     ```
 
     ![Spark Config](../img/Databricks/sparkconfig.png)
