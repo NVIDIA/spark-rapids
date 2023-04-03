@@ -742,11 +742,39 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
 
 }
 
+trait HasGpuStringReplace extends Arm {
+  def doStringReplace(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuScalar): ColumnVector = {
+    // When search or replace string is null, return all nulls like the CPU does.
+    if (!searchExpr.isValid || !replaceExpr.isValid) {
+      GpuColumnVector.columnVectorFromNull(strExpr.getRowCount.toInt, StringType)
+    } else if (searchExpr.getValue.asInstanceOf[UTF8String].numChars() == 0) {
+      // Return original string if search string is empty
+      strExpr.getBase.asStrings()
+    } else {
+      strExpr.getBase.stringReplace(searchExpr.getBase, replaceExpr.getBase)
+    }
+  }
+
+  def doStringReplaceMulti(
+    strExpr: GpuColumnVector,
+    search: Seq[String],
+    replacement: String): ColumnVector = {
+      withResource(ColumnVector.fromStrings(search: _*)) { targets => 
+        withResource(ColumnVector.fromStrings(replacement)) {  repls =>
+          strExpr.getBase.stringReplace(targets, repls)
+        }
+      }
+  }
+}
+
 case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression)
-  extends GpuTernaryExpression with ImplicitCastInputTypes {
+  extends GpuTernaryExpression with ImplicitCastInputTypes with HasGpuStringReplace {
 
   override def dataType: DataType = srcExpr.dataType
 
@@ -794,15 +822,7 @@ case class GpuStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    // When search or replace string is null, return all nulls like the CPU does.
-    if (!searchExpr.isValid || !replaceExpr.isValid) {
-      GpuColumnVector.columnVectorFromNull(strExpr.getRowCount.toInt, StringType)
-    } else if (searchExpr.getValue.asInstanceOf[UTF8String].numChars() == 0) {
-      // Return original string if search string is empty
-      strExpr.getBase.asStrings()
-    } else {
-      strExpr.getBase.stringReplace(searchExpr.getBase, replaceExpr.getBase)
-    }
+    doStringReplace(strExpr, searchExpr, replaceExpr)
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
@@ -996,6 +1016,40 @@ object GpuRegExpUtils {
    countGroups(parseAST(pattern))
   }
 
+  def getChoicesFromRegex(regex: RegexAST): Option[Seq[String]] = {
+    regex match {
+      case RegexGroup(_, t, None) =>
+        getChoicesFromRegex(t)
+      case RegexChoice(a, b) =>
+        getChoicesFromRegex(a) match {
+          case Some(la) => 
+            getChoicesFromRegex(b) match {
+              case Some(lb) => Some(la ++ lb)
+              case _ => None
+            }
+          case _ => None
+        }
+      case RegexSequence(parts) =>
+        if (GpuOverrides.isSupportedStringReplacePattern(regex.toRegexString)) {
+          Some(Seq(regex.toRegexString))
+        } else {
+          parts.foldLeft(Some(Seq[String]()): Option[Seq[String]]) { (m: Option[Seq[String]], r) => 
+            getChoicesFromRegex(r) match {
+              case Some(l) => m.map(_ ++ l)
+              case _ => None
+            }
+          }
+        }
+      case _ =>
+        if (GpuOverrides.isSupportedStringReplacePattern(regex.toRegexString)) {
+          Some(Seq(regex.toRegexString))
+        } else {
+          None
+        }
+    }
+  }
+
+
 }
 
 class GpuRLikeMeta(
@@ -1114,11 +1168,13 @@ case class GpuRegExpReplace(
     replaceExpr: Expression)
     (javaRegexpPattern: String,
     cudfRegexPattern: String,
-    cudfReplacementString: String)
-  extends GpuRegExpTernaryBase with ImplicitCastInputTypes {
+    cudfReplacementString: String,
+    searchList: Option[Seq[String]],
+    replaceOpt: Option[GpuRegExpReplaceOpt])
+  extends GpuRegExpTernaryBase with ImplicitCastInputTypes with HasGpuStringReplace {
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(javaRegexpPattern,
-    cudfRegexPattern, cudfReplacementString)
+    cudfRegexPattern, cudfReplacementString, searchList, replaceOpt)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
   override def first: Expression = srcExpr
@@ -1129,7 +1185,7 @@ case class GpuRegExpReplace(
     cudfRegexPattern: String, cudfReplacementString: String) = {
 
     this(srcExpr, searchExpr, GpuLiteral("", StringType))(javaRegexpPattern,
-      cudfRegexPattern, cudfReplacementString)
+      cudfRegexPattern, cudfReplacementString, None, None)
   }
 
   override def doColumnar(
@@ -1139,28 +1195,41 @@ case class GpuRegExpReplace(
     // For empty strings and a regex containing only a zero-match repetition,
     // the behavior in some versions of Spark is different.
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
-    val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
-    if (SparkShimImpl.reproduceEmptyStringBug &&
-        GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
-      val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
-        withResource(Scalar.fromInt(0)) { zero =>
-          len.equalTo(zero)
+    replaceOpt match {
+      case Some(GpuRegExpStringReplace) =>
+        doStringReplace(strExpr, searchExpr, replaceExpr)
+      case Some(GpuRegExpStringReplaceMulti) =>
+        searchList match {
+          case Some(searches) =>
+            doStringReplaceMulti(strExpr, searches, cudfReplacementString)
+          case _ =>
+            throw new IllegalStateException("Need a replace")
         }
-      }
-      withResource(isEmpty) { _ =>
-        withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-          withResource(GpuScalar.from(cudfReplacementString, DataTypes.StringType)) { rep =>
-            withResource(strExpr.getBase.replaceRegex(prog, rep)) { replacement =>
-              isEmpty.ifElse(emptyString, replacement)
+      case _ =>
+        val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
+        if (SparkShimImpl.reproduceEmptyStringBug &&
+            GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
+          val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
+            withResource(Scalar.fromInt(0)) { zero =>
+              len.equalTo(zero)
             }
           }
+          withResource(isEmpty) { _ =>
+            withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+              withResource(GpuScalar.from(cudfReplacementString, DataTypes.StringType)) { rep =>
+                withResource(strExpr.getBase.replaceRegex(prog, rep)) { replacement =>
+                  isEmpty.ifElse(emptyString, replacement)
+                }
+              }
+            }
+          }
+        } else {
+          withResource(Scalar.fromString(cudfReplacementString)) { rep =>
+            strExpr.getBase.replaceRegex(prog, rep)
+          }
         }
-      }
-    } else {
-      withResource(Scalar.fromString(cudfReplacementString)) { rep =>
-        strExpr.getBase.replaceRegex(prog, rep)
-      }
     }
+
   }
 
 }
