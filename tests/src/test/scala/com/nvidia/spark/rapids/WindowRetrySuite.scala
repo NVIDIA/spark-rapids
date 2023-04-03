@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatest.mockito.MockitoSugar
 
@@ -36,7 +36,7 @@ class WindowRetrySuite
       .build()
     withResource(windowTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
+      spy(SpillableColumnarBatch(cb, -1))
     }
   }
 
@@ -153,7 +153,7 @@ class WindowRetrySuite
     val theMock = mock[ColumnVector]
     outputColumns(0) = theMock
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    assertThrows[java.lang.OutOfMemoryError] {
+    assertThrows[SplitAndRetryOOM] {
       groupAggs.doAggsAndClose(
         false,
         Seq.empty[SortOrder],

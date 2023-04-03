@@ -90,16 +90,5 @@ object RapidsDeltaUtils {
         }
       }
     }
-
-    val autoCompactEnabled =
-      getSQLConf("spark.databricks.delta.autoCompact.enabled").orElse {
-        val metadata = deltaLog.snapshot.metadata
-        metadata.configuration.get("delta.autoOptimize.autoCompact").orElse {
-          getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.autoCompact")
-        }
-      }.exists(_.toBoolean)
-    if (autoCompactEnabled) {
-      meta.willNotWorkOnGpu("automatic compaction of Delta Lake tables is not supported")
-    }
   }
 }

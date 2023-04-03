@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,8 +163,7 @@ private[python] object BatchGroupUtils extends Arm {
       dedupAttrs: Seq[Attribute],
       groupingOffsetsInDedup: Seq[Int],
       inputRows: GpuMetric,
-      inputBatches: GpuMetric,
-      spillCallback: SpillCallback): Iterator[ColumnarBatch] = {
+      inputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     val dedupRefs = GpuBindReferences.bindReferences(dedupAttrs, inputAttrs)
     val dedupIter = inputIter.map { batch =>
       // Close the original input batches.
@@ -175,7 +174,7 @@ private[python] object BatchGroupUtils extends Arm {
       }
     }
     // Groups rows on the batches being projected
-    BatchGroupedIterator(dedupIter, dedupAttrs, groupingOffsetsInDedup, spillCallback)
+    BatchGroupedIterator(dedupIter, dedupAttrs, groupingOffsetsInDedup)
   }
 
   /**
@@ -261,8 +260,7 @@ private[python] object BatchGroupUtils extends Arm {
 private[python] class BatchGroupedIterator private(
     input: Iterator[ColumnarBatch],
     inputAttributes: Seq[Attribute],
-    groupingIndices: Seq[Int],
-    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with Arm {
+    groupingIndices: Seq[Int]) extends Iterator[ColumnarBatch] with Arm {
 
   private val batchesQueue: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
@@ -307,8 +305,7 @@ private[python] class BatchGroupedIterator private(
           tables.foreach { t =>
             batchesQueue.enqueue(SpillableColumnarBatch(
               GpuColumnVectorFromBuffer.from(t, inputTypes),
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              spillCallback))
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
       }
@@ -328,10 +325,9 @@ private[python] object BatchGroupedIterator extends Arm {
    */
   def apply(wrapped: Iterator[ColumnarBatch],
             inputAttributes: Seq[Attribute],
-            groupingIndices: Seq[Int],
-            spillCallback: SpillCallback): Iterator[ColumnarBatch] = {
+            groupingIndices: Seq[Int]): Iterator[ColumnarBatch] = {
     if (wrapped.hasNext) {
-      new BatchGroupedIterator(wrapped, inputAttributes, groupingIndices, spillCallback)
+      new BatchGroupedIterator(wrapped, inputAttributes, groupingIndices)
     } else {
       Iterator.empty
     }

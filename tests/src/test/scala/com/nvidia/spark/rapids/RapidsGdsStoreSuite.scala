@@ -147,8 +147,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
     withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      val handle = catalog.addContiguousTable(bufferId, ct, spillPriority,
-        RapidsBuffer.defaultSpillCallback, false)
+      val handle = catalog.addContiguousTable(bufferId, ct, spillPriority, false)
       (bufferSize, handle)
     }
   }

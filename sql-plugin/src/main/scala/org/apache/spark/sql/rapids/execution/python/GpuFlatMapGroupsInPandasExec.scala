@@ -106,9 +106,8 @@ case class GpuFlatMapGroupsInPandasExec(
   // processed by Python executors group by group, so better to coalesce the output batches.
   override def coalesceAfter: Boolean = true
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
-         spillCallback) = commonGpuMetrics()
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
@@ -126,8 +125,7 @@ case class GpuFlatMapGroupsInPandasExec(
                         chainedFunc,
                         Array(argOffsets),
                         StructType.fromAttributes(dedupAttrs),
-                        pythonOutputSchema,
-                        spillCallback)
+                        pythonOutputSchema)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -139,7 +137,7 @@ case class GpuFlatMapGroupsInPandasExec(
       // Projects each input batch into the deduplicated schema, and splits
       // into separate group batches to sends them to Python group by group later.
       val pyInputIter = projectAndGroup(inputIter, localChildOutput, dedupAttrs, groupingOffsets,
-          mNumInputRows, mNumInputBatches, spillCallback)
+          mNumInputRows, mNumInputBatches)
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.

@@ -18,15 +18,18 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
@@ -54,7 +57,6 @@ object GpuMetric extends Logging {
   val PARTITION_SIZE = "partitionSize"
   val NUM_PARTITIONS = "numPartitions"
   val OP_TIME = "opTime"
-  val SEMAPHORE_WAIT_TIME = "semaphoreWaitTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
   val COLLECT_TIME = "collectTime"
   val CONCAT_TIME = "concatTime"
@@ -66,9 +68,6 @@ object GpuMetric extends Logging {
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
-  val SPILL_AMOUNT = "spillData"
-  val SPILL_AMOUNT_DISK = "spillDisk"
-  val SPILL_AMOUNT_HOST = "spillHost"
   val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
   val READ_FS_TIME = "readFsTime"
   val WRITE_BUFFER_TIME = "writeBufferTime"
@@ -84,7 +83,6 @@ object GpuMetric extends Logging {
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME = "op time"
-  val DESCRIPTION_SEMAPHORE_WAIT_TIME = "GPU semaphore wait time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
@@ -96,9 +94,6 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
-  val DESCRIPTION_SPILL_AMOUNT = "bytes spilled from GPU"
-  val DESCRIPTION_SPILL_AMOUNT_DISK = "bytes spilled to disk"
-  val DESCRIPTION_SPILL_AMOUNT_HOST = "bytes spilled to host"
   val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
   val DESCRIPTION_READ_FS_TIME = "time to read fs data"
   val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
@@ -122,32 +117,6 @@ object GpuMetric extends Logging {
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
-
-  def makeSpillCallback(allMetrics: Map[String, GpuMetric]): SpillCallback = {
-    val spillAmount = allMetrics(SPILL_AMOUNT)
-    val disk = allMetrics(SPILL_AMOUNT_DISK)
-    val host = allMetrics(SPILL_AMOUNT_HOST)
-    val sem = allMetrics(SEMAPHORE_WAIT_TIME)
-    new SpillCallback {
-      override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = {
-        from match {
-          case DEVICE =>
-            spillAmount += amount
-          case _ => // ignored
-        }
-        to match {
-          case HOST =>
-            host += amount
-          case GDS | DISK =>
-            disk += amount
-          case _ =>
-            logWarning(s"Spill to $to is unsupported in metrics: $amount")
-        }
-      }
-
-      override def semaphoreWaitTime: GpuMetric = sem
-    }
-  }
 }
 
 sealed abstract class GpuMetric extends Serializable {
@@ -202,6 +171,8 @@ object GpuExec {
     case gpu: GpuExec => gpu.outputBatching
     case _ => null
   }
+
+  val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
 trait GpuExec extends SparkPlan with Arm {
@@ -280,16 +251,6 @@ trait GpuExec extends SparkPlan with Arm {
 
   lazy val additionalMetrics: Map[String, GpuMetric] = Map.empty
 
-  protected def spillMetrics: Map[String, GpuMetric] = Map(
-    SPILL_AMOUNT -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_SPILL_AMOUNT),
-    SPILL_AMOUNT_DISK -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_SPILL_AMOUNT_DISK),
-    SPILL_AMOUNT_HOST -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_SPILL_AMOUNT_HOST)
-  ) ++ semaphoreMetrics
-
-  protected def semaphoreMetrics: Map[String, GpuMetric] = Map(
-    SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME)
-  )
-
   /**
    * Returns true if there is something in the exec that cannot work when batches between
    * multiple file partitions are combined into a single batch (coalesce).
@@ -329,4 +290,26 @@ trait GpuExec extends SparkPlan with Arm {
       case other => QueryPlan.normalizeExpressions(other, allAttributes)
     }.withNewChildren(canonicalizedChildren)
   }
+
+  // This is ugly, we don't need to access these metrics directly, but we do need to make sure
+  // that we can send them over the wire to the executor so that things work as expected
+  def setTaskMetrics(gpuTaskMetrics: GpuTaskMetrics): Unit =
+    setTagValue(GpuExec.TASK_METRICS_TAG, gpuTaskMetrics)
+
+  def getTaskMetrics: Option[GpuTaskMetrics] =
+    this.getTagValue(GpuExec.TASK_METRICS_TAG)
+
+  final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val orig = internalDoExecuteColumnar()
+    val metrics = getTaskMetrics
+    metrics.map { gpuMetrics =>
+      // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
+      LocationPreservingMapPartitionsRDD(orig) { iter =>
+        gpuMetrics.makeSureRegistered()
+        iter
+      }
+    }.getOrElse(orig)
+  }
+
+  protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]
 }

@@ -58,7 +58,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         .build()
     withResource(projectTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(LongType, LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
+      spy(SpillableColumnarBatch(cb, -1))
     }
   }
 
@@ -72,8 +72,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val sb = buildProjectBatch()
 
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
-      val result = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, Seq(expr),
-        RapidsBuffer.defaultSpillCallback)
+      val result = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, Seq(expr))
       withResource(result) { cb =>
         assertResult(4)(cb.numRows)
         assertResult(1)(cb.numCols)
@@ -104,7 +103,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val sb = buildProjectBatch()
 
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
-      val result = tp.projectAndCloseWithRetrySingleBatch(sb, RapidsBuffer.defaultSpillCallback)
+      val result = tp.projectAndCloseWithRetrySingleBatch(sb)
       withResource(result) { cb =>
         assertResult(4)(cb.numRows)
         assertResult(1)(cb.numCols)

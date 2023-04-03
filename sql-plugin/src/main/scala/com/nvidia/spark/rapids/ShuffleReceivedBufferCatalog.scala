@@ -69,8 +69,6 @@ class ShuffleReceivedBufferCatalog(
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync tells the store a synchronize in the current stream is required
    *                  before storing this buffer
    * @return RapidsBufferHandle associated with this buffer
@@ -79,7 +77,6 @@ class ShuffleReceivedBufferCatalog(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      defaultSpillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
       needsSync: Boolean): RapidsBufferHandle = {
     val bufferId = nextShuffleReceivedBufferId()
     tableMeta.bufferMeta.mutateId(bufferId.tableId)
@@ -90,7 +87,6 @@ class ShuffleReceivedBufferCatalog(
         buffer,
         tableMeta,
         initialSpillPriority,
-        defaultSpillCallback,
         needsSync)
     }
   }
@@ -99,15 +95,12 @@ class ShuffleReceivedBufferCatalog(
    * Adds a degenerate buffer (zero rows or columns)
    *
    * @param meta metadata describing the buffer layout
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @return RapidsBufferHandle associated with this buffer
    */
   def addDegenerateRapidsBuffer(
-      meta: TableMeta,
-      spillCallback: SpillCallback): RapidsBufferHandle = {
+      meta: TableMeta): RapidsBufferHandle = {
     val bufferId = nextShuffleReceivedBufferId()
-    catalog.registerDegenerateBuffer(bufferId, meta, spillCallback)
+    catalog.registerDegenerateBuffer(bufferId, meta)
   }
 
   /**

@@ -42,7 +42,7 @@ case class GpuDeltaInvariantCheckerExec(
     throw new IllegalStateException("ROW BASED PROCESSING IS NOT SUPPORTED")
   }
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     if (checks.isEmpty) return child.executeColumnar()
     val boundRefs = checks.map(_.withBoundReferences(child.output))
 

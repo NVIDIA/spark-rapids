@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.io.DataOutputStream
 import java.net.Socket
 
 import ai.rapids.cudf.{ArrowIPCWriterOptions, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, GpuSemaphore}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuSemaphore}
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD}
@@ -44,7 +44,6 @@ class GpuCoGroupedArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Int,
-    val semWait: GpuMetric,
     pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[(ColumnarBatch, ColumnarBatch)](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {

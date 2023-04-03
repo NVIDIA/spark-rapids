@@ -95,7 +95,7 @@ case class GpuRapidsDeltaWriteExec(child: SparkPlan) extends V2CommandExec
   override lazy val allMetrics: Map[String, GpuMetric] =
     GpuMetric.wrap(basicMetrics ++ taskMetrics)
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // This is just a stub node for planning purposes and does not actually perform
     // the write. See the documentation for RapidsDeltaWrite and its use in
     // GpuOptimisticTransaction for details on how the write is handled.

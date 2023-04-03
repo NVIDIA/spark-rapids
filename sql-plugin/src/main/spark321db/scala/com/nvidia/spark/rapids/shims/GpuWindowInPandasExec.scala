@@ -87,10 +87,9 @@ case class GpuWindowInPandasExec(
       projectList.map(_.transform(unboundToRefMap)), child.output)
   }
 
-  // Override doExecuteColumnar so we use the correct GpuArrowPythonRunner
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-         spillCallback) = commonGpuMetrics()
+  // Override internalDoExecuteColumnar so we use the correct GpuArrowPythonRunner
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
@@ -199,7 +198,7 @@ case class GpuWindowInPandasExec(
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches, spillCallback)
+        numInputRows, numInputBatches)
       val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
@@ -208,7 +207,7 @@ case class GpuWindowInPandasExec(
         val inputBatch = withResource(projectedBatch) { projectedCb =>
           insertWindowBounds(projectedCb)
         }
-        queue.add(batch, spillCallback)
+        queue.add(batch)
         inputBatch
       }
 
@@ -227,7 +226,6 @@ case class GpuWindowInPandasExec(
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          spillCallback.semaphoreWaitTime,
           pythonOutputSchema,
           () => queue.finish())
 
@@ -240,6 +238,6 @@ case class GpuWindowInPandasExec(
       }
 
     } // End of mapPartitions
-  } // End of doExecuteColumnar
+  } // End of internalDoExecuteColumnar
 
 }

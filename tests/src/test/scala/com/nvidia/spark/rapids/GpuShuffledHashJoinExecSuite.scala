@@ -60,7 +60,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
       mockStreamIter,
       targetSize,
       buildAttrs,
-      RequireSingleBatch, None, RapidsBuffer.defaultSpillCallback, metricMap)
+      RequireSingleBatch, None, metricMap)
 
     verifyBuiltData(builtData)
     // build iterator should be drained
@@ -107,6 +107,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
       testJoinPreparation(buildIter) { builtData =>
         assert(builtData.isLeft)
         assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
+
       }
     }
   }

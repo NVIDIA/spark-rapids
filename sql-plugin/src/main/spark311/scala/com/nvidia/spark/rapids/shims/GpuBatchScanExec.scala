@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
@@ -50,5 +51,13 @@ case class GpuBatchScanExec(
 
   override def doCanonicalize(): GpuBatchScanExec = {
     this.copy(output = output.map(QueryPlan.normalizeExpressions(_, output)))
+  }
+
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric("numOutputRows")
+    inputRDD.asInstanceOf[RDD[ColumnarBatch]].map { b =>
+      numOutputRows += b.numRows()
+      b
+    }
   }
 }

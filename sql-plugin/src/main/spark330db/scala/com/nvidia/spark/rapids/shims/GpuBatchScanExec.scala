@@ -33,6 +33,7 @@ import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
 import org.apache.spark.sql.execution.datasources.v2._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
@@ -141,5 +142,13 @@ case class GpuBatchScanExec(
     val runtimeFiltersString = s"RuntimeFilters: ${runtimeFilters.mkString("[", ",", "]")}"
     val result = s"$nodeName$truncatedOutputString ${scan.description()} $runtimeFiltersString"
     redact(result)
+  }
+
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = longMetric("numOutputRows")
+    inputRDD.asInstanceOf[RDD[ColumnarBatch]].map { b =>
+      numOutputRows += b.numRows()
+      b
+    }
   }
 }

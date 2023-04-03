@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,6 +77,18 @@ object GpuParquetFileFormat {
     if (!meta.conf.isParquetWriteEnabled) {
       meta.willNotWorkOnGpu("Parquet output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
+    }
+
+    // Check if bloom filter is enabled for any columns. If yes, then disable GPU write.
+    // For Parquet tables, bloom filters are enabled for column `col` by setting
+    // `parquet.bloom.filter.enabled#col` to `true` in `options` or table properties.
+    // Refer to https://spark.apache.org/docs/3.2.0/sql-data-sources-load-save-functions.html
+    // for further details.
+    options.foreach {
+      case (key, _) if key.startsWith("parquet.bloom.filter.enabled#") =>
+        meta.willNotWorkOnGpu(s"Bloom filter write for Parquet is not yet supported on GPU. " +
+          s"If bloom filter is not required, unset $key")
+      case _ =>
     }
 
     FileFormatChecks.tag(meta, schema, ParquetFormatType, WriteFileOp)
@@ -290,7 +302,7 @@ class GpuParquetWriter(
     timestampRebaseException: Boolean,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet") {
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", false) {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 

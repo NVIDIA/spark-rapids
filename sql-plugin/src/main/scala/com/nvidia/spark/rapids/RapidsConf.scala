@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RapidsPrivateUtil
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -1246,6 +1247,13 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
+  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
+         "once per invocation.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1530,6 +1538,22 @@ object RapidsConf {
         .createWithDefault(20)
 
   // ALLUXIO CONFIGS
+  val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
+    .doc("The Alluxio master hostname. If not set, read Alluxio master URL from " +
+      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
+      "and Spark driver are not co-located.")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("")
+
+  val ALLUXIO_MASTER_PORT = conf("spark.rapids.alluxio.master.port")
+    .doc("The Alluxio master port. If not set, read Alluxio master port from " +
+      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
+      "and Spark driver are not co-located.")
+    .startupOnly()
+    .integerConf
+    .createWithDefault(19998)
+
   val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
     .doc("The Alluxio installation home path or link to the installation home path. ")
     .startupOnly()
@@ -1825,6 +1849,13 @@ object RapidsConf {
     .integerConf
     .createWithDefault(16)
 
+  val ENABLE_AQE_EXCHANGE_REUSE_FIXUP = conf("spark.rapids.sql.aqeExchangeReuseFixup.enable")
+      .doc("Option to turn on the fixup of exchange reuse when running with " +
+          "adaptive query execution.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1879,7 +1910,9 @@ object RapidsConf {
     } else {
       println("Rapids Configs:")
     }
-    registeredConfs.sortBy(_.key).foreach(_.help(asTable))
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    allConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
@@ -1988,6 +2021,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
@@ -2365,6 +2400,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioHome: String = get(ALLUXIO_HOME)
 
+  lazy val getAlluxioMaster: String = get(ALLUXIO_MASTER)
+
+  lazy val getAlluxioMasterPort: Int = get(ALLUXIO_MASTER_PORT)
+
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   lazy val getAlluxioAutoMountEnabled: Boolean = get(ALLUXIO_AUTOMOUNT_ENABLED)
@@ -2419,7 +2458,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
-  lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+  lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+
+  lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

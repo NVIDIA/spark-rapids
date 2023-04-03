@@ -198,7 +198,7 @@ class GpuCoalesceBatchesRetrySuite
   test("coalesce gpu batches throws if SplitAndRetryOOM with non-splittable goal") {
     val iters = getIters(injectSplitAndRetry = 1, goal = RequireSingleBatch)
     iters.foreach { iter =>
-      assertThrows[OutOfMemoryError] {
+      assertThrows[SplitAndRetryOOM] {
         iter.next()
       }
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
@@ -211,8 +211,6 @@ class GpuCoalesceBatchesRetrySuite
 
   class SpillableColumnarBatchThatThrows(batch: ColumnarBatch)
       extends SpillableColumnarBatch {
-    override def getSpillCallback: SpillCallback =
-      RapidsBuffer.defaultSpillCallback
     override def numRows(): Int = 0
     override def setSpillPriority(priority: Long): Unit = {}
     override def getColumnarBatch(): ColumnarBatch = {
@@ -244,8 +242,7 @@ class GpuCoalesceBatchesRetrySuite
       } else {
         spy(SpillableColumnarBatch(
           batch,
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-          RapidsBuffer.defaultSpillCallback))
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY))
       }
       spillableSpy
     }
@@ -259,7 +256,6 @@ class GpuCoalesceBatchesRetrySuite
       batchesToConcat.iterator,
       goal,
       StructType(Seq(StructField("col0", LongType, nullable = true))),
-      NoopMetric,
       NoopMetric,
       NoopMetric,
       NoopMetric,
@@ -301,7 +297,6 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         NoopMetric,
-        RapidsBuffer.defaultSpillCallback,
         "test",
         TableCompressionCodecConfig(1024)) with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
@@ -335,7 +330,6 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         NoopMetric,
-        RapidsBuffer.defaultSpillCallback,
         "test") with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()

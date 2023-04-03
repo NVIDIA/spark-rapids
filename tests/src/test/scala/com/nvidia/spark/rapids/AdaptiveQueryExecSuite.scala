@@ -628,7 +628,7 @@ class AdaptiveQueryExecSuite
       val parts = rdd.partitions
       assert(parts.forall(rdd.preferredLocations(_).nonEmpty))
     }
-    assert(numShuffles === (numLocalReaders.length + numShufflesWithoutLocalReader))
+    assert(numShuffles == (numLocalReaders.length + numShufflesWithoutLocalReader))
     numLocalReaders.length
   }
 

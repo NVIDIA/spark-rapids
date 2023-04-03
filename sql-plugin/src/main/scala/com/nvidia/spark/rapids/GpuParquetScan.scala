@@ -1713,7 +1713,7 @@ class MultiFileParquetPartitionReader(
     val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
     // About to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes, parseOpts,
       dataBuffer, 0, dataSize, metrics,
@@ -2230,7 +2230,7 @@ class MultiFileCloudParquetPartitionReader(
         new ColumnarBatch(Array.empty, rows)
       } else {
         // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val nullColumns = meta.readSchema.fields.safeMap(f =>
           GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
         new ColumnarBatch(nullColumns, rows)
@@ -2282,7 +2282,7 @@ class MultiFileCloudParquetPartitionReader(
       val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
       // about to start using the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       parseOpts
     }
     val colTypes = readDataSchema.fields.map(f => f.dataType)
@@ -2298,7 +2298,7 @@ class MultiFileCloudParquetPartitionReader(
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, None,
         tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
 
-      val batchIter = CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+      val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
 
       if (allPartValues.isDefined) {
         val allPartInternalRows = allPartValues.get.map(_._2)
@@ -2510,7 +2510,7 @@ class ParquetPartitionReader(
           EmptyGpuColumnarBatchIterator
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
           new SingleGpuColumnarBatchIterator(new ColumnarBatch(nullColumns.toArray, numRows))
@@ -2518,7 +2518,7 @@ class ParquetPartitionReader(
       } else {
         val colTypes = readDataSchema.fields.map(f => f.dataType)
         val iter = if (currentChunkedBlocks.isEmpty) {
-          CachedGpuBatchIterator(EmptyTableReader, colTypes, spillCallback)
+          CachedGpuBatchIterator(EmptyTableReader, colTypes)
         } else {
           val parseOpts = getParquetOptions(readDataSchema, clippedParquetSchema, useFieldId)
           val (dataBuffer, dataSize, _) = metrics(BUFFER_TIME).ns {
@@ -2526,7 +2526,7 @@ class ParquetPartitionReader(
           }
           if (dataSize == 0) {
             dataBuffer.close()
-            CachedGpuBatchIterator(EmptyTableReader, colTypes, spillCallback)
+            CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
             closeOnExcept(dataBuffer) { _ =>
               // Dump parquet data into a file
@@ -2534,7 +2534,7 @@ class ParquetPartitionReader(
                 Some("parquet"))
 
               // about to start using the GPU
-              GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+              GpuSemaphore.acquireIfNecessary(TaskContext.get())
             }
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
               // Inc the ref count because MakeParquetTableProducer will try to close the dataBuffer
@@ -2548,7 +2548,7 @@ class ParquetPartitionReader(
                 useFieldId, readDataSchema,
                 clippedParquetSchema, Some(filePath),
                 tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
-              CachedGpuBatchIterator(producer, colTypes, spillCallback)
+              CachedGpuBatchIterator(producer, colTypes)
             }
           }
         }

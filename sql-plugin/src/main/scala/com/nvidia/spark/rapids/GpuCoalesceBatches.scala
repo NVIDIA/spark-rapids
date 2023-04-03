@@ -633,7 +633,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     concatTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: SpillCallback,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -656,8 +655,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
-    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-      spillCallback))
+    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
 
   private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
     val wip = batches.safeMap(_.getColumnarBatch())
@@ -697,8 +695,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     closeOnExcept(batch) { _ =>
       assert(onDeck.isEmpty)
     }
-    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-      spillCallback))
+    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
   }
 
   override protected def clearOnDeck(): Unit = {
@@ -731,7 +728,6 @@ class GpuCompressionAwareCoalesceIterator(
     concatTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: SpillCallback,
     opName: String,
     codecConfigs: TableCompressionCodecConfig)
   extends GpuCoalesceIterator(
@@ -744,7 +740,7 @@ class GpuCompressionAwareCoalesceIterator(
     concatTime = concatTime,
     opTime = opTime,
     peakDevMemory = peakDevMemory,
-    spillCallback, opName) {
+    opName) {
 
   private[this] var codec: TableCompressionCodec = _
 
@@ -828,7 +824,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  ) ++ spillMetrics
+  )
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new IllegalStateException("ROW BASED PROCESSING IS NOT SUPPORTED")
@@ -854,7 +850,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
       child.outputOrdering
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -877,21 +873,20 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
         Iterator.single(combinedCb)
       }
     } else {
-      val callback = GpuMetric.makeSpillCallback(allMetrics)
       goal match {
         case sizeGoal: CoalesceSizeGoal =>
           batches.mapPartitions { iter =>
             new GpuCompressionAwareCoalesceIterator(
               iter, dataTypes, sizeGoal, decompressMemoryTarget,
               numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
-              concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches",
+              concatTime, opTime, peakDevMemory, "GpuCoalesceBatches",
               localCodecConfigs)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-            concatTime, opTime, peakDevMemory, callback)
+            concatTime, opTime, peakDevMemory)
           batches.mapPartitions { iter =>
             f(iter)
           }

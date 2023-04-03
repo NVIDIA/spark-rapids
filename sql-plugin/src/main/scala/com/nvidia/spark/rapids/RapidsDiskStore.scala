@@ -60,8 +60,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         fileOffset,
         incoming.size,
         incoming.meta,
-        incoming.getSpillPriority,
-        incoming.getSpillCallback)
+        incoming.getSpillPriority)
     }
   }
 
@@ -92,10 +91,9 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       fileOffset: Long,
       size: Long,
       meta: TableMeta,
-      spillPriority: Long,
-      spillCallback: SpillCallback)
+      spillPriority: Long)
       extends RapidsBufferBase(
-        id, size, meta, spillPriority, spillCallback) {
+        id, size, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK
