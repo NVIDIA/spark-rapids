@@ -230,13 +230,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       case ex: Throwable =>
         // Only restore on retry exceptions
         val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
-        val causedByRetry = topLevelIsRetry match {
-          case false =>
-            val (cbRetry, _) = causedByRetryOrSplit(ex)
-            cbRetry
-          case true => true
-        }
-        if (topLevelIsRetry || causedByRetry) {
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
           r.restore()
         }
         throw ex
@@ -263,13 +257,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       case ex: Throwable =>
         // Only restore on retry exceptions
         val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
-        val causedByRetry = topLevelIsRetry match {
-          case false =>
-            val (cbRetry, _) = causedByRetryOrSplit(ex)
-            cbRetry
-          case true => true
-        }
-        if (topLevelIsRetry || causedByRetry) {
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
           r.foreach(_.restore())
         }
         throw ex
