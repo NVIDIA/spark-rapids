@@ -27,7 +27,7 @@ The plugin is tested on the following architectures:
 
 Software Requirements:
 
-	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, Rocky Linux 8
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
 
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
