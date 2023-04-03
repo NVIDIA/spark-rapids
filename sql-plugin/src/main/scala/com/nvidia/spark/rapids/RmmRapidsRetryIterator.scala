@@ -19,9 +19,13 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
-object RmmRapidsRetryIterator extends Arm {
+import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.internal.SQLConf
+
+object RmmRapidsRetryIterator extends Arm with Logging {
 
   /**
    * withRetry for Iterator[T]. This helper calls a function `fn` as it takes
@@ -177,6 +181,32 @@ object RmmRapidsRetryIterator extends Arm {
   }
 
   /**
+   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * returns the result. In the event of an OOM Retry exception, it calls the restore() method
+   * of the input and then throws the oom exception.  This is intended to be used within the `fn`
+   * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
+   * of a retry.
+   *
+   * @param r  a single item T
+   * @param fn the work to perform. Takes no input and produces K
+   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam K `fn` result type
+   * @return a single item of type K
+   */
+  def withRestoreOnRetry[T <: CheckpointRestore, K](r: T)(fn: => K): K = {
+    try {
+      fn
+    } catch {
+      case t: RetryOOM =>
+        r.restore()
+        throw t
+      case t: SplitAndRetryOOM =>
+        r.restore()
+        throw t
+    }
+  }
+
+  /**
    * Helper method to drain an iterator and ensuring that it was non-empty
    * and it had a single item in it.
    */
@@ -267,7 +297,7 @@ object RmmRapidsRetryIterator extends Arm {
     override def hasNext: Boolean = !wasCalledSuccessfully
 
     override def split(): Unit = {
-      throw new OutOfMemoryError(
+      throw new SplitAndRetryOOM(
         "Attempted to handle a split, but was not initialized with a splitPolicy.")
     }
 
@@ -319,7 +349,7 @@ object RmmRapidsRetryIterator extends Arm {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        throw new OutOfMemoryError(
+        throw new SplitAndRetryOOM(
           "Attempted to handle a split, but was not initialized with a splitPolicy.")
       }
       // splitPolicy must take ownership of the argument
@@ -391,8 +421,40 @@ object RmmRapidsRetryIterator extends Arm {
   class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
       extends Iterator[K]
           with Arm {
+    // used to figure out if we should inject an OOM (only for tests)
+    private val config = new RapidsConf(SQLConf.get)
+
+    // this is true if an OOM was injected (only for tests)
+    private var injectedOOM = false
+    // this is true if the OOM was cleared after it was injected (only for tests)
+    private var injectedOOMCleared = false
 
     override def hasNext: Boolean = attemptIter.hasNext
+
+    private def clearInjectedOOMIfNeeded(): Unit = {
+      if (injectedOOM && !injectedOOMCleared) {
+        val threadId = RmmSpark.getCurrentThreadId
+        // if for some reason we don't throw, or we throw something that isn't a RetryOOM
+        // we want to remove the retry we registered before we leave the withRetry block.
+        // If the thread is in an UNKNOWN state, then it is already cleared.
+        if (RmmSpark.getStateOf(threadId) != RmmSparkThreadState.UNKNOWN) {
+          RmmSpark.forceRetryOOM(threadId, 0)
+        }
+        injectedOOMCleared = true
+      }
+    }
+
+    /**
+     * Returns a tuple of (shouldRetry, shouldSplit) depending the exception
+     * passed
+     */
+    private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean) = {
+      ex match {
+        case retryOOM: RetryOOM => (true, false)
+        case splitAndRetryOOM: SplitAndRetryOOM => (true, true)
+        case _ => (false, false)
+      }
+    }
 
     override def next(): K = {
       // this is set on the first exception, and we add suppressed if there are others
@@ -413,27 +475,48 @@ object RmmRapidsRetryIterator extends Arm {
         doSplit = false
         try {
           // call the user's function
+          if (config.testRetryOOMInjectionEnabled && !injectedOOM) {
+            injectedOOM = true
+            // ensure we have associated our thread with the running task, as
+            // `forceRetryOOM` requires a prior association.
+            RmmSpark.associateCurrentThreadWithTask(TaskContext.get().taskAttemptId())
+            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+          }
           result = Some(attemptIter.next())
+          clearInjectedOOMIfNeeded()
         } catch {
-          case retryOOM: RetryOOM =>
-            if (lastException != null) {
-              retryOOM.addSuppressed(lastException)
+          case ex: Throwable =>
+            // handle a retry as the top-level exception
+            val (topLevelIsRetry, isSplitAndRetry) = isRetryOrSplitAndRetry(ex)
+            doSplit = isSplitAndRetry
+
+            // handle any retries that are wrapped in a different top-level exception
+            var causedByRetry = false
+            if (!topLevelIsRetry) {
+              var current = ex
+              // check if there is a hidden retry OOM
+              while (current != null && !causedByRetry) {
+                current = current.getCause()
+                val (isRetry, isSplit) = isRetryOrSplitAndRetry(current)
+                causedByRetry = isRetry
+                doSplit = doSplit || isSplit
+              }
             }
-            lastException = retryOOM
-          case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
+
+            clearInjectedOOMIfNeeded()
+
+            // make sure we add any prior exceptions to this one as causes
             if (lastException != null) {
-              splitAndRetryOOM.addSuppressed(lastException)
+              ex.addSuppressed(lastException)
             }
-            lastException = splitAndRetryOOM
-            doSplit = true
-          case other: Throwable =>
-            if (lastException != null) {
-              other.addSuppressed(lastException)
-            }
-            lastException = other
-            // we want to throw early here, since we got an exception
-            // we were not prepared to handle
-            throw lastException
+            lastException = ex
+
+            if (!topLevelIsRetry && !causedByRetry) {
+              // we want to throw early here, since we got an exception
+              // we were not prepared to handle
+              throw lastException
+            } 
+            // else another exception wrapped a retry. So we are going to try again
         }
       }
       if (result.isEmpty) {
@@ -447,7 +530,7 @@ object RmmRapidsRetryIterator extends Arm {
   /**
    * Common split function from a single SpillableColumnarBatch to a sequence of them,
    * that tries to split the input into two chunks. If the input cannot be split in two,
-   * because we are down to 1 row, this function throws `OutOfMemoryError`.
+   * because we are down to 1 row, this function throws `SplitAndRetryOOM`.
    *
    * Note how this function closes the input `spillable` that is passed in.
    *
@@ -455,11 +538,10 @@ object RmmRapidsRetryIterator extends Arm {
    */
   def splitSpillableInHalfByRows: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
     (spillable: SpillableColumnarBatch) => {
-      val spillCallback = spillable.getSpillCallback
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {
-          throw new OutOfMemoryError(s"A batch of $toSplitRows cannot be split!")
+          throw new SplitAndRetryOOM(s"A batch of $toSplitRows cannot be split!")
         }
         val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
           withResource(GpuColumnVector.from(src)) { tbl =>
@@ -470,8 +552,7 @@ object RmmRapidsRetryIterator extends Arm {
               val spillables = batches.safeMap { b =>
                 SpillableColumnarBatch(
                   b,
-                  SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                  spillCallback)
+                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
               }
               closeOnExcept(spillables) { _ =>
                 require(spillables.length == 2,
@@ -486,4 +567,16 @@ object RmmRapidsRetryIterator extends Arm {
       }
     }
   }
+}
+
+trait CheckpointRestore {
+  /**
+   * Save state so it can be restored in case of an OOM Retry.
+   */
+  def checkpoint(): Unit
+
+  /**
+   * Restore state that was checkpointed.
+   */
+  def restore(): Unit
 }

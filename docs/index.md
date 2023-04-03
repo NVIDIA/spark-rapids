@@ -9,7 +9,10 @@ description: This site serves as a collection of documentation about the RAPIDS 
 The RAPIDS Accelerator for Apache Spark leverages GPUs to accelerate processing via the
 [RAPIDS libraries](http://rapids.ai).
 
-As data scientists shift from using traditional analytics to leveraging AI applications that better model complex market demands, traditional CPU-based processing can no longer keep up without compromising either speed or cost. The growing adoption of AI in analytics has created the need for a new framework to process data quickly and cost efficiently with GPUs.
+As data scientists shift from using traditional analytics to leveraging AI(DL/ML) applications that 
+better model complex market demands, traditional CPU-based processing can no longer keep up without 
+compromising either speed or cost. The growing adoption of AI in analytics has created the need for 
+a new framework to process data quickly and cost-efficiently with GPUs.
 
 The RAPIDS Accelerator for Apache Spark combines the power of the <a href="https://github.com/rapidsai/cudf/">RAPIDS cuDF</a> library and the scale of the Spark distributed computing framework.  The RAPIDS Accelerator library also has a built-in accelerated shuffle based on <a href="https://github.com/openucx/ucx/">UCX</a> that can be configured to leverage GPU-to-GPU communication and RDMA capabilities. 
 
@@ -20,6 +23,8 @@ Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while s
 [demo](https://databricks.com/session_na20/deep-dive-into-gpu-support-in-apache-spark-3-x). Costs 
 based on Cloud T4 GPU instance market price.
 
+Please refer to [spark-rapids-examples repo](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/XGBoost-Examples)
+for details of this example job.
 
 ## Ease of Use
 Run your existing Apache Spark applications with no code change.  Launch Spark with the RAPIDS Accelerator for Apache Spark plugin jar and enable a configuration setting: 

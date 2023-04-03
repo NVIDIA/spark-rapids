@@ -18,11 +18,24 @@ This tool is intended to give the users a starting point and does not guarantee 
 queries or applications with the highest _recommendation_ will actually be accelerated the most. Currently,
 it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
 
+The estimations for GPU duration are available for different environments and are based on benchmarks run in the
+applicable environments.  Here are the cluster information for the ETL benchmarks used for the estimates:
+
+| Environment      | CPU Cluster       | GPU Cluster                    |
+|------------------|-------------------|--------------------------------|
+| On-prem          | 8x 128-core       | 8x 128-core + 8x A100 40 GB    |
+| Dataproc         | 4x n1-standard-32 | 4x n1-standard-32 + 8x T4 16GB |
+| EMR              | 8x m5d.8xlarge    | 4x g4dn.12xlarge               |
+| Databricks AWS   | 8x m6gd.8xlage    | 8x g5.8xlarge                  |
+| Databricks Azure | 8x E8ds_v4        | 8x NC8as_T4_v3                 |
+
+Note that all benchmarks were run using the [NDS benchmark](https://github.com/NVIDIA/spark-rapids-benchmarks/tree/dev/nds) at SF3K (3 TB).
+
 > **Disclaimer!**  
 > Estimates provided by the Qualification tool are based on the currently supported "_SparkPlan_" or "_Executor Nodes_"
 > used in the application. It currently does not handle all the expressions or datatypes used.  
 > Please refer to "[Understanding Execs report](#execs-report)" section and the
-> "[Supported Operators](./supported_ops.md)" guide to check the types and expressions you are using are supported.
+> "[Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md)" guide to check the types and expressions you are using are supported.
 
 This document covers below topics:
 
@@ -55,7 +68,7 @@ more information.
 The Qualification tool require the Spark 3.x jars to be able to run but do not need an Apache Spark run time.
 If you do not already have Spark 3.x installed, you can download the Spark distribution to
 any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.1/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2 Run the Qualification tool
@@ -165,6 +178,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       --max-sql-desc-length  <arg>   Maximum length of the SQL description
                                      string output with the per sql output.
                                      Default is 100.
+      --ml-functions                 Report if there are any SparkML or Spark XGBoost
+                                     functions in the eventlog.
   -n, --num-output-rows  <arg>       Number of output rows in the summary report.
                                      Default is 1000.
       --num-threads  <arg>           Number of thread to use for parallel
@@ -183,6 +198,10 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                      It will overwrite any existing directory with
                                      the same name.
   -p, --per-sql                      Report at the individual SQL query level.
+      --platform  <arg>              Cluster platform where Spark CPU workloads were
+                                     executed. Options include onprem, dataproc, emr
+                                     databricks-aws, and databricks-azure.
+                                     Default is onprem.
   -r, --report-read-schema           Whether to output the read formats and
                                      datatypes to the CSV file. This can be very
                                      long. Default is false.
@@ -245,6 +264,14 @@ java ${QUALIFICATION_HEAP} \
   com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 1-newest-per-app-name /eventlogDir
 ```
 
+- Parse ML functions from the eventlog:
+
+```bash
+java ${QUALIFICATION_HEAP} \
+  -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+  com.nvidia.spark.rapids.tool.qualification.QualificationMain --ml-functions /eventlogDir
+```
+
 Note: the “regular expression” used by `-a` option is based on
 [java.util.regex.Pattern](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html).
 
@@ -274,6 +301,8 @@ The tree structure of the output directory `${OUTPUT_FOLDER}/rapids_4_spark_qual
     ├── rapids_4_spark_qualification_output_persql.csv
     ├── rapids_4_spark_qualification_output_execs.csv
     ├── rapids_4_spark_qualification_output_stages.csv
+    ├── rapids_4_spark_qualification_output_mlfunctions.csv
+    ├── rapids_4_spark_qualification_output_mlfunctions_totalduration.csv
     └── ui
         ├── assets
         │   ├── bootstrap/
@@ -308,7 +337,7 @@ to [Understanding the Qualification tool output](#understanding-the-qualificatio
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.1/)
 
 ### Modify your application code to call the api's
 
@@ -395,7 +424,7 @@ with the Rapids Accelerator for Spark.
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.1/)
 
 ### Configuration
 
@@ -453,11 +482,11 @@ acceleration of migrating a Spark application or query to GPU.
 
 1. `Estimated GPU Duration`: predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
    operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
-2. `Estimated Speed-up factor`: the estimated speed-up factor is simply the original CPU duration of the app divided by the
+2. `Estimated Speed-up`: the estimated speed-up is simply the original CPU duration of the app divided by the
    estimated GPU duration. That will estimate how much faster the application would run on GPU.
 
 The lower the estimated GPU duration, the higher the "_Estimated Speed-up_".
-The processed applications or queries are ranked by the "_Estimated Speed-up_". Based on how high the speed-up factor,
+The processed applications or queries are ranked by the "_Estimated Speed-up_". Based on how high the estimated speed-up,
 the tool classifies the applications into the following different categories:
 
 - `Strongly Recommended`
@@ -466,7 +495,7 @@ the tool classifies the applications into the following different categories:
 - `Not Applicable`: indicates that the app has job or stage failures.
 
 As mentioned before, the tool does not guarantee the applications or queries with the highest _recommendation_ will actually be
-accelerated the most. Please refer to [Supported Operators](./supported_ops.md) section.
+accelerated the most. Please refer to [Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md) section.
 
 In addition to the _recommendation_, the Qualification tool reports a set of metrics in tasks of SQL Dataframe operations
 within the scope of: "_Entire App_"; "_Stages_"; and "_Execs_". The report is divided into three main levels. The fields
@@ -491,7 +520,7 @@ The report represents the entire app execution, including unsupported operators 
 6. _GPU Opportunity_: wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.
 7. _Estimated GPU Duration_: predicted runtime of the app if it was run on GPU. It is the sum of the accelerated
    operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
-8. _Estimated GPU Speed-up_: the speed-up factor is simply the original CPU duration of the app divided by the
+8. _Estimated GPU Speed-up_: the speed-up is simply the original CPU duration of the app divided by the
    estimated GPU duration. That will estimate how much faster the application would run on GPU.
 9. _Estimated GPU Time Saved_: estimated wall-Clock time saved if it was run on the GPU.
 10. _SQL Dataframe Task Duration_: amount of time spent in tasks of SQL Dataframe operations.
@@ -528,7 +557,7 @@ The report represents the entire app execution, including unsupported operators 
     is passed to the CLI.
 
 **Note:** the Qualification tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
-Please refer to [Supported Operators](./supported_ops.md) for more details on UDF.
+Please refer to [Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md) for more details on UDF.
 
 By default, the applications and queries are sorted in descending order by the following fields:
 - _Recommendation_;
@@ -545,13 +574,13 @@ For each stage used in SQL operations, the Qualification tool generates the foll
 3. _Average Speedup Factor_: the average estimated speed-up of all the operators in the given stage.
 4. _Stage Task Duration_: amount of time spent in tasks of SQL Dataframe operations for the given stage.
 5. _Unsupported Task Duration_: sum of task durations for the unsupported operators. For more details,
-   see [Supported Operators](./supported_ops.md).
+   see [Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md).
 6. _Stage Estimated_: True or False indicates if we had to estimate the stage duration.
 
 ### Execs report
 
 The Qualification tool generates a report of the "Exec" in the "_SparkPlan_" or "_Executor Nodes_" along with the estimated
-acceleration on the GPU. Please refer to the [Supported Operators](./supported_ops.md) guide for more
+acceleration on the GPU. Please refer to the [Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md) guide for more
 details on limitations on UDFs and unsupported operators.
 
 1. _App ID_
@@ -564,7 +593,7 @@ details on limitations on UDFs and unsupported operators.
 6. _Exec Duration_: wall-Clock time measured since the operator starts till it is completed.
 7. _SQL Node Id_
 8. _Exec Is Supported_: whether the Exec is supported by RAPIDS or not. Please refer to the
-  [Supported Operators](./supported_ops.md) section.
+  [Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md) section.
 9. _Exec Stages_: an array of stage IDs
 10. _Exec Children_
 11. _Exec Children Node Ids_
@@ -624,6 +653,24 @@ The following table lists the exec's name and the status of parsing their expres
 | UnionExec                             |              x              |         -        |        -        |
 | WindowExec                            |              -              |         x        |        -        |
 | WindowInPandasExec                    |              -              |         -        |        x        |
+
+### MLFunctions report
+The Qualification tool generates a report if there are SparkML or Spark XGBoost functions used in the eventlog.
+The functions in "*spark.ml.*" or "*spark.XGBoost.*" packages are displayed in the report.
+
+1. _App ID_
+2. _Stage ID_
+3. _ML Functions_: List of ML functions used in the corresponding stage.
+4. _Stage Task Duration_: amount of time spent in tasks containing ML functions for the given stage.
+
+### MLFunctions total duration report
+The Qualification tool generates a report of total duration across all stages for ML functions which 
+are supported on GPU.
+
+1. _App ID_
+2. _Stage_Ids : Stage Id's corresponding to the given ML function.
+3. _ML Function Name_: ML function name supported on GPU.
+4. _Total Duration_: total duration across all stages for the corresponding ML function.
 
 ## Output Formats
 
@@ -711,7 +758,7 @@ It contains the following main components:
    There are three searchPanes:
     1. "_Is Stage Estimated_": it splits the stages into two groups based on whether the stage duration time was estimated
        or not.
-    2. "_Speed-up_": groups the stages by their "average speed-up factor". Each stage can belong to one of the following
+    2. "_Speed-up_": groups the stages by their "average speed-up". Each stage can belong to one of the following
        predefined speed-up ranges: `1.0 (No Speed-up)`; `]1.0, 1.3[`; `[1.3, 2.5[`; `[2.5, 5[`; and `[5, _]`. The
        search-pane does not show a range bucket if its count is 0.
     3. "_Tasks GPU Support_": this filter can be used to find stages having all their execs supported by the GPU.
@@ -724,7 +771,7 @@ It contains the following main components:
    There are three _searchPanes_:
     1. "_Exec_": filters the rows by exec name. This filter also allows text searching by typing into the filter-title as
        a text input.
-    2. "_Speed-up_": groups the stages by their "average speed-up factor". Each stage can belong to one of the following
+    2. "_Speed-up_": groups the stages by their "average speed-up". Each stage can belong to one of the following
        predefined speed-up ranges: `1.0 (No Speed-up)`; `]1.0, 1.3[`; `[1.3, 2.5[`; `[2.5, 5[`; and `[5, _]`. The
        search-pane does not show a range bucket if its count is 0.
     3. "_GPU Support_": filters the execs whether an exec is supported by GPU or not.

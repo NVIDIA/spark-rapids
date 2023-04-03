@@ -823,20 +823,23 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .build()
 
     // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-        metrics(GPU_DECODE_TIME))) { _ =>
-      try {
-        Table.readORC(parseOpts, hostBuf, 0, bufSize)
-      } catch {
-        case e: Exception => 
-          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+          metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readORC(parseOpts, hostBuf, 0, bufSize)
+        }
+
+        // Execute the schema evolution
+        SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
+          isCaseSensitive, Some(GpuOrcScan.castColumnTo))
       }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
     }
-    // Execute the schema evolution
-    SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
-      isCaseSensitive, Some(GpuOrcScan.castColumnTo))
   }
 }
 
@@ -1075,7 +1078,7 @@ class GpuOrcPartitionReader(
           None
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
           Some(new ColumnarBatch(nullColumns.toArray, numRows))
@@ -1744,7 +1747,7 @@ class MultiFileCloudOrcPartitionReader(
           new ColumnarBatch(Array.empty, 0)
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = meta.readSchema.fields.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)

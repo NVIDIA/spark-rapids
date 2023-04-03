@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,4 +47,8 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--delta_lake", action="store_true", default=False, help="if true enable Delta Lake tests"
+    )
+    parser.addoption(
+        "--test_oom_injection_mode", action='store', default="random",
+        help="in what way, if any, should the tests inject OOMs at test time. Valid options are: random, always, or never"
     )

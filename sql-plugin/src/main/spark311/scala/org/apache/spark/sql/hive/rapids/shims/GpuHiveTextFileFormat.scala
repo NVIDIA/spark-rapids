@@ -18,7 +18,6 @@
 {"spark": "311"}
 {"spark": "312"}
 {"spark": "313"}
-{"spark": "314"}
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
@@ -140,7 +139,7 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 class GpuHiveTextWriter(override val path: String,
                         dataSchema: StructType,
                         context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "HiveText") {
+  extends ColumnarOutputWriter(context, dataSchema, "HiveText", false) {
 
   /**
    * This CSV writer reformats columns, to iron out inconsistencies between

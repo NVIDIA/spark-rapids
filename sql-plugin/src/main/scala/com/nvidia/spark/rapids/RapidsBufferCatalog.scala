@@ -74,8 +74,7 @@ class RapidsBufferCatalog(
 
   class RapidsBufferHandleImpl(
       override val id: RapidsBufferId,
-      var priority: Long,
-      spillCallback: SpillCallback)
+      var priority: Long)
     extends RapidsBufferHandle {
 
     private var closed = false
@@ -94,16 +93,6 @@ class RapidsBufferCatalog(
      * @return this handle's spill priority
      */
     def getSpillPriority: Long = priority
-
-    /**
-     * Each handle was created in a different part of the code and as such could have
-     * different spill metrics callbacks. This function is used by the catalog to find
-     * out what the last spill callback added. This last callback gets reports of
-     * spill bytes if a spill were to occur to the `RapidsBuffer` this handle points to.
-     *
-     * @return the spill callback associated with this handle
-     */
-    def getSpillCallback: SpillCallback = spillCallback
 
     override def close(): Unit = synchronized {
       // since the handle is stored in the catalog in addition to being
@@ -126,15 +115,13 @@ class RapidsBufferCatalog(
    *
    * @param id the `RapidsBufferId` that this handle refers to
    * @param spillPriority the spill priority specified on creation of the handle
-   * @param spillCallback this handle's spill callback
    * @note public for testing
    * @return a new instance of `RapidsBufferHandle`
    */
   def makeNewHandle(
       id: RapidsBufferId,
-      spillPriority: Long,
-      spillCallback: SpillCallback): RapidsBufferHandle = {
-    val handle = new RapidsBufferHandleImpl(id, spillPriority, spillCallback)
+      spillPriority: Long): RapidsBufferHandle = {
+    val handle = new RapidsBufferHandleImpl(id, spillPriority)
     trackNewHandle(handle)
     handle
   }
@@ -189,9 +176,6 @@ class RapidsBufferCatalog(
           if (newHandles.isEmpty) {
             null // remove since no more handles exist, should not happen
           } else {
-            // we pick the last spillCallback inserted as the winner every time
-            // this callback is going to get the metrics associated with this buffer's
-            // spill
             newHandles
           }
         }
@@ -204,7 +188,6 @@ class RapidsBufferCatalog(
       } else {
         // more handles remain, our priority changed so we need to update things
         buffer.setSpillPriority(maxPriority)
-        buffer.setSpillCallback(newHandles.last.getSpillCallback)
         false // we have handles left
       }
     }
@@ -220,8 +203,6 @@ class RapidsBufferCatalog(
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
    * @return RapidsBufferHandle handle for this buffer
@@ -230,7 +211,6 @@ class RapidsBufferCatalog(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
       needsSync: Boolean = true): RapidsBufferHandle = synchronized {
     // first time we see `buffer`
     val existing = getExistingRapidsBufferAndAcquire(buffer)
@@ -241,11 +221,10 @@ class RapidsBufferCatalog(
           buffer,
           tableMeta,
           initialSpillPriority,
-          spillCallback,
           needsSync)
       case Some(rapidsBuffer) =>
         withResource(rapidsBuffer) { _ =>
-          makeNewHandle(rapidsBuffer.id, initialSpillPriority, spillCallback)
+          makeNewHandle(rapidsBuffer.id, initialSpillPriority)
         }
     }
   }
@@ -261,8 +240,6 @@ class RapidsBufferCatalog(
    *
    * @param contigTable contiguous table to track in storage
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
    * @return RapidsBufferHandle handle for this table
@@ -270,7 +247,6 @@ class RapidsBufferCatalog(
   def addContiguousTable(
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
       needsSync: Boolean = true): RapidsBufferHandle = synchronized {
     val existing = getExistingRapidsBufferAndAcquire(contigTable.getBuffer)
     existing match {
@@ -279,11 +255,10 @@ class RapidsBufferCatalog(
           TempSpillBufferId(),
           contigTable,
           initialSpillPriority,
-          spillCallback,
           needsSync)
       case Some(rapidsBuffer) =>
         withResource(rapidsBuffer) { _ =>
-          makeNewHandle(rapidsBuffer.id, initialSpillPriority, spillCallback)
+          makeNewHandle(rapidsBuffer.id, initialSpillPriority)
         }
     }
   }
@@ -297,8 +272,6 @@ class RapidsBufferCatalog(
    * @param id the RapidsBufferId to use for this buffer
    * @param contigTable contiguous table to track in storage
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
    * @return RapidsBufferHandle handle for this table
@@ -307,14 +280,12 @@ class RapidsBufferCatalog(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback,
       needsSync: Boolean): RapidsBufferHandle = synchronized {
     addBuffer(
       id,
       contigTable.getBuffer,
       MetaUtils.buildTableMeta(id.tableId, contigTable),
       initialSpillPriority,
-      spillCallback,
       needsSync)
   }
 
@@ -326,8 +297,6 @@ class RapidsBufferCatalog(
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
    * @return RapidsBufferHandle handle for this RapidsBuffer
@@ -337,7 +306,6 @@ class RapidsBufferCatalog(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback,
       needsSync: Boolean): RapidsBufferHandle = synchronized {
     logDebug(s"Adding buffer ${id} to ${deviceStorage}")
     val rapidsBuffer = deviceStorage.addBuffer(
@@ -345,10 +313,9 @@ class RapidsBufferCatalog(
       buffer,
       tableMeta,
       initialSpillPriority,
-      spillCallback,
       needsSync)
     registerNewBuffer(rapidsBuffer)
-    makeNewHandle(id, initialSpillPriority, spillCallback)
+    makeNewHandle(id, initialSpillPriority)
   }
 
   /**
@@ -357,11 +324,10 @@ class RapidsBufferCatalog(
    */
   def registerDegenerateBuffer(
       bufferId: RapidsBufferId,
-      meta: TableMeta,
-      spillCallback: SpillCallback): RapidsBufferHandle = synchronized {
+      meta: TableMeta): RapidsBufferHandle = synchronized {
     val buffer = new DegenerateRapidsBuffer(bufferId, meta)
     registerNewBuffer(buffer)
-    makeNewHandle(buffer.id, buffer.getSpillPriority, spillCallback)
+    makeNewHandle(buffer.id, buffer.getSpillPriority)
   }
 
   /**
@@ -375,7 +341,6 @@ class RapidsBufferCatalog(
       // update the priority of the underlying RapidsBuffer to be the
       // maximum priority for all handles associated with it
       buffer.setSpillPriority(maxPriority)
-      buffer.setSpillCallback(handles.last.getSpillCallback)
     }
   }
 
@@ -556,9 +521,6 @@ class RapidsBufferCatalog(
         logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
         val bufferHasSpilled = isBufferSpilled(buffer.id, buffer.storageTier)
         if (!bufferHasSpilled) {
-          val spillCallback = buffer.getSpillCallback
-          spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-
           // if the spillStore specifies a maximum size spill taking this ceiling
           // into account before trying to create a buffer there
           trySpillToMaximumSize(buffer, spillStore, stream)
@@ -827,15 +789,12 @@ object RapidsBufferCatalog extends Logging with Arm {
    * this buffer is destroyed.
    * @param contigTable contiguous table to trackNewHandle in device storage
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @return RapidsBufferHandle associated with this buffer
    */
   def addContiguousTable(
       contigTable: ContiguousTable,
-      initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-    singleton.addContiguousTable(contigTable, initialSpillPriority, spillCallback)
+      initialSpillPriority: Long): RapidsBufferHandle = {
+    singleton.addContiguousTable(contigTable, initialSpillPriority)
   }
 
   /**
@@ -844,16 +803,13 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @return RapidsBufferHandle associated with this buffer
    */
   def addBuffer(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
-      initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-    singleton.addBuffer(buffer, tableMeta, initialSpillPriority, spillCallback)
+      initialSpillPriority: Long): RapidsBufferHandle = {
+    singleton.addBuffer(buffer, tableMeta, initialSpillPriority)
   }
 
   /**

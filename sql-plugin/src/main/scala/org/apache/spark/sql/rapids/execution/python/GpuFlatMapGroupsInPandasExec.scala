@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,22 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "321db"}
-{"spark": "330db"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.python.shims
+package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
-import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonRunner, GpuPythonExecBase, GpuPythonHelper, GpuPythonUDF, GroupArgs}
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.types.{StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuFlatMapGroupsInPandasExecMeta(
@@ -111,27 +106,26 @@ case class GpuFlatMapGroupsInPandasExec(
   // processed by Python executors group by group, so better to coalesce the output batches.
   override def coalesceAfter: Boolean = true
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
-         spillCallback) = commonGpuMetrics()
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
-    val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
     val localOutput = output
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.
     val pythonOutputSchema = StructType(
         StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
-    // Configs from DB 10.4 runtime
-    val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
-    val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
-
     // Resolve the argument offsets and related attributes.
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
         resolveArgOffsets(child, groupingAttributes)
+
+    val runnerShims = GpuArrowPythonRunnerShims(conf,
+                        chainedFunc,
+                        Array(argOffsets),
+                        StructType.fromAttributes(dedupAttrs),
+                        pythonOutputSchema)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -143,36 +137,11 @@ case class GpuFlatMapGroupsInPandasExec(
       // Projects each input batch into the deduplicated schema, and splits
       // into separate group batches to sends them to Python group by group later.
       val pyInputIter = projectAndGroup(inputIter, localChildOutput, dedupAttrs, groupingOffsets,
-          mNumInputRows, mNumInputBatches, spillCallback)
+          mNumInputRows, mNumInputBatches)
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        // Choose the right DB SPECIFIC serializer from 9.1 runtime.
-        val pyRunner = if (zeroConfEnabled && maxBytes > 0L) {
-          new GpuGroupUDFArrowPythonRunner(
-            chainedFunc,
-            PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-            Array(argOffsets),
-            StructType.fromAttributes(dedupAttrs),
-            sessionLocalTimeZone,
-            pythonRunnerConf,
-            // The whole group data should be written in a single call, so here is unlimited
-            Int.MaxValue,
-            spillCallback.semaphoreWaitTime,
-            pythonOutputSchema)
-        } else {
-          new GpuArrowPythonRunner(
-            chainedFunc,
-            PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-            Array(argOffsets),
-            StructType.fromAttributes(dedupAttrs),
-            sessionLocalTimeZone,
-            pythonRunnerConf,
-            Int.MaxValue,
-            spillCallback.semaphoreWaitTime,
-            pythonOutputSchema)
-        }
-
+        val pyRunner = runnerShims.getRunner()
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
         // Empty partition, return it directly

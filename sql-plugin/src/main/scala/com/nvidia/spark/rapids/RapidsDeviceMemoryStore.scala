@@ -56,8 +56,7 @@ class RapidsDeviceMemoryStore
       other.size,
       other.meta,
       deviceBuffer,
-      other.getSpillPriority,
-      other.getSpillCallback)
+      other.getSpillPriority)
   }
 
   /**
@@ -71,8 +70,6 @@ class RapidsDeviceMemoryStore
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
    * @return the RapidsBuffer instance that was added.
@@ -82,7 +79,6 @@ class RapidsDeviceMemoryStore
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback,
       needsSync: Boolean): RapidsBuffer = {
     buffer.incRefCount()
     val rapidsBuffer = new RapidsDeviceMemoryBuffer(
@@ -90,8 +86,7 @@ class RapidsDeviceMemoryStore
       buffer.getLength,
       tableMeta,
       buffer,
-      initialSpillPriority,
-      spillCallback)
+      initialSpillPriority)
     freeOnExcept(rapidsBuffer) { _ =>
       logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
         s"uncompressed=${rapidsBuffer.meta.bufferMeta.uncompressedSize}, " +
@@ -131,9 +126,8 @@ class RapidsDeviceMemoryStore
       size: Long,
       meta: TableMeta,
       contigBuffer: DeviceMemoryBuffer,
-      spillPriority: Long,
-      spillCallback: SpillCallback)
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback)
+      spillPriority: Long)
+      extends RapidsBufferBase(id, size, meta, spillPriority)
         with MemoryBuffer.EventHandler {
 
     override val storageTier: StorageTier = StorageTier.DEVICE

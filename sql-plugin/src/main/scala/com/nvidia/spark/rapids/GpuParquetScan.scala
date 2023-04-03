@@ -1713,7 +1713,7 @@ class MultiFileParquetPartitionReader(
     val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
     // About to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes, parseOpts,
       dataBuffer, 0, dataSize, metrics,
@@ -2230,7 +2230,7 @@ class MultiFileCloudParquetPartitionReader(
         new ColumnarBatch(Array.empty, rows)
       } else {
         // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val nullColumns = meta.readSchema.fields.safeMap(f =>
           GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
         new ColumnarBatch(nullColumns, rows)
@@ -2275,26 +2275,32 @@ class MultiFileCloudParquetPartitionReader(
       hostBuffer: HostMemoryBuffer,
       dataSize: Long,
       allPartValues: Option[Array[(Long, InternalRow)]]): Iterator[ColumnarBatch] = {
-    val tableReader = closeOnExcept(hostBuffer) { _ =>
 
+    val parseOpts = closeOnExcept(hostBuffer) { _ =>
       // Dump parquet data into a file
       dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("parquet"))
       val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
       // about to start using the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      parseOpts
+    }
+    val colTypes = readDataSchema.fields.map(f => f.dataType)
 
-      MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes, parseOpts,
+    RmmRapidsRetryIterator.withRetryNoSplit(hostBuffer) { _ =>
+      // The MakeParquetTableProducer will close the input buffer, and that would be bad
+      // because we don't want to close it until we know that we are done with it
+      hostBuffer.incRefCount()
+      val tableReader = MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes,
+        parseOpts,
         hostBuffer, 0, dataSize, metrics,
         isCorrectInt96RebaseMode, isCorrectRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, None,
         tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
-    }
 
-    closeOnExcept(tableReader) { _ =>
-      val colTypes = readDataSchema.fields.map(f => f.dataType)
+      val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
+
       if (allPartValues.isDefined) {
-        val batchIter = CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
         val allPartInternalRows = allPartValues.get.map(_._2)
         val rowsPerPartition = allPartValues.get.map(_._1)
         new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
@@ -2302,7 +2308,7 @@ class MultiFileCloudParquetPartitionReader(
       } else {
         // this is a bit weird, we don't have number of rows when allPartValues isn't
         // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
-        CachedGpuBatchIterator(tableReader, colTypes, spillCallback).map { batch =>
+        batchIter.map { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
           addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
@@ -2337,21 +2343,21 @@ object MakeParquetTableProducer extends Arm {
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,
         filePath, onTableSize)
     } else {
-      val table = withResource(buffer) { _ =>
-        withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
-          metrics(GPU_DECODE_TIME))) { _ =>
-          try {
+      val table = try {
+        RmmRapidsRetryIterator.withRetryNoSplit(buffer) { _ =>
+          withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
+            metrics(GPU_DECODE_TIME))) { _ =>
             Table.readParquet(opts, buffer, offset, len)
-          } catch {
-            case e: Exception =>
-              val path = filePath match {
-                case Some(path) => s"$path"
-                case None => ""
-              }
-              throw new IOException("Error when processing file " + 
-                  s"[path: $path, range: $offset-${offset + len}]", e)
           }
         }
+      } catch {
+        case e: Exception =>
+          val path = filePath match {
+            case Some(path) => s"$path"
+            case None => ""
+          }
+          throw new IOException("Error when processing file " +
+              s"[path: $path, range: $offset-${offset + len}]", e)
       }
       closeOnExcept(table) { _ =>
         GpuParquetScan.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
@@ -2504,46 +2510,52 @@ class ParquetPartitionReader(
           EmptyGpuColumnarBatchIterator
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
           new SingleGpuColumnarBatchIterator(new ColumnarBatch(nullColumns.toArray, numRows))
         }
       } else {
         val colTypes = readDataSchema.fields.map(f => f.dataType)
-        CachedGpuBatchIterator(readToTables(currentChunkedBlocks), colTypes,
-          spillCallback).map { batch =>
+        val iter = if (currentChunkedBlocks.isEmpty) {
+          CachedGpuBatchIterator(EmptyTableReader, colTypes)
+        } else {
+          val parseOpts = getParquetOptions(readDataSchema, clippedParquetSchema, useFieldId)
+          val (dataBuffer, dataSize, _) = metrics(BUFFER_TIME).ns {
+            readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
+          }
+          if (dataSize == 0) {
+            dataBuffer.close()
+            CachedGpuBatchIterator(EmptyTableReader, colTypes)
+          } else {
+            closeOnExcept(dataBuffer) { _ =>
+              // Dump parquet data into a file
+              dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix),
+                Some("parquet"))
+
+              // about to start using the GPU
+              GpuSemaphore.acquireIfNecessary(TaskContext.get())
+            }
+            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+              // Inc the ref count because MakeParquetTableProducer will try to close the dataBuffer
+              // which we don't want until we know that the retry is done with it.
+              dataBuffer.incRefCount()
+              val producer = MakeParquetTableProducer(useChunkedReader, conf,
+                targetBatchSizeBytes, parseOpts,
+                dataBuffer, 0, dataSize, metrics,
+                isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
+                hasInt96Timestamps, isSchemaCaseSensitive,
+                useFieldId, readDataSchema,
+                clippedParquetSchema, Some(filePath),
+                tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
+              CachedGpuBatchIterator(producer, colTypes)
+            }
+          }
+        }
+        iter.map { batch =>
           logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
           batch
         }
-      }
-    }
-  }
-
-  private def readToTables(currentChunkedBlocks: Seq[BlockMetaData]): GpuDataProducer[Table] = {
-    if (currentChunkedBlocks.isEmpty) {
-      return EmptyTableReader
-    }
-    val (dataBuffer, dataSize, _) = metrics(BUFFER_TIME).ns {
-      readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
-    }
-    if (dataSize == 0) {
-      dataBuffer.close()
-      EmptyTableReader
-    } else {
-      closeOnExcept(dataBuffer) { _ =>
-        // Dump parquet data into a file
-        dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix), Some("parquet"))
-        val parseOpts = getParquetOptions(readDataSchema, clippedParquetSchema, useFieldId)
-
-        // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-
-        MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes, parseOpts,
-          dataBuffer, 0, dataSize, metrics, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
-          hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
-          clippedParquetSchema, Some(filePath),
-          tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
       }
     }
   }

@@ -625,3 +625,21 @@ def test_cast_day_time_to_integral_side_effect():
 
 def test_cast_binary_to_string():
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(spark, binary_gen).selectExpr("a", "CAST(a AS STRING) as str"))
+
+def test_cast_int_to_string_not_UTC():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, int_gen, 100).selectExpr("a", "CAST(a AS STRING) as str"),
+        {"spark.sql.session.timeZone": "+08"})
+
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (timestamp_gen, 'DATE'),
+        (date_gen, 'TIMESTAMP'),
+        (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params)
+def test_cast_fallback_not_UTC(from_gen, to_type):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, from_gen, 100).selectExpr("CAST(a AS {}) as casted".format(to_type)),
+        "Cast",
+        {"spark.sql.session.timeZone": "+08",
+         "spark.rapids.sql.castStringToTimestamp.enabled": "true"})

@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.language.implicitConversions
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric.{makeSpillCallback, BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -380,7 +380,6 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   protected var isDone: Boolean = false
   protected var maxDeviceMemory: Long = 0
   protected var batchIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
-  protected lazy val spillCallback: SpillCallback = makeSpillCallback(execMetrics)
 
   override def get(): ColumnarBatch = {
     batchIter.next()
@@ -1143,7 +1142,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         } else {
           val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
@@ -1151,9 +1150,26 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       } else {
         val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
-        val tableReader = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
-          currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
-        CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+        if (currentChunkMeta.currentChunk.isEmpty) {
+          CachedGpuBatchIterator(EmptyTableReader, colTypes)
+        } else {
+          val (dataBuffer, dataSize) = readPartFiles(currentChunkMeta.currentChunk,
+            currentChunkMeta.clippedSchema)
+          if (dataSize == 0) {
+            dataBuffer.close()
+            CachedGpuBatchIterator(EmptyTableReader, colTypes)
+          } else {
+            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+              // We don't want to actually close the host buffer until we know that we don't
+              // want to retry more, so offset the close for now.
+              dataBuffer.incRefCount()
+              val tableReader = readBufferToTablesAndClose(dataBuffer,
+                dataSize, currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
+                currentChunkMeta.extraInfo)
+              CachedGpuBatchIterator(tableReader, colTypes)
+            }
+          }
+        }
       }
       new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
           currentChunkMeta.rowsPerPartition, partitionSchema).map { withParts =>
