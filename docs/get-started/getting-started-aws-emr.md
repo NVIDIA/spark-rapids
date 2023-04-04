@@ -29,7 +29,7 @@ notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).
 For more information on AWS EMR, please see the [AWS
 documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-is-emr.html).
 
-## Leveraging Spark RAPIDS User Tools For Qualification and Bootstrap
+## Leveraging Spark RAPIDS User Tools for Qualification and Bootstrap
 
 To use the qualification and bootstrap tools for EMR, you will want to install the Spark RAPIDS user tools package.
 Instructions for installing and setting up the Spark RAPIDS user tools package for EMR can be found here:
@@ -277,7 +277,7 @@ sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 sudo chmod a+rwx -R /sys/fs/cgroup/devices
 ```
 
-### Running the Spark RAPIDS User Tools Bootstrap For Optimal Cluster Spark Settings
+### Running the Spark RAPIDS User Tools Bootstrap for Optimal Cluster Spark Settings
 
 The bootstrap tool will generate optimized settings for the RAPIDS Accelerator on Apache Spark on a
 GPU cluster for EMR.  The tool will fetch the characteristics of the cluster -- including
