@@ -29,6 +29,47 @@ notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).
 For more information on AWS EMR, please see the [AWS
 documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-is-emr.html).
 
+## Leveraging Spark RAPIDS User Tools for Qualification and Bootstrap
+
+To use the qualification and bootstrap tools for EMR, you will want to install the Spark RAPIDS user tools package.
+Instructions for installing and setting up the Spark RAPIDS user tools package for EMR can be found here:
+[link](https://github.com/NVIDIA/spark-rapids-tools/blob/main/user_tools/docs/user-tools-aws-emr.md).
+
+## Qualify CPU Workloads for GPU Acceleration
+
+The [qualification tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) is launched to analyze CPU applications
+that have already run. The tool will output the applications recommended for acceleration along with estimated speed-up
+and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-accelerated cluster to take
+advantage of the speed-up and cost savings.
+
+Usage: `spark_rapids_user_tools emr qualification --eventlogs <s3-log-path> --cpu_cluster <cluster-name>`
+
+Help (to see all options available): `spark_rapids_user_tools emr qualification --help`
+
+Example output:
+```
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+|    | App Name   | App ID                         | Recommendation       |   Estimated GPU |   Estimated GPU |           App |   Estimated GPU |
+|    |            |                                |                      |         Speedup |     Duration(s) |   Duration(s) |      Savings(%) |
+|----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------|
+|  0 | query24    | application_1664888311321_0011 | Strongly Recommended |            3.49 |          257.18 |        897.68 |           59.70 |
+|  1 | query78    | application_1664888311321_0009 | Strongly Recommended |            3.35 |          113.89 |        382.35 |           58.10 |
+|  2 | query23    | application_1664888311321_0010 | Strongly Recommended |            3.08 |          325.77 |       1004.28 |           54.37 |
+|  3 | query64    | application_1664888311321_0008 | Strongly Recommended |            2.91 |          150.81 |        440.30 |           51.82 |
+|  4 | query50    | application_1664888311321_0003 | Recommended          |            2.47 |          101.54 |        250.95 |           43.08 |
+|  5 | query16    | application_1664888311321_0005 | Recommended          |            2.36 |          106.33 |        251.95 |           40.63 |
+|  6 | query38    | application_1664888311321_0004 | Recommended          |            2.29 |           67.37 |        154.33 |           38.59 |
+|  7 | query87    | application_1664888311321_0006 | Recommended          |            2.25 |           75.67 |        170.69 |           37.64 |
+|  8 | query51    | application_1664888311321_0002 | Recommended          |            1.53 |           53.94 |         82.63 |            8.18 |
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+
+Instance types conversions:
+-----------  --  ------------
+m5d.8xlarge  to  g4dn.8xlarge
+-----------  --  ------------
+To support acceleration with T4 GPUs, switch the worker node instance types
+```
+
 ## Configure and Launch AWS EMR with GPU Nodes
 
 Please follow AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
@@ -235,6 +276,33 @@ set -ex
 sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 sudo chmod a+rwx -R /sys/fs/cgroup/devices
 ```
+
+### Running the Spark RAPIDS User Tools Bootstrap for Optimal Cluster Spark Settings
+
+The bootstrap tool will generate optimized settings for the RAPIDS Accelerator on Apache Spark on a
+GPU cluster for EMR.  The tool will fetch the characteristics of the cluster -- including
+number of workers, worker cores, worker memory, and GPU accelerator type and count.  It will use
+the cluster properties to then determine the optimal settings for running GPU-accelerated Spark
+applications.
+
+Usage: `spark_rapids_user_tools emr bootstrap --cluster <cluster-name>`
+
+Help (to see all options available): `spark_rapids_user_tools emr bootstrap --help`
+
+Example output:
+```
+##### BEGIN : RAPIDS bootstrap settings for gpu-cluster
+spark.executor.cores=16
+spark.executor.memory=32768m
+spark.executor.memoryOverhead=7372m
+spark.rapids.sql.concurrentGpuTasks=2
+spark.rapids.memory.pinnedPool.size=4096m
+spark.sql.files.maxPartitionBytes=512m
+spark.task.resource.gpu.amount=0.0625
+##### END : RAPIDS bootstrap settings for gpu-cluster
+```
+
+A detailed description for bootstrap settings with usage information is available in the [RAPIDS Accelerator for Apache Spark Configuration](https://nvidia.github.io/spark-rapids/docs/configs.html) and [Spark Configuration](https://spark.apache.org/docs/latest/configuration.html) page.
 
 ### Running an example joint operation using Spark Shell
 
