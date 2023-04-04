@@ -93,8 +93,8 @@ In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its 
 be installed on the host and inside Docker containers (if not baremetal). A host has additional
 requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
 
-The minimum UCX requirement for the RAPIDS Shuffle Manager is
-[UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1).
+The required UCX version for the RAPIDS Shuffle Manager is
+[UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1). Versions higher than 1.12.1 have not been tested.
 
 #### Baremetal
 
@@ -330,7 +330,7 @@ In this section, we are using a docker container built using the sample dockerfi
 1. Choose the version of the shuffle manager that matches your Spark version. Please refer to
    the table at the top of this document for `spark.shuffle.manager` values.
 
-2. Settings for UCX 1.12.1+:
+2. Settings for UCX 1.12.1:
 
     Minimum configuration:
 

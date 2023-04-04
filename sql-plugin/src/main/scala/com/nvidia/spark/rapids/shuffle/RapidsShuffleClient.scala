@@ -463,5 +463,10 @@ class RapidsShuffleClient(
   def unregisterPeerErrorListener(handler: RapidsShuffleFetchHandler): Unit = {
     logDebug(s"Unregister $handler from client for ${connection.getPeerExecutorId}")
     liveHandlers.remove(handler)
+    // Make sure we remove the handler from the transport as well, otherwise
+    // we could have a host memory leak: https://github.com/NVIDIA/spark-rapids/issues/7997
+    // At this stage this should not cancel any requests because the task should have
+    // completed, but it will also remove `handler` from internal tracking in `transport`.
+    transport.cancelPending(handler)
   }
 }

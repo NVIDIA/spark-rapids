@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -348,7 +348,7 @@ trait RapidsShuffleTransport extends AutoCloseable {
 
   /**
    * Cancel requests that are waiting in the queue (not in-flight) for a specific
-   * handler
+   * handler (if any), and unregister the handler.
    */
   def cancelPending(handler: RapidsShuffleFetchHandler): Unit
 
