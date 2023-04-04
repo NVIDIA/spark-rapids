@@ -430,6 +430,19 @@ def test_replace():
                 'REPLACE(a, NULL, "PROD")',
                 'REPLACE(a, "T", "")'))
 
+def test_translate():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'translate(a, "TEST", "PROD")',
+                'translate(a, "TEST", "P")',
+                'translate(a, "TEST", "")',
+                'translate(a, "TE", "PROD")',
+                'translate(a, NULL, "PROD")',
+                'translate(a, "TEST", NULL)',
+                'translate("AaBbCc", "abc", "123")',
+                'translate("AaBbCc", "abc", "1")'))
+
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
