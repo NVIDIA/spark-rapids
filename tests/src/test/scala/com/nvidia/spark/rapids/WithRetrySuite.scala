@@ -167,6 +167,31 @@ class WithRetrySuite
     }
   }
 
+  test("withRestoreOnRetry restores state on causedBy retry") {
+    val initialValue = 5
+    val increment = 5
+    var didThrow = false
+    val myCheckpointable = new SimpleCheckpointRestore(initialValue)
+    myCheckpointable.checkpoint()
+    try {
+      assertThrows[IllegalStateException] {
+        withRetryNoSplit {
+          withRestoreOnRetry(myCheckpointable) {
+            myCheckpointable.value += increment
+            if (!didThrow) {
+              val ex = new IllegalStateException()
+              ex.addSuppressed(new RetryOOM("causedby ex in tests"))
+              throw ex
+              didThrow = true
+            }
+          }
+        }
+      }
+    } finally {
+      assert(myCheckpointable.value == (initialValue + increment))
+    }
+  }
+
   test("withRestoreOnRetry restores state for Seq on retry") {
     val initialValue = 5
     val increment = 3
@@ -181,6 +206,33 @@ class WithRetrySuite
           if (!didThrow) {
             didThrow = true
             throw new RetryOOM("in tests")
+          }
+        }
+      }
+    } finally {
+      assert(myCheckpointables(0).value == (initialValue + increment))
+      assert(myCheckpointables(1).value == (initialValue + 10 + increment))
+    }
+  }
+
+  test("withRestoreOnRetry restores state for Seq on caused by retry") {
+    val initialValue = 5
+    val increment = 3
+    var didThrow = false
+    val myCheckpointables = Seq(new SimpleCheckpointRestore(initialValue),
+      new SimpleCheckpointRestore(initialValue + 10))
+    myCheckpointables.foreach(_.checkpoint())
+    try {
+      assertThrows[IllegalStateException] {
+        withRetryNoSplit {
+          withRestoreOnRetry(myCheckpointables) {
+            myCheckpointables.foreach(_.value += increment)
+            if (!didThrow) {
+              didThrow = true
+              val ex = new IllegalStateException()
+              ex.addSuppressed(new RetryOOM("causedby ex in tests"))
+              throw ex
+            }
           }
         }
       }
