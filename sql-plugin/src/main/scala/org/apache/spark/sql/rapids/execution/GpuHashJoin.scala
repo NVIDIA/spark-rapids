@@ -267,11 +267,13 @@ abstract class BaseHashJoinIterator(
   // We can cache this because the build side is not changing
   private lazy val streamMagnificationFactor = joinType match {
     case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
-      built.allowSpilling()
+      built.checkpoint()
       withRetryNoSplit {
-        // This is okay because the build keys must be deterministic
-        withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-          guessStreamMagnificationFactor(builtKeys)
+        withRestoreOnRetry(built) {
+          // This is okay because the build keys must be deterministic
+          withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+            guessStreamMagnificationFactor(builtKeys)
+          }
         }
       }
     case _ =>
