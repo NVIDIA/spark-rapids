@@ -436,8 +436,8 @@ def test_translate():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'translate(a, "TEST", "PROD")',
                 'translate(a, "TEST", "P")',
-                'translate(a, "TEST", "")',
-                'translate(a, "TE", "PROD")',
+                'translate(a, "T\ud720", "PROD")',
+                'translate(a, "", "PROD")',
                 'translate(a, NULL, "PROD")',
                 'translate(a, "TEST", NULL)',
                 'translate("AaBbCc", "abc", "123")',
