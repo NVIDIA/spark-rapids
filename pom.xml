@@ -399,6 +399,34 @@
             </modules>
         </profile>
         <profile>
+            <id>release333</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>333</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>333</buildver>
+                <spark.version>${spark333.version}</spark.version>
+                <spark.test.version>${spark333.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+                <spark.shim.sources>${spark333.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release340</id>
             <activation>
                 <property>
@@ -599,6 +627,7 @@
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
+        <spark333.version>3.3.3-SNAPSHOT</spark333.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
@@ -643,6 +672,7 @@
             330cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
+            333
         </snapshot.buildvers>
         <databricks.buildvers>
             321db,
