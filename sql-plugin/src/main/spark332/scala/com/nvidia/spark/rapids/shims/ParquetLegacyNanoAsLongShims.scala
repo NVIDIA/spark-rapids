@@ -24,6 +24,8 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.internal.SQLConf
 
 object ParquetLegacyNanoAsLongShims {
+  def supportsLegacyParquetNanosAsLong(): Boolean = true
+
   /**
    * This method should strictly be used by ParquetCachedBatchSerializer(PCBS) as it is hard coding
    * the value of LEGACY_PARQUET_NANOS_AS_LONG.
