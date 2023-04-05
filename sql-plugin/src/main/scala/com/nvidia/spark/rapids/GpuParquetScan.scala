@@ -666,7 +666,6 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       }
 
       val fileSchema = footer.getFileMetaData.getSchema
-      //fileSchema.
 
       // check spark.sql.parquet.fieldId.read.ignoreMissing
       ParquetSchemaClipShims.checkIgnoreMissingIds(ignoreMissingParquetFieldId, fileSchema,
