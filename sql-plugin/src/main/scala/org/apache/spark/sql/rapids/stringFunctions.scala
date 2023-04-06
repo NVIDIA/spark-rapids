@@ -883,6 +883,31 @@ case class GpuStringTranslate(
       toExpr: GpuColumnVector): ColumnVector =
         throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
+  private def buildLists(fromExpr: GpuScalar, toExpr: GpuScalar): (List[String], List[String]) = {
+    val fromString = fromExpr.getValue.asInstanceOf[UTF8String].toString
+    val toString = toExpr.getValue.asInstanceOf[UTF8String].toString
+    var fromCharArray = Array[String]()
+    var toCharsArray = Array[String]()
+    var i = 0
+    var j = 0
+    while (i < fromString.length) {
+      val replaceStr = if (j < toString.length) {
+        val repCharCount = Character.charCount(toString.codePointAt(j))
+        val repStr = toString.substring(j, j + repCharCount)
+        j += repCharCount
+        repStr
+      } else {
+        ""
+      }
+      val matchCharCount = Character.charCount(fromString.codePointAt(i))
+      val matchStr = fromString.substring(i, i + matchCharCount)
+      i += matchCharCount
+      fromCharArray :+= matchStr
+      toCharsArray :+= replaceStr
+    }
+    (fromCharArray.toList, toCharsArray.toList)
+  }
+
   override def doColumnar(
       strExpr: GpuColumnVector,
       fromExpr: GpuScalar,
@@ -892,18 +917,12 @@ case class GpuStringTranslate(
       GpuColumnVector.columnVectorFromNull(strExpr.getRowCount.toInt, StringType)
     } else if (fromExpr.getValue.asInstanceOf[UTF8String].numChars() == 0) {
       // Return original string if search string is empty
-      strExpr.getBase.asStrings()
+      strExpr.getBase.incRefCount()
     } else {
-      val fromCharsList = fromExpr.getValue.asInstanceOf[UTF8String].toString.sliding(1).toList
-      var toCharsList = toExpr.getValue.asInstanceOf[UTF8String].toString.sliding(1).toList
-      if (fromCharsList.length < toCharsList.length) {
-        toCharsList = toCharsList.take(fromCharsList.length)
-      } else if (fromCharsList.length > toCharsList.length) {
-        toCharsList = toCharsList ++ List.fill(fromCharsList.length - toCharsList.length)("")
-      }
-      withResource(ColumnVector.fromStrings(fromCharsList: _*)) { fromCharsCol =>
-        withResource(ColumnVector.fromStrings(toCharsList: _*)) { toCharsCol =>
-          strExpr.getBase.stringReplace(fromCharsCol, toCharsCol)
+      val (fromStringList, toStringList) = buildLists(fromExpr, toExpr)
+      withResource(ColumnVector.fromStrings(fromStringList: _*)) { fromStringCol =>
+        withResource(ColumnVector.fromStrings(toStringList: _*)) { toStringCol =>
+          strExpr.getBase.stringReplace(fromStringCol, toStringCol)
         }
       }
     }
