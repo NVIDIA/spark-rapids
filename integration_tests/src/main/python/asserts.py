@@ -612,8 +612,7 @@ def assert_py4j_exception(func, error_message):
     """
     with pytest.raises(Py4JJavaError) as py4jError:
         func()
-    actual_error = str(py4jError.value.java_exception)
-    assert error_message in actual_error, f"Expected error '{error_message}'' did not appear in '{actual_error}'"
+    assert error_message in str(py4jError.value.java_exception)
 
 def assert_gpu_and_cpu_error(df_fun, conf, error_message):
     """
