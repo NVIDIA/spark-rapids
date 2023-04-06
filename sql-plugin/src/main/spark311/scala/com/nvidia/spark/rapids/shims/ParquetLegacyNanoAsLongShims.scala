@@ -35,7 +35,12 @@ package com.nvidia.spark.rapids.shims
 import org.apache.hadoop.conf.Configuration
 
 object ParquetLegacyNanoAsLongShims {
-  def supportsLegacyParquetNanosAsLong(): Boolean = false
+  def legacyParquetNanosAsLong(): Boolean = {
+    // TODO this should be true for 3.2.4+, 3.3.2+, 3.4.0+ if
+    //   spark.sql.legacy.parquet.nanosAsLong = true
+    false
+  }
+
   def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
     // LEGACY_PARQUET_NANOS_AS_LONG is only considered in Spark 3.3.2 and later
   }

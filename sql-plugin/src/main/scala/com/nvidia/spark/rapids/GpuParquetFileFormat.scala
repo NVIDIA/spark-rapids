@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -45,6 +45,10 @@ object GpuParquetFileFormat {
       schema: StructType): Option[GpuParquetFileFormat] = {
 
     val sqlConf = spark.sessionState.conf
+
+    if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
+      meta.willNotWorkOnGpu("GPU does not support spark.sql.legacy.parquet.nanosAsLong")
+    }
 
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
