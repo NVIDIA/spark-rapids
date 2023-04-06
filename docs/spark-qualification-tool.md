@@ -49,6 +49,49 @@ Spark event logs after the application(s) have run, the second is to be integrat
 application using explicit API calls, and the third is to install a Spark listener which can output
 results on a per SQL query basis.
 
+In running the qualification tool standalone on Spark event logs, the tool can be run as a user tool command
+via a [pip package](https://pypi.org/project/spark-rapids-user-tools/) for CSP environments (Google Dataproc,
+AWS EMR, Databricks AWS) or as a java application for other environments.
+
+## Running the Qualification tool standalone for CSP environments on Spark event logs
+### User Tools Prerequisites and Setup for CSP environments
+
+* [Dataproc](https://github.com/NVIDIA/spark-rapids-tools/blob/main/user_tools/docs/user-tools-dataproc.md)
+* [EMR](https://github.com/NVIDIA/spark-rapids-tools/blob/main/user_tools/docs/user-tools-aws-emr.md)
+* [Databricks AWS](https://github.com/NVIDIA/spark-rapids-tools/blob/main/user_tools/docs/user-tools-databricks-aws.md)
+
+### Qualify CPU Workloads for Potential Cost Savings and Acceleration with GPUs
+
+The qualification tool will run against logs from your CSP environment and then will output the applications
+recommended for acceleration along with estimated speed-up and cost saving metrics.
+
+Usage: `spark_rapids_user_tools <CSP> qualification --cpu_cluster <CLUSTER> --eventlogs <EVENTLOGS-PATH>`
+
+The supported CSPs are *dataproc*, *emr*, and *databricks-aws*.  The EVENTLOGS-PATH should be the storage location
+for your eventlogs.  For Dataproc, it should be set to the GCS path.  For EMR and Databricks-AWS, it should be set to
+the S3 path.  THE CLUSTER can be a live cluster or a configuration file representing the cluster instances and size.
+More details are in the above documentation links per CSP environment
+
+Help (to see all options available): `spark_rapids_user_tools <CSP> qualification --help`
+
+Example output:
+```
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+|    | App Name   | App ID                         | Recommendation       |   Estimated GPU |   Estimated GPU |           App |   Estimated GPU |
+|    |            |                                |                      |         Speedup |     Duration(s) |   Duration(s) |      Savings(%) |
+|----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------|
+|  0 | query24    | application_1664888311321_0011 | Strongly Recommended |            3.49 |          257.18 |        897.68 |           59.70 |
+|  1 | query78    | application_1664888311321_0009 | Strongly Recommended |            3.35 |          113.89 |        382.35 |           58.10 |
+|  2 | query23    | application_1664888311321_0010 | Strongly Recommended |            3.08 |          325.77 |       1004.28 |           54.37 |
+|  3 | query64    | application_1664888311321_0008 | Strongly Recommended |            2.91 |          150.81 |        440.30 |           51.82 |
+|  4 | query50    | application_1664888311321_0003 | Recommended          |            2.47 |          101.54 |        250.95 |           43.08 |
+|  5 | query16    | application_1664888311321_0005 | Recommended          |            2.36 |          106.33 |        251.95 |           40.63 |
+|  6 | query38    | application_1664888311321_0004 | Recommended          |            2.29 |           67.37 |        154.33 |           38.59 |
+|  7 | query87    | application_1664888311321_0006 | Recommended          |            2.25 |           75.67 |        170.69 |           37.64 |
+|  8 | query51    | application_1664888311321_0002 | Recommended          |            1.53 |           53.94 |         82.63 |            8.18 |
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+```
+
 ## Running the Qualification tool standalone on Spark event logs
 
 ### Prerequisites
@@ -68,7 +111,7 @@ more information.
 The Qualification tool require the Spark 3.x jars to be able to run but do not need an Apache Spark run time.
 If you do not already have Spark 3.x installed, you can download the Spark distribution to
 any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.1/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2 Run the Qualification tool
@@ -337,7 +380,7 @@ to [Understanding the Qualification tool output](#understanding-the-qualificatio
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.1/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
 
 ### Modify your application code to call the api's
 
@@ -424,7 +467,7 @@ with the Rapids Accelerator for Spark.
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.1/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
 
 ### Configuration
 
@@ -480,8 +523,9 @@ section on the file contents details.
 For each processed Spark application, the Qualification tool generates two main fields to help quantify the expected
 acceleration of migrating a Spark application or query to GPU.
 
-1. `Estimated GPU Duration`: predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
-   operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
+1. `Estimated GPU Duration`: predicted runtime of the app if it was run on GPU. It is the sum of the accelerated
+   operator durations and ML functions duration(if applicable) along with durations that could not run on GPU because
+   they are unsupported operators or not SQL/Dataframe.
 2. `Estimated Speed-up`: the estimated speed-up is simply the original CPU duration of the app divided by the
    estimated GPU duration. That will estimate how much faster the application would run on GPU.
 
@@ -517,9 +561,9 @@ The report represents the entire app execution, including unsupported operators 
 4. _App Duration_: wall-Clock time measured since the application starts till it is completed.
    If an app is not completed an estimated completion time would be computed.
 5. _SQL DF duration_: wall-Clock time duration that includes only SQL-Dataframe queries.
-6. _GPU Opportunity_: wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.
+6. _GPU Opportunity_: wall-Clock time that shows how much of the SQL duration and ML functions(if applicable) can be accelerated on the GPU.
 7. _Estimated GPU Duration_: predicted runtime of the app if it was run on GPU. It is the sum of the accelerated
-   operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
+   operator durations and ML functions durations(if applicable) along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
 8. _Estimated GPU Speed-up_: the speed-up is simply the original CPU duration of the app divided by the
    estimated GPU duration. That will estimate how much faster the application would run on GPU.
 9. _Estimated GPU Time Saved_: estimated wall-Clock time saved if it was run on the GPU.
