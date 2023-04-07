@@ -780,7 +780,7 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
-@pytest.mark.skipif(not spark_version().startswith('3.1.'), reason='Spark 3.1.x does not need special handling')
+@pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
 def test_spark_40819_31x(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
     def read_timestamp_nano_parquet(spark):
@@ -789,7 +789,7 @@ def test_spark_40819_31x(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path))
 
-@pytest.mark.skipif(is_before_spark_320, reason='Spark 3.1.x supports reading timestamps in nanos')
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 def test_spark_40819_false(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
     conf = copy_and_update(original_parquet_file_reader_conf, {
@@ -800,7 +800,7 @@ def test_spark_40819_false(std_input_path):
         lambda: with_gpu_session(read_timestamp_nano_parquet, conf),
         error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
 
-@pytest.mark.skipif(is_before_spark_320, reason='Spark 3.1.x supports reading timestamps in nanos')
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 @pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
 @pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
 def test_spark_40819_true(std_input_path):
