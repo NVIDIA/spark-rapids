@@ -19,6 +19,8 @@ import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEqu
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.jni.GpuOOM
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
@@ -285,26 +287,38 @@ abstract class BaseHashJoinIterator(
   }
 
   override def createGatherer(
-      cb: ColumnarBatch,
+      cb: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
+    // cb will be closed by the caller, so use a spill-only version here
+    val spillOnlyCb = LazySpillableColumnarBatch.spillOnly(cb)
+    val batches = Seq(built, spillOnlyCb)
+    batches.foreach(_.checkpoint())
     try {
-      withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-        joinGatherer(builtKeys, built, cb)
+      withRetryNoSplit {
+        withRestoreOnRetry(batches) {
+          // We need a new LSCB that will be taken over by the gatherer, or closed
+          closeOnExcept(LazySpillableColumnarBatch(spillOnlyCb.getBatch, "stream_data")) {
+            streamBatch =>
+              withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+                joinGatherer(builtKeys, built, streamBatch)
+              }
+          }
+        }
       }
     } catch {
       // This should work for all join types. There should be no need to do this for any
       // of the existence joins because the output rows will never be larger than the
       // input rows on the stream side.
-      case oom: OutOfMemoryError if joinType.isInstanceOf[InnerLike]
+      case oom @ (_ : OutOfMemoryError | _: GpuOOM) if joinType.isInstanceOf[InnerLike]
           || joinType == LeftOuter
           || joinType == RightOuter
           || joinType == FullOuter =>
         // Because this is just an estimate, it is possible for us to get this wrong, so
         // make sure we at least split the batch in half.
-        val numBatches = Math.max(2, estimatedNumBatches(cb))
+        val numBatches = Math.max(2, estimatedNumBatches(spillOnlyCb))
 
         // Split batch and return no gatherer so the outer loop will try again
-        splitAndSave(cb, numBatches, Some(oom))
+        splitAndSave(spillOnlyCb.getBatch, numBatches, Some(oom))
         None
     }
   }
@@ -352,11 +366,9 @@ abstract class BaseHashJoinIterator(
   private def joinGatherer(
       buildKeys: ColumnarBatch,
       buildData: LazySpillableColumnarBatch,
-      streamCb: ColumnarBatch): Option[JoinGatherer] = {
-    withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
-      closeOnExcept(LazySpillableColumnarBatch(streamCb, "stream_data")) { sd =>
-        joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, sd)
-      }
+      streamCb: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    withResource(GpuProjectExec.project(streamCb.getBatch, boundStreamKeys)) { streamKeys =>
+      joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, streamCb)
     }
   }
 
@@ -383,7 +395,7 @@ abstract class BaseHashJoinIterator(
     }
   }
 
-  private def estimatedNumBatches(cb: ColumnarBatch): Int = joinType match {
+  private def estimatedNumBatches(cb: LazySpillableColumnarBatch): Int = joinType match {
     case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
       // We want the gather map size to be around the target size. There are two gather maps
       // that are made up of ints, so estimate how many rows per batch on the stream side
@@ -391,7 +403,7 @@ abstract class BaseHashJoinIterator(
       val approximateStreamRowCount = ((targetSize.toDouble / 2) /
           DType.INT32.getSizeInBytes) / streamMagnificationFactor
       val estimatedRowsPerStreamBatch = Math.min(Int.MaxValue, approximateStreamRowCount)
-      Math.ceil(cb.numRows() / estimatedRowsPerStreamBatch).toInt
+      Math.ceil(cb.numRows / estimatedRowsPerStreamBatch).toInt
     case _ => 1
   }
 }
@@ -738,12 +750,14 @@ class HashFullJoinIterator(
         }
       }
     }
-    builtSideTracker.foreach(_.close())
+    val previousTracker = builtSideTracker
     builtSideTracker = withResource(updatedTrackingTable) { _ =>
       Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
         SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     }
+    // If we throw above, we should not close the existing tracker
+    previousTracker.foreach(_.close())
   }
 }
 

@@ -181,6 +181,36 @@ object RmmRapidsRetryIterator extends Arm with Logging {
   }
 
   /**
+   * Returns a tuple of (shouldRetry, shouldSplit) depending the exception
+   * passed
+   */
+  private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean) = {
+    ex match {
+      case _: RetryOOM => (true, false)
+      case _: SplitAndRetryOOM => (true, true)
+      case _ => (false, false)
+    }
+  }
+
+  /**
+   * Returns a tuple of (causedByRetry, causedBySplit) depending the exception
+   * passed
+   */
+  private def causedByRetryOrSplit(ex: Throwable): (Boolean, Boolean) = {
+    var current = ex
+    var causedByRetry = false
+    var causedBySplit = false
+    // check if there is a hidden retry or split OOM
+    while (current != null && !causedByRetry) {
+      current = current.getCause()
+      val (isRetry, isSplit) = isRetryOrSplitAndRetry(current)
+      causedByRetry = isRetry
+      causedBySplit = causedBySplit || isSplit
+    }
+    (causedByRetry, causedBySplit)
+  }
+
+  /**
    * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
    * returns the result. In the event of an OOM Retry exception, it calls the restore() method
    * of the input and then throws the oom exception.  This is intended to be used within the `fn`
@@ -197,12 +227,40 @@ object RmmRapidsRetryIterator extends Arm with Logging {
     try {
       fn
     } catch {
-      case t: RetryOOM =>
-        r.restore()
-        throw t
-      case t: SplitAndRetryOOM =>
-        r.restore()
-        throw t
+      case ex: Throwable =>
+        // Only restore on retry exceptions
+        val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
+          r.restore()
+        }
+        throw ex
+    }
+  }
+
+  /**
+   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * returns the result. In the event of an OOM Retry exception, it calls the restore() method
+   * of the input and then throws the oom exception.  This is intended to be used within the `fn`
+   * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
+   * of a retry.
+   *
+   * @param r  a Seq of item T
+   * @param fn the work to perform. Takes no input and produces K
+   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam K `fn` result type
+   * @return a single item of type K
+   */
+  def withRestoreOnRetry[T <: CheckpointRestore, K](r: Seq[T])(fn: => K): K = {
+    try {
+      fn
+    } catch {
+      case ex: Throwable =>
+        // Only restore on retry exceptions
+        val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
+          r.foreach(_.restore())
+        }
+        throw ex
     }
   }
 
@@ -444,18 +502,6 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       }
     }
 
-    /**
-     * Returns a tuple of (shouldRetry, shouldSplit) depending the exception
-     * passed
-     */
-    private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean) = {
-      ex match {
-        case retryOOM: RetryOOM => (true, false)
-        case splitAndRetryOOM: SplitAndRetryOOM => (true, true)
-        case _ => (false, false)
-      }
-    }
-
     override def next(): K = {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
@@ -487,20 +533,15 @@ object RmmRapidsRetryIterator extends Arm with Logging {
         } catch {
           case ex: Throwable =>
             // handle a retry as the top-level exception
-            val (topLevelIsRetry, isSplitAndRetry) = isRetryOrSplitAndRetry(ex)
-            doSplit = isSplitAndRetry
+            val (topLevelIsRetry, topLevelIsSplit) = isRetryOrSplitAndRetry(ex)
+            doSplit = topLevelIsSplit
 
             // handle any retries that are wrapped in a different top-level exception
             var causedByRetry = false
             if (!topLevelIsRetry) {
-              var current = ex
-              // check if there is a hidden retry OOM
-              while (current != null && !causedByRetry) {
-                current = current.getCause()
-                val (isRetry, isSplit) = isRetryOrSplitAndRetry(current)
-                causedByRetry = isRetry
-                doSplit = doSplit || isSplit
-              }
+              val (cbRetry, cbSplit) = causedByRetryOrSplit(ex)
+              causedByRetry = cbRetry
+              doSplit = doSplit || cbSplit
             }
 
             clearInjectedOOMIfNeeded()
@@ -548,18 +589,20 @@ object RmmRapidsRetryIterator extends Arm with Logging {
             val splitIx = (tbl.getRowCount / 2).toInt
             withResource(tbl.contiguousSplit(splitIx)) { cts =>
               val tables = cts.map(_.getTable)
-              val batches = tables.safeMap(GpuColumnVector.from(_, spillable.dataTypes))
-              val spillables = batches.safeMap { b =>
-                SpillableColumnarBatch(
-                  b,
-                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              withResource(tables.safeMap(GpuColumnVector.from(_, spillable.dataTypes))) {
+                batches =>
+                  val spillables = batches.safeMap { b =>
+                    SpillableColumnarBatch(
+                      GpuColumnVector.incRefCounts(b),
+                      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                  }
+                  closeOnExcept(spillables) { _ =>
+                    require(spillables.length == 2,
+                      s"Contiguous split returned ${spillables.length} tables but two were " +
+                          s"expected!")
+                  }
+                  (spillables.head, spillables.last)
               }
-              closeOnExcept(spillables) { _ =>
-                require(spillables.length == 2,
-                  s"Contiguous split returned ${spillables.length} tables but two were " +
-                      s"expected!")
-              }
-              (spillables.head, spillables.last)
             }
           }
         }

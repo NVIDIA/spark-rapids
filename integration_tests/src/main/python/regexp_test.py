@@ -28,7 +28,7 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-_regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
+_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -804,6 +804,59 @@ def test_regexp_replace_unicode_support():
         ),
         conf=_regexp_conf)
 
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_fallback():
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
+
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "[a-z]+", "PROD")',
+            'REGEXP_REPLACE(a, "aa", "PROD")',
+        ),
+        cpu_fallback_class_name='RegExpReplace',
+        conf=conf
+    )
+
+@pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
+def test_regexp_replace_simple(regexp_enabled):
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "aa", "PROD")',
+            'REGEXP_REPLACE(a, "ab", "PROD")',
+            'REGEXP_REPLACE(a, "ae", "PROD")',
+            'REGEXP_REPLACE(a, "bc", "PROD")',
+            'REGEXP_REPLACE(a, "fa", "PROD")'
+        ),
+        conf=conf
+    )
+
+@pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
+def test_regexp_replace_multi_optimization(regexp_enabled):
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "aa|bb", "PROD")',
+            'REGEXP_REPLACE(a, "(aa)|(bb)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc", "PROD")',
+            'REGEXP_REPLACE(a, "(aa)|(bb)|(cc)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
+            'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+        ),
+        conf=conf
+    )
+
+
 def test_regexp_split_unicode_support():
     data_gen = mk_str_gen('([bf]o{0,2}青){1,7}') \
         .with_special_case('boo青and青foo')
@@ -836,7 +889,7 @@ def test_regexp_memory_fallback():
         ),
         cpu_fallback_class_name='RLike',
         conf={ 
-            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
@@ -858,7 +911,7 @@ def test_regexp_memory_ok():
             'a rlike "1|2|3|4|5|6"'
         ),
         conf={ 
-            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }

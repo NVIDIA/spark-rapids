@@ -35,7 +35,7 @@ def test_rlike_no_unicode_fallback():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
-            'a rlike "ab"'),
+            'a rlike "ab+"'),
         'RLike',
         conf=_regexp_conf)
 
@@ -44,7 +44,7 @@ def test_re_replace_no_unicode_fallback():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
-            'REGEXP_REPLACE(a, "TEST", "PROD")'),
+            'REGEXP_REPLACE(a, "[A-Z]+", "PROD")'),
         'RegExpReplace',
         conf=_regexp_conf)
 
