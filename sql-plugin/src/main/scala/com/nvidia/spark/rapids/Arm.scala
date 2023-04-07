@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
-import scala.reflect.ClassTag
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -133,18 +132,6 @@ trait Arm {
     } catch {
       case t: Throwable =>
         r.foreach(_.safeClose(t))
-        throw t
-    }
-  }
-
-  /** Executes the provided code block, closing the resources only if an exception occurs */
-  def closeOnExcept[T <: AutoCloseable, V](r: Array[ArrayBuffer[T]])
-      (block: Array[ArrayBuffer[T]] => V)(implicit ct: ClassTag[T]): V = {
-    try {
-      block(r)
-    } catch {
-      case t: Throwable =>
-        r.filterNot(_ == null).flatten.safeClose(t)
         throw t
     }
   }
