@@ -780,7 +780,7 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
-@pytest.mark.skipif(not is_before_spark_320, reason='Spark 3.1.x does not need special handling')
+@pytest.mark.skipif(not spark_version().startswith('3.1.'), reason='Spark 3.1.x does not need special handling')
 def test_spark_40819_31x(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
     def read_timestamp_nano_parquet(spark):
