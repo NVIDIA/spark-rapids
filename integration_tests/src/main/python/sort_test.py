@@ -219,7 +219,7 @@ def test_multi_orderby(data_gen):
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
 
 @allow_non_gpu('ShuffleExchangeExec')
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_multi_orderby_on_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))

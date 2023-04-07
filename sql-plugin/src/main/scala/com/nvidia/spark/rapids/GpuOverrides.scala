@@ -2051,20 +2051,9 @@ object GpuOverrides extends Logging {
            TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
-        // override def tagExprForGpu(): Unit = {
-        //   if (isStructType(sortOrder.dataType) || isArrayType(sortOrder.dataType)) {
-        //     val nullOrdering = sortOrder.nullOrdering
-        //     val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
-        //     val direction = sortOrder.direction.sql
-        //     if (nullOrdering != directionDefaultNullOrdering) {
-        //       willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
-        //         s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
-        //     }
-        //   }
-        // }
-
         override def tagExprForGpu(): Unit = {
           if (isStructType(sortOrder.dataType) || isArrayType(sortOrder.dataType)) {
+          // if (isStructType(sortOrder.dataType)) {
             val nullOrdering = sortOrder.nullOrdering
             val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
             val direction = sortOrder.direction.sql
@@ -2074,7 +2063,6 @@ object GpuOverrides extends Logging {
             }
           }
         }
-
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
           sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
