@@ -17,8 +17,10 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
@@ -115,100 +117,119 @@ class GpuKeyBatchingIterator(
     }
   }
 
-  private def concatPending(last: Option[Table] = None): ColumnarBatch = {
-    var peak = 0L
-    try {
-      withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
-        withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
-          while (pending.nonEmpty) {
-            withResource(pending.dequeue()) { spillable =>
+  private def concatPending(last: Option[SpillableColumnarBatch] = None): ColumnarBatch = {
+    val spillableBuffers = new ArrayBuffer[SpillableColumnarBatch]()
+    while (pending.nonEmpty) {
+      spillableBuffers.append(pending.dequeue())
+    }
+    pendingSize = 0
+    last.foreach { lastSpill =>
+      spillableBuffers.append(lastSpill)
+    }
+    RmmRapidsRetryIterator.withRetryNoSplit(spillableBuffers) { spillableBuffers =>
+      var peak = 0L
+      try {
+        withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
+          withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
+            spillableBuffers.foreach { spillable =>
               withResource(spillable.getColumnarBatch()) { cb =>
                 peak += GpuColumnVector.getTotalDeviceMemoryUsed(cb)
                 toConcat.append(GpuColumnVector.from(cb))
               }
             }
-          }
-          pendingSize = 0
-          last.foreach { lastTab =>
-            peak += GpuColumnVector.getTotalDeviceMemoryUsed(lastTab)
-            toConcat.append(lastTab)
-          }
-          if (toConcat.length > 1) {
-            withResource(Table.concatenate(toConcat: _*)) { concated =>
-              peak += GpuColumnVector.getTotalDeviceMemoryUsed(concated)
-              GpuColumnVector.from(concated, types)
+
+            if (toConcat.length > 1) {
+              withResource(Table.concatenate(toConcat: _*)) { concated =>
+                peak += GpuColumnVector.getTotalDeviceMemoryUsed(concated)
+                GpuColumnVector.from(concated, types)
+              }
+            } else if (toConcat.nonEmpty) {
+              GpuColumnVector.from(toConcat.head, types)
+            } else {
+              // We got nothing but have to do something
+              GpuColumnVector.emptyBatchFromTypes(types)
             }
-          } else if (toConcat.nonEmpty) {
-            GpuColumnVector.from(toConcat.head, types)
-          } else {
-            // We got nothing but have to do something
-            GpuColumnVector.emptyBatchFromTypes(types)
           }
         }
+      } finally {
+        peakDevMemory.set(Math.max(peakDevMemory.value, peak))
       }
-    } finally {
-      peakDevMemory.set(Math.max(peakDevMemory.value, peak))
+    }
+  }
+
+  private[this] def processAndCloseFinalBatch(cb: ColumnarBatch): ColumnarBatch = {
+    val scb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    // concatPending will close scb
+    concatPending(Some(scb))
+  }
+
+  private[this] def splitAndCloseBatch(cb: ColumnarBatch): Option[ColumnarBatch] = {
+    val cutoff = closeOnExcept(cb)(getKeyCutoff)
+    if (cutoff <= 0) {
+      val cbSize = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+      peakDevMemory.set(Math.max(peakDevMemory.value, cbSize))
+      // Everything is for a single key, so save it away and try the next batch...
+      pending +=
+          SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      pendingSize += cbSize
+      None
+    } else {
+      var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+      val table = withResource(cb)(GpuColumnVector.from)
+      val tables = withResource(table) { table =>
+        table.contiguousSplit(cutoff)
+      }
+      val (firstSpill, secondSpill) = withResource(tables) { tables =>
+        assert(tables.length == 2)
+        val tmp = tables.safeMap { t =>
+          SpillableColumnarBatch(t, types, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        }
+        (tmp(0), tmp(1))
+      }
+      val ret = closeOnExcept(secondSpill) { secondSpill =>
+        concatPending(Some(firstSpill))
+      }
+      closeOnExcept(ret) { ret =>
+        peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
+        val savedSize = secondSpill.sizeInBytes
+        peak += savedSize
+        pending += secondSpill
+        pendingSize += savedSize
+        peakDevMemory.set(Math.max(peakDevMemory.value, peak))
+        Some(ret)
+      }
     }
   }
 
   override def next(): ColumnarBatch = {
-    while (iter.hasNext) {
-      withResource(iter.next()) { cb =>
-        numInputBatches += 1
-        val numRows = cb.numRows()
-        if (numRows > 0) { // else filter it out...
-          numInputRows += numRows
-          withResource(new MetricRange(opTime)) { _ =>
-            if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
-              // No need to do a split on the final row and create extra work this is the last batch
-              withResource(GpuColumnVector.from(cb)) { table =>
-                val ret = concatPending(Some(table))
-                numOutputRows += ret.numRows()
-                numOutputBatches += 1
-                return ret
-              }
-            }
-            // else not the last batch split so the final key group is not in this batch...
-            val cutoff = getKeyCutoff(cb)
-            if (cutoff <= 0) {
-              val cbSize = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-              peakDevMemory.set(Math.max(peakDevMemory.value, cbSize))
-              // Everything is for a single key, so save it away and try the next batch...
-              pending +=
-                  SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-              pendingSize += cbSize
-            } else {
-              var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-              withResource(GpuColumnVector.from(cb)) { table =>
-                withResource(table.contiguousSplit(cutoff)) { tables =>
-                  assert(tables.length == 2)
-                  val ret = concatPending(Some(tables(0).getTable))
-                  peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
-                  val savedSize = tables(1).getBuffer.getLength
-                  peak += savedSize
-                  pending +=
-                      SpillableColumnarBatch(tables(1), types,
-                        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-                  pendingSize += savedSize
-                  numOutputRows += ret.numRows()
-                  numOutputBatches += 1
-                  peakDevMemory.set(Math.max(peakDevMemory.value, peak))
-                  return ret
-                }
-              }
-            }
+    var ret: Option[ColumnarBatch] = None
+    while (ret.isEmpty && iter.hasNext) {
+      val cb = iter.next()
+      numInputBatches += 1
+      val numRows = cb.numRows()
+      if (numRows <= 0) {
+        cb.close()
+      } else {
+        numInputRows += numRows
+        withResource(new MetricRange(opTime)) { _ =>
+          if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
+            // No need to do a split on the final row and create extra work this is the last batch
+            ret = Some(processAndCloseFinalBatch(cb))
+          } else {
+            ret = splitAndCloseBatch(cb)
           }
         }
       }
     }
-    val ret = withResource(new MetricRange(opTime)) { _ =>
-      // At the end of the iterator, nothing more to process
-      concatPending()
+    val finalRet = ret.getOrElse {
+      withResource(new MetricRange(opTime)) { _ =>
+        // At the end of the iterator, nothing more to process
+        concatPending()
+      }
     }
-    numOutputRows += ret.numRows()
+    numOutputRows += finalRet.numRows()
     numOutputBatches += 1
-    ret
+    finalRet
   }
 }
 
