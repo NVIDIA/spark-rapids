@@ -441,6 +441,7 @@ class GpuSubPartitionPairIterator(
     // build partitioner
     val buildIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigBuildBatches)
       .map(_.getColumnarBatch())
+    bigBuildBatches.clear()
     buildSubPartitioner.safeClose(new Exception())
     buildSubPartitioner = new GpuBatchSubPartitioner(buildIt, boundBuildKeys,
       realNumPartitions, hashSeed)
@@ -449,6 +450,7 @@ class GpuSubPartitionPairIterator(
     // stream partitioner
     val streamIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigStreamBatches)
       .map(_.getColumnarBatch())
+    bigStreamBatches.clear()
     streamSubPartitioner.safeClose(new Exception())
     streamSubPartitioner = new GpuBatchSubPartitioner(streamIt, boundStreamKeys,
       realNumPartitions, hashSeed)
@@ -460,6 +462,9 @@ class GpuSubPartitionPairIterator(
     val requiredNum = Math.floorDiv(totalSize, realTargetSize).toInt + 1
     math.max(requiredNum, numPartitions)
   }
+
+  /** For test only */
+  def isRepartitioned: Boolean = repartitioned
 }
 
 /** Base class for joins by sub-partitioning algorithm */
