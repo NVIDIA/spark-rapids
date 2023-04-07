@@ -119,13 +119,10 @@ class GpuKeyBatchingIterator(
 
   private def concatPending(last: Option[SpillableColumnarBatch] = None): ColumnarBatch = {
     val spillableBuffers = new ArrayBuffer[SpillableColumnarBatch]()
-    while (pending.nonEmpty) {
-      spillableBuffers.append(pending.dequeue())
-    }
+    spillableBuffers.appendAll(pending)
+    pending.clear()
     pendingSize = 0
-    last.foreach { lastSpill =>
-      spillableBuffers.append(lastSpill)
-    }
+    spillableBuffers.appendAll(last)
     RmmRapidsRetryIterator.withRetryNoSplit(spillableBuffers) { spillableBuffers =>
       var peak = 0L
       try {
@@ -163,6 +160,13 @@ class GpuKeyBatchingIterator(
     concatPending(Some(scb))
   }
 
+  /**
+   * Split cb at a key boundary trying to get the output buffers to be close to
+   * the target batch size. Part of cb might be cached to be returned later on.
+   * @param cb the batch to split. This will be closed when the call completes.
+   * @return a Columnar batch to return from next or None if there was no place to
+   *         the batch could be split.
+   */
   private[this] def splitAndCloseBatch(cb: ColumnarBatch): Option[ColumnarBatch] = {
     val cutoff = closeOnExcept(cb)(getKeyCutoff)
     if (cutoff <= 0) {
