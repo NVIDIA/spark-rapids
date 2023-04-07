@@ -803,6 +803,7 @@ def test_spark_40819_false(std_input_path):
 @pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 @pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
 @pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
+@allow_non_gpu('FileSourceScanExec, ColumnarToRowExec')
 def test_spark_40819_true(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
     conf = copy_and_update(original_parquet_file_reader_conf, {
