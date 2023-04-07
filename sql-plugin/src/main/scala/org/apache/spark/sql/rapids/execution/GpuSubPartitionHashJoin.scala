@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -46,7 +46,7 @@ object GpuSubPartitionHashJoin extends Arm {
       spillBatches: Seq[SpillableColumnarBatch]): Option[SpillableColumnarBatch] = {
     val retBatch = if (spillBatches.length >= 2) {
       // two or more batches, concatenate them
-      val (concatTable, types) = withResource(spillBatches) { _ =>
+      val (concatTable, types) = RmmRapidsRetryIterator.withRetryNoSplit(spillBatches) { _ =>
         withResource(spillBatches.safeMap(_.getColumnarBatch())) { batches =>
           val batchTypes = GpuColumnVector.extractTypes(batches.head)
           withResource(batches.safeMap(GpuColumnVector.from)) { tables =>
