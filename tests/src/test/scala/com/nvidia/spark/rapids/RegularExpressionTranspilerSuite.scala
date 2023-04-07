@@ -35,9 +35,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // but we still reject them because the behavior is not consistent with Java
 
     // The test "AST fuzz test - regexp_replace" hangs if we stop rejecting these patterns
-    for (pattern <- Seq("\t+|a", "(\t+|a)Dc$1", "\n[^\r\n]x*|^3x")) {
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support repetition on one side of a choice")
+    for (pattern <- Seq("\t*|a", "(\t*|a)Dc$1", "\n[^\r\n]x*|^3x")) {
+      assertUnsupported(pattern, RegexReplaceMode,
+        "cuDF does not support replace or split with zero-length repetition on one side of a" +
+        " choice")
     }
 
     //The test "AST fuzz test - regexp_find" fails if we stop rejecting these patterns.
@@ -99,12 +100,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support choice with repetition") {
-    val patterns = Seq("b+|^\t")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support repetition on one side of a choice")
-    )
+  test("choice with repetition - regexp_find") {
+    val patterns = Seq("b?|a", "b*|^\t", "b+|^\t", "a|b+", "a+|b+", "a{2,3}|b+", "a*|b+",
+        "[cat]{3}|dog")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("aaa", "bb", "a\tb", "aaaabbbb", "a\tb\ta\tb"))
+  }
+
+  test("choice with repetition - regexp_replace") {
+    val patterns = Seq("b+|^\t", "a|b+", "a+|b+", "a{2,3}|b+", "[cat]{3}|dog")
+    assertCpuGpuMatchesRegexpReplace(patterns, Seq("aaa", "bb", "a\tb", "aaaabbbb", "a\tb\ta\tb"))
   }
 
   test("cuDF does not support terms ending with line anchors on one side of a choice") {
@@ -116,16 +120,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF unsupported choice cases") {
-    val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
+    val patterns = Seq("c*|d*", "c*|dog", "c|d?", "c|d{0,2}")
     patterns.foreach(pattern => {
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support repetition on one side of a choice")
+      assertUnsupported(pattern, RegexReplaceMode,
+        "cuDF does not support replace or split with zero-length repetition on one side of a"
+        + " choice")
     })
-  }
-
-  test("sanity check: choice edge case 2") {
-    assertUnsupported("c+|d+", RegexFindMode,
-      "cuDF does not support repetition on one side of a choice")
   }
 
   test("newline before $ in replace mode") {
@@ -740,6 +740,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "regexp_split on GPU does not support empty match repetition consistently with Spark"
       )
     )
+  }
+
+  test("regexp_split - character class repetition with choice - ? and * - fall back to CPU") {
+    val patterns = Seq(raw"c*|d*", raw"c*|dog", raw"a{0,2}|b", raw"b?|a", raw"[cat]{0,3}|dog")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "cuDF does not support replace or split with zero-length repetition on one side of a" +
+        " choice")
+      )
   }
 
   test("regexp_split - fall back to CPU for {0,n}, or {0,}") {

@@ -769,11 +769,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def isRepetition(e: RegexAST): Boolean = {
+  private def isRepetition(e: RegexAST, checkZeroLength: Boolean = false): Boolean = {
     e match {
-      case RegexRepetition(_, _) => true
-      case RegexGroup(_, term, _) => isRepetition(term)
-      case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
+      case RegexRepetition(_, _) if !checkZeroLength => true 
+      case RegexRepetition(_, quantifier) => quantifier match {
+        case SimpleQuantifier(ch) if "*?".contains(ch) => true
+        case QuantifierFixedLength(length) if length == 0 => true
+        case QuantifierVariableLength(min, _) if min == 0 => true
+        case _ => false
+      }
+      case RegexGroup(_, term, _) => isRepetition(term, checkZeroLength)
+      case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last, checkZeroLength)
       case _ => false
     }
   }
@@ -1497,13 +1503,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val ll = rewrite(l, replacement, None, flags)
         val rr = rewrite(r, replacement, None, flags)
 
-        // cuDF does not support repetition on one side of a choice, such as "a*|a"
-        if (isRepetition(ll)) {
-          throw new RegexUnsupportedException(
-            "cuDF does not support repetition on one side of a choice", l.position)
-        } else if (isRepetition(rr)) {
-          throw new RegexUnsupportedException(
-            "cuDF does not support repetition on one side of a choice", r.position)
+        // cuDF does not support zero-length repetition in replace or split mode
+        // cuDF does support +, fixed-length, and variable length with min > 0 
+        if (mode != RegexFindMode) {
+          if (isRepetition(ll, true)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support replace or split with zero-length repetition on one side of a"
+              + " choice",
+              l.position)
+          } else if (isRepetition(rr, true)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support replace or split with zero-length repetition on one side of a"
+              + " choice",
+              r.position)
+          }
         }
 
         // cuDF does not support terms ending with line anchors on one side
