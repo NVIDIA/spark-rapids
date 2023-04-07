@@ -783,8 +783,6 @@ def test_spark_32639(std_input_path):
 @pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
 def test_parquet_read_nano_as_longs_31x(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
-    def read_timestamp_nano_parquet(spark):
-        spark.read.parquet(data_path).collect()
     # we correctly return timestamp_micros when running against Spark 3.1.x
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path))
