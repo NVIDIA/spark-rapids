@@ -991,8 +991,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
           isEmptyRepetition(term)
         case RegexSequence(parts) =>
           parts.forall(isEmptyRepetition)
-        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
-        // we did, we would need to add a `case RegexChoice()` here
+        case RegexChoice(l, r) =>
+          isEmptyRepetition(l) || isEmptyRepetition(r)
         case _ => false
       }
     }
