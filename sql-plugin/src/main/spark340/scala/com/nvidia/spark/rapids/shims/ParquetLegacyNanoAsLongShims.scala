@@ -15,32 +15,28 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.sql.internal.SQLConf
 object ParquetLegacyNanoAsLongShims {
   def legacyParquetNanosAsLong(): Boolean = {
-    // this should be true for 3.2.4+, 3.3.2+, 3.4.0+ if
-    //   spark.sql.legacy.parquet.nanosAsLong = true
-    false
+    SQLConf.get.legacyParquetNanosAsLong
   }
 
+  /**
+   * This method should strictly be used by ParquetCachedBatchSerializer(PCBS) as it is hard coding
+   * the value of LEGACY_PARQUET_NANOS_AS_LONG.
+   *
+   * As far as PCBS is concerned it really doesn't matter what we set it to as long as
+   * ParquetSchemaConverter doesn't see a "null" value.
+   *
+   * @param conf Hadoop conf
+   */
   def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
-    // LEGACY_PARQUET_NANOS_AS_LONG is only considered in Spark 3.3.2 and later
+    conf.setBoolean(SQLConf.LEGACY_PARQUET_NANOS_AS_LONG.key, true)
   }
 }
