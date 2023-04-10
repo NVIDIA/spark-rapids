@@ -945,7 +945,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
       if ((containsEndAnchor(r1) &&
           (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
         (containsEndAnchor(r2) &&
-          (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
+          // (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
+          (containsNewline(r1) || containsBeginAnchor(r1)))) {
         throw new RegexUnsupportedException(
           s"End of line/string anchor is not supported in this context: " +
             s"${toReadableString(r1.toRegexString)}" +

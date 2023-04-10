@@ -102,6 +102,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("zero-length repetition near line anchor  - regexp_find") {
+    val patterns = Seq("\\00*[D$3]$", "\\00*[D$3]\\Z", "^([a-z]*)([0-9]*)([a-z]*)$")
+    val inputs = Seq("abcd", "abc012abc", "999abb", "\\00D", "D", "D\n", "\\00D\n\r")
+    assertCpuGpuMatchesRegexpFind(patterns, inputs)
+  }
+
   test("cuDF unsupported choice cases") {
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
@@ -303,7 +309,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
     val unsupportedPatterns = Seq("[\r\n]?$", "$\r", "\r$",
-      "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$", "\\00*[D$3]$")
+      // "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$", "[D$3]$")
+      "\u0085$", "\u2028$", "\u2029$", "\n$", "\r\n$")
     for (pattern <- unsupportedPatterns) {
       assertUnsupported(pattern, RegexFindMode,
         "End of line/string anchor is not supported in this context")
@@ -317,7 +324,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
     val unsupportedPatterns = Seq("[\r\n]?\\Z", "\\Z\r", "\r\\Z",
-      "\u0085\\Z", "\u2028\\Z", "\u2029\\Z", "\n\\Z", "\r\n\\Z", "\\00*[D$3]\\Z")
+      "\u0085\\Z", "\u2028\\Z", "\u2029\\Z", "\n\\Z", "\r\n\\Z")
     for (pattern <- unsupportedPatterns) {
       assertUnsupported(pattern, RegexFindMode,
         "End of line/string anchor is not supported in this context")
