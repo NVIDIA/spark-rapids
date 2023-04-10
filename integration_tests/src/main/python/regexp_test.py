@@ -517,6 +517,19 @@ def test_character_classes():
             ),
         conf=_regexp_conf)
 
+def test_regexp_choice():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "[abcd]|[123]")',
+                'rlike(a, "[^\n\r]|abcd")',
+                'rlike(a, "abd1a$|^ab2a")',
+                'regexp_extract(a, "(abc1a$|^ab2ab|a3abc)", 1)',
+                'regexp_extract(a, "(abc1a$|ab2ab$)", 1)',
+                'regexp_replace(a, "[abcd]$|^abc", "@")'
+            ),
+        conf=_regexp_conf)
+
 def test_regexp_hexadecimal_digits():
     gen = mk_str_gen(
         '[abcd]\\\\x00\\\\x7f\\\\x80\\\\xff\\\\x{10ffff}\\\\x{00eeee}[\\\\xa0-\\\\xb0][abcd]')
