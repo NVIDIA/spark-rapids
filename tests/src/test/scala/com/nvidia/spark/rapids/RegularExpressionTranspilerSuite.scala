@@ -743,9 +743,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq(raw"c*|d*", raw"c*|dog", raw"a{0,2}|b", raw"b?|a", raw"[cat]{0,3}|dog")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexSplitMode,
-        "cuDF does not support replace or split with zero-length repetition on one side of a" +
-        " choice")
+        "regexp_split on GPU does not support empty match repetition consistently with Spark"
       )
+    )
   }
 
   test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
