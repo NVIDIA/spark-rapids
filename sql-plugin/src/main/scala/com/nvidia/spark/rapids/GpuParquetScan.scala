@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -179,6 +179,10 @@ object GpuParquetScan {
       readSchema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
     val sqlConf = sparkSession.conf
+
+    if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
+      meta.willNotWorkOnGpu("GPU does not support spark.sql.legacy.parquet.nanosAsLong")
+    }
 
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +

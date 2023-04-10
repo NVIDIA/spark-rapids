@@ -1519,18 +1519,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
           }
         }
 
-        // cuDF does not support terms ending with line anchors on one side
-        // of a choice, such as "^|$"
-        if (endsWithLineAnchor(ll)) {
-          throw new RegexUnsupportedException(
-            "cuDF does not support terms ending with line anchors on one side of a choice",
-            l.position)
-        } else if (endsWithLineAnchor(rr)) {
-          throw new RegexUnsupportedException(
-            "cuDF does not support terms ending with line anchors on one side of a choice",
-            r.position)
-        }
-
         // cuDF does not support terms ending with word boundaries on one side
         // of a choice, such as "\\b|a"
         if (endsWithWordBoundary(ll)) {
@@ -1663,7 +1651,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
     case RegexChar(ch) => ch == '^' || ch == '$'
     case RegexEscaped(ch) if "zZ".contains(ch) => true // \z gets translated to $
-    case RegexEscaped(ch) if 'A' == ch && mode == RegexSplitMode => true 
+    case RegexEscaped(ch) if 'A' == ch => true 
     case _ => false
   }
 
