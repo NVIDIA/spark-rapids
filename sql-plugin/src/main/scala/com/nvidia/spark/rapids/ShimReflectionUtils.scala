@@ -18,6 +18,11 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
 
+/*
+ * This is specifically for functions dealing with loading classes via reflection. This
+ * class itself should not contain or import any shimmed/parallel world classes so that
+ * it can also be called via reflection, like calling getMethod on ShimReflectionUtils.
+ */
 object ShimReflectionUtils extends Logging {
 
   def loadClass(className: String): Class[_] = {

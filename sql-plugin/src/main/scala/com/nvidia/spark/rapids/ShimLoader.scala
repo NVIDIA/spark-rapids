@@ -271,7 +271,8 @@ object ShimLoader extends Logging {
           ret
         }.getOrElse(shimClassLoader.loadClass(shimServiceProviderStr))
         Option(
-          (ShimReflectionUtils.instantiateClass(shimClass).asInstanceOf[SparkShimServiceProvider], shimURL)
+          (ShimReflectionUtils.instantiateClass(shimClass).asInstanceOf[SparkShimServiceProvider],
+            shimURL)
         )
       } catch {
         case cnf: ClassNotFoundException =>
@@ -368,7 +369,8 @@ object ShimLoader extends Logging {
   }
 
   def newInternalExclusiveModeGpuDiscoveryPlugin(): ResourceDiscoveryPlugin = {
-    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
+    ShimReflectionUtils.
+      newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
 
   def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
@@ -376,7 +378,8 @@ object ShimLoader extends Logging {
   }
 
   def loadColumnarRDD(): Class[_] = {
-    ShimReflectionUtils.loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
+    ShimReflectionUtils.
+      loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
 
   def newExplainPlan(): ExplainPlanBase = {
@@ -384,7 +387,8 @@ object ShimLoader extends Logging {
   }
 
   def newHiveProvider(): HiveProvider= {
-    ShimReflectionUtils.newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
+    ShimReflectionUtils.
+      newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
   }
 
   def newAvroProvider(): AvroProvider = ShimReflectionUtils.newInstanceOf[AvroProvider](
