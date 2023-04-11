@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils}
+import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils

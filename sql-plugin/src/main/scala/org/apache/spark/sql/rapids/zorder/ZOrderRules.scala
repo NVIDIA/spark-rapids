@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.zorder
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuRangePartitioner, GpuSorter, RepeatingParamCheck, ShimLoader, ShimReflectionUtils, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuRangePartitioner, GpuSorter, RepeatingParamCheck, ShimReflectionUtils, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{expr, pluginSupportedOrderableSig}
 
 import org.apache.spark.sql.catalyst.InternalRow

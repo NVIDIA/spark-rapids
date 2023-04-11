@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
-import com.nvidia.spark.rapids.{FileFormatChecks, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimLoader, ShimReflectionUtils}
+import com.nvidia.spark.rapids.{FileFormatChecks, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
 
 import org.apache.spark.sql.connector.read.Scan
