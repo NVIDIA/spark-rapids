@@ -38,6 +38,7 @@ SIGN_FILE=${1:-"false"}
 DIST_PL=${DIST_PL:-"dist"}
 
 ###### Build the path of jar(s) to be deployed ######
+MVN="mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 -s $MVN_SETTINGS"
 ART_ID=`$MVN help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
 ART_GROUP_ID=`$MVN help:evaluate -q -pl $DIST_PL -Dexpression=project.groupId -DforceStdout`
 ART_VER=`$MVN help:evaluate -q -f $DIST_PL -Dexpression=project.version -DforceStdout`
@@ -49,7 +50,6 @@ OUT_PATH=${OUT_PATH:-"$DIST_PL/target"}
 SIGN_TOOL=${SIGN_TOOL:-"gpg"}
 MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
 
-MVN="mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 -s $MVN_SETTINGS"
 FPATH="$OUT_PATH/$ART_ID-$ART_VER"
 cp $FPATH-$CUDA_CLASSIFIER.jar $FPATH.jar
 
