@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.zorder
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuRangePartitioner, GpuSorter, RepeatingParamCheck, ShimLoader, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuRangePartitioner, GpuSorter, RepeatingParamCheck, ShimReflectionUtils, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{expr, pluginSupportedOrderableSig}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -88,7 +88,7 @@ object ZOrderRules {
   def openSourceExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {
       val interleaveClazz =
-        ShimLoader.loadClass("org.apache.spark.sql.delta.expressions.InterleaveBits")
+        ShimReflectionUtils.loadClass("org.apache.spark.sql.delta.expressions.InterleaveBits")
             .asInstanceOf[Class[Expression]]
       val interleaveRule = expr[Expression](
         "Interleave bit as a part of deltalake zorder",
@@ -105,7 +105,7 @@ object ZOrderRules {
         })
 
       val partExprClass =
-        ShimLoader.loadClass("org.apache.spark.sql.delta.expressions.PartitionerExpr")
+        ShimReflectionUtils.loadClass("org.apache.spark.sql.delta.expressions.PartitionerExpr")
             .asInstanceOf[Class[Expression]]
       val partRule = partExprRule(partExprClass)
 
@@ -120,7 +120,7 @@ object ZOrderRules {
   def databricksExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {
       val hilbertClazz =
-        ShimLoader.loadClass("com.databricks.sql.expressions.HilbertLongIndex")
+        ShimReflectionUtils.loadClass("com.databricks.sql.expressions.HilbertLongIndex")
             .asInstanceOf[Class[Expression]]
       val hilbertRule = expr[Expression](
         "Hilbert long index as a part of Databrick's deltalake zorder",
@@ -141,7 +141,7 @@ object ZOrderRules {
         })
 
       val partExprClass =
-        ShimLoader.loadClass("com.databricks.sql.expressions.PartitionerExpr")
+        ShimReflectionUtils.loadClass("com.databricks.sql.expressions.PartitionerExpr")
             .asInstanceOf[Class[Expression]]
       val partRule = partExprRule(partExprClass)
       Map(hilbertClazz -> hilbertRule,
