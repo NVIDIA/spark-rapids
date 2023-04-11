@@ -561,6 +561,33 @@ use the RAPIDS Shuffle Manager, your deployment option may be limited to the ext
 Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
 `ARENA` for CUDA 11.5+. For CUDA 11.4 and older, it will fall back to `ARENA`.
 
+### What is a `RetryOOM` or `SplitAndRetryOOM` exception?
+
+In the 23.04 release of the accelerator two new exceptions were added to replace a
+regular `OutOfMemoryError` that was thrown before when the GPU ran out of memory.
+Originally we used `OutOfMemoryError` like on the CPU thinking that it would help to
+trigger GC in case handles pointing to GPU memory were leaked in the JVM heap. But
+`OutOfMemoryError` is technically a fatal exception and recovering from it, is
+not strictly supported. As such Apache Spark treats it as a fatal exception and will
+kill the process that sees this exception. This can result in a lot of tasks
+being rerun if the GPU runs out of memory. These new exceptions prevent that. They
+also provide an indication to various GPU operators that the GPU ran out of memory
+and how that operator might be able to recover. `RetryOOM` indicates that the operator
+should roll back to a known good spot and then wait until the memory allocation
+framework decides that it should be retired. `SplitAndRetryOOM` is used
+when there is really only one task unblocked and the only way to recover would be to
+roll back to a good spot and try to split the input so that less total GPU memory is
+needed.
+
+These are not implemented for all GPU operations. A number of GPU operations that
+use a significant amount of memory have been updated to handle `RetryOOM`, but fewer
+have been updated to handle `SplitAndRetryOOM`. If you do run into these exceptions
+it is an indication that you are using too much GPU memory. The tuning guide can
+help you to reduce your memory usage. Be aware that some algorithms do not have
+a way to split their usage, things like window operations over some large windows.
+If tuning does not fix the problem please file an issue to help us understand what
+operators may need better out of core algorithm support.
+
 ### I have more questions, where do I go?
 We use github to track bugs, feature requests, and answer questions. File an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
