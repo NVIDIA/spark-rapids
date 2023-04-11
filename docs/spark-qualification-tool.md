@@ -70,7 +70,7 @@ Usage: `spark_rapids_user_tools <CSP> qualification --cpu_cluster <CLUSTER> --ev
 The supported CSPs are *dataproc*, *emr*, and *databricks-aws*.  The EVENTLOGS-PATH should be the storage location
 for your eventlogs.  For Dataproc, it should be set to the GCS path.  For EMR and Databricks-AWS, it should be set to
 the S3 path.  THE CLUSTER can be a live cluster or a configuration file representing the cluster instances and size.
-More details are in the above documentation links per CSP environment
+More details are in the above documentation links per CSP environment. The user tools only show recommended applications in the output.
 
 Help (to see all options available): `spark_rapids_user_tools <CSP> qualification --help`
 
