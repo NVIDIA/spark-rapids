@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{RapidsConf, ShimLoader}
+import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, ShimReflectionUtils}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
@@ -560,7 +560,7 @@ object RapidsShuffleTransport extends Logging {
   def makeTransport(shuffleServerId: BlockManagerId,
                     rapidsConf: RapidsConf): RapidsShuffleTransport = {
     val transportClass = try {
-      ShimLoader.loadClass(rapidsConf.shuffleTransportClassName)
+      ShimReflectionUtils.loadClass(rapidsConf.shuffleTransportClassName)
     } catch {
       case classNotFoundException: ClassNotFoundException =>
         logError(s"Unable to find RapidsShuffleTransport class " +

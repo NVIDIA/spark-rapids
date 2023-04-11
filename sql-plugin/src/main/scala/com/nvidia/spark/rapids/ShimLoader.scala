@@ -194,7 +194,7 @@ object ShimLoader extends Logging {
     }
   }
 
-  private def getShimClassLoader(): ClassLoader = {
+  def getShimClassLoader(): ClassLoader = {
     initShimProviderIfNeeded()
     if (pluginClassLoader == null) {
       updateSparkClassLoader()
@@ -271,7 +271,7 @@ object ShimLoader extends Logging {
           ret
         }.getOrElse(shimClassLoader.loadClass(shimServiceProviderStr))
         Option(
-          (instantiateClass(shimClass).asInstanceOf[SparkShimServiceProvider], shimURL)
+          (ShimReflectionUtils.instantiateClass(shimClass).asInstanceOf[SparkShimServiceProvider], shimURL)
         )
       } catch {
         case cnf: ClassNotFoundException =>
@@ -327,36 +327,13 @@ object ShimLoader extends Logging {
     SPARK_BUILD_DATE
   )
 
-  def loadClass(className: String): Class[_] = {
-    val loader = getShimClassLoader()
-    logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
-    loader.loadClass(className)
-  }
-
-  private def newInstanceOf[T](className: String): T = {
-    instantiateClass(loadClass(className)).asInstanceOf[T]
-  }
-
-  def newOptimizerClass(className: String): Optimizer = {
-    newInstanceOf[Optimizer](className)
-  } 
-
-  // avoid cached constructors
-  private def instantiateClass[T](cls: Class[T]): T = {
-    logDebug(s"Instantiate ${cls.getName} using classloader " + cls.getClassLoader)
-    cls.getClassLoader match {
-      case urcCl: java.net.URLClassLoader =>
-        logDebug("urls " + urcCl.getURLs.mkString("\n"))
-      case _ =>
-    }
-    val constructor = cls.getConstructor()
-    constructor.newInstance()
-  }
-
-
   //
   // Reflection-based API with Spark to switch the classloader used by the caller
   //
+
+  def newOptimizerClass(className: String): Optimizer = {
+    ShimReflectionUtils.newInstanceOf[Optimizer](className)
+  }
 
   def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): Any = {
     val shuffleClassLoader = getShimClassLoader()
@@ -367,63 +344,63 @@ object ShimLoader extends Logging {
   }
 
   def newDriverPlugin(): DriverPlugin = {
-    newInstanceOf("com.nvidia.spark.rapids.RapidsDriverPlugin")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.RapidsDriverPlugin")
   }
 
   def newExecutorPlugin(): ExecutorPlugin = {
-    newInstanceOf("com.nvidia.spark.rapids.RapidsExecutorPlugin")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.RapidsExecutorPlugin")
   }
 
   def newColumnarOverrideRules(): ColumnarRule = {
-    newInstanceOf("com.nvidia.spark.rapids.ColumnarOverrideRules")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.ColumnarOverrideRules")
   }
 
   def newGpuQueryStagePrepOverrides(): Rule[SparkPlan] = {
-    newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
   }
 
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
-    newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
 
   def newStrategyRules(): Strategy = {
-    newInstanceOf("com.nvidia.spark.rapids.StrategyRules")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.StrategyRules")
   }
 
   def newInternalExclusiveModeGpuDiscoveryPlugin(): ResourceDiscoveryPlugin = {
-    newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
 
   def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
-    newInstanceOf("com.nvidia.spark.rapids.ParquetCachedBatchSerializer")
+    ShimReflectionUtils.newInstanceOf("com.nvidia.spark.rapids.ParquetCachedBatchSerializer")
   }
 
   def loadColumnarRDD(): Class[_] = {
-    loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
+    ShimReflectionUtils.loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
 
   def newExplainPlan(): ExplainPlanBase = {
-    newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
+    ShimReflectionUtils.newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
 
   def newHiveProvider(): HiveProvider= {
-    newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
+    ShimReflectionUtils.newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
   }
 
-  def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
+  def newAvroProvider(): AvroProvider = ShimReflectionUtils.newInstanceOf[AvroProvider](
     "org.apache.spark.sql.rapids.AvroProviderImpl")
 
-  def newDeltaProbe(): DeltaProbe = ShimLoader.newInstanceOf[DeltaProbe](
+  def newDeltaProbe(): DeltaProbe = ShimReflectionUtils.newInstanceOf[DeltaProbe](
     "com.nvidia.spark.rapids.delta.DeltaProbeImpl")
 
-  def newIcebergProvider(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
+  def newIcebergProvider(): IcebergProvider = ShimReflectionUtils.newInstanceOf[IcebergProvider](
     "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
 
-  def newPlanShims(): PlanShims = ShimLoader.newInstanceOf[PlanShims](
+  def newPlanShims(): PlanShims = ShimReflectionUtils.newInstanceOf[PlanShims](
     "com.nvidia.spark.rapids.shims.PlanShimsImpl"
   )
   
   def loadGpuColumnVector(): Class[_] = {
-    loadClass("com.nvidia.spark.rapids.GpuColumnVector")
+    ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }
 }
