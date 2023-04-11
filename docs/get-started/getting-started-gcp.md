@@ -27,7 +27,7 @@ We provide some RAPIDS tools to analyze the clusters and the applications runnin
 
 The Prerequisites of the RAPIDS tools including:
 * gcloud CLI is installed: https://cloud.google.com/sdk/docs/install
-* python 3.8, 3.10
+* python 3.8+
 * `pip install spark-rapids-user-tools`
 
 ## Create a Dataproc Cluster Accelerated by GPUs
