@@ -473,20 +473,8 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
                         'input_file_block_length()'),
             conf=updated_conf)
 
-@allow_non_gpu('DataWritingCommandExec')
-@pytest.mark.skipif(is_spark_340_or_later(), reason='Plan changes in 340')
-def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
-    gen = TimestampGen()
-    data_path = spark_tmp_path + '/CSV_DATA'
-    assert_gpu_fallback_write(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("csv").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.csv(path),
-            data_path,
-            'DataWritingCommandExec')
-
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-@pytest.mark.skipif(is_before_spark_340(), reason='Plan changes in 340')
-def test_csv_save_as_table_fallback_340(spark_tmp_path, spark_tmp_table_factory):
+def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/CSV_DATA'
     assert_gpu_fallback_write(
