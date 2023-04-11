@@ -1519,6 +1519,32 @@ class CudfRegexTranspiler(mode: RegexMode) {
           }
         }
 
+        if (mode == RegexSplitMode) {
+          if (beginsWithLineAnchor(ll) || beginsWithLineAnchor(rr) ||
+              endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support either side of a choice containing a line anchor in split "
+               + "mode", l.position)
+          }
+        }
+        else if (mode == RegexReplaceMode) {
+          if (endsWithLineAnchor(ll) && endsWithLineAnchor(rr)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support both sides of a choice containing a line anchor in replace" +
+              " mode", l.position)
+          }
+          if (endsWithLineAnchor(ll) && beginsWithLineAnchor(rr)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support both sides of a choice containing a line anchor in replace" +
+              " mode", l.position)
+          }
+          if (beginsWithLineAnchor(ll) && endsWithLineAnchor(rr)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support both sides of a choice containing a line anchor in replace" +
+              " mode", l.position)
+          }
+        }
+
         // cuDF does not support terms ending with word boundaries on one side
         // of a choice, such as "\\b|a"
         if (endsWithWordBoundary(ll)) {
@@ -1616,6 +1642,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
     })
   }
 
+  private def beginsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        val j = parts.indexWhere {
+            case RegexEmpty() => false
+            case _ => true
+        }
+        beginsWith(parts(j), f)
+      case RegexGroup(_, term, _) =>
+        beginsWith(term, f) 
+      case _ => f(regex)
+    }
+
+  }
+
   private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1632,7 +1673,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private def endsWithLineAnchor(e: RegexAST): Boolean = {
     endsWith(e, {
-      case RegexEscaped('A') => true
+      case RegexEscaped(ch) if "AZ".contains(ch) => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
+  private def beginsWithLineAnchor(e: RegexAST): Boolean = {
+    beginsWith(e, {
+      case RegexEscaped(ch) if "AZ".contains(ch) => true
       case other => isBeginOrEndLineAnchor(other)
     })
   }
