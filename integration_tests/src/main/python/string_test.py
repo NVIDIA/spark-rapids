@@ -22,7 +22,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_databricks104_or_later
+from spark_session import is_databricks104_or_later, is_before_spark_320
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -430,26 +430,25 @@ def test_replace():
                 'REPLACE(a, NULL, "PROD")',
                 'REPLACE(a, "T", "")'))
 
-# def test_translate():
-#     gen = mk_str_gen('.{0,5}TEST[\ud720 \U0010FFFF A]{0,5}')
-#     assert_gpu_and_cpu_are_equal_collect(
-#             lambda spark: unary_op_df(spark, gen).selectExpr(
-#                 'translate(a, "TEST", "PROD")',
-#                 'translate(a, "TEST", "P")',
-#                 'translate(a, "T\ud720", "PROD")',
-#                 'translate(a, "T\U0010FFFF", "PROD")',
-#                 'translate(a, "", "PROD")',
-#                 'translate(a, NULL, "PROD")',
-#                 'translate(a, "TEST", NULL)',
-#                 'translate("AaBbCc", "abc", "123")',
-#                 'translate("AaBbCc", "abc", "1")'))
-
 def test_translate():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'translate(a, "TEST", "PROD")',
+                'translate(a, "TEST", "P")',
+                'translate(a, "T\ud720", "PROD")',
+                'translate(a, "", "PROD")',
+                'translate(a, NULL, "PROD")',
+                'translate(a, "TEST", NULL)',
+                'translate("AaBbCc", "abc", "123")',
+                'translate("AaBbCc", "abc", "1")'))
+
+@pytest.mark.skipif(is_before_spark_320(), reason="https://issues.apache.org/jira/browse/SPARK-34094")
+def test_translate_spark320_or_later():
     gen = mk_str_gen('.{0,5}TEST[\ud720 \U0010FFFF A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'translate(a, "T\U0010FFFF", "PROD")',
-                'translate(a, "", "PROD")'))
+                'translate(a, "T\U0010FFFF", "PROD")'))
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
