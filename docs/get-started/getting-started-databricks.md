@@ -134,13 +134,16 @@ cluster.
     [`spark.rapids.sql.python.gpu.enabled`](../configs.md#sql.python.gpu.enabled) to `true` to
     enable GPU support for python. Add the path of the plugin jar (supposing it is placed under
     `/databricks/jars/`) to the `spark.executorEnv.PYTHONPATH` option. For more details please go to
-    [GPU Scheduling For Pandas UDF](../additional-functionality/rapids-udfs.md#gpu-scheduling-for-pandas-udf)
+    [GPU Scheduling For Pandas UDF](../additional-functionality/rapids-udfs.md#gpu-support-for-pandas-udf)
 
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
     spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-23.04.0.jar:/databricks/spark/python
     ```
+   Note that since python memory pool require installing the cudf library, so you need to install cudf library in 
+   each worker nodes `pip install cudf-cu11 --extra-index-url=https://pypi.nvidia.com` or disable python memory pool
+   `spark.rapids.python.memory.gpu.pooling.enabled=false`.
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
