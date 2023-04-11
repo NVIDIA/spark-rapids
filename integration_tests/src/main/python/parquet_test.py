@@ -700,7 +700,7 @@ def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
     return bucketed_4_10e4.join(bucketed_4_10e6, "id")
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets

@@ -296,7 +296,7 @@ def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory)
     with_gpu_session(
             lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name))
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
@@ -312,7 +312,7 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
             'DataWritingCommandExec',
             conf=all_confs)
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
@@ -330,7 +330,7 @@ def test_parquet_write_encryption_option_fallback(spark_tmp_path, spark_tmp_tabl
         data_path,
         'DataWritingCommandExec')
 
-@allow_non_gpu("DataWritingCommandExec")
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
@@ -344,7 +344,7 @@ def test_parquet_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_o
         "DataWritingCommandExec",
         conf=write_options)
 
-@allow_non_gpu("DataWritingCommandExec")
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
@@ -367,7 +367,7 @@ def test_parquet_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_op
     finally:
         with_cpu_session(reset_hadoop_confs)
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 # note that others should fail as well but requires you to load the libraries for them
 # 'lzo', 'brotli', 'lz4', 'zstd' should all fallback
 @pytest.mark.parametrize('codec', ['gzip'])
@@ -382,7 +382,7 @@ def test_parquet_write_compression_fallback(spark_tmp_path, codec, spark_tmp_tab
             'DataWritingCommandExec',
             conf=all_confs)
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_factory):
     gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -395,7 +395,7 @@ def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_fact
             conf=all_confs)
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_fallback_write(
@@ -406,7 +406,7 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
 
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_parquet_write_bloom_filter_with_options_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_fallback_write(
@@ -419,7 +419,7 @@ def test_parquet_write_bloom_filter_with_options_cpu_fallback(spark_tmp_path, sp
 
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_parquet_write_bloom_filter_sql_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     base_table_name = spark_tmp_table_factory.get()
