@@ -67,17 +67,20 @@ object GpuHashPartitioningBase extends Arm {
 
   def hashPartitionAndClose(batch: ColumnarBatch, keys: Seq[Expression], numPartitions: Int,
       nvtxName: String, seed: Int = DEFAULT_HASH_SEED): PartitionedTable = {
-    withResource(batch) { batch =>
-      val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
-        withResource(GpuMurmur3Hash.compute(batch, keys, seed)) { hash =>
-          withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
-            hash.pmod(partsLit, DType.INT32)
+    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
+          withResource(GpuMurmur3Hash.compute(cb, keys, seed)) { hash =>
+            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+              hash.pmod(partsLit, DType.INT32)
+            }
           }
         }
-      }
-      withResource(parts) { parts =>
-        withResource(GpuColumnVector.from(batch)) { table =>
-          table.partition(parts, numPartitions)
+        withResource(parts) { parts =>
+          withResource(GpuColumnVector.from(cb)) { table =>
+            table.partition(parts, numPartitions)
+          }
         }
       }
     }

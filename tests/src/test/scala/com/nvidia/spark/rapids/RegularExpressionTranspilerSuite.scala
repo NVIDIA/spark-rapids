@@ -46,11 +46,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         "End of line/string anchor is not supported in this context")
     }
 
-    // The test "AST fuzz test - regexp_replace" hangs if we stop rejecting these patterns
-    for (pattern <- Seq("a^|b", "w$|b", "]*\\wWW$|zb", "(\\A|\\05)?")) {
-      assertUnsupported(pattern, RegexFindMode,
-        "cuDF does not support terms ending with line anchors on one side of a choice")
-    }
   }
 
   test("transpiler detects invalid cuDF patterns") {
@@ -104,14 +99,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition on one side of a choice")
-    )
-  }
-
-  test("cuDF does not support terms ending with line anchors on one side of a choice") {
-    val patterns = Seq(",\u000b\u000b$$|,\u000bz\f", "1|2$$", "a$\\Z|b", "a|b^^")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
-        "cuDF does not support terms ending with line anchors on one side of a choice")
     )
   }
 
@@ -244,10 +231,21 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchors - find") {
-    val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
-        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test")
+    val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
+  }
+
+  test("string anchor on one side of choice") {
+    val patterns = Seq("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "testb", "atest", "testa",
+      "\ntesta", "btesta\n", "\ntestab\n", "testa\r", "btesta\r\n"))
+  }
+
+  test("string anchor on both sides of choice") {
+    val patterns = Seq("a$|b$", "^a|a$", "^a|b$", "\\Aa|a\\Z", "\\Aa|b\\Z")
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "testb", "atest", "testa",
+      "\ntesta", "btesta\n", "\ntestab\n", "testa\r", "btesta\r\n"))
   }
 
   test("string anchor \\A will fall back to CPU in some repetitions") {
@@ -259,15 +257,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchor \\Z fall back to CPU in groups") {
-    val patterns = Seq(raw"(\Z)", raw"(\Z)+")
+    val patterns = Seq(raw"(\Z)a", raw"a(\Z)")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
-        "Sequences that only contain '^' or '$' are not supported")
+        "Line and string anchors are not supported in capture groups")
     )
   }
 
   test("string anchor \\Z fall back to CPU in some repetitions") {
-    val patterns = Seq(raw"a(\Z)*", raw"a(\Z){2,}")
+    val patterns = Seq(raw"a(\Z)+", raw"a(\Z)*", raw"a(\Z){2,}")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, RegexFindMode, 
         "cuDF does not support repetition of group containing: \\Z")
@@ -430,7 +428,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("a\\A+", "a\\A")
     doTranspileTest("a\\A{1,}", "a\\A")
     doTranspileTest("a\\A{2}", "a\\A")
-    doTranspileTest("a(\\A)+", "a(\\A)")
   }
 
   test("transpile \\z") {
@@ -532,37 +529,37 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("line anchor find - unicode line separators 0085") {
     assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
     val inputs = Seq("aTEST\u0085", "aTEST\u0085\n", "aTEST\n\u0085")
-    assertCpuGpuMatchesRegexpFind(Seq("TEST$"), inputs)
+    assertCpuGpuMatchesRegexpFind(Seq("TEST$", "^a|T$"), inputs)
   }
 
   test("line anchor find - unicode line separators 2028") {
     assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
     val inputs = Seq("aTEST\u2028", "aTEST\u2028\n", "aTEST\n\u2028")
-    assertCpuGpuMatchesRegexpFind(Seq("TEST$"), inputs)
+    assertCpuGpuMatchesRegexpFind(Seq("TEST$", "^a|T$"), inputs)
   }
 
   test("line anchor find - unicode line separators 2029") {
     assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
     val inputs = Seq("aTEST\u2029", "aTEST\u2029\n", "aTEST\n\u2029")
-    assertCpuGpuMatchesRegexpFind(Seq("TEST$"), inputs)
+    assertCpuGpuMatchesRegexpFind(Seq("TEST$", "^a|T$"), inputs)
   }
 
   test("line anchor replace - unicode line separators 0085") {
     assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
     val inputs = Seq("aTEST\u0085", "aTEST\u0085\n", "aTEST\n\u0085")
-    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$", "^a|T$"), inputs)
   }
 
   test("line anchor replace - unicode line separators 2028") {
     assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
     val inputs = Seq("aTEST\u2028", "aTEST\u2028\n", "aTEST\n\u2028")
-    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$", "^a|T$"), inputs)
   }
 
   test("line anchor replace - unicode line separators 2029") {
     assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
     val inputs = Seq("aTEST\u2029", "aTEST\u2029\n", "aTEST\n\u2029")
-    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$", "^a|T$"), inputs)
   }
 
   test("cuDF does not support some uses of line anchors in regexp_replace") {

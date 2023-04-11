@@ -589,18 +589,20 @@ object RmmRapidsRetryIterator extends Arm with Logging {
             val splitIx = (tbl.getRowCount / 2).toInt
             withResource(tbl.contiguousSplit(splitIx)) { cts =>
               val tables = cts.map(_.getTable)
-              val batches = tables.safeMap(GpuColumnVector.from(_, spillable.dataTypes))
-              val spillables = batches.safeMap { b =>
-                SpillableColumnarBatch(
-                  b,
-                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              withResource(tables.safeMap(GpuColumnVector.from(_, spillable.dataTypes))) {
+                batches =>
+                  val spillables = batches.safeMap { b =>
+                    SpillableColumnarBatch(
+                      GpuColumnVector.incRefCounts(b),
+                      SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+                  }
+                  closeOnExcept(spillables) { _ =>
+                    require(spillables.length == 2,
+                      s"Contiguous split returned ${spillables.length} tables but two were " +
+                          s"expected!")
+                  }
+                  (spillables.head, spillables.last)
               }
-              closeOnExcept(spillables) { _ =>
-                require(spillables.length == 2,
-                  s"Contiguous split returned ${spillables.length} tables but two were " +
-                      s"expected!")
-              }
-              (spillables.head, spillables.last)
             }
           }
         }

@@ -86,7 +86,7 @@ class DeltaProbeImpl extends DeltaProbe {
   override def getDeltaProvider: DeltaProvider = {
     val cpuClassName = "org.apache.spark.sql.delta.sources.DeltaDataSource"
     val hasDeltaJar = UnshimmedTrampolineUtil.classIsLoadable(cpuClassName) &&
-        Try(ShimLoader.loadClass(cpuClassName)).isSuccess
+        Try(ShimReflectionUtils.loadClass(cpuClassName)).isSuccess
     if (hasDeltaJar) {
       DeltaRuntimeShim.getDeltaProvider
     } else {

@@ -43,7 +43,7 @@ object ExternalSource extends Logging {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
     Utils.classIsLoadable(avroScanClassName) && {
-      Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
+      Try(ShimReflectionUtils.loadClass(avroScanClassName)).map(_ => true)
         .getOrElse {
           logWarning("Avro library not found by the RAPIDS plugin. The Plugin jars are " +
               "likely deployed using a static classpath spark.driver/executor.extraClassPath. " +
@@ -57,7 +57,7 @@ object ExternalSource extends Logging {
 
   private lazy val hasIcebergJar = {
     Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
-        Try(ShimLoader.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
+        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
   }
 
   private lazy val icebergProvider = IcebergProvider()
