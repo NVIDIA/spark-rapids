@@ -1527,23 +1527,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
                + "mode", l.position)
           }
         }
-        else if (mode == RegexReplaceMode) {
-          if (endsWithLineAnchor(ll) && endsWithLineAnchor(rr)) {
-            throw new RegexUnsupportedException(
-              "cuDF does not support both sides of a choice containing a line anchor in replace" +
-              " mode", l.position)
-          }
-          if (endsWithLineAnchor(ll) && beginsWithLineAnchor(rr)) {
-            throw new RegexUnsupportedException(
-              "cuDF does not support both sides of a choice containing a line anchor in replace" +
-              " mode", l.position)
-          }
-          if (beginsWithLineAnchor(ll) && endsWithLineAnchor(rr)) {
-            throw new RegexUnsupportedException(
-              "cuDF does not support both sides of a choice containing a line anchor in replace" +
-              " mode", l.position)
-          }
-        }
 
         // cuDF does not support terms ending with word boundaries on one side
         // of a choice, such as "\\b|a"
@@ -1948,7 +1931,7 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
-    numCaptureGroups: Int = 0) extends RegexAST {
+    var numCaptureGroups: Int = 0) extends RegexAST {
   def this(parts: ListBuffer[RegexAST], numCaptureGroups: Int, position: Int) {
     this(parts, numCaptureGroups)
     this.position = Some(position)
@@ -1957,12 +1940,16 @@ sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
   def appendBackref(num: Int): Unit = {
+    numCaptureGroups += 1
     parts += RegexBackref(num, true)
   }
 
   def popBackref(): Unit = {
     parts.last match {
-      case RegexBackref(_, true) => parts.trimEnd(1)
+      case RegexBackref(_, true) => {
+        numCaptureGroups -= 1
+        parts.trimEnd(1)
+      }
       case _ =>
     }
   }

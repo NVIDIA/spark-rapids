@@ -532,6 +532,7 @@ def test_regexp_choice():
                 'regexp_extract(a, "(ab+|^ab)", 1)',
                 'regexp_extract(a, "(ab*|^ab)", 1)',
                 'regexp_replace(a, "[abcd]$|^abc", "@")',
+                'regexp_replace(a, "[ab]$|[cd]$", "@")',
                 'regexp_replace(a, "[ab]+|^cd1", "@")'
             ),
         conf=_regexp_conf)

@@ -249,26 +249,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchor on either side of choice - regexp_replace") {
-    val patterns = Seq("a$|b", "^a|b", "\\Aa|b")
+    val patterns = Seq("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$", 
+        "^a|b$", "\\Aa|a\\Z", "\\Aa|b\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "testb", "atest", "testa",
       "\ntesta", "btesta\n", "\ntestab\n", "testa\r", "btesta\r\n"))
   }
 
   test("string anchor on either side of choice - fallback to CPU - regexp_split") {
-    val patterns = Set("a$|b", "^a|b", "\\Aa|b")
-    patterns.foreach { pattern => 
-      assertUnsupported(pattern, RegexSplitMode,
-        "cuDF does not support either side of a choice containing a line anchor in split mode")
-    }
-  }
-
-  test("string anchor fallback on both sides of choice - regexp_replace or regexp_split") {
-    val patterns = Set("a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$", 
+    val patterns = Set("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$", 
         "^a|b$", "\\Aa|a\\Z", "\\Aa|b\\Z")
     patterns.foreach { pattern => 
-      assertUnsupported(pattern, RegexReplaceMode,
-        "cuDF does not support both sides of a choice containing a line anchor in replace"
-        + " mode")
       assertUnsupported(pattern, RegexSplitMode,
         "cuDF does not support either side of a choice containing a line anchor in split mode")
     }
@@ -1063,17 +1053,19 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
 
   private def assertUnsupported(pattern: String, mode: RegexMode, message: String): Unit = {
-    val e = withClue(s"Pattern: '$pattern':") {
+    val e = withClue(s"Pattern: '${toReadableString(pattern)}':") {
       intercept[RegexUnsupportedException] {
         transpile(pattern, mode)
       }
     }
     val msg = e.getMessage
     if (!msg.startsWith(message)) {
-      fail(s"Pattern '$pattern': Error was [${e.getMessage}] but expected [$message]'")
+      fail(s"Pattern '${toReadableString(pattern)}': Error was [${e.getMessage}]"
+        + s" but expected [$message]'")
     }
     if(!msg.contains("near index")) {
-      fail(s"Pattern '$pattern': Error was [${e.getMessage}] but does not specify index")
+      fail(s"Pattern '${toReadableString(pattern)}': Error was [${e.getMessage}]"
+        + " but does not specify index")
     }
   }
 
