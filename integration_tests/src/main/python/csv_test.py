@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330, is_spark_340_or_later, is_before_spark_340
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -474,7 +474,19 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
             conf=updated_conf)
 
 @allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.skipif(is_spark_340_or_later(), reason='Plan changes in 340')
 def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
+    gen = TimestampGen()
+    data_path = spark_tmp_path + '/CSV_DATA'
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("csv").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.csv(path),
+            data_path,
+            'DataWritingCommandExec')
+
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='Plan changes in 340')
+def test_csv_save_as_table_fallback_340(spark_tmp_path, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/CSV_DATA'
     assert_gpu_fallback_write(
