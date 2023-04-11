@@ -177,7 +177,7 @@ class ShuffleBufferCatalog(
         // NOTE: Not synchronizing array buffer because this shuffle should be inactive.
         bufferIds.foreach { id =>
           tableMap.remove(id.tableId)
-          bufferIdToHandle.get(id).close()
+          bufferIdToHandle.remove(id).close()
         }
       }
       info.blockMap.forEachValue(Long.MaxValue, bufferRemover)
