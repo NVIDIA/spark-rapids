@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ class GpuKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.rapids.execution.SerializeConcatHostBuffersDeserializeBatch",
       "org.apache.spark.sql.rapids.execution.SerializeBatchDeserializeHostBuffer")
     allClassesToRegister.foreach { classToRegister =>
-      kryo.register(ShimLoader.loadClass(classToRegister), new KryoJavaSerializer())
+      kryo.register(ShimReflectionUtils.loadClass(classToRegister), new KryoJavaSerializer())
     }
   }
 }
