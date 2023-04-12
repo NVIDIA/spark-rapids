@@ -10,7 +10,7 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.3.0 or 3.3.1 of
+The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.3.0, 3.3.1 or 3.3.2 of
 Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
 be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -540,7 +540,7 @@ Below are some troubleshooting tips on GPU query performance issue:
   `spark.sql.files.maxPartitionBytes` and `spark.rapids.sql.concurrentGpuTasks` as these configurations can affect performance of queries significantly.
   Please refer to [Tuning Guide](./tuning-guide.md) for more details.
 
-### Why is Avro library not found by RAPIDS?
+### Why is the Avro library not found by RAPIDS?
 
 If you are getting a warning `Avro library not found by the RAPIDS plugin.` or if you are getting the
 `java.lang.NoClassDefFoundError: org/apache/spark/sql/v2/avro/AvroScan` error, make sure you ran the
