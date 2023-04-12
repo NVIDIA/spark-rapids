@@ -817,6 +817,7 @@ def test_regexp_replace_unicode_support():
             'REGEXP_REPLACE(a, "TEST䤫", "PROD")',
             'REGEXP_REPLACE(a, "TEST[䤫]", "PROD")',
             'REGEXP_REPLACE(a, "TEST.*\\\\d", "PROD")',
+            'REGEXP_REPLACE(a, "TEST[85]*$", "PROD")',
             'REGEXP_REPLACE(a, "TEST.+$", "PROD")',
         ),
         conf=_regexp_conf)
