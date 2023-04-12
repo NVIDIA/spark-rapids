@@ -567,14 +567,14 @@ In the 23.04 release of the accelerator two new exceptions were added to replace
 regular `OutOfMemoryError` that was thrown before when the GPU ran out of memory.
 Originally we used `OutOfMemoryError` like on the CPU thinking that it would help to
 trigger GC in case handles pointing to GPU memory were leaked in the JVM heap. But
-`OutOfMemoryError` is technically a fatal exception and recovering from it, is
+`OutOfMemoryError` is technically a fatal exception and recovering from it is
 not strictly supported. As such Apache Spark treats it as a fatal exception and will
 kill the process that sees this exception. This can result in a lot of tasks
 being rerun if the GPU runs out of memory. These new exceptions prevent that. They
 also provide an indication to various GPU operators that the GPU ran out of memory
 and how that operator might be able to recover. `RetryOOM` indicates that the operator
 should roll back to a known good spot and then wait until the memory allocation
-framework decides that it should be retired. `SplitAndRetryOOM` is used
+framework decides that it should be retried. `SplitAndRetryOOM` is used
 when there is really only one task unblocked and the only way to recover would be to
 roll back to a good spot and try to split the input so that less total GPU memory is
 needed.
