@@ -427,21 +427,23 @@ def test_regexp_extract():
                 'regexp_extract(a, "([0-9]+)", 1)',
                 'regexp_extract(a, "([0-9])([abcd]+)", 1)',
                 'regexp_extract(a, "([0-9])([abcd]+)", 2)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 1)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 2)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 1)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 2)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)',
                 'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)", 3)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)'),
+                'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)$", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)$", 3)'),
         conf=_regexp_conf)
 
 def test_regexp_extract_no_match():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 0)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 1)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 2)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 3)'),
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 0)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 1)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 2)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 3)'),
         conf=_regexp_conf)
 
 # if we determine that the index is out of range we fall back to CPU and let
@@ -680,7 +682,9 @@ def test_rlike():
                 'a rlike "a{2}"',
                 'a rlike "a{1,3}"',
                 'a rlike "a{1,}"',
-                'a rlike "a[bc]d"'),
+                'a rlike "a[bc]d"',
+                'a rlike "a[bc]d"',
+                'a rlike "^[a-d]*$"'),
         conf=_regexp_conf)
 
 def test_rlike_embedded_null():

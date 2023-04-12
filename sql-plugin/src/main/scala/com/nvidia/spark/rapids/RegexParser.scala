@@ -945,8 +945,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
       if ((containsEndAnchor(r1) &&
           (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
         (containsEndAnchor(r2) &&
-          // (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
           (containsNewline(r1) || containsBeginAnchor(r1)))) {
+        throw new RegexUnsupportedException(
+          s"End of line/string anchor is not supported in this context: " +
+            s"${toReadableString(r1.toRegexString)}" +
+            s"${toReadableString(r2.toRegexString)}", r1.position)
+      }
+    }
+
+    def checkEndAnchorContextSplit(r1: RegexAST, r2: RegexAST): Unit = {
+      if ((containsEndAnchor(r1) &&
+          (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
+        (containsEndAnchor(r2) &&
+          (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
         throw new RegexUnsupportedException(
           s"End of line/string anchor is not supported in this context: " +
             s"${toReadableString(r1.toRegexString)}" +
@@ -958,7 +969,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
       regex match {
         case RegexSequence(parts) =>
           for (i <- 1 until parts.length) {
-            checkEndAnchorContext(parts(i - 1), parts(i))
+            if (mode == RegexSplitMode) {
+              checkEndAnchorContextSplit(parts(i - 1), parts(i))
+            } else {
+              checkEndAnchorContext(parts(i - 1), parts(i))
+            }
           }
         case RegexChoice(l, r) =>
           checkUnsupported(l)
@@ -967,7 +982,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexRepetition(ast, _) => checkUnsupported(ast)
         case RegexCharacterClass(_, components) =>
           for (i <- 1 until components.length) {
-            checkEndAnchorContext(components(i - 1), components(i))
+            if (mode == RegexSplitMode) {
+              checkEndAnchorContextSplit(components(i - 1), components(i))
+            } else {
+              checkEndAnchorContext(components(i - 1), components(i))
+            }
           }
         case _ =>
           // ignore

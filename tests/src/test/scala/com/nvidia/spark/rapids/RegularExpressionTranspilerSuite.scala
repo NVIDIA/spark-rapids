@@ -108,6 +108,20 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
+  test("zero-length repetition near line anchor  - regexp_replace") {
+    val patterns = Seq("\\00*[D$3]$", "\\00*[D$3]\\Z", "^([a-z]*)([0-9]*)([a-z]*)$")
+    val inputs = Seq("abcd", "abc012abc", "999abb", "\\00D", "D", "D\n", "\\00D\n\r")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("zero-length repetition near line anchor  - regexp_split") {
+    val patterns = Set("\\00*[D$3]$", "\\00*[D$3]\\Z", "^([a-z]*)([0-9]*)([a-z]*)$")
+    patterns.foreach(pattern => {
+      assertUnsupported(pattern, RegexSplitMode,
+      "End of line/string anchor is not supported in this context")
+    })
+  }
+
   test("cuDF unsupported choice cases") {
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
