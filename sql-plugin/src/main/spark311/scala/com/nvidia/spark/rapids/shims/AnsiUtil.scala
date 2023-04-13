@@ -30,8 +30,8 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf.{ColumnVector, ColumnView}
 import com.nvidia.spark.rapids.GpuCast
 
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
+import org.apache.spark.sql.types.DataType
 
 object AnsiUtil {
 
