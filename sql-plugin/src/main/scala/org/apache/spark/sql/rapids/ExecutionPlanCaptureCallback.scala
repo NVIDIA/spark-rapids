@@ -20,11 +20,12 @@ import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
-import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
+import com.nvidia.spark.rapids.{GpuAlias, PlanShims, PlanUtils}
+import com.nvidia.spark.rapids.shims.AnsiUtil
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
+import org.apache.spark.sql.execution.{CommandResultExec, ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -130,6 +131,15 @@ object ExecutionPlanCaptureCallback {
     assertNotContain(executedPlan, gpuClass)
   }
 
+  def assertContainsAnsiCast(df: DataFrame): Unit = {
+    assert(containsPlanMatching(df.queryExecution.executedPlan,
+      _.expressions.exists {
+        case Alias(e, _) => AnsiUtil.isAnsiCast(e)
+        case GpuAlias(e, _) => AnsiUtil.isAnsiCast(e)
+        case e => AnsiUtil.isAnsiCast(e)
+      }), "Plan does not contain an ansi cast")
+  }
+
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
     !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
         PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
@@ -172,6 +182,29 @@ object ExecutionPlanCaptureCallback {
           .findFirstIn(sparkPlanStringForRegex)
           .nonEmpty
   }.nonEmpty
+
+  private def containsPlanMatching(plan: SparkPlan, f: SparkPlan => Boolean): Boolean = {
+    println(plan.getClass)
+    plan.find {
+      case p if f(p) =>
+        true
+      case p: UnaryExecNode =>
+        containsPlanMatching(p.child, f)
+      case p: AdaptiveSparkPlanExec =>
+        containsPlanMatching(p.executedPlan, f)
+      case p: QueryStageExec =>
+        containsPlanMatching(p.plan, f)
+      case p: ReusedSubqueryExec =>
+        containsPlanMatching(p.child, f)
+      case p: ReusedExchangeExec =>
+        containsPlanMatching(p.child, f)
+      case CommandResultExec(_, child, _) =>
+        containsPlanMatching(child, f)
+      case p =>
+        PlanShims.children(p).exists(plan => containsPlanMatching(plan, f))
+    }.nonEmpty
+  }
+
 }
 
 /**

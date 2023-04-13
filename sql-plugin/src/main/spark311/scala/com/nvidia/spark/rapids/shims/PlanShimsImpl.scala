@@ -27,4 +27,5 @@ import org.apache.spark.sql.execution.SparkPlan
 
 class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
+  def children(plan: SparkPlan): Seq[SparkPlan] = plan.children
 }

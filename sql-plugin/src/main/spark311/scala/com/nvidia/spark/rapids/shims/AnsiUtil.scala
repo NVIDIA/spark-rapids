@@ -30,6 +30,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf.{ColumnVector, ColumnView}
 
 import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Expression}
 
 object AnsiUtil {
 
@@ -39,4 +40,6 @@ object AnsiUtil {
   def castFloatToTimestampAnsi(floatInput: ColumnView, toType: DataType): ColumnVector = {
     throw new IllegalArgumentException("Unsupported operation in this Shim")
   }
+
+  def isAnsiCast(e: Expression): Boolean = e.isInstanceOf[AnsiCast]
 }

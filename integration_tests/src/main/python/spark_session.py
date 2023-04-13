@@ -221,3 +221,6 @@ def is_hive_available():
     if is_at_least_precommit_run():
         return True
     return _spark.conf.get("spark.sql.catalogImplementation") == "hive"
+
+def explain_string(df, type):
+    return df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), type)

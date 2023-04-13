@@ -15,18 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -39,5 +28,9 @@ class PlanShimsImpl extends PlanShims {
     case p: CommandResultExec => p.commandPhysicalPlan
     case _ => plan
   }
-  def children(plan: SparkPlan): Seq[SparkPlan] = plan.children
+
+  def children(plan: SparkPlan): Seq[SparkPlan] = plan match {
+    case p: GpuWriteFiles => Seq(p.child)
+    case _ => plan.children
+  }
 }

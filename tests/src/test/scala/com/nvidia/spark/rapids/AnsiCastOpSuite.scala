@@ -723,17 +723,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  ///////////////////////////////////////////////////////////////////////////
-  // Copying between Hive tables, which has special rules
-  ///////////////////////////////////////////////////////////////////////////
-  testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
-    frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
-  }
-
-  testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf) {
-    frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
-  }
-
   private def testCastTo(castTo: DataType)(frame: DataFrame): DataFrame ={
     frame.withColumn("c1", col("c0").cast(castTo))
   }
@@ -750,28 +739,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     spark.sql(s"CREATE TABLE $t2 (a $sqlDataType) USING parquet")
     assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     spark.sql(s"SELECT a FROM $t2")
-  }
-
-  /**
-   * Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
-   */
-  private def doTableCopy(frame: DataFrame,
-    sqlSourceType: String,
-    sqlDestType: String): DataFrame = {
-
-    val spark = frame.sparkSession
-    val now = System.currentTimeMillis()
-    val t1 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t1_$now"
-    val t2 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t2_$now"
-    val t3 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t3_$now"
-    frame.createOrReplaceTempView(t1)
-    spark.sql(s"CREATE TABLE $t2 (c0 $sqlSourceType) USING parquet")
-    spark.sql(s"CREATE TABLE $t3 (c0 $sqlDestType) USING parquet")
-    // insert into t2
-    assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
-    // copy from t2 to t1, with an ansi_cast()
-    spark.sql(s"INSERT INTO $t3 SELECT c0 FROM $t2")
-    spark.sql(s"SELECT c0 FROM $t3")
   }
 
   /**

@@ -15,19 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuColumnVector}
+import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuCast, GpuColumnVector}
 
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, EvalMode, Expression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.DataType
@@ -53,7 +48,7 @@ object AnsiUtil extends Arm {
 
   private def castDoubleToTimestampAnsi(doubleInput: ColumnView, toType: DataType): ColumnVector = {
     val msg = s"The column contains out-of-range values. To return NULL instead, use " +
-        s"'try_cast'. If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
+      s"'try_cast'. If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
 
     def throwSparkDateTimeException(infOrNan: String): Unit = {
       throw RapidsErrorUtils.sparkDateTimeException(infOrNan)
@@ -108,11 +103,15 @@ object AnsiUtil extends Arm {
         }
 
         withResource(mul.castTo(DType.INT64)) { inputTimesMicrosCv =>
-            inputTimesMicrosCv.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
+          inputTimesMicrosCv.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
         }
       }
     }
   }
 
-  def isAnsiCast(e: Expression): Boolean = e.isInstanceOf[AnsiCast]
+  def isAnsiCast(e: Expression): Boolean = e match {
+    case c: GpuCast => c.ansiMode
+    case c: Cast => c.evalMode == EvalMode.ANSI
+    case _ => false
+  }
 }

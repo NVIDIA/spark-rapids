@@ -20,6 +20,7 @@ import org.apache.spark.sql.execution.SparkPlan
 
 trait PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
+  def children(plan: SparkPlan): Seq[SparkPlan]
 }
 
 object PlanShims {
@@ -27,5 +28,9 @@ object PlanShims {
 
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = {
     shims.extractExecutedPlan(plan)
+  }
+
+  def children(plan: SparkPlan): Seq[SparkPlan] = {
+    shims.children(plan)
   }
 }
