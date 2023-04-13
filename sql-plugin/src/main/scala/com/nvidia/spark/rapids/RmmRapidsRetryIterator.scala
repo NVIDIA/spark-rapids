@@ -355,8 +355,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
     override def hasNext: Boolean = !wasCalledSuccessfully
 
     override def split(): Unit = {
-      throw new SplitAndRetryOOM(
-        "Attempted to handle a split, but was not initialized with a splitPolicy.")
+      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
     }
 
     override def next(): K = {
@@ -407,8 +406,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        throw new SplitAndRetryOOM(
-          "Attempted to handle a split, but was not initialized with a splitPolicy.")
+        throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
       }
       // splitPolicy must take ownership of the argument
       val splitted = splitPolicy(attemptStack.pop())
@@ -582,7 +580,8 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {
-          throw new SplitAndRetryOOM(s"A batch of $toSplitRows cannot be split!")
+          throw new SplitAndRetryOOM(
+            s"GPU OutOfMemory: a batch of $toSplitRows cannot be split!")
         }
         val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
           withResource(GpuColumnVector.from(src)) { tbl =>
