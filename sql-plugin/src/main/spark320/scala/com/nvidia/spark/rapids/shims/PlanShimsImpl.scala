@@ -27,6 +27,7 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -38,10 +39,5 @@ class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
     case p: CommandResultExec => p.commandPhysicalPlan
     case _ => plan
-  }
-
-  def children(plan: SparkPlan): Seq[SparkPlan] = plan match {
-    case p: CommandResultExec => Seq(p.commandPhysicalPlan)
-    case _ => plan.children
   }
 }

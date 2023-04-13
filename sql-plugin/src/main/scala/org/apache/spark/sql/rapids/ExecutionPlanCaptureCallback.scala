@@ -132,7 +132,9 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContainsAnsiCast(df: DataFrame): Unit = {
-    assert(containsPlanMatching(df.queryExecution.executedPlan,
+    val executedPlan = ExecutionPlanCaptureCallback
+      .extractExecutedPlan(df.queryExecution.executedPlan)
+    assert(containsPlanMatching(executedPlan,
       _.expressions.exists {
         case Alias(e, _) => AnsiUtil.isAnsiCast(e)
         case GpuAlias(e, _) => AnsiUtil.isAnsiCast(e)
@@ -197,7 +199,7 @@ object ExecutionPlanCaptureCallback {
     case p: ReusedExchangeExec =>
       containsPlanMatching(p.child, f)
     case p =>
-      PlanShims.children(p).exists(plan => containsPlanMatching(plan, f))
+      p.children.exists(plan => containsPlanMatching(plan, f))
   }.nonEmpty
 
 }
