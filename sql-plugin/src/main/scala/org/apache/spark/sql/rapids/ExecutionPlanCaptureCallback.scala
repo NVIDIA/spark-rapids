@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.AnsiUtil
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
-import org.apache.spark.sql.execution.{CommandResultExec, ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -132,6 +132,9 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContainsAnsiCast(df: DataFrame): Unit = {
+
+    println(df.queryExecution.executedPlan)
+
     assert(containsPlanMatching(df.queryExecution.executedPlan,
       _.expressions.exists {
         case Alias(e, _) => AnsiUtil.isAnsiCast(e)
@@ -198,8 +201,6 @@ object ExecutionPlanCaptureCallback {
         containsPlanMatching(p.child, f)
       case p: ReusedExchangeExec =>
         containsPlanMatching(p.child, f)
-      case CommandResultExec(_, child, _) =>
-        containsPlanMatching(child, f)
       case p =>
         PlanShims.children(p).exists(plan => containsPlanMatching(plan, f))
     }.nonEmpty

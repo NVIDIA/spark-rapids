@@ -25,9 +25,9 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuColumnVector}
+import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuCast, GpuColumnVector}
 
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Expression}
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.DataType
@@ -114,5 +114,17 @@ object AnsiUtil extends Arm {
     }
   }
 
-  def isAnsiCast(e: Expression): Boolean = e.isInstanceOf[AnsiCast]
+  def isAnsiCast(e: Expression): Boolean = {
+    val x = e match {
+      case c: GpuCast => c.ansiMode
+      case _: AnsiCast => true
+      case _: Cast =>
+        val m = e.getClass.getDeclaredField("ansiEnabled")
+        m.setAccessible(true)
+        m.getBoolean(e)
+      case _ => false
+    }
+    println(s"isAnsiCast $e => $x")
+    x
+  }
 }
