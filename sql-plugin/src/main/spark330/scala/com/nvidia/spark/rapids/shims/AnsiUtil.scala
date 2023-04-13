@@ -114,17 +114,13 @@ object AnsiUtil extends Arm {
     }
   }
 
-  def isAnsiCast(e: Expression): Boolean = {
-    val x = e match {
-      case c: GpuCast => c.ansiMode
-      case _: AnsiCast => true
-      case _: Cast =>
-        val m = e.getClass.getDeclaredField("ansiEnabled")
-        m.setAccessible(true)
-        m.getBoolean(e)
-      case _ => false
-    }
-    println(s"isAnsiCast $e => $x")
-    x
+  def isAnsiCast(e: Expression): Boolean = e match {
+    case c: GpuCast => c.ansiMode
+    case _: AnsiCast => true
+    case _: Cast =>
+      val m = e.getClass.getDeclaredField("ansiEnabled")
+      m.setAccessible(true)
+      m.getBoolean(e)
+    case _ => false
   }
 }

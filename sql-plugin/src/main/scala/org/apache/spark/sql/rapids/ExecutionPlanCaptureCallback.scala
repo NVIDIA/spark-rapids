@@ -132,9 +132,6 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContainsAnsiCast(df: DataFrame): Unit = {
-
-    println(df.queryExecution.executedPlan)
-
     assert(containsPlanMatching(df.queryExecution.executedPlan,
       _.expressions.exists {
         case Alias(e, _) => AnsiUtil.isAnsiCast(e)
@@ -186,25 +183,22 @@ object ExecutionPlanCaptureCallback {
           .nonEmpty
   }.nonEmpty
 
-  private def containsPlanMatching(plan: SparkPlan, f: SparkPlan => Boolean): Boolean = {
-    println(plan.getClass)
-    plan.find {
-      case p if f(p) =>
-        true
-      case p: UnaryExecNode =>
-        containsPlanMatching(p.child, f)
-      case p: AdaptiveSparkPlanExec =>
-        containsPlanMatching(p.executedPlan, f)
-      case p: QueryStageExec =>
-        containsPlanMatching(p.plan, f)
-      case p: ReusedSubqueryExec =>
-        containsPlanMatching(p.child, f)
-      case p: ReusedExchangeExec =>
-        containsPlanMatching(p.child, f)
-      case p =>
-        PlanShims.children(p).exists(plan => containsPlanMatching(plan, f))
-    }.nonEmpty
-  }
+  private def containsPlanMatching(plan: SparkPlan, f: SparkPlan => Boolean): Boolean = plan.find {
+    case p if f(p) =>
+      true
+    case p: UnaryExecNode =>
+      containsPlanMatching(p.child, f)
+    case p: AdaptiveSparkPlanExec =>
+      containsPlanMatching(p.executedPlan, f)
+    case p: QueryStageExec =>
+      containsPlanMatching(p.plan, f)
+    case p: ReusedSubqueryExec =>
+      containsPlanMatching(p.child, f)
+    case p: ReusedExchangeExec =>
+      containsPlanMatching(p.child, f)
+    case p =>
+      PlanShims.children(p).exists(plan => containsPlanMatching(plan, f))
+  }.nonEmpty
 
 }
 
