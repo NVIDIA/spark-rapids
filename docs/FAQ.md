@@ -588,6 +588,24 @@ a way to split their usage, things like window operations over some large window
 If tuning does not fix the problem please file an issue to help us understand what
 operators may need better out of core algorithm support.
 
+### Encryption Support
+
+The RAPIDS Accelerator for Apache Spark has several components that may or may not follow
+the encryption configurations that Apache Spark provides. The following documents the 
+exceptions that are known at the time of writing this FAQ entry:
+
+Local storage encryption (`spark.io.encryption.enabled`) is not supported for spilled buffers that the 
+plugin uses to help with GPU out-of-memory situations. The RAPIDS Shuffle Manager does not implement 
+local storage encryption for shuffle blocks when configured for UCX, but it does when configured in 
+MULTITHREADED mode.
+
+Network encryption (`spark.network.crypto.enabled`) is not supported in the RAPIDS Shuffle Manager
+when configured for UCX, but it is supported when configured in MULTITHREADED mode.
+
+If your environment has specific encryption requirements for network or IO, please make sure
+that the RAPIDS Accelerator suits your needs, and file and issue or discussion if you have doubts
+or would like expanded encryption support.
+
 ### I have more questions, where do I go?
 We use github to track bugs, feature requests, and answer questions. File an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
