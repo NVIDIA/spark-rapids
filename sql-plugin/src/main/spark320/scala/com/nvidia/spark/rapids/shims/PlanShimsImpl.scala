@@ -39,6 +39,7 @@ class PlanShimsImpl extends PlanShims {
     case p: CommandResultExec => p.commandPhysicalPlan
     case _ => plan
   }
+
   def children(plan: SparkPlan): Seq[SparkPlan] = plan match {
     case p: CommandResultExec => Seq(p.commandPhysicalPlan)
     case _ => plan.children
