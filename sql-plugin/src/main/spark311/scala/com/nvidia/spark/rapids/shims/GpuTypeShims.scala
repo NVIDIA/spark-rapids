@@ -137,6 +137,8 @@ object GpuTypeShims {
 
   def additionalTypesBooleanCanCastTo: TypeSig = TypeSig.TIMESTAMP
 
+  def additionalTypesDateCanCastTo:TypeSig = TypeSig.BOOLEAN + TypeSig.integral + TypeSig.fp
+
   def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.none
 
   def additionalTypesStringCanCastTo: TypeSig = TypeSig.none

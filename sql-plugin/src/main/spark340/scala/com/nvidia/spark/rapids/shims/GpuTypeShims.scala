@@ -228,6 +228,12 @@ object GpuTypeShims {
     TypeSig.TIMESTAMP
   }
 
+  def additionalTypesDateCanCastTo:TypeSig = if (SQLConf.get.ansiEnabled) {
+    TypeSig.none
+  } else {
+    TypeSig.BOOLEAN
+  }
+
   def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.YEARMONTH + TypeSig.DAYTIME
 
   def additionalTypesStringCanCastTo: TypeSig = TypeSig.DAYTIME

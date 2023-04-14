@@ -1364,8 +1364,10 @@ class CastChecks extends ExprChecks {
       .withPsNote(TypeEnum.STRING, fpToStringPsNote)
   val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
-  val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkDateSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  def dateChecks: TypeSig = TIMESTAMP + DATE + STRING +
+    GpuTypeShims.additionalTypesDateCanCastTo
+  def sparkDateSig: TypeSig = DECIMAL_128 + TIMESTAMP + DATE + STRING +
+    GpuTypeShims.additionalTypesDateCanCastTo
 
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
   val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
