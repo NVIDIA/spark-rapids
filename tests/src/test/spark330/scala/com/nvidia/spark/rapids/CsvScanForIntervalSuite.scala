@@ -25,7 +25,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.shims.GpuIntervalUtils
-import com.nvidis.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types.{DayTimeIntervalType, StructField, StructType}
