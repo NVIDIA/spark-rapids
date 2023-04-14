@@ -1,30 +1,17 @@
 # Change log
-Generated on 2023-04-13
+Generated on 2023-04-14
 
 ## Release 23.04
 
 ### Features
 |||
 |:---|:---|
-|[#7992](https://github.com/NVIDIA/spark-rapids/issues/7992)|[Audit][SPARK-40819][SQL][3.3] Timestamp nanos behaviour regression (parquet reader)|
 |[#7985](https://github.com/NVIDIA/spark-rapids/issues/7985)|[FEA] Expose Alluxio master URL to support K8s Env|
-|[#7960](https://github.com/NVIDIA/spark-rapids/issues/7960)|[FEA] Don't Throw OutOfMemoryError in retry iterator|
 |[#7880](https://github.com/NVIDIA/spark-rapids/issues/7880)|[FEA] retry framework task level metrics|
 |[#7394](https://github.com/NVIDIA/spark-rapids/issues/7394)|[FEA] Support Delta Lake auto compaction|
-|[#7943](https://github.com/NVIDIA/spark-rapids/issues/7943)|[FEA] Add an onRetry option to withRetryNoSplit|
-|[#7920](https://github.com/NVIDIA/spark-rapids/issues/7920)|[FEA] Remove SpillCallback and executor level spill metrics|
-|[#7886](https://github.com/NVIDIA/spark-rapids/issues/7886)|Make the read batches spillable if they are on GPU in `BatchTypeSizeAwareIterator`.|
-|[#7893](https://github.com/NVIDIA/spark-rapids/issues/7893)|[FEA] data types not related to time still fallback if Timezone is not UTC|
-|[#7777](https://github.com/NVIDIA/spark-rapids/issues/7777)|[FEA] Use Retry Framework in GpuCoalesceBatches for RetryOOM only|
 |[#7463](https://github.com/NVIDIA/spark-rapids/issues/7463)|[FEA] Drop support for Databricks-9.1 ML LTS|
 |[#7253](https://github.com/NVIDIA/spark-rapids/issues/7253)|[FEA] Implement OOM retry framework|
-|[#7254](https://github.com/NVIDIA/spark-rapids/issues/7254)|[FEA] Update GpuWindowExec to use OOM retry framework|
-|[#7256](https://github.com/NVIDIA/spark-rapids/issues/7256)|[FEA] Update GpuHashAggregate to use OOM retry framework|
 |[#7042](https://github.com/NVIDIA/spark-rapids/issues/7042)|[FEA] Add support in the tools event parsing for ML functions, libraries, and expressions|
-|[#7518](https://github.com/NVIDIA/spark-rapids/issues/7518)|[FEA] Switch to nested JSON reader|
-|[#7295](https://github.com/NVIDIA/spark-rapids/issues/7295)|[FEA] switch APIs to regex_program|
-|[#7783](https://github.com/NVIDIA/spark-rapids/issues/7783)|[FEA] Spark 3.3.2 is released, update things to be supported|
-|[#7441](https://github.com/NVIDIA/spark-rapids/issues/7441)|[FEA] Support WriteFilesExec in Spark-3.4 to fix several tests.|
 
 ### Performance
 |||
@@ -94,14 +81,22 @@ Generated on 2023-04-13
 ### PRs
 |||
 |:---|:---|
+|[#8100](https://github.com/NVIDIA/spark-rapids/pull/8100)|Update/improve EMR getting started documentation [skip ci]|
+|[#8101](https://github.com/NVIDIA/spark-rapids/pull/8101)|Improve OOM exception messages|
+|[#8087](https://github.com/NVIDIA/spark-rapids/pull/8087)|Add an FAQ entry on encryption support [skip ci]|
+|[#8076](https://github.com/NVIDIA/spark-rapids/pull/8076)|Add in docs about RetryOOM [skip ci]|
 |[#8077](https://github.com/NVIDIA/spark-rapids/pull/8077)|Temporarily skip `test_parquet_read_nano_as_longs_31x` on dataproc|
+|[#8071](https://github.com/NVIDIA/spark-rapids/pull/8071)|Fix error in deploy script [skip ci]|
+|[#8070](https://github.com/NVIDIA/spark-rapids/pull/8070)|Fixes closed RapidsShuffleHandleImpl leak in ShuffleBufferCatalog|
 |[#8069](https://github.com/NVIDIA/spark-rapids/pull/8069)|Fix loading extra jar|
 |[#8044](https://github.com/NVIDIA/spark-rapids/pull/8044)|Fall back to CPU if  `spark.sql.legacy.parquet.nanosAsLong` is set|
 |[#8049](https://github.com/NVIDIA/spark-rapids/pull/8049)|[DOC] Adding user tool info to main qualification docs page [skip ci]|
+|[#8040](https://github.com/NVIDIA/spark-rapids/pull/8040)|Fix device vector leak in RmmRetryIterator.splitSpillableInHalfByRows|
 |[#8031](https://github.com/NVIDIA/spark-rapids/pull/8031)|Fix regexp_replace integration test that should fallback when unicode is disabled|
 |[#7828](https://github.com/NVIDIA/spark-rapids/pull/7828)|Fallback to arena allocator if RMM failed to initialize with async allocator|
 |[#8006](https://github.com/NVIDIA/spark-rapids/pull/8006)|Handle caused-by retry exceptions in withRestoreOnRetry|
 |[#8013](https://github.com/NVIDIA/spark-rapids/pull/8013)|[Doc] Adding user tools info into EMR getting started guide [skip ci]|
+|[#8007](https://github.com/NVIDIA/spark-rapids/pull/8007)|Fix leak where RapidsShuffleIterator for a completed task was kept alive|
 |[#8010](https://github.com/NVIDIA/spark-rapids/pull/8010)|Specify that UCX should be 1.12.1 only [skip ci]|
 |[#7967](https://github.com/NVIDIA/spark-rapids/pull/7967)|Transpile simple choice-type regular expressions into lists of choices to use with string replace multi|
 |[#7902](https://github.com/NVIDIA/spark-rapids/pull/7902)|Add oom retry handling for createGatherer in gpu hash joins|
@@ -151,12 +146,15 @@ Generated on 2023-04-13
 |[#7860](https://github.com/NVIDIA/spark-rapids/pull/7860)|Enable manual copy-and-paste code detection [skip ci]|
 |[#7852](https://github.com/NVIDIA/spark-rapids/pull/7852)|Use withRetry in GpuCoalesceBatches|
 |[#7857](https://github.com/NVIDIA/spark-rapids/pull/7857)|Unshim getSparkShimVersion|
+|[#7854](https://github.com/NVIDIA/spark-rapids/pull/7854)|Optimize `regexp_extract*` by transpiling capture groups to non-capturing groups so that only the required capturing group is manifested|
 |[#7853](https://github.com/NVIDIA/spark-rapids/pull/7853)|Remove support for Databricks-9.1 ML LTS|
 |[#7856](https://github.com/NVIDIA/spark-rapids/pull/7856)|Update references to reduced dependencies pom [skip ci]|
 |[#7848](https://github.com/NVIDIA/spark-rapids/pull/7848)|Initialize only sql-plugin  to prevent missing submodule artifacts in buildall [skip ci]|
+|[#7839](https://github.com/NVIDIA/spark-rapids/pull/7839)|Add reduced pom to dist jar in the packaging phase|
 |[#7822](https://github.com/NVIDIA/spark-rapids/pull/7822)|Add in support for OOM retry|
 |[#7846](https://github.com/NVIDIA/spark-rapids/pull/7846)|Stop releasing semaphore in GpuUserDefinedFunction|
 |[#7840](https://github.com/NVIDIA/spark-rapids/pull/7840)|Execute mvn initialize before parallel build [skip ci]|
+|[#7222](https://github.com/NVIDIA/spark-rapids/pull/7222)|Automatic conversion to shimplified directory structure|
 |[#7824](https://github.com/NVIDIA/spark-rapids/pull/7824)|Use withRetryNoSplit in BasicWindowCalc|
 |[#7842](https://github.com/NVIDIA/spark-rapids/pull/7842)|Try fix broken blackduck scan [skip ci]|
 |[#7841](https://github.com/NVIDIA/spark-rapids/pull/7841)|Hardcode scan projects [skip ci]|
@@ -171,7 +169,9 @@ Generated on 2023-04-13
 |[#7791](https://github.com/NVIDIA/spark-rapids/pull/7791)|Doc changes for new nested JSON reader [skip ci]|
 |[#7797](https://github.com/NVIDIA/spark-rapids/pull/7797)|Add GPU support for EphemeralSubstring|
 |[#7561](https://github.com/NVIDIA/spark-rapids/pull/7561)|Ant task to automatically convert to a simple shim layout|
+|[#7789](https://github.com/NVIDIA/spark-rapids/pull/7789)|Update script for integration tests on Databricks|
 |[#7798](https://github.com/NVIDIA/spark-rapids/pull/7798)|Do not error out DB IT test script when pytest code 5 [skip ci]|
+|[#7787](https://github.com/NVIDIA/spark-rapids/pull/7787)|Document a workaround to RuntimeException 'boom' [skip ci]|
 |[#7786](https://github.com/NVIDIA/spark-rapids/pull/7786)|Fix nested loop joins when there's no build-side columns|
 |[#7730](https://github.com/NVIDIA/spark-rapids/pull/7730)|[FEA] Switch to `regex_program` APIs|
 |[#7788](https://github.com/NVIDIA/spark-rapids/pull/7788)|Support released spark 3.3.2|
@@ -188,14 +188,18 @@ Generated on 2023-04-13
 |[#7746](https://github.com/NVIDIA/spark-rapids/pull/7746)|Merge branch-23.02 into branch-23.04 [skip ci]|
 |[#7740](https://github.com/NVIDIA/spark-rapids/pull/7740)|Revert 7737 workaround for cudf setup in databricks 11.3 runtime [skip ci]|
 |[#7737](https://github.com/NVIDIA/spark-rapids/pull/7737)|Workaround for cudf setup in databricks 11.3 runtime|
+|[#7734](https://github.com/NVIDIA/spark-rapids/pull/7734)|Temporarily skip the test_parquet_read_ignore_missing on Databricks|
+|[#7728](https://github.com/NVIDIA/spark-rapids/pull/7728)|Fix estimatedNumBatches in case of OOM for Full Outer Join|
 |[#7718](https://github.com/NVIDIA/spark-rapids/pull/7718)|GpuParquetScan fails with NullPointerException during combining|
 |[#7712](https://github.com/NVIDIA/spark-rapids/pull/7712)|Enable Dynamic FIle Pruning on|
 |[#7702](https://github.com/NVIDIA/spark-rapids/pull/7702)|Merge 23.02 into 23.04|
+|[#7572](https://github.com/NVIDIA/spark-rapids/pull/7572)|Enables spillable/unspillable state for RapidsBuffer and allow buffer sharing|
 |[#7687](https://github.com/NVIDIA/spark-rapids/pull/7687)|Fix window tests for Spark-3.4|
 |[#7667](https://github.com/NVIDIA/spark-rapids/pull/7667)|Reenable tests originally bypassed for 3.4|
 |[#7542](https://github.com/NVIDIA/spark-rapids/pull/7542)|Support WriteFilesExec in Spark-3.4 to fix several tests|
 |[#7673](https://github.com/NVIDIA/spark-rapids/pull/7673)|Add missing spark shim test suites |
 |[#7655](https://github.com/NVIDIA/spark-rapids/pull/7655)|Fix Spark 3.4 build|
+|[#7621](https://github.com/NVIDIA/spark-rapids/pull/7621)|Document GNU sed for macOS auto-copyrighter users [skip ci]|
 |[#7618](https://github.com/NVIDIA/spark-rapids/pull/7618)|Update JNI to 23.04.0-SNAPSHOT and update new delta-stub ver to 23.04|
 |[#7541](https://github.com/NVIDIA/spark-rapids/pull/7541)|Init version 23.04.0-SNAPSHOT|
 
