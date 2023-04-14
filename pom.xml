@@ -587,7 +587,7 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>23.04.0</spark-rapids-jni.version>
-        <rapids-4-spark-private.version>23.04.0</rapids-4-spark-private.version>
+        <spark-rapids-private.version>23.04.0</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
