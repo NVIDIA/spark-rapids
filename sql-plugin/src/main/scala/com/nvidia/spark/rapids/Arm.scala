@@ -162,7 +162,7 @@ trait Arm {
  * Use the utils as static methods will be better in some places. e.g. in a SparkPlan,
  * it can avoid serializing the whole plan.
  */
-object Arm extends Arm {}
+object Arm extends Arm
 
 class CloseableHolder[T <: AutoCloseable](var t: T) {
   def setAndCloseOld(newT: T): Unit = {
