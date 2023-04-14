@@ -21,6 +21,7 @@ package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
