@@ -125,6 +125,16 @@ spark.rapids.sql.command.DeleteCommandEdge=true on Databricks platforms.
 Deleting data from Delta Lake tables via the SQL `DELETE FROM` statement or via the DeltaTable
 `delete` API is supported.
 
+### num_affected_rows Difference with Databricks
+
+The Delta Lake delete command returns a single row result with a `num_affected_rows` column.
+When entire partition files in the table are deleted, the open source Delta Lake and RAPIDS
+Acclerator implementations of delete can return -1 for `num_affected_rows` since it could be
+expensive to open the files and produce an accurate row count. Databricks changed the behavior
+of delete operations that delete entire partition files to return the actual row count.
+This is only a difference in the statistics of the operation, and the table contents will still
+be accurately deleted with the RAPIDS Accelerator.
+
 ## Update Operations on Delta Lake Tables
 
 Delta Lake update acceleration is experimental and is disabled by default. To enable acceleration
