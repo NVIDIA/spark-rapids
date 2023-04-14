@@ -1369,8 +1369,10 @@ class CastChecks extends ExprChecks {
   def sparkDateSig: TypeSig = DECIMAL_128 + TIMESTAMP + DATE + STRING +
     GpuTypeShims.additionalTypesDateCanCastTo
 
-  val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkTimestampSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  def timestampChecks: TypeSig = integral + fp + TIMESTAMP + DATE + STRING +
+    GpuTypeShims.additionalTypesTimestampCanCastTo
+  def sparkTimestampSig: TypeSig = cpuNumeric + TIMESTAMP + DATE + STRING +
+    GpuTypeShims.additionalTypesTimestampCanCastTo
 
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
       BINARY + GpuTypeShims.additionalTypesStringCanCastTo
