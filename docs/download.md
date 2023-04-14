@@ -69,7 +69,7 @@ New functionality and performance improvements for this release include:
 * Optimize the transpilation in `regexp_extract` function
 * Support Delta Lake write with auto-optimization and auto-compaction on Databricks platforms
 * Qualification and Profiling tool:
-  * Add support to recommend cluster shape options on CSPs
+  * Add support to recommend cluster shape options on Dataproc and EMR
   * Add support for Databricks local mode with cost savings based on cluster metadata
   * Add TCO calculator to estimate annualized cost savings, including estimated frequency for applications
   * Add support in the qualification tool to generate estimated speed-up for ML functionality in Spark applications
