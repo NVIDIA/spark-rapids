@@ -14,7 +14,7 @@ applications using ML libraries with Spark DataFrame APIs.  Examples
 of such libraries include the original [Apache Spark
 MLlib](https://spark.apache.org/mllib/),
 [XGBoost](https://xgboost.readthedocs.io/en/stable/), [Spark RAPIDS ML](https://nvidia.github.io/spark-rapids-ml/), 
-and the [DL inference UDF function](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.ml.functions.predict_batch_udf.html#pyspark.ml.functions.predict_batch_udf)
+and the [DL inference UDF function](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.ml.functions.predict_batch_udf.html)
 introduced in Spark 3.4.   The latter three also enable leveraging
 GPUs (in the case of the DL inference UDF, indirectly via the
 underlying DL framework) to accelerate the core ML algorithms, and
@@ -81,7 +81,7 @@ val maxValue = rdd.map(table => {
 Both the Scala Spark PCA
 [implementation](https://github.com/NVIDIA/spark-rapids-ml/blob/ab575bc46e55f38ee52906b3c3b55b75f2418459/jvm/src/main/scala/org/apache/spark/ml/linalg/distributed/RapidsRowMatrix.scala)
 in Spark RAPIDS ML and XGBoost’s [GPU accelerated Scala SparkAPI](https://github.com/dmlc/xgboost/blob/f1e9bbcee52159d4bd5f7d25ef539777ceac147c/jvm-packages/xgboost4j-spark-gpu/src/main/scala/ml/dmlc/xgboost4j/scala/rapids/spark/GpuPreXGBoost.scala)
-leverage ColumnarRdd to accelerate data transfer between the RAPIDS
+leverage ColumnarRdd (search for ColumnarRdd in these files) to accelerate data transfer between the RAPIDS
 Accelerator for Apache Spark and the respective core ML algorithm
 computations.   XGBoost in particular enables this when detecting that
 the RAPIDS Accelerator for Apache Spark is present and enabled.
