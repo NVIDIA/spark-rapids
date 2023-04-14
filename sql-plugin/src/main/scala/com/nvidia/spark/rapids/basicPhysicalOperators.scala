@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims._
@@ -65,7 +66,7 @@ class GpuProjectExecMeta(
   }
 }
 
-object GpuProjectExec extends Arm {
+object GpuProjectExec {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
       opTime: GpuMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)
@@ -333,7 +334,7 @@ case class GpuProjectAstExec(
  *   Input columns for tier 3: a, c, e, f, ref2, ref3
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
- case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) extends Arm {
+ case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
 
   /**
    * Is everything deterministic. This can help with reliability in the common case.
@@ -403,7 +404,7 @@ case class GpuProjectAstExec(
 /**
  * Run a filter on a batch.  The batch will be consumed.
  */
-object GpuFilter extends Arm {
+object GpuFilter {
   def apply(
       batch: ColumnarBatch,
       boundCondition: Expression,

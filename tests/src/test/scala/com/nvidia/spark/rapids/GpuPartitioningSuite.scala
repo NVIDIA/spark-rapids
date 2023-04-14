@@ -20,6 +20,7 @@ import java.io.File
 import java.math.RoundingMode
 
 import ai.rapids.cudf.{ColumnVector, Cuda, DType, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -28,7 +29,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuPartitioningSuite extends FunSuite with Arm {
+class GpuPartitioningSuite extends FunSuite {
   var rapidsConf = new RapidsConf(Map[String, String]())
 
   private def buildBatch(): ColumnarBatch = {

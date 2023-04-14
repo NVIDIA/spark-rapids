@@ -26,6 +26,7 @@ import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 
@@ -241,7 +242,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     numWriterThreads: Int)
       extends ShuffleWriter[K, V]
         with RapidsShuffleWriterShimHelper
-        with Arm
         with Logging {
   private var myMapStatus: Option[MapStatus] = None
   private val metrics = handle.metrics
@@ -517,7 +517,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     mapOutputTracker: MapOutputTracker = SparkEnv.get.mapOutputTracker,
     canUseBatchFetch: Boolean = false,
     numReaderThreads: Int = 0)
-  extends ShuffleReader[K, C] with Logging with Arm {
+  extends ShuffleReader[K, C] with Logging {
 
   case class GetMapSizesResult(
       blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
@@ -603,7 +603,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   class RapidsShuffleThreadedBlockIterator(
       fetcherIterator: RapidsShuffleBlockFetcherIterator,
       serializer: GpuColumnarBatchSerializer)
-    extends Iterator[(Any, Any)] with Arm {
+    extends Iterator[(Any, Any)] {
     private val queued = new LinkedBlockingQueue[(Any, Any)]
     private val futures = new mutable.Queue[Future[Option[BlockState]]]()
     private val serializerInstance = serializer.newInstance()
@@ -890,8 +890,7 @@ class RapidsCachingWriter[K, V](
     rapidsShuffleServer: Option[RapidsShuffleServer],
     metrics: Map[String, SQLMetric])
   extends ShuffleWriter[K, V]
-    with Logging
-    with Arm {
+    with Logging {
   private val numParts = handle.dependency.partitioner.numPartitions
   private val sizes = new Array[Long](numParts)
 
@@ -1019,7 +1018,7 @@ class RapidsCachingWriter[K, V](
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
 abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
-    extends ShuffleManager with Arm with RapidsShuffleHeartbeatHandler with Logging {
+    extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 

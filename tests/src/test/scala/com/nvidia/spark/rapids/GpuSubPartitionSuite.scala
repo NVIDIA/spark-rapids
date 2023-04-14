@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.Arm._
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, ExprId}
 import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuBatchSubPartitionIterator, GpuSubPartitionPairIterator}

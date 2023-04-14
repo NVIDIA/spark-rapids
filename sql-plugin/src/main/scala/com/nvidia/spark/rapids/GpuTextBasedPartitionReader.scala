@@ -23,6 +23,7 @@ import scala.collection.mutable.ListBuffer
 import scala.math.max
 
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
@@ -73,7 +74,7 @@ object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
  * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
  * the lines.
  */
-class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
   private var buffer = HostMemoryBuffer.allocate(size)
   private var location: Long = 0
 
@@ -127,7 +128,7 @@ object HostStringColBuffererFactory extends LineBuffererFactory[HostStringColBuf
 /**
  * Buffer the lines as a HostColumnVector of strings, one per line.
  */
-class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
   // We had to jump through some hoops so that we could grow the string columns dynamically
   //  might be nice to have this in CUDF, but this works fine too.
   private var dataBuffer = HostMemoryBuffer.allocate(size)
@@ -210,7 +211,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric],
     bufferFactory: FACT)
-  extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
+  extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
   import GpuMetric._
 
   private var batch: Option[ColumnarBatch] = None

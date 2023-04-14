@@ -21,6 +21,7 @@ import java.util.Comparator
 import scala.collection.mutable
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -37,7 +38,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 abstract class RapidsBufferStore(val tier: StorageTier)
-    extends AutoCloseable with Logging with Arm {
+    extends AutoCloseable with Logging {
 
   val name: String = tier.toString
 
@@ -257,7 +258,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       override val meta: TableMeta,
       initialSpillPriority: Long,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-      extends RapidsBuffer with Arm {
+      extends RapidsBuffer {
     private val MAX_UNSPILL_ATTEMPTS = 100
 
     // isValid and refcount must be used with the `RapidsBufferBase` lock held

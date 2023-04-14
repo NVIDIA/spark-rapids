@@ -28,6 +28,7 @@ import java.net.Socket
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._

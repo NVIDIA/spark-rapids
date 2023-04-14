@@ -769,11 +769,17 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def isRepetition(e: RegexAST): Boolean = {
+  private def isRepetition(e: RegexAST, checkZeroLength: Boolean = false): Boolean = {
     e match {
-      case RegexRepetition(_, _) => true
-      case RegexGroup(_, term, _) => isRepetition(term)
-      case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last)
+      case RegexRepetition(_, _) if !checkZeroLength => true 
+      case RegexRepetition(_, quantifier) => quantifier match {
+        case SimpleQuantifier(ch) if "*?".contains(ch) => true
+        case QuantifierFixedLength(length) if length == 0 => true
+        case QuantifierVariableLength(min, _) if min == 0 => true
+        case _ => false
+      }
+      case RegexGroup(_, term, _) => isRepetition(term, checkZeroLength)
+      case RegexSequence(parts) if parts.nonEmpty => isRepetition(parts.last, checkZeroLength)
       case _ => false
     }
   }
@@ -945,6 +951,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
       if ((containsEndAnchor(r1) &&
           (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
         (containsEndAnchor(r2) &&
+          (containsNewline(r1) || containsBeginAnchor(r1)))) {
+        throw new RegexUnsupportedException(
+          s"End of line/string anchor is not supported in this context: " +
+            s"${toReadableString(r1.toRegexString)}" +
+            s"${toReadableString(r2.toRegexString)}", r1.position)
+      }
+    }
+
+    def checkEndAnchorContextSplit(r1: RegexAST, r2: RegexAST): Unit = {
+      if ((containsEndAnchor(r1) &&
+          (containsNewline(r2) || containsEmpty(r2) || containsBeginAnchor(r2))) ||
+        (containsEndAnchor(r2) &&
           (containsNewline(r1) || containsEmpty(r1) || containsBeginAnchor(r1)))) {
         throw new RegexUnsupportedException(
           s"End of line/string anchor is not supported in this context: " +
@@ -957,7 +975,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
       regex match {
         case RegexSequence(parts) =>
           for (i <- 1 until parts.length) {
-            checkEndAnchorContext(parts(i - 1), parts(i))
+            if (mode == RegexSplitMode) {
+              checkEndAnchorContextSplit(parts(i - 1), parts(i))
+            } else {
+              checkEndAnchorContext(parts(i - 1), parts(i))
+            }
           }
         case RegexChoice(l, r) =>
           checkUnsupported(l)
@@ -966,7 +988,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case RegexRepetition(ast, _) => checkUnsupported(ast)
         case RegexCharacterClass(_, components) =>
           for (i <- 1 until components.length) {
-            checkEndAnchorContext(components(i - 1), components(i))
+            if (mode == RegexSplitMode) {
+              checkEndAnchorContextSplit(components(i - 1), components(i))
+            } else {
+              checkEndAnchorContext(components(i - 1), components(i))
+            }
           }
         case _ =>
           // ignore
@@ -985,8 +1011,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
           isEmptyRepetition(term)
         case RegexSequence(parts) =>
           parts.forall(isEmptyRepetition)
-        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
-        // we did, we would need to add a `case RegexChoice()` here
+        case RegexChoice(l, r) =>
+          isEmptyRepetition(l) || isEmptyRepetition(r)
         case _ => false
       }
     }
@@ -1497,13 +1523,29 @@ class CudfRegexTranspiler(mode: RegexMode) {
         val ll = rewrite(l, replacement, None, flags)
         val rr = rewrite(r, replacement, None, flags)
 
-        // cuDF does not support repetition on one side of a choice, such as "a*|a"
-        if (isRepetition(ll)) {
-          throw new RegexUnsupportedException(
-            "cuDF does not support repetition on one side of a choice", l.position)
-        } else if (isRepetition(rr)) {
-          throw new RegexUnsupportedException(
-            "cuDF does not support repetition on one side of a choice", r.position)
+        // cuDF does not support zero-length repetition in replace or split mode
+        // cuDF does support +, fixed-length, and variable length with min > 0 
+        if (mode != RegexFindMode) {
+          if (isRepetition(ll, true)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support replace or split with zero-length repetition on one side of a"
+              + " choice",
+              l.position)
+          } else if (isRepetition(rr, true)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support replace or split with zero-length repetition on one side of a"
+              + " choice",
+              r.position)
+          }
+        }
+
+        if (mode == RegexSplitMode) {
+          if (beginsWithLineAnchor(ll) || beginsWithLineAnchor(rr) ||
+              endsWithLineAnchor(ll) || endsWithLineAnchor(rr)) {
+            throw new RegexUnsupportedException(
+              "cuDF does not support either side of a choice containing a line anchor in split "
+               + "mode", l.position)
+          }
         }
 
         // cuDF does not support terms ending with word boundaries on one side
@@ -1603,6 +1645,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
     })
   }
 
+  private def beginsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        val j = parts.indexWhere {
+            case RegexEmpty() => false
+            case _ => true
+        }
+        beginsWith(parts(j), f)
+      case RegexGroup(_, term, _) =>
+        beginsWith(term, f) 
+      case _ => f(regex)
+    }
+
+  }
+
   private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1619,7 +1676,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private def endsWithLineAnchor(e: RegexAST): Boolean = {
     endsWith(e, {
-      case RegexEscaped('A') => true
+      case RegexEscaped(ch) if "AZ".contains(ch) => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
+  private def beginsWithLineAnchor(e: RegexAST): Boolean = {
+    beginsWith(e, {
+      case RegexEscaped(ch) if "AZ".contains(ch) => true
       case other => isBeginOrEndLineAnchor(other)
     })
   }
@@ -1887,7 +1951,7 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
-    numCaptureGroups: Int = 0) extends RegexAST {
+    var numCaptureGroups: Int = 0) extends RegexAST {
   def this(parts: ListBuffer[RegexAST], numCaptureGroups: Int, position: Int) {
     this(parts, numCaptureGroups)
     this.position = Some(position)
@@ -1896,12 +1960,16 @@ sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
   def appendBackref(num: Int): Unit = {
+    numCaptureGroups += 1
     parts += RegexBackref(num, true)
   }
 
   def popBackref(): Unit = {
     parts.last match {
-      case RegexBackref(_, true) => parts.trimEnd(1)
+      case RegexBackref(_, true) => {
+        numCaptureGroups -= 1
+        parts.trimEnd(1)
+      }
       case _ =>
     }
   }

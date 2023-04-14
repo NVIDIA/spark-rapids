@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -209,7 +210,7 @@ case class GpuShuffledHashJoinExec(
   }
 }
 
-object GpuShuffledHashJoinExec extends Arm {
+object GpuShuffledHashJoinExec {
   /**
    * Return the build data as a single ColumnarBatch when sub-partitioning is not enabled,
    * while as an iterator of ColumnarBatch when sub-partitioning is enabled.

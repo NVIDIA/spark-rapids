@@ -25,14 +25,15 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BoolUtils, FloatUtils, GpuCast, GpuColumnVector}
+import com.nvidia.spark.rapids.{BoolUtils, FloatUtils, GpuCast, GpuColumnVector}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.DataType
 
-object AnsiUtil extends Arm {
+object AnsiUtil {
 
   /**
    * Spark 330+ supports Ansi cast from float/double to timestamp

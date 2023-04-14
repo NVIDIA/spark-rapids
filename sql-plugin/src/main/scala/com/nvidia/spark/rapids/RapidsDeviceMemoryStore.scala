@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -28,7 +29,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 class RapidsDeviceMemoryStore
-  extends RapidsBufferStore(StorageTier.DEVICE) with Arm {
+  extends RapidsBufferStore(StorageTier.DEVICE) {
 
   // The RapidsDeviceMemoryStore handles spillability via ref counting
   override protected def spillableOnAdd: Boolean = false

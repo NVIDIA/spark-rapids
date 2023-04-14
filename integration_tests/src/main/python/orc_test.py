@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -405,9 +405,11 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disa
                         'input_file_block_length()'),
             conf=all_confs)
 
-def setup_orc_file_no_column_names(spark, table_name):
+def setup_orc_file_no_column_names(spark, table_name, location=None):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
     create_query = "CREATE TABLE `{}` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc".format(table_name)
+    if location:
+        create_query += f" LOCATION '{location}'"
     insert_query = "INSERT INTO {} VALUES(13, '155', 2020)".format(table_name)
     spark.sql(drop_query).collect
     spark.sql(create_query).collect
@@ -420,6 +422,16 @@ def test_missing_column_names(spark_tmp_table_factory, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)),
         reader_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_missing_column_names_with_schema(spark_tmp_table_factory, spark_tmp_path, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    table_location = spark_tmp_path + "/ORC_DATA"
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name, table_location))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.schema("a int, b string, c int").orc(table_location),
+        reader_confs)
+
 
 def setup_orc_file_with_column_names(spark, table_name):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)

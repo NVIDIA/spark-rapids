@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
@@ -43,7 +44,7 @@ class GpuKeyBatchingIterator(
     concatTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric)
-    extends Iterator[ColumnarBatch] with Arm {
+    extends Iterator[ColumnarBatch] {
   private val pending = mutable.Queue[SpillableColumnarBatch]()
   private var pendingSize: Long = 0
 
