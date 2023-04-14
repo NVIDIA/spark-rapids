@@ -33,12 +33,12 @@ function mvnEval {
 ART_ID=$(mvnEval project.artifactId)
 ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
-CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
-CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$CUDA_CLASSIFIER"} # e.g. cuda11,cuda12
+DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
+CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"} # e.g. cuda11,cuda12
 IFS=',' read -a CUDA_CLASSIFIERS_ARR <<< "$CUDA_CLASSIFIERS"
 TMP_PATH="/tmp/$(date '+%Y-%m-%d')-$$"
 
-DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$CUDA_CLASSIFIER"
+DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$DEFAULT_CUDA_CLASSIFIER"
 DIST_POM_FPATH="$DIST_PL/target/parallel-world/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
 DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
@@ -49,7 +49,7 @@ fi
 
 DEPLOY_TYPES='jar'
 DEPLOY_FILES="${DIST_FPATH}.jar"
-DEPLOY_CLASSIFIERS="$CUDA_CLASSIFIER"
+DEPLOY_CLASSIFIERS="$DEFAULT_CUDA_CLASSIFIER"
 # Make sure that the local m2 repo on the build machine has the same pom
 # installed as the one being pushed to the remote repo. This to prevent
 # discrepancies between the build machines regardless of how the local repo was populated.
@@ -78,7 +78,7 @@ function distWithReducedPom {
     esac
 
     $MVN -B $mvnCmd $MVN_URM_MIRROR \
-        -Dcuda.version=$CUDA_CLASSIFIER \
+        -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
         -Dmaven.repo.local=$M2DIR \
         -Dfile="${DIST_FPATH}.jar" \
         -DpomFile="${DIST_POM_FPATH}" \
@@ -97,14 +97,14 @@ function distWithReducedPom {
 SKIP_TESTS=${SKIP_TESTS:-"false"}
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER \
+        -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
         -DskipTests=$SKIP_TESTS \
         -Dbuildver="${buildver}"
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
         $MVN -B deploy -pl '!dist' $MVN_URM_MIRROR \
             -Dmaven.repo.local=$M2DIR \
-            -Dcuda.version=$CUDA_CLASSIFIER \
+            -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
             -DskipTests \
             -Dbuildver="${buildver}"
 done
@@ -124,8 +124,8 @@ installDistArtifact() {
 if (( ${#CUDA_CLASSIFIERS_ARR[@]} > 1 )); then
   mkdir -p ${TMP_PATH}
   for classifier in "${CUDA_CLASSIFIERS_ARR[@]}"; do
-    if [ "${classifier}" == "${CUDA_CLASSIFIER}" ]; then
-      echo "skip default: ${CUDA_CLASSIFIER} in build extra cuda classifiers step..."
+    if [ "${classifier}" == "${DEFAULT_CUDA_CLASSIFIER}" ]; then
+      echo "skip default: ${DEFAULT_CUDA_CLASSIFIER} in build extra cuda classifiers step..."
       continue
     fi
     installDistArtifact ${classifier}
@@ -139,7 +139,7 @@ if (( ${#CUDA_CLASSIFIERS_ARR[@]} > 1 )); then
   done
 fi
 # build dist w/ default cuda classifier
-installDistArtifact ${CUDA_CLASSIFIER}
+installDistArtifact ${DEFAULT_CUDA_CLASSIFIER}
 
 distWithReducedPom "install"
 
@@ -151,7 +151,7 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests=$SKIP_TESTS \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER
+        -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER
 fi
 
 # Parse Spark files from local mvn repo
