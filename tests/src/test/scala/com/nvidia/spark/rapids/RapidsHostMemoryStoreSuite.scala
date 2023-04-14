@@ -20,6 +20,7 @@ import java.io.File
 import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
+import com.nvidia.spark.rapids.Arm._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, times, verify, when}
@@ -31,7 +32,7 @@ import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerTyp
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
-class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
+class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)

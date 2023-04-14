@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import scala.reflect.runtime.universe.TypeTag
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import ai.rapids.cudf.ast
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
 import org.apache.commons.codec.binary.{Hex => ApacheHex}
@@ -41,7 +42,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
-object GpuScalar extends Arm with Logging {
+object GpuScalar extends Logging {
 
   // TODO Support interpreting the value to a Spark DataType
   def extract(v: Scalar): Any = {
@@ -481,7 +482,7 @@ object GpuScalar extends Arm with Logging {
 class GpuScalar private(
     private var scalar: Option[Scalar],
     private var value: Option[Any],
-    val dataType: DataType) extends Arm with AutoCloseable {
+    val dataType: DataType) extends AutoCloseable {
 
   private var refCount: Int = 0
 

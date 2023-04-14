@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsConf, ShuffleMetadata}
+import com.nvidia.spark.rapids.{RapidsBuffer, RapidsConf, ShuffleMetadata}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -73,7 +74,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           requestHandler: RapidsShuffleRequestHandler,
                           exec: Executor,
                           bssExec: Executor,
-                          rapidsConf: RapidsConf) extends AutoCloseable with Logging with Arm {
+                          rapidsConf: RapidsConf) extends AutoCloseable with Logging {
 
   def getId: BlockManagerId = {
     // upon seeing this port, the other side will try to connect to the port

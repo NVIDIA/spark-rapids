@@ -35,16 +35,13 @@ import java.io.DataInputStream
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
-import com.nvidia.spark.rapids.Arm
-
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.BasePythonRunner
 
 abstract class ShimBasePythonRunner[IN, OUT](
     funcs : scala.Seq[org.apache.spark.api.python.ChainedPythonFunctions],
     evalType : scala.Int, argOffsets : scala.Array[scala.Array[scala.Int]]
-) extends BasePythonRunner[IN, OUT](funcs, evalType, argOffsets)
-    with Arm {
+) extends BasePythonRunner[IN, OUT](funcs, evalType, argOffsets) {
   protected abstract class ShimReaderIterator(
     stream: DataInputStream,
     writerThread: WriterThread,

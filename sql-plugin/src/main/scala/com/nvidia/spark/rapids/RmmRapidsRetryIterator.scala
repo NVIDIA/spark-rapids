@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
@@ -25,7 +26,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
 
-object RmmRapidsRetryIterator extends Arm with Logging {
+object RmmRapidsRetryIterator extends Logging {
 
   /**
    * withRetry for Iterator[T]. This helper calls a function `fn` as it takes
@@ -445,8 +446,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
    */
   class RmmRapidsRetryAutoCloseableIterator[T <: AutoCloseable, K](
       attemptIter: Spliterator[K])
-      extends RmmRapidsRetryIterator[T, K](attemptIter)
-        with Arm {
+      extends RmmRapidsRetryIterator[T, K](attemptIter) {
 
     override def hasNext: Boolean = super.hasNext
 
@@ -475,8 +475,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
    * @param attemptIter an iterator of T
    */
   class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
-      extends Iterator[K]
-          with Arm {
+      extends Iterator[K] {
     // used to figure out if we should inject an OOM (only for tests)
     private val config = new RapidsConf(SQLConf.get)
 

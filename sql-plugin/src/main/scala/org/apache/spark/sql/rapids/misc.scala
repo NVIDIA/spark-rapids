@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, NullType, StringType}
 
-case class GpuRaiseError(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes
-  with Arm {
+case class GpuRaiseError(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
 
   override def dataType: DataType = NullType
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)

@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, OutOfBoundsPolicy, ReductionAggregation, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuOOM
@@ -100,7 +101,7 @@ object JoinTypeChecks {
     Map(CONDITION -> condition.toSeq)
 }
 
-object GpuHashJoin extends Arm {
+object GpuHashJoin {
 
   def tagJoin(
       meta: SparkPlanMeta[_],

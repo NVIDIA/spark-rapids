@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
 
@@ -922,7 +923,7 @@ trait GpuUnboundToUnboundWindowWithFixer {
  * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
  */
 class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
-    extends BatchedUnboundedToUnboundedWindowFixer with Arm {
+    extends BatchedUnboundedToUnboundedWindowFixer {
   private var previousValue: Option[Long] = None
 
   override def reset(): Unit = {
@@ -972,7 +973,7 @@ class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
  * right thing when they see a null.
  */
 class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
-    extends BatchedRunningWindowFixer with Arm with Logging {
+    extends BatchedRunningWindowFixer with Logging {
   private var previousResult: Option[Scalar] = None
 
   def getPreviousResult: Option[Scalar] = previousResult
@@ -1019,7 +1020,7 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
  * might be able to make this more generic but we need to see what the use case really is.
  */
 class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
-    extends BatchedRunningWindowFixer with Arm with Logging {
+    extends BatchedRunningWindowFixer with Logging {
   private val name = "sum"
   private var previousResult: Option[Scalar] = None
   private var previousOverflow: Option[Scalar] = None
@@ -1243,7 +1244,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
  * happens in the `scanCombine` method for GpuRank.  It is a little ugly but it works to maintain
  * the requirement that the input to the fixer is a single column.
  */
-class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
+class RankFixer extends BatchedRunningWindowFixer with Logging {
   import RankFixer._
 
   // We have to look at row number as well as rank.  This fixer is the same one that `GpuRowNumber`
@@ -1321,7 +1322,7 @@ class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
   }
 }
 
-object RankFixer extends Arm {
+object RankFixer {
   private def fixRankSamePartDifferentOrdering(rank: cudf.ColumnView,
       previousRow: Option[Scalar]): cudf.ColumnVector =
     rank.add(previousRow.get, rank.getType)
@@ -1347,7 +1348,7 @@ object RankFixer extends Arm {
  * If anything is outside of a continues partition by group then we just keep
  * those values unchanged.
  */
-class DenseRankFixer extends BatchedRunningWindowFixer with Arm with Logging {
+class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
   import DenseRankFixer._
 
   private var previousRank: Option[Scalar] = None
@@ -1418,7 +1419,7 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Arm with Logging {
   }
 }
 
-object DenseRankFixer extends Arm {
+object DenseRankFixer {
   private[this] def isFirstTrue(cv: cudf.ColumnView): Boolean = {
     withResource(cv.getScalarElement(0)) { scalar =>
       scalar.getBoolean

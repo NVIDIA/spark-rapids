@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -181,7 +182,7 @@ class GpuCollectLimitMeta(
       )(SinglePartition), 0)
 }
 
-object GpuTopN extends Arm {
+object GpuTopN {
   private[this] def concatAndClose(a: SpillableColumnarBatch,
       b: ColumnarBatch,
       concatTime: GpuMetric): ColumnarBatch = {

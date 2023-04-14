@@ -21,6 +21,7 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 import scala.collection.mutable.{ArrayBuffer, ArrayStack}
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -157,7 +158,7 @@ case class GpuSortEachBatchIterator(
     sortTime: GpuMetric = NoopMetric,
     outputBatches: GpuMetric = NoopMetric,
     outputRows: GpuMetric = NoopMetric,
-    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
+    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): ColumnarBatch = {
@@ -246,7 +247,7 @@ case class GpuOutOfCoreSortIterator(
     outputBatches: GpuMetric,
     outputRows: GpuMetric,
     peakDevMemory: GpuMetric) extends Iterator[ColumnarBatch]
-    with Arm with AutoCloseable {
+    with AutoCloseable {
 
   // There are so many places where we might hit a new peak that it gets kind of complex
   // so we are picking a few places that are likely to increase the amount of memory used.

@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
@@ -742,7 +743,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
 
 }
 
-trait HasGpuStringReplace extends Arm {
+trait HasGpuStringReplace {
   def doStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,

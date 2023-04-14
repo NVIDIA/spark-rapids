@@ -18,7 +18,8 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -27,7 +28,7 @@ import org.apache.spark.sql.catalyst.plans.InnerLike
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuSubPartitionHashJoin extends Arm {
+object GpuSubPartitionHashJoin {
   /**
    * Concatenate the input batches into a single one.
    * The caller is responsible for closing the returned batch.
@@ -104,7 +105,7 @@ class GpuBatchSubPartitioner(
     inputIter: Iterator[ColumnarBatch],
     inputBoundKeys: Seq[GpuExpression],
     numPartitions: Int,
-    hashSeed: Int) extends AutoCloseable with Arm {
+    hashSeed: Int) extends AutoCloseable {
 
   private var isNotInited = true
   private var numCurBatches = 0
@@ -210,7 +211,7 @@ class GpuBatchSubPartitioner(
 class GpuBatchSubPartitionIterator(
     batchSubPartitioner: GpuBatchSubPartitioner,
     targetBatchSize: Long)
-  extends Iterator[(Seq[Int], Seq[SpillableColumnarBatch])] with Arm with Logging {
+  extends Iterator[(Seq[Int], Seq[SpillableColumnarBatch])] with Logging {
 
   // The partitions to be read. Initially it is all the partitions.
   private val remainingPartIds: ArrayBuffer[Int] =
@@ -332,7 +333,7 @@ class GpuSubPartitionPairIterator(
     numPartitions: Int,
     targetBatchSize: Long,
     skipEmptyPairs: Boolean = true)
-  extends Iterator[PartitionPair] with Arm with AutoCloseable {
+  extends Iterator[PartitionPair] with AutoCloseable {
 
   private[this] var hashSeed = 100
 
@@ -476,7 +477,7 @@ abstract class BaseSubHashJoinIterator(
     numPartitions: Int,
     targetSize: Long,
     opTime: GpuMetric)
-  extends Iterator[ColumnarBatch] with Arm with TaskAutoCloseableResource {
+  extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
   // skip empty partition pairs
   private[this] val subPartitionPairIter = new GpuSubPartitionPairIterator(buildIter,
@@ -540,7 +541,7 @@ abstract class BaseSubHashJoinIterator(
   protected def setupJoinIterator(pair: PartitionPair): Option[Iterator[ColumnarBatch]]
 }
 
-trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
+trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
 
   protected lazy val buildSchema: StructType = StructType.fromAttributes(buildPlan.output)
 
