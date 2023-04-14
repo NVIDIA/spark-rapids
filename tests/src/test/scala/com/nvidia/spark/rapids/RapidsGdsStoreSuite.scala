@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import ai.rapids.cudf.{ContiguousTable, CuFile, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, times, verify, when}
@@ -31,7 +32,7 @@ import org.apache.spark.storage.BlockId
 
 object GdsTest extends Tag("GdsTest")
 
-class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
+class RapidsGdsStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
  test("single shot spill with shared path", GdsTest) {
    println("Trying to load CuFile")

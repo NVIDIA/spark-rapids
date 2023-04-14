@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.{MetadataResponse, TableMeta, TransferState}
 
 import org.apache.spark.internal.Logging
@@ -92,7 +93,7 @@ class RapidsShuffleClient(
     exec: Executor,
     clientCopyExecutor: Executor,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
-      extends Logging with Arm with AutoCloseable {
+      extends Logging with AutoCloseable {
 
   // these are handlers that are interested (live spark tasks) in peer failure handling
   private val liveHandlers =

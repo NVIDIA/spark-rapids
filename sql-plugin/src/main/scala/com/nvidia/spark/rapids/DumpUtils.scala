@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,12 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object DumpUtils extends Logging with Arm {
+object DumpUtils extends Logging {
   /**
    * Debug utility to dump columnar batch to parquet file. <br>
    * It's running on GPU. Parquet column names are generated from columnar batch type info. <br>
@@ -93,7 +94,7 @@ object DumpUtils extends Logging with Arm {
 
 // parquet dumper
 class ParquetDumper(path: String, table: Table) extends HostBufferConsumer
-  with Arm with AutoCloseable {
+  with AutoCloseable {
   private[this] val outputStream = new FileOutputStream(path)
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
@@ -138,7 +139,7 @@ private class ColumnIndex() {
   }
 }
 
-object ParquetDumper extends Arm {
+object ParquetDumper {
   val COMPRESS_TYPE = CompressionType.SNAPPY
 
   def parquetWriterOptionsFromTable[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](

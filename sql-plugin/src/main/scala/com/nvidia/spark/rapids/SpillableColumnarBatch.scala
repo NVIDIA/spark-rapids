@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.DataType
@@ -56,7 +57,7 @@ trait SpillableColumnarBatch extends AutoCloseable {
  * row count in memory, and not dealing with the catalog at all.
  */
 class JustRowsColumnarBatch(numRows: Int)
-    extends SpillableColumnarBatch with Arm {
+    extends SpillableColumnarBatch {
   override def numRows(): Int = numRows
   override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
 
@@ -81,7 +82,7 @@ class SpillableColumnarBatchImpl (
     handle: RapidsBufferHandle,
     rowCount: Int,
     sparkTypes: Array[DataType])
-    extends SpillableColumnarBatch with Arm {
+    extends SpillableColumnarBatch {
 
   override def dataTypes: Array[DataType] = sparkTypes
   /**
@@ -121,7 +122,7 @@ class SpillableColumnarBatchImpl (
   }
 }
 
-object SpillableColumnarBatch extends Arm {
+object SpillableColumnarBatch {
   /**
    * Create a new SpillableColumnarBatch.
    *
@@ -224,7 +225,7 @@ object SpillableColumnarBatch extends Arm {
  * Just like a SpillableColumnarBatch but for buffers.
  */
 class SpillableBuffer(
-    handle: RapidsBufferHandle) extends AutoCloseable with Arm {
+    handle: RapidsBufferHandle) extends AutoCloseable {
 
   /**
    * Set a new spill priority.
@@ -250,7 +251,7 @@ class SpillableBuffer(
   }
 }
 
-object SpillableBuffer extends Arm {
+object SpillableBuffer {
 
   /**
    * Create a new SpillableBuffer.

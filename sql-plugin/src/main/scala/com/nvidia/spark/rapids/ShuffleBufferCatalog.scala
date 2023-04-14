@@ -24,6 +24,7 @@ import java.util.function.{Consumer, IntUnaryOperator}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.SparkEnv
@@ -49,7 +50,7 @@ case class ShuffleBufferId(
 /** Catalog for lookup of shuffle buffers by block ID */
 class ShuffleBufferCatalog(
     catalog: RapidsBufferCatalog,
-    diskBlockManager: RapidsDiskBlockManager) extends Arm with Logging {
+    diskBlockManager: RapidsDiskBlockManager) extends Logging {
 
   private val deviceStore = RapidsBufferCatalog.getDeviceStorage
 

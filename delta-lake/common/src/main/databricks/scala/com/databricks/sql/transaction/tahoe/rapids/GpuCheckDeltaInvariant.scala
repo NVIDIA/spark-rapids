@@ -25,6 +25,7 @@ import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.databricks.sql.transaction.tahoe.constraints.{CheckDeltaInvariant, Constraint}
 import com.databricks.sql.transaction.tahoe.constraints.Constraints.{Check, NotNull}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, GpuBindReferences, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuOverrides, RapidsConf, RapidsMeta, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.shims.InvariantViolationExceptionShim
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 

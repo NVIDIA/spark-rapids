@@ -69,33 +69,12 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
       StructField("c3_long", LongType),
       StructField("c1_int", IntegerType))))) { frame => frame }
 
-  /**
-   * We can't compare the results from CPU and GPU, since CPU will get in-correct result
-   * see https://github.com/NVIDIA/spark-rapids/issues/3060
-   */
-  test("schema can't be pruned") {
-    withGpuSparkSession( spark => {
-      val df = frameFromOrcWithSchema("schema-cant-prune.orc",
+  testSparkResultsAreEqual("schema-can-prune reordered columns reordered",
+    frameFromOrcWithSchema("schema-cant-prune.orc",
         StructType(Seq(
+          StructField("_col3", LongType),
           StructField("_col2", StringType),
-          StructField("_col3", LongType),
-          StructField("_col1", IntegerType))))(spark)
-      val ret = df.collect()
-      assert(ret(0).getString(0) === "hello")
-      assert(ret(0).getLong(1) === 2021)
-      assert(ret(0).getInt(2) === 1)
-
-      val df1 = frameFromOrcWithSchema("schema-cant-prune.orc",
-        StructType(Seq(
-          StructField("_col3", LongType),
-          StructField("_col1", IntegerType),
-          StructField("_col2", StringType))))(spark)
-      val ret1 = df1.collect()
-      assert(ret1(0).getLong(0) === 2021)
-      assert(ret1(0).getInt(1) === 1)
-      assert(ret1(0).getString(2) === "hello")
-    })
-  }
+          StructField("_col1", LongType))))) { frame => frame }
 
   /**
    *

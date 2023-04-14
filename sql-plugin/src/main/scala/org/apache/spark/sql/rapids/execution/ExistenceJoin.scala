@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{ColumnVector, GatherMap, NvtxColor, Scalar, Table}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuMetric, LazySpillableColumnarBatch, NvtxWithMetrics, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, LazySpillableColumnarBatch, NvtxWithMetrics, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -47,7 +48,7 @@ abstract class ExistenceJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric
 ) extends Iterator[ColumnarBatch]()
-    with TaskAutoCloseableResource with Arm {
+    with TaskAutoCloseableResource {
 
   use(spillableBuiltBatch)
 

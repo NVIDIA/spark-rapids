@@ -25,6 +25,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
@@ -245,7 +246,7 @@ case class GpuJsonPartitionReaderFactory(
   }
 }
 
-object JsonPartitionReader extends Arm {
+object JsonPartitionReader {
   def readToTable(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,

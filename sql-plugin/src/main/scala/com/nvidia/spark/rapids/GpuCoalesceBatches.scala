@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
@@ -254,7 +255,7 @@ abstract class AbstractGpuCoalesceIterator(
     streamTime: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
-    opName: String) extends Iterator[ColumnarBatch] with Arm with Logging {
+    opName: String) extends Iterator[ColumnarBatch] with Logging {
 
   private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
 
@@ -643,7 +644,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime,
     concatTime,
     opTime,
-    opName) with Arm {
+    opName) {
 
   protected val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
 

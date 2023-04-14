@@ -20,6 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
@@ -271,7 +272,7 @@ class ConditionalNestedLoopJoinIterator(
   }
 }
 
-object GpuBroadcastNestedLoopJoinExecBase extends Arm {
+object GpuBroadcastNestedLoopJoinExecBase {
   def nestedLoopJoin(
       joinType: JoinType,
       buildSide: GpuBuildSide,

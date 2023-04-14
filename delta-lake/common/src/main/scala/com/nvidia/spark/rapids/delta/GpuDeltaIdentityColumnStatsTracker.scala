@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids.delta
 import scala.collection.mutable
 
 import ai.rapids.cudf.ColumnView
-import com.nvidia.spark.rapids.{Arm, GpuScalar}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuScalar
 import com.nvidia.spark.rapids.delta.shims.ShimJsonUtils
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -56,7 +57,7 @@ class GpuDeltaIdentityColumnStatsTracker(
   }
 }
 
-object GpuDeltaIdentityColumnStatsTracker extends Arm {
+object GpuDeltaIdentityColumnStatsTracker {
   def batchStatsToRow(
       dataCols: Seq[Attribute],
       identityStatsExpr: Expression,

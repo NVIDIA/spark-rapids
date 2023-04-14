@@ -114,6 +114,7 @@ def test_split_re_no_limit():
             'split(a, "[bf]")',
             'split(a, "[o]")',
             'split(a, "^(boo|foo):$")',
+            'split(a, "(bo+|fo{2}):$")',
             'split(a, "[bf]$:")',
             'split(a, "b[o]+")',
             'split(a, "b[o]*")',
@@ -526,9 +527,15 @@ def test_regexp_choice():
                 'rlike(a, "[abcd]|[123]")',
                 'rlike(a, "[^\n\r]|abcd")',
                 'rlike(a, "abd1a$|^ab2a")',
+                'rlike(a, "[a-c]*|[\n]")',
+                'rlike(a, "[a-c]+|[\n]")',
                 'regexp_extract(a, "(abc1a$|^ab2ab|a3abc)", 1)',
                 'regexp_extract(a, "(abc1a$|ab2ab$)", 1)',
-                'regexp_replace(a, "[abcd]$|^abc", "@")'
+                'regexp_extract(a, "(ab+|^ab)", 1)',
+                'regexp_extract(a, "(ab*|^ab)", 1)',
+                'regexp_replace(a, "[abcd]$|^abc", "@")',
+                'regexp_replace(a, "[ab]$|[cd]$", "@")',
+                'regexp_replace(a, "[ab]+|^cd1", "@")'
             ),
         conf=_regexp_conf)
 

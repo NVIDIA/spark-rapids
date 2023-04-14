@@ -17,11 +17,12 @@ package org.apache.spark.sql.rapids
 
 import scala.io.Source
 
-import com.nvidia.spark.rapids.{Arm, ConfEntry, ConfEntryWithDefault, OptionalConfEntry}
+import com.nvidia.spark.rapids.{ConfEntry, ConfEntryWithDefault, OptionalConfEntry}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.internal.config.ConfigEntry
 
-object RapidsPrivateUtil extends Arm {
+object RapidsPrivateUtil {
   def getPrivateConfigs(): Seq[ConfEntry[_]] = {
     withResource(Source.fromResource("spark-rapids-extra-configs-classes").bufferedReader()) { r =>
       val className = r.readLine().trim

@@ -22,6 +22,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{MapOutputTracker, SparkEnv, TaskContext}
 import org.apache.spark.serializer.SerializerManager

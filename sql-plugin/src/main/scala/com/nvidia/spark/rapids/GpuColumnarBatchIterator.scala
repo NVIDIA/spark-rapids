@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package com.nvidia.spark.rapids
+
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
@@ -96,7 +98,7 @@ class GpuColumnarBatchWithPartitionValuesIterator(
     inputIter: GpuColumnarBatchIterator,
     partValues: Array[InternalRow],
     partRowNums: Array[Long],
-    partSchema: StructType) extends Iterator[ColumnarBatch] with Arm {
+    partSchema: StructType) extends Iterator[ColumnarBatch] {
   assert(partValues.length == partRowNums.length)
 
   private var leftValues: Array[InternalRow] = partValues
