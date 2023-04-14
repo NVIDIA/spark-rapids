@@ -14,12 +14,7 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -28,6 +23,7 @@ import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.{ColumnarCopyHelper, TypeSig}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
 
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
 import org.apache.spark.sql.vectorized.ColumnVector
 
@@ -226,7 +222,11 @@ object GpuTypeShims {
   def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING +
       TypeSig.integral
 
-  def additionalTypesBooleanCanCastTo: TypeSig = TypeSig.TIMESTAMP
+  def additionalTypesBooleanCanCastTo: TypeSig = if (SQLConf.get.ansiEnabled) {
+    TypeSig.none
+  } else {
+    TypeSig.TIMESTAMP
+  }
 
   def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.YEARMONTH + TypeSig.DAYTIME
 

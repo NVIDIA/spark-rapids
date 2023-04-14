@@ -135,6 +135,8 @@ object GpuTypeShims {
 
   def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING
 
+  def additionalTypesBooleanCanCastTo: TypeSig = TypeSig.TIMESTAMP
+
   def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.none
 
   def additionalTypesStringCanCastTo: TypeSig = TypeSig.none

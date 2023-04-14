@@ -1348,8 +1348,10 @@ class CastChecks extends ExprChecks {
     NULL + DECIMAL_128
   val sparkNullSig: TypeSig = all
 
-  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128
-  val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
+  def booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING + DECIMAL_128 +
+    GpuTypeShims.additionalTypesBooleanCanCastTo
+  def sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + STRING +
+    GpuTypeShims.additionalTypesBooleanCanCastTo
 
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
       BINARY + GpuTypeShims.additionalTypesIntegralCanCastTo
