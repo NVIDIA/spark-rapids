@@ -657,6 +657,9 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
+        <!-- TODO: Add 340 to noSnapshot.buildvers when 3.4.0 shim is complete
+             See https://github.com/NVIDIA/spark-rapids/issues/5824
+        -->
         <noSnapshot.buildvers>
             311,
             312,
