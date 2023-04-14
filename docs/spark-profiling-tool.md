@@ -54,7 +54,7 @@ There are 3 modes of operation for the Profiling tool:
     on each application individually and outputs a file per application
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
            com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
            <eventlogs | eventlog directories ...>
     ```
@@ -66,7 +66,7 @@ There are 3 modes of operation for the Profiling tool:
     together and you get one file for all applications.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --combined
            <eventlogs | eventlog directories ...>
     ```
@@ -76,7 +76,7 @@ There are 3 modes of operation for the Profiling tool:
     The Compare mode will use more memory if comparing lots of applications.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --compare
            <eventlogs | eventlog directories ...>
     ```
@@ -583,7 +583,7 @@ The _Auto-Tuner_ output has 2 main sections:
 ```
 Profiling tool for the RAPIDS Accelerator and Apache Spark
 
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
