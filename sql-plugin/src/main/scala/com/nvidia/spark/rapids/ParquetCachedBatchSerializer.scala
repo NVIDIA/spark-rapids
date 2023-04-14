@@ -26,6 +26,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, SparkShimImpl}
@@ -257,7 +258,7 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
  * Note, this class should not be referenced directly in source code.
  * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
  */
-protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
+protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 

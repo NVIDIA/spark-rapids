@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,14 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object SortUtils extends Arm {
+object SortUtils {
   @scala.annotation.tailrec
   def extractReference(exp: Expression): Option[GpuBoundReference] = exp match {
     case r: GpuBoundReference => Some(r)
@@ -64,7 +65,7 @@ object SortUtils extends Arm {
  */
 class GpuSorter(
     val sortOrder: Seq[SortOrder],
-    inputSchema: Array[Attribute]) extends Arm with Serializable {
+    inputSchema: Array[Attribute]) extends Serializable {
 
   /**
    * A class that provides convenience methods for sorting batches of data

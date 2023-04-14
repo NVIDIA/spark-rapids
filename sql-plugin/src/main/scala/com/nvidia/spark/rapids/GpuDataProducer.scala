@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -113,7 +114,7 @@ class WrappedGpuDataProducer[T, U](
 object EmptyTableReader extends EmptyGpuDataProducer[Table]
 
 class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBatch])
-    extends GpuColumnarBatchIterator(true) with Arm {
+    extends GpuColumnarBatchIterator(true) {
 
   override def hasNext: Boolean = pending.nonEmpty
 
@@ -143,7 +144,7 @@ class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBat
  * held and will not be released before the first table is consumed. This is also fitting with
  * the semantics of how we use an Iterator[ColumnarBatch] pointing to GPU data.
  */
-object CachedGpuBatchIterator extends Arm {
+object CachedGpuBatchIterator {
   private[this] def makeSpillableAndClose(table: Table,
       dataTypes: Array[DataType]): SpillableColumnarBatch = {
     withResource(table) { _ =>

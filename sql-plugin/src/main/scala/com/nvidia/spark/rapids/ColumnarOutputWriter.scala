@@ -21,6 +21,7 @@ import java.io.OutputStream
 import scala.collection.mutable
 
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -64,7 +65,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
 abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
-    includeRetry: Boolean) extends HostBufferConsumer with Arm {
+    includeRetry: Boolean) extends HostBufferConsumer {
 
   val tableWriter: TableWriter
   val conf = context.getConfiguration

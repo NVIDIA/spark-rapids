@@ -27,6 +27,7 @@ import scala.collection.mutable
 import scala.language.implicitConversions
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
@@ -109,7 +110,7 @@ trait HostMemoryBuffersWithMetaDataBase {
 }
 
 // This is a common trait for all kind of file formats
-trait MultiFileReaderFunctions extends Arm {
+trait MultiFileReaderFunctions {
 
   // Add partitioned columns into the batch
   protected def addPartitionValues(
@@ -165,7 +166,7 @@ object MultiFileReaderThreadPool extends Logging {
   }
 }
 
-object MultiFileReaderUtils extends Arm {
+object MultiFileReaderUtils {
 
   private implicit def toURI(path: String): URI = {
     try {
@@ -289,7 +290,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
     broadcastedConf: Broadcast[SerializableConfiguration],
     @transient rapidsConf: RapidsConf,
     alluxioPathReplacementMap: Option[Map[String, String]] = None)
-  extends PartitionReaderFactory with Arm with Logging {
+  extends PartitionReaderFactory with Logging {
 
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
@@ -373,7 +374,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
  * @param execMetrics metrics
  */
 abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[String, GpuMetric])
-    extends PartitionReader[ColumnarBatch] with Logging with ScanWithMetrics with Arm {
+    extends PartitionReader[ColumnarBatch] with Logging with ScanWithMetrics {
 
   metrics = execMetrics
 

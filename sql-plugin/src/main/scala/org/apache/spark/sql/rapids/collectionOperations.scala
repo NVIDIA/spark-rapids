@@ -21,6 +21,7 @@ import java.util.Optional
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar, SegmentedReductionAggregation, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
@@ -1300,7 +1301,7 @@ class GpuSequenceMeta(
   }
 }
 
-object GpuSequenceUtil extends Arm {
+object GpuSequenceUtil {
 
   private def checkSequenceInputs(
       start: ColumnVector,

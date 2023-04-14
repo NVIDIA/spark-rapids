@@ -22,6 +22,7 @@ import java.nio.file.Files
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.CodecType
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.IntVector

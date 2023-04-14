@@ -28,13 +28,14 @@ package org.apache.spark.sql.rapids.shims
 import java.math.BigInteger
 
 import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, DType, RoundMode, Scalar}
-import com.nvidia.spark.rapids.{Arm, BoolUtils, GpuBinaryExpression, GpuColumnVector, GpuScalar}
+import com.nvidia.spark.rapids.{BoolUtils, GpuBinaryExpression, GpuColumnVector, GpuScalar}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.rapids.GpuDivModLike.makeZeroScalar
 import org.apache.spark.sql.types._
 
-object IntervalUtils extends Arm {
+object IntervalUtils {
 
   /**
    * Convert long cv to int cv, throws exception if any value in `longCv` exceeds the int limits.

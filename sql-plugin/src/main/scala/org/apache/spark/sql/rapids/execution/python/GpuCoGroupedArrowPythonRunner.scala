@@ -21,6 +21,7 @@ import java.net.Socket
 
 import ai.rapids.cudf.{ArrowIPCWriterOptions, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuSemaphore}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD}

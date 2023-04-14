@@ -28,6 +28,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
@@ -296,7 +297,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
 }
 
 /** A trait collecting common methods across the 3 kinds of avro readers */
-trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase =>
+trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
   private val avroFormat = Some("avro")
 
   def debugDumpPrefix: Option[String]
@@ -1014,7 +1015,7 @@ class GpuMultiFileAvroPartitionReader(
 /** A tool to filter Avro blocks */
 case class AvroFileFilterHandler(
     hadoopConf: Configuration,
-    @transient options: AvroOptions) extends Arm with Logging {
+    @transient options: AvroOptions) extends Logging {
 
   @scala.annotation.nowarn(
     "msg=value ignoreExtension in class AvroOptions is deprecated*"

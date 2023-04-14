@@ -31,6 +31,7 @@ import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
@@ -120,7 +121,7 @@ case class GpuOrcScan(
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
 
-object GpuOrcScan extends Arm {
+object GpuOrcScan {
 
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
@@ -599,7 +600,7 @@ case class GpuOrcPartitionReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics : Map[String, GpuMetric],
     @transient params: Map[String, String])
-  extends ShimFilePartitionReaderFactory(params) with Arm {
+  extends ShimFilePartitionReaderFactory(params) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
@@ -847,7 +848,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
  * A base ORC partition reader which compose of some common methods
  */
 trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
-  with Arm with ScanWithMetrics { self: FilePartitionReaderBase =>
+  with ScanWithMetrics { self: FilePartitionReaderBase =>
 
   /**
    * Send a host buffer to GPU for ORC decoding, and return it as a ColumnarBatch.
@@ -1095,7 +1096,7 @@ class GpuOrcPartitionReader(
 
 }
 
-private object OrcTools extends Arm {
+private object OrcTools {
 
   /** Build an ORC data reader using OrcPartitionReaderContext */
   def buildDataReader(ctx: OrcPartitionReaderContext): DataReader = {
@@ -1151,7 +1152,7 @@ private case class GpuOrcFileFilterHandler(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     pushedFilters: Array[Filter],
-    isOrcFloatTypesToStringEnable: Boolean) extends Arm {
+    isOrcFloatTypesToStringEnable: Boolean) {
 
   private[rapids] val isCaseSensitive = sqlConf.caseSensitiveAnalysis
 
@@ -1783,7 +1784,7 @@ class MultiFileCloudOrcPartitionReader(
 
 }
 
-trait OrcCodecWritingHelper extends Arm {
+trait OrcCodecWritingHelper {
 
   /** Executes the provided code block in the codec environment */
   def withCodecOutputStream[T](
