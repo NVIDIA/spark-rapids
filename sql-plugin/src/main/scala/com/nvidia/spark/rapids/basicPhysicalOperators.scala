@@ -221,9 +221,11 @@ case class GpuProjectExec(
 
     val rdd = child.executeColumnar()
     rdd.map { cb =>
-      val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
-        val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
+      // Use the static 'withResource' to avoid serializing the whole plan to executors.
+      val ret = Arm.withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) {
+        _ =>
+          val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
       }
       numOutputBatches += 1
       numOutputRows += ret.numRows()

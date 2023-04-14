@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -157,6 +157,12 @@ trait Arm {
     }
   }
 }
+
+/**
+ * Use the utils as static methods will be better in some places. e.g. in a SparkPlan,
+ * it can avoid serializing the whole plan.
+ */
+object Arm extends Arm {}
 
 class CloseableHolder[T <: AutoCloseable](var t: T) {
   def setAndCloseOld(newT: T): Unit = {
