@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
 import java.util.concurrent.{Callable, TimeUnit}
+import java.util.regex.Pattern
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -1430,7 +1431,21 @@ private case class GpuOrcFileFilterHandler(
         isOrcFloatTypesToStringEnable: Boolean): (TypeDescription, Array[Boolean]) = {
       // all default to false
       val fileIncluded = new Array[Boolean](fileSchema.getMaximumId + 1)
-      val isForcePos = OrcShims.forcePositionalEvolution(conf)
+      val isForcePos = if (OrcShims.forcePositionalEvolution(conf)) {
+        true
+      } else if (GpuOrcPartitionReaderUtils.isMissingColumnNames(fileSchema)) {
+        if (OrcConf.TOLERATE_MISSING_SCHEMA.getBoolean(conf)) {
+          true
+        } else {
+          throw new RuntimeException("Found that schema metadata is missing"
+              + " from file. This is likely caused by"
+              + " a writer earlier than HIVE-4243. Will"
+              + " not try to reconcile schemas")
+        }
+      } else {
+        false
+      }
+
       (checkTypeCompatibility(fileSchema, readSchema, isCaseAware, fileIncluded, isForcePos,
         isOrcFloatTypesToStringEnable),
         fileIncluded)
@@ -1453,6 +1468,7 @@ private case class GpuOrcFileFilterHandler(
           // Check for the top or nested struct types.
           val readFieldNames = readType.getFieldNames.asScala
           val readField2Type = readFieldNames.zip(readType.getChildren.asScala)
+
           val getReadFieldType: (String, Int) => Option[(String, TypeDescription)] =
             if (isForcePos) {
               // Match the top level columns using position rather than column names.
@@ -1550,6 +1566,13 @@ private case class GpuOrcFileFilterHandler(
     }
   }
 
+  private object GpuOrcPartitionReaderUtils {
+    private val missingColumnNamePattern = Pattern.compile("_col\\d+")
+
+    private def isMissingColumnNames(t: TypeDescription): Boolean = {
+      t.getFieldNames.asScala.exists(f => missingColumnNamePattern.matcher(f).matches())
+    }
+  }
 }
 
 /**
