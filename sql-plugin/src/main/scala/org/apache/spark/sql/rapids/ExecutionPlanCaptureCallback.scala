@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.AnsiUtil
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
-import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -188,8 +188,6 @@ object ExecutionPlanCaptureCallback {
   private def containsPlanMatching(plan: SparkPlan, f: SparkPlan => Boolean): Boolean = plan.find {
     case p if f(p) =>
       true
-    case p: UnaryExecNode =>
-      containsPlanMatching(p.child, f)
     case p: AdaptiveSparkPlanExec =>
       containsPlanMatching(p.executedPlan, f)
     case p: QueryStageExec =>
