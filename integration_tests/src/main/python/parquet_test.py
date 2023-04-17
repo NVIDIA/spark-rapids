@@ -23,8 +23,9 @@ import pyarrow as pa
 import pyarrow.parquet as pa_pq
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
+from spark_init_internal import spark_version
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, is_dataproc_runtime
 
 
 def read_parquet_df(data_path):
@@ -516,6 +517,74 @@ def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
+def test_parquet_read_ignore_missing(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/PARQUET_DATA/'
+    data_path_tmp = spark_tmp_path + '/PARQUET_DATA_TMP/'
+
+    # we need to create the files, get the dataframe but remove the file before we
+    # actually read the file contents. Here we save the data into a second directory
+    # so that when CPU runs, it can remove the file and then put the data back to run
+    # on the GPU.
+    def setup_data(spark):
+        df = spark.range(0, 1000, 1, 2).write.parquet(data_path)
+        sc = spark.sparkContext
+        config = sc._jsc.hadoopConfiguration()
+        src_path = sc._jvm.org.apache.hadoop.fs.Path(data_path)
+        dst_path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
+        fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
+        sc._jvm.org.apache.hadoop.fs.FileUtil.copy(fs, src_path, fs, dst_path, False, config)
+        df
+
+    with_cpu_session(lambda spark : setup_data(spark))
+    file_deleted = ""
+
+    def read_and_remove(spark):
+        sc = spark.sparkContext
+        config = sc._jsc.hadoopConfiguration()
+        path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
+        src_path = sc._jvm.org.apache.hadoop.fs.Path(data_path)
+        dst_path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
+        fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
+        fs.delete(src_path)
+        sc._jvm.org.apache.hadoop.fs.FileUtil.copy(fs, dst_path, fs, src_path, False, config)
+        # input_file_name doesn't use combine so get the input file names in a different dataframe
+        # that we ultimately don't return
+        df = spark.read.parquet(data_path)
+        df_with_file_names = df.withColumn("input_file", input_file_name())
+        distinct_file_names = df_with_file_names.select("input_file").distinct().sort("input_file")
+        num_files = distinct_file_names.count()
+        assert(num_files == 2)
+        files_to_read=[]
+        for i in range(0, 2):
+            files_to_read.insert(i, distinct_file_names.collect()[i][0])
+
+        df_to_test = spark.read.parquet(files_to_read[0], files_to_read[1])
+        # we do our best to try to remove the one Spark will read first but its not
+        # guaranteed
+        file_to_delete = files_to_read[1]
+        path_to_delete = sc._jvm.org.apache.hadoop.fs.Path(file_to_delete)
+        fs.delete(path_to_delete)
+        df_with_file_names_after = df.withColumn("input_file", input_file_name())
+        distinct_file_names_after = df_with_file_names_after.select("input_file").distinct()
+        num_files_after_delete = distinct_file_names_after.count()
+        assert(num_files_after_delete == 1)
+        return df_to_test
+
+
+    # we want all the files to be read by a single Spark task
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.files.ignoreMissingFiles': 'true',
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.files.maxPartitionBytes': '2g',
+        'spark.sql.files.minPartitionNum': '1',
+        'spark.sql.openCostInBytes': '1'})
+    assert_gpu_and_cpu_row_counts_equal(
+            lambda spark : read_and_remove(spark),
+            conf=all_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -711,6 +780,48 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
+@pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
+@pytest.mark.skipif(is_dataproc_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/8074')
+def test_parquet_read_nano_as_longs_31x(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    # we correctly return timestamp_micros when running against Spark 3.1.x
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path))
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
+def test_parquet_read_nano_as_longs_false(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    conf = copy_and_update(original_parquet_file_reader_conf, {
+            'spark.sql.legacy.parquet.nanosAsLong': False })
+    def read_timestamp_nano_parquet(spark):
+        spark.read.parquet(data_path).collect()
+    assert_gpu_and_cpu_error(
+        read_timestamp_nano_parquet,
+        conf,
+        error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
+def test_parquet_read_nano_as_longs_not_configured(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    def read_timestamp_nano_parquet(spark):
+        spark.read.parquet(data_path).collect()
+    assert_gpu_and_cpu_error(
+        read_timestamp_nano_parquet,
+        conf=original_parquet_file_reader_conf,
+        error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
+@pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
+@pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
+@allow_non_gpu('FileSourceScanExec, ColumnarToRowExec')
+def test_parquet_read_nano_as_longs_true(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    conf = copy_and_update(original_parquet_file_reader_conf, {
+            'spark.sql.legacy.parquet.nanosAsLong': True })
+    assert_gpu_fallback_collect(
+        lambda spark: spark.read.parquet(data_path),
+        'FileSourceScanExec',
+        conf=conf)
 
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
@@ -1217,6 +1328,21 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
                            {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
+        conf=conf)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize("types", [("byte", "short"), ("byte", "int"), ("short", "int")], ids=idfn)
+def test_parquet_read_int_upcast(spark_tmp_path, reader_confs, v1_enabled_list, types):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    store_type, load_type = types
+    with_cpu_session(lambda spark: spark.range(10) \
+                     .selectExpr(f"cast(id as {store_type})") \
+                     .write.parquet(data_path))
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(f"id {load_type}").parquet(data_path),
         conf=conf)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)

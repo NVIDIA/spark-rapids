@@ -18,7 +18,7 @@
 # This script installs dependencies required to build RAPIDS Accelerator for Apache Spark on DB.
 # All the environments can be overwritten by shell variables:
 #   SPARKSRCTGZ: Archive file location of the plugin repository. Default is empty.
-#   BASE_SPARK_VERSION: Spark version [3.1.2, 3.2.1, 3.3.0]. Default is pulled from current instance.
+#   BASE_SPARK_VERSION: Spark version [3.2.1, 3.3.0]. Default is pulled from current instance.
 #   BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS: The version of Spark used when we install the
 #       Databricks jars in .m2. Default is {BASE_SPARK_VERSION}.
 #   MVN_OPT: Options to be passed to the MVN commands. Note that "-DskipTests" is hardcoded in the
@@ -114,7 +114,7 @@ initialize()
 }
 
 # Sets the JAR files prefixes based on the build version.
-# DB9.1 and 10.4 uses ----workspace as a prefix.
+# DB 10.4 uses ----workspace as a prefix.
 # DB 11.3 uses more abbreviations (i.e., workspace becomes ws).
 set_jars_prefixes()
 {
@@ -124,7 +124,7 @@ set_jars_prefixes()
     # get the hive prefix. something like hive-2.3
     HIVE_VER_STRING=hive-$(echo ${sw_versions[HIVE_FULL]} | cut -d. -f 1,2)
 
-    # defaults are for 3.1.2, and 3.2.1
+    # defaults are for 3.2.1
     PREFIX_WS=----workspace
     SPARK_MAJOR_VERSION_STRING=spark_${SPARK_MAJOR_VERSION_NUM_STRING}
     PREFIX_SPARK=${PREFIX_WS}_${SPARK_MAJOR_VERSION_STRING}
@@ -185,24 +185,6 @@ set_sw_versions()
             sw_versions[ORC]="1.6.13"
             sw_versions[PARQUET]="1.12.0"
             sw_versions[PROTOBUF]="2.6.1"
-            ;;
-        "3.1.2")
-            sw_versions[COMMONS_LANG3]="3.10"
-            sw_versions[COMMONS_IO]="2.4"
-            sw_versions[DB]="9"
-            sw_versions[FASTERXML_JACKSON]="2.10.0"
-            sw_versions[HADOOP]="2.7"
-            sw_versions[HIVE_FULL]="2.3.7"
-            sw_versions[JSON4S_AST]="3.7.0-M5"
-            sw_versions[JSON4S_CORE]="3.7.0-M5"
-            sw_versions[ORC]="1.5.12"
-            sw_versions[PARQUET]="1.10.1"
-            sw_versions[HIVESTORAGE_API]="2.7.2"
-            sw_versions[PROTOBUF]="2.6.1"
-            sw_versions[KRYO]="4.0.2"
-            sw_versions[ARROW]="2.0.0"
-            sw_versions[JAVAASSIST]="3.25.0-GA"
-            sw_versions[AVRO]="1.8.2"
             ;;
         *) echo "Unexpected Spark version: $BASE_SPARK_VERSION"; exit 1;;
     esac
@@ -290,17 +272,6 @@ set_dep_jars()
         artifacts[LOG4JCORE]="-DgroupId=org.apache.logging.log4j -DartifactId=log4j-core"
         dep_jars[LOG4JCORE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__${sw_versions[LOG4JCORE]}.jar
     fi
-
-    # spark-3.1.2 overrides some jar naming conventions
-    if [[ $BASE_SPARK_VERSION == "3.1.2" ]]
-    then
-        dep_jars[HIVE]=${PREFIX_SPARK}--sql--hive--hive_${SCALA_VERSION}_deploy_shaded.jar
-        dep_jars[HIVEMETASTORECLIENTPATCHED]=${PREFIX_SPARK}--patched-hive-with-glue--hive-12679-patch_deploy.jar
-        dep_jars[PARQUETFORMAT]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
-        dep_jars[AVROSPARK]=${PREFIX_SPARK}--vendor--avro--avro_${SCALA_VERSION}_deploy_shaded.jar
-        dep_jars[AVROMAPRED]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro-mapred-hadoop2--org.apache.avro__avro-mapred-hadoop2__${sw_versions[AVRO]}.jar
-        dep_jars[AVRO]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro--org.apache.avro__avro__${sw_versions[AVRO]}.jar
-    fi
 }
 
 # Install dependency jars to MVN repository.
@@ -337,7 +308,7 @@ else
 fi
 
 if [[ "$WITH_BLOOP" == "1" ]]; then
-    MVN_OPT="ch.epfl.scala:maven-bloop_2.13:bloopInstall $MVN_OPT"
+    MVN_OPT="ch.epfl.scala:bloop-maven-plugin:bloopInstall $MVN_OPT"
 fi
 
 # Build the RAPIDS plugin by running package command for databricks

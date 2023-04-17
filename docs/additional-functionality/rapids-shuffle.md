@@ -26,13 +26,13 @@ in our plugin:
 | 3.2.3           | com.nvidia.spark.rapids.spark323.RapidsShuffleManager    |
 | 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
 | 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
-| Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
+| 3.3.2           | com.nvidia.spark.rapids.spark332.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 | Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
 
 ## Multi-Threaded Mode
 
-Mult-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
+Multi-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
 more CPU threads for compute-intensive tasks, such as compression and decompression. 
 
 Minimum configuration:
@@ -93,8 +93,8 @@ In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its 
 be installed on the host and inside Docker containers (if not baremetal). A host has additional
 requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
 
-The minimum UCX requirement for the RAPIDS Shuffle Manager is
-[UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1).
+The required UCX version for the RAPIDS Shuffle Manager is
+[UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1). Versions higher than 1.12.1 have not been tested.
 
 #### Baremetal
 
@@ -330,7 +330,7 @@ In this section, we are using a docker container built using the sample dockerfi
 1. Choose the version of the shuffle manager that matches your Spark version. Please refer to
    the table at the top of this document for `spark.shuffle.manager` values.
 
-2. Settings for UCX 1.12.1+:
+2. Settings for UCX 1.12.1:
 
     Minimum configuration:
 
@@ -392,10 +392,10 @@ Save the script in DBFS and add it to the "Init Scripts" list:
 
 2) Add the UCX minimum configuration for your Cluster. 
 
-Databricks 9.1:
+Databricks 10.4:
 
 ```
-spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
+spark.shuffle.manager com.nvidia.spark.rapids.spark321db.RapidsShuffleManager
 spark.rapids.shuffle.mode UCX
 spark.shuffle.service.enabled false
 spark.executorEnv.UCX_MEMTYPE_CACHE n

@@ -176,6 +176,8 @@ class GpuOptimisticTransaction(
     val constraints =
       Constraints.getAll(metadata, spark) ++ generatedColumnConstraints ++ additionalConstraints
 
+    val isOptimize = isOptimizeCommand(queryExecution.analyzed)
+
     SQLExecution.withNewExecutionId(queryExecution, Option("deltaTransactionalWrite")) {
       val outputSpec = FileFormatWriter.OutputSpec(
         outputPath.toString,
@@ -194,7 +196,9 @@ class GpuOptimisticTransaction(
 
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
-      val planWithInvariants = addInvariantChecks(empty2NullPlan, constraints)
+      val optimizedPlan =
+        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize)
+      val planWithInvariants = addInvariantChecks(optimizedPlan, constraints)
       val physicalPlan = convertToGpu(planWithInvariants)
 
       val statsTrackers: ListBuffer[ColumnarWriteJobStatsTracker] = ListBuffer()
@@ -275,6 +279,23 @@ class GpuOptimisticTransaction(
     identityTracker.foreach { tracker =>
       updatedIdentityHighWaterMarks.appendAll(tracker.highWaterMarks.toSeq)
     }
-    resultFiles.toSeq ++ committer.changeFiles
+    val fileActions = resultFiles.toSeq ++ committer.changeFiles
+
+    // Check if auto-compaction is enabled.
+    // (Auto compaction checks are derived from the work in
+    //  https://github.com/delta-io/delta/pull/1156).
+    lazy val autoCompactEnabled =
+      spark.sessionState.conf
+        .getConf[String](DeltaSQLConf.DELTA_AUTO_COMPACT_ENABLED)
+        .getOrElse {
+          DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
+            .getOrElse("false")
+        }.toBoolean
+
+    if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
+      registerPostCommitHook(GpuDoAutoCompaction)
+    }
+
+    fileActions
   }
 }

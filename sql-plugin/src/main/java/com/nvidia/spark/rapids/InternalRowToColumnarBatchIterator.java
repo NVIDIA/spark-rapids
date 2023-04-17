@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,6 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
   protected final long dataLength;
   protected final DType[] rapidsTypes;
   protected final DataType[] outputTypes;
-  protected final GpuMetric semaphoreWaitTime;
   protected final GpuMetric streamTime;
   protected final GpuMetric opTime;
   protected final GpuMetric numInputRows;
@@ -63,7 +62,6 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
       Iterator<InternalRow> input,
       Attribute[] schema,
       CoalesceSizeGoal goal,
-      GpuMetric semaphoreWaitTime,
       GpuMetric streamTime,
       GpuMetric opTime,
       GpuMetric numInputRows,
@@ -81,7 +79,6 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
       rapidsTypes[i] = GpuColumnVector.getNonNestedRapidsType(schema[i].dataType());
       outputTypes[i] = schema[i].dataType();
     }
-    this.semaphoreWaitTime = semaphoreWaitTime;
     this.streamTime = streamTime;
     this.opTime = opTime;
     this.numInputRows = numInputRows;
@@ -158,7 +155,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         // Grab the semaphore because we are about to put data onto the GPU.
         TaskContext tc = TaskContext.get();
         if (tc != null) {
-          GpuSemaphore$.MODULE$.acquireIfNecessary(tc, semaphoreWaitTime);
+          GpuSemaphore$.MODULE$.acquireIfNecessary(tc);
         }
         buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(opTime));
         devColumn = hostColumn.copyToDevice();

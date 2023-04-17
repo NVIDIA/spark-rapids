@@ -248,7 +248,7 @@ abstract class GpuShuffleExchangeExecBase(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = SparkShimImpl
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = SparkShimImpl
     .attachTreeIfSupported(this, "execute") {
       // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
       if (cachedShuffleRDD == null) {

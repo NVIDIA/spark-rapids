@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,9 +48,8 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-         spillCallback) = commonGpuMetrics()
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
 
     val pyInputTypes = child.schema
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
@@ -75,7 +74,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
       val contextAwareIter = new ContextAwareIterator(context, inputIter)
 
       val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
-          batchSize, numInputRows, numInputBatches, spillCallback)
+          batchSize, numInputRows, numInputBatches)
         .map { batch =>
           // Here we wrap it via another column so that Python sides understand it
           // as a DataFrame.
@@ -96,8 +95,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             pyInputSchema,
             sessionLocalTimeZone,
             pythonRunnerConf,
-            batchSize,
-            spillCallback.semaphoreWaitTime) {
+            batchSize) {
           override def toBatch(table: Table): ColumnarBatch = {
             BatchGroupedIterator.extractChildren(table, localOutput)
           }
@@ -114,6 +112,6 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
         inputIter
       }
     } // end of mapPartitionsInternal
-  } // end of doExecuteColumnar
+  } // end of internalDoExecuteColumnar
 
 }

@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.Ignore
+import org.scalatest.{FunSuite, Ignore}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.GpuRegExpUtils
 
  /* 
  * Different versions of Java support different versions of Unicode. 
@@ -192,6 +193,29 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   INCOMPAT_testSparkResultsAreEqual("Test compatible values lower case modifier",
     TestCodepoints.lowercaseCompatibleCharsDF) {
     frame => frame.select(lower(col("strings")))
+  }
+}
+
+class RegExpUtilsSuite extends FunSuite {
+  test("get list of choices from regexp for multi-replace") {
+    val regexChoices = Map(
+      "aa|bb" -> Seq("aa", "bb"),
+      "(aa)|(bb)" -> Seq("aa", "bb"),
+      "aa|bb|cc" -> Seq("aa", "bb", "cc"),
+      "(aa)|(bb)|(cc)" -> Seq("aa", "bb", "cc"),
+      "aa|bb|cc|dd" -> Seq("aa", "bb", "cc", "dd"),
+      "(aa|bb)|(cc|dd)" -> Seq("aa", "bb", "cc", "dd"),
+      "aa|bb|cc|dd|ee" -> Seq("aa", "bb", "cc", "dd", "ee"),
+      "aa|bb|cc|dd|ee|ff" -> Seq("aa", "bb", "cc", "dd", "ee", "ff")
+    )
+
+    regexChoices.foreach { case (pattern, choices) =>
+      val (ast, _) = (new CudfRegexTranspiler(RegexReplaceMode)).getTranspiledAST(pattern,
+              None, Some(""))
+      val result = GpuRegExpUtils.getChoicesFromRegex(ast)
+      assert(result.isDefined && result.forall(_ == choices))
+    }
+
   }
 }
 

@@ -18,7 +18,7 @@ package org.apache.spark.sql.delta.rapids
 
 import scala.util.Try
 
-import com.nvidia.spark.rapids.{RapidsConf, ShimLoader, VersionUtils}
+import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
@@ -52,7 +52,7 @@ object DeltaRuntimeShim {
 
   private lazy val shimInstance = {
     val shimClassName = getShimClassName
-    val shimClass = ShimLoader.loadClass(shimClassName)
+    val shimClass = ShimReflectionUtils.loadClass(shimClassName)
     shimClass.getConstructor().newInstance().asInstanceOf[DeltaRuntimeShim]
   }
 

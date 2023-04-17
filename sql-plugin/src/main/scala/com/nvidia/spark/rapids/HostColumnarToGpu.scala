@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ object HostColumnarToGpu extends Logging {
 
   // use reflection to get access to a private field in a class
   private def getClassFieldAccessible(className: String, fieldName: String) = {
-    val classObj = ShimLoader.loadClass(className)
+    val classObj = ShimReflectionUtils.loadClass(className)
     val fields = classObj.getDeclaredFields.toList
     val field = fields.filter( x => {
       x.getName.contains(fieldName)
@@ -177,7 +177,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     streamTime: GpuMetric,
     concatTime: GpuMetric,
     copyBufTime: GpuMetric,
-    semTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
     opName: String,
@@ -245,6 +244,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows = 0
   }
 
+
+  /**
+   * addBatchToConcat for HostToGpuCoalesceIterator does not need to close `batch`
+   * because the batch is closed by the producer iterator.
+   * See: https://github.com/NVIDIA/spark-rapids/issues/6995
+   * @param batch the batch to add in.
+   */
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     withResource(new MetricRange(copyBufTime)) { _ =>
       val rows = batch.numRows()
@@ -261,7 +267,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     // About to place data back on the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semTime)
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     val ret = batchBuilder.build(totalRows)
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
@@ -269,8 +275,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // refine the estimate for number of rows based on this batch
     batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory,
       ret.numRows())
-
     ret
+  }
+
+  override val supportsRetryIterator: Boolean = false
+
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
+    throw new UnsupportedOperationException(
+      "HostColumnarToGpu iterator does not support retry iterators")
   }
 
   override def cleanupConcatIsDone(): Unit = {
@@ -317,7 +329,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     COPY_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_BUFFER_TIME),
     PEAK_DEVICE_MEMORY -> createMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-    ) ++ semaphoreMetrics
+    )
 
   override def output: Seq[Attribute] = child.output
 
@@ -338,7 +350,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
    *
    * @return an RDD of `ColumnarBatch`
    */
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
 
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
@@ -347,7 +359,6 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val copyBufTime = gpuLongMetric(COPY_BUFFER_TIME)
-    val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
@@ -360,7 +371,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-        streamTime, concatTime, copyBufTime, semTime, opTime,
+        streamTime, concatTime, copyBufTime, opTime,
         peakDevMemory, "HostColumnarToGpu", confUseArrow)
     }
   }

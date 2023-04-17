@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ object PlanUtils {
     val execNameWithoutPackage = getBaseNameFromClass(planClass.getName)
     execNameWithoutPackage == fallbackCpuClass ||
       plan.getClass.getName == fallbackCpuClass ||
-      Try(ShimLoader.loadClass(fallbackCpuClass))
+      Try(ShimReflectionUtils.loadClass(fallbackCpuClass))
         .map(_.isAssignableFrom(planClass))
         .getOrElse(false)
   }
