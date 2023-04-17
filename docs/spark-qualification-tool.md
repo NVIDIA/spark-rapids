@@ -70,7 +70,7 @@ Usage: `spark_rapids_user_tools <CSP> qualification --cpu_cluster <CLUSTER> --ev
 The supported CSPs are *dataproc*, *emr*, and *databricks-aws*.  The EVENTLOGS-PATH should be the storage location
 for your eventlogs.  For Dataproc, it should be set to the GCS path.  For EMR and Databricks-AWS, it should be set to
 the S3 path.  THE CLUSTER can be a live cluster or a configuration file representing the cluster instances and size.
-More details are in the above documentation links per CSP environment
+More details are in the above documentation links per CSP environment. The user tools only show recommended applications in the output.
 
 Help (to see all options available): `spark_rapids_user_tools <CSP> qualification --help`
 
@@ -111,7 +111,7 @@ more information.
 The Qualification tool require the Spark 3.x jars to be able to run but do not need an Apache Spark run time.
 If you do not already have Spark 3.x installed, you can download the Spark distribution to
 any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.04.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2 Run the Qualification tool
@@ -140,7 +140,7 @@ any machine and include the jars in the classpath.
 
     ```bash
     Sample: java ${QUALIFICATION_HEAP} \
-              -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+              -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
               com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
     ```
 
@@ -166,7 +166,7 @@ java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CO
 
 RAPIDS Accelerator Qualification tool for Apache Spark
 
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
        <eventlogs | eventlog directories ...>
 
@@ -380,7 +380,7 @@ to [Understanding the Qualification tool output](#understanding-the-qualificatio
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.04.0/)
 
 ### Modify your application code to call the api's
 
@@ -467,7 +467,7 @@ with the Rapids Accelerator for Spark.
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.04.0/)
 
 ### Configuration
 
