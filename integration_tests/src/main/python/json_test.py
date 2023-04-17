@@ -368,3 +368,12 @@ def test_from_json_map():
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+
+# @pytest.mark.parametrize('schema', [_string_schema])
+def test_from_json_struct():
+    json_string_gen = StringGen(r'{"a": "xyz[0-9]{0,5}"(, "b": "[A-Z]{0,5}")?}')
+    schema = StructType([StructField("a", StringType()), StructField("b", StringType())])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})

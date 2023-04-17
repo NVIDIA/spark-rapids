@@ -31,6 +31,9 @@ case class GpuJsonToStructs(
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    System.err.println(s"Schema = ${schema}")
+    GpuColumnVector.debug("input", input.getBase)
+    GpuColumnVector.debug("result", MapUtils.extractRawMapFromJsonString(input.getBase))
     MapUtils.extractRawMapFromJsonString(input.getBase)
   }
 

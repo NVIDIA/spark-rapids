@@ -3359,6 +3359,7 @@ object GpuOverrides extends Logging {
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
         TypeSig.MAP.nested(TypeSig.STRING),
+        // (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
