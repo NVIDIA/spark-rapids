@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.language.implicitConversions
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric.{makeSpillCallback, BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -77,10 +77,11 @@ trait HostMemoryBuffersWithMetaDataBase {
   def memBuffersAndSizes: Array[SingleHMBAndMeta]
   // Total bytes read
   def bytesRead: Long
-  // Percentage of time spent on filtering
-  private var _filterTimePct: Double = 0L
-  // Percentage of time spent on buffering
-  private var _bufferTimePct: Double = 0L
+
+  // Time spent on filtering
+  private var _filterTime: Long = 0L
+  // Time spent on buffering
+  private var _bufferTime: Long = 0L
 
   // The partition values which are needed if combining host memory buffers
   // after read by the multithreaded reader but before sending to GPU.
@@ -89,13 +90,22 @@ trait HostMemoryBuffersWithMetaDataBase {
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
   // that filtering and buffering incurred in one of the scan runners.
   def setMetrics(filterTime: Long, bufferTime: Long): Unit = {
-    val totalTime = filterTime + bufferTime
-    _filterTimePct = filterTime.toDouble / totalTime
-    _bufferTimePct = bufferTime.toDouble / totalTime
+    _bufferTime = bufferTime
+    _filterTime = filterTime
   }
 
-  def getBufferTimePct: Double = _bufferTimePct
-  def getFilterTimePct: Double = _filterTimePct
+  def getBufferTime: Long = _bufferTime
+  def getFilterTime: Long = _filterTime
+
+  def getBufferTimePct: Double = {
+    val totalTime = _filterTime + _bufferTime
+    _bufferTime.toDouble / totalTime
+  }
+
+  def getFilterTimePct: Double = {
+    val totalTime = _filterTime + _bufferTime
+    _filterTime.toDouble / totalTime
+  }
 }
 
 // This is a common trait for all kind of file formats
@@ -370,7 +380,6 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   protected var isDone: Boolean = false
   protected var maxDeviceMemory: Long = 0
   protected var batchIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
-  protected lazy val spillCallback: SpillCallback = makeSpillCallback(execMetrics)
 
   override def get(): ColumnarBatch = {
     batchIter.next()
@@ -1133,7 +1142,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         } else {
           val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
@@ -1141,9 +1150,26 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       } else {
         val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
-        val tableReader = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
-          currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
-        CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+        if (currentChunkMeta.currentChunk.isEmpty) {
+          CachedGpuBatchIterator(EmptyTableReader, colTypes)
+        } else {
+          val (dataBuffer, dataSize) = readPartFiles(currentChunkMeta.currentChunk,
+            currentChunkMeta.clippedSchema)
+          if (dataSize == 0) {
+            dataBuffer.close()
+            CachedGpuBatchIterator(EmptyTableReader, colTypes)
+          } else {
+            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+              // We don't want to actually close the host buffer until we know that we don't
+              // want to retry more, so offset the close for now.
+              dataBuffer.incRefCount()
+              val tableReader = readBufferToTablesAndClose(dataBuffer,
+                dataSize, currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
+                currentChunkMeta.extraInfo)
+              CachedGpuBatchIterator(tableReader, colTypes)
+            }
+          }
+        }
       }
       new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
           currentChunkMeta.rowsPerPartition, partitionSchema).map { withParts =>

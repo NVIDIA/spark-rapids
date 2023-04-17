@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.command.{ExecutedCommandExec, RunnableCommand}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * GPU version of ExecutedCommandExec.
@@ -69,6 +70,11 @@ case class GpuExecutedCommandExec(cmd: RunnableCommand) extends LeafExecNode wit
 
   protected override def doExecute(): RDD[InternalRow] = {
     sparkContext.parallelize(sideEffectResult, 1)
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
   }
 }
 

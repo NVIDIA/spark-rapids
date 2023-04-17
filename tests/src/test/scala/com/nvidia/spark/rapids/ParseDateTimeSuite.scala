@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, RegexProgram}
 import java.sql.{Date, Timestamp}
 import org.scalatest.BeforeAndAfterEach
 import scala.collection.mutable.ListBuffer
@@ -279,11 +279,11 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(res)
   }
 
-  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
     withResource(ColumnVector.fromStrings(values: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(v.stringReplaceWithBackrefs(rule.search, rule.replace)) { actual =>
+        val prog = new RegexProgram(rule.search)
+        withResource(v.stringReplaceWithBackrefs(prog, rule.replace)) { actual =>
           CudfTestHelper.assertColumnsAreEqual(expected, actual)
         }
       }

@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, RunnableCommandRule, ShimLoader}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, RunnableCommandRule, ShimLoader, ShimReflectionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
@@ -25,8 +25,8 @@ import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableComma
 object GpuHiveOverrides {
   val isSparkHiveAvailable: Boolean = {
     try {
-      ShimLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
-      ShimLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
+      ShimReflectionUtils.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
+      ShimReflectionUtils.loadClass("org.apache.hadoop.hive.conf.HiveConf")
       true
     } catch {
       case _: ClassNotFoundException | _: NoClassDefFoundError => false

@@ -11,9 +11,9 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 9.1 ML, 10.4 ML or 11.3 ML with GPU
-    * AWS: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2), 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
-    * Azure: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
+    * Apache Spark 3.x running in Databricks Runtime 10.4 ML or 11.3 ML with GPU
+    * AWS: 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
+    * Azure: 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
@@ -87,9 +87,6 @@ cluster.
    how to import a notebook.  
    Select the version of the RAPIDS Accelerator for Apache Spark based on the Databricks runtime
    version:
-    - [Databricks 9.1 LTS
-    ML](https://docs.databricks.com/release-notes/runtime/9.1ml.html#system-environment) has CUDA 11
-    installed.  Users will need to use 21.12.0 or later on Databricks 9.1 LTS ML. 
    - [Databricks 10.4 LTS
      ML](https://docs.databricks.com/release-notes/runtime/10.4ml.html#system-environment) has CUDA 11
      installed.  Users will need to use 22.04.0 or later on Databricks 10.4 LTS ML.

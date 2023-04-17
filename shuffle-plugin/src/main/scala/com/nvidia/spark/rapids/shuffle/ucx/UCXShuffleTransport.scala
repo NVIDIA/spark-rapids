@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, CudaMemoryBuffer, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{GpuDeviceManager, HashedPriorityQueue, RapidsConf}
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle._
 import com.nvidia.spark.rapids.shuffle.{BounceBufferManager, BufferReceiveState, ClientConnection, PendingTransferRequest, RapidsShuffleClient, RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport, RefCountedDirectByteBuffer}
 
@@ -248,7 +249,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       new ThreadFactoryBuilder()
         .setNameFormat("shuffle-transport-client-exec-%d")
         .setDaemon(true)
-        .build),
+        .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()),
     // if we can't hand off because we are too busy, block the caller (in UCX's case,
     // the progress thread)
     new CallerRunsAndLogs())
@@ -258,7 +261,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
       .setNameFormat("shuffle-client-copy-thread-%d")
       .setDaemon(true)
-      .build))
+      .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()))
 
   override def makeClient(blockManagerId: BlockManagerId): RapidsShuffleClient = {
     val peerExecutorId = blockManagerId.executorId.toLong
@@ -280,14 +285,18 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
       .setNameFormat(s"shuffle-server-conn-thread-${shuffleServerId.executorId}-%d")
       .setDaemon(true)
-      .build))
+      .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()))
 
   // This executor handles any task that would block (e.g. wait for spill synchronously due to OOM)
   private[this] val serverCopyExecutor = Executors.newSingleThreadExecutor(
     GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
       .setNameFormat(s"shuffle-server-copy-thread-%d")
       .setDaemon(true)
-      .build))
+      .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()))
 
   // This is used to queue up on the server all the [[BufferSendState]] as the server waits for
   // bounce buffers to become available (it is the equivalent of the transport's throttle, minus
@@ -296,7 +305,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
       .setNameFormat(s"shuffle-server-bss-thread-%d")
       .setDaemon(true)
-      .build))
+      .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()))
 
   /**
    * Construct a server instance
@@ -356,7 +367,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       new ThreadFactoryBuilder()
         .setNameFormat(s"shuffle-transport-throttle-monitor")
         .setDaemon(true)
-        .build))
+        .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()))
 
   // helper class to hold transfer requests that have a bounce buffer
   // and should be ready to be handled by a `BufferReceiveState`

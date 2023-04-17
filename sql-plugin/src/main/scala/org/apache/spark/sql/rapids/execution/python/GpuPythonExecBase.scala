@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ trait GpuPythonExecBase extends GpuExec {
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
-  ) ++ spillMetrics
+  )
 
   /**
    * Return the common metrics in order of
@@ -47,17 +47,13 @@ trait GpuPythonExecBase extends GpuExec {
    *   NUM_INPUT_BATCHES
    *   NUM_OUTPUT_ROWS
    *   NUM_OUTPUT_BATCHES
-   *   SpillCallback
    * as a tuple.
    */
-  protected def commonGpuMetrics(): (GpuMetric, GpuMetric, GpuMetric, GpuMetric,
-      SpillCallback) = (
+  protected def commonGpuMetrics(): (GpuMetric, GpuMetric, GpuMetric, GpuMetric) = (
     gpuLongMetric(NUM_INPUT_ROWS),
     gpuLongMetric(NUM_INPUT_BATCHES),
     gpuLongMetric(NUM_OUTPUT_ROWS),
-    gpuLongMetric(NUM_OUTPUT_BATCHES),
-    GpuMetric.makeSpillCallback(allMetrics)
-  )
+    gpuLongMetric(NUM_OUTPUT_BATCHES))
 
 }
 

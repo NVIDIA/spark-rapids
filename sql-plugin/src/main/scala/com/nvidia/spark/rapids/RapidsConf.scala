@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RapidsPrivateUtil
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -342,6 +343,25 @@ object RapidsConf {
     .startupOnly()
     .stringConf
     .createWithDefault("NONE")
+
+  val SPARK_RMM_STATE_DEBUG = conf("spark.rapids.memory.gpu.state.debug")
+      .doc("To better recover from out of memory errors, RMM will track several states for " +
+          "the threads that interact with the GPU. This provides a log of those state " +
+          "transitions to aid in debugging it. STDOUT or STDERR will have the logging go there " +
+          "empty string will disable logging and anything else will be treated as a file to " +
+          "write the logs to.")
+      .startupOnly()
+      .stringConf
+      .createWithDefault("")
+
+  val SPARK_RMM_STATE_ENABLE = conf("spark.rapids.memory.gpu.state.enable")
+      .doc("Enabled or disable using the SparkRMM state tracking to improve " +
+          "OOM response. This includes possibly retrying parts of the processing in " +
+          "the case of an OOM")
+      .startupOnly()
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
     .doc("The path to a local directory where a heap dump will be created if the GPU " +
@@ -1227,6 +1247,13 @@ object RapidsConf {
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
+  val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
+    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
+         "once per invocation.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1249,6 +1276,16 @@ object RapidsConf {
     .stringConf
     .toSequence
     .createWithDefault(Nil)
+
+  val HASH_SUB_PARTITION_TEST_ENABLED = conf("spark.rapids.sql.test.subPartitioning.enabled")
+    .doc("Setting to true will force hash joins to use the sub-partitioning algorithm if " +
+      s"${TEST_CONF.key} is also enabled, while false means always disabling it. This is " +
+      "intended for tests. Do not set any value under production environments, since it " +
+      "will override the default behavior that will choose one automatically according to " +
+      "the input batch size")
+    .internal()
+    .booleanConf
+    .createOptional
 
   val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
     .doc("When enabled, all query transformations will be logged.")
@@ -1501,6 +1538,27 @@ object RapidsConf {
         .createWithDefault(20)
 
   // ALLUXIO CONFIGS
+  val ALLUXIO_MASTER = conf("spark.rapids.alluxio.master")
+    .doc("The Alluxio master hostname. If not set, read Alluxio master URL from " +
+      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
+      "and Spark driver are not co-located.")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("")
+
+  val ALLUXIO_MASTER_PORT = conf("spark.rapids.alluxio.master.port")
+    .doc("The Alluxio master port. If not set, read Alluxio master port from " +
+      "spark.rapids.alluxio.home locally. This config is useful when Alluxio master " +
+      "and Spark driver are not co-located.")
+    .startupOnly()
+    .integerConf
+    .createWithDefault(19998)
+
+  val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
+    .doc("The Alluxio installation home path or link to the installation home path. ")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("/opt/alluxio")
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
     .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
@@ -1519,10 +1577,6 @@ object RapidsConf {
   val ALLUXIO_AUTOMOUNT_ENABLED = conf("spark.rapids.alluxio.automount.enabled")
     .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
       "It requires the Alluxio master is the same node of Spark driver node. " +
-      "When it's true, it requires an environment variable ALLUXIO_HOME be set properly. " +
-      "The default value of ALLUXIO_HOME is \"/opt/alluxio-2.8.0\". " +
-      "You can set it as an environment variable when running a spark-submit or " +
-      "you can use spark.yarn.appMasterEnv.ALLUXIO_HOME to set it on Yarn. " +
       "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
@@ -1787,6 +1841,21 @@ object RapidsConf {
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(0L)
 
+  val NUM_SUB_PARTITIONS = conf("spark.rapids.sql.join.hash.numSubPartitions")
+    .doc("The number of partitions for the repartition in each partition for big hash join. " +
+      "GPU will try to repartition the data into smaller partitions in each partition when the " +
+      "data from the build side is too large to fit into a single batch.")
+    .internal()
+    .integerConf
+    .createWithDefault(16)
+
+  val ENABLE_AQE_EXCHANGE_REUSE_FIXUP = conf("spark.rapids.sql.aqeExchangeReuseFixup.enable")
+      .doc("Option to turn on the fixup of exchange reuse when running with " +
+          "adaptive query execution.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1817,7 +1886,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.02.0-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.04.0-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -1841,7 +1910,9 @@ object RapidsConf {
     } else {
       println("Rapids Configs:")
     }
-    registeredConfs.sortBy(_.key).foreach(_.help(asTable))
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    allConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
@@ -1951,6 +2022,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
+  lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
+
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
@@ -1958,6 +2031,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
+
+  lazy val sparkRmmDebugLocation: String = get(SPARK_RMM_STATE_DEBUG)
+
+  lazy val sparkRmmStateEnable: Boolean = get(SPARK_RMM_STATE_ENABLE)
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
@@ -2321,6 +2398,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
+  lazy val getAlluxioHome: String = get(ALLUXIO_HOME)
+
+  lazy val getAlluxioMaster: String = get(ALLUXIO_MASTER)
+
+  lazy val getAlluxioMasterPort: Int = get(ALLUXIO_MASTER_PORT)
+
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   lazy val getAlluxioAutoMountEnabled: Boolean = get(ALLUXIO_AUTOMOUNT_ENABLED)
@@ -2375,7 +2458,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
-  lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+  lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+
+  lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

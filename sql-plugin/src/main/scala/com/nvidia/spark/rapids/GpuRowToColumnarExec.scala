@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -591,7 +591,6 @@ class RowToColumnarIterator(
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
-    semaphoreWaitTime: GpuMetric = NoopMetric,
     streamTime: GpuMetric = NoopMetric,
     opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
 
@@ -650,7 +649,7 @@ class RowToColumnarIterator(
         // note that TaskContext.get() can return null during unit testing so we wrap it in an
         // option here
         Option(TaskContext.get())
-            .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx, semaphoreWaitTime))
+            .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
         val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
           opTime)) { _ =>
@@ -681,7 +680,6 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
   def apply(input: Iterator[InternalRow],
       schema: Array[Attribute],
       goal: CoalesceSizeGoal,
-      semaphoreWaitTime: GpuMetric,
       streamTime: GpuMetric,
       opTime: GpuMetric,
       numInputRows: GpuMetric,
@@ -701,8 +699,6 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
     val schemaRef = ctx.addReferenceObj("schema", schema,
       classOf[Array[Attribute]].getCanonicalName)
     val goalRef = ctx.addReferenceObj("goal", goal, classOf[CoalesceSizeGoal].getName)
-    val semaphoreWaitTimeRef = ctx.addReferenceObj("semaphoreWaitTime", semaphoreWaitTime,
-      classOf[GpuMetric].getName)
     val streamTimeRef = ctx.addReferenceObj("streamTime", streamTime, classOf[GpuMetric].getName)
     val opTimeRef = ctx.addReferenceObj("opTime", opTime, classOf[GpuMetric].getName)
     val numInputRowsRef = ctx.addReferenceObj("numInputRows", numInputRows,
@@ -777,7 +773,6 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |      $iterRef,
          |      $schemaRef,
          |      $goalRef,
-         |      $semaphoreWaitTimeRef,
          |      $streamTimeRef,
          |      $opTimeRef,
          |      $numInputRowsRef,
@@ -882,13 +877,12 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   }
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
   )
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // use local variables instead of class global variables to prevent the entire
     // object from having to be serialized
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
@@ -896,7 +890,6 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val opTime = gpuLongMetric(OP_TIME)
-    val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
     val rowBased = child.execute()
 
@@ -912,13 +905,13 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
         CudfRowTransitions.areAllSupported(output)) {
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedInternalRowToCudfRowIterator(
-        rowIter, localOutput.toArray, localGoal, semaphoreWaitTime, streamTime, opTime,
+        rowIter, localOutput.toArray, localGoal, streamTime, opTime,
         numInputRows, numOutputRows, numOutputBatches))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
         localSchema, localGoal, converters,
-        numInputRows, numOutputRows, numOutputBatches, semaphoreWaitTime, streamTime, opTime))
+        numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
     }
   }
 }

@@ -20,7 +20,7 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 9.1, 10.4, 11.3](get-started/getting-started-databricks.md)
+- [Databricks Runtime 10.4, 11.3](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through
@@ -403,7 +403,7 @@ There are multiple reasons why this a problematic configuration:
 - CUDA context switches between processes sharing a single GPU can be expensive
 - Each executor would have a fraction of the GPU memory available for processing
 
-### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+### Is [Multi-Instance GPU (MIG)](https://www.nvidia.com/en-gb/technologies/multi-instance-gpu/) supported?
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,
@@ -560,6 +560,51 @@ use the RAPIDS Shuffle Manager, your deployment option may be limited to the ext
 
 Starting from 22.06, the default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from
 `ARENA` for CUDA 11.5+. For CUDA 11.4 and older, it will fall back to `ARENA`.
+
+### What is a `RetryOOM` or `SplitAndRetryOOM` exception?
+
+In the 23.04 release of the accelerator two new exceptions were added to replace a
+regular `OutOfMemoryError` that was thrown before when the GPU ran out of memory.
+Originally we used `OutOfMemoryError` like on the CPU thinking that it would help to
+trigger GC in case handles pointing to GPU memory were leaked in the JVM heap. But
+`OutOfMemoryError` is technically a fatal exception and recovering from it is
+not strictly supported. As such Apache Spark treats it as a fatal exception and will
+kill the process that sees this exception. This can result in a lot of tasks
+being rerun if the GPU runs out of memory. These new exceptions prevent that. They
+also provide an indication to various GPU operators that the GPU ran out of memory
+and how that operator might be able to recover. `RetryOOM` indicates that the operator
+should roll back to a known good spot and then wait until the memory allocation
+framework decides that it should be retried. `SplitAndRetryOOM` is used
+when there is really only one task unblocked and the only way to recover would be to
+roll back to a good spot and try to split the input so that less total GPU memory is
+needed.
+
+These are not implemented for all GPU operations. A number of GPU operations that
+use a significant amount of memory have been updated to handle `RetryOOM`, but fewer
+have been updated to handle `SplitAndRetryOOM`. If you do run into these exceptions
+it is an indication that you are using too much GPU memory. The tuning guide can
+help you to reduce your memory usage. Be aware that some algorithms do not have
+a way to split their usage, things like window operations over some large windows.
+If tuning does not fix the problem please file an issue to help us understand what
+operators may need better out of core algorithm support.
+
+### Encryption Support
+
+The RAPIDS Accelerator for Apache Spark has several components that may or may not follow
+the encryption configurations that Apache Spark provides. The following documents the 
+exceptions that are known at the time of writing this FAQ entry:
+
+Local storage encryption (`spark.io.encryption.enabled`) is not supported for spilled buffers that the 
+plugin uses to help with GPU out-of-memory situations. The RAPIDS Shuffle Manager does not implement 
+local storage encryption for shuffle blocks when configured for UCX, but it does when configured in 
+MULTITHREADED mode.
+
+Network encryption (`spark.network.crypto.enabled`) is not supported in the RAPIDS Shuffle Manager
+when configured for UCX, but it is supported when configured in MULTITHREADED mode.
+
+If your environment has specific encryption requirements for network or IO, please make sure
+that the RAPIDS Accelerator suits your needs, and file and issue or discussion if you have doubts
+or would like expanded encryption support.
 
 ### I have more questions, where do I go?
 We use github to track bugs, feature requests, and answer questions. File an

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -184,12 +185,22 @@ class AcceleratedColumnarToRowIterator(
   }
 }
 
+/**
+ * ColumnarToRowIterator converts GPU ColumnarBatches to CPU InternalRows.
+ *
+ * @note releaseSemaphore = true (default) should only be used in cases where
+ *       we are sure that no GPU memory is left unaccounted for (not spillable).
+ *       One notable case where releaseSemaphore is false is when used in
+ *       `GpuUserDefinedFunction`, which is evaluated as part of a projection, that
+ *       may or may not include other GPU columns.
+ */
 class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
     streamTime: GpuMetric,
-    nullSafe: Boolean = false) extends Iterator[InternalRow] with Arm {
+    nullSafe: Boolean = false,
+    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null
@@ -212,24 +223,29 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   def loadNextBatch(): Unit = {
     closeCurrentBatch()
     it = null
+    // devCb will be None if the parent iterator is empty
     val devCb = fetchNextBatch()
     // perform conversion
-    devCb.foreach { devCb =>
-      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
-        try {
-          cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(toHost),
-            devCb.numRows())
-          it = cb.rowIterator()
-          // In order to match the numOutputRows metric in the generated code we update
-          // numOutputRows for each batch. This is less accurate than doing it at output
-          // because it will over count the number of rows output in the case of a limit,
-          // but it is more efficient.
-          numOutputRows += cb.numRows()
-        } finally {
-          devCb.close()
-          // Leaving the GPU for a while
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    try {
+      devCb.foreach { devCb =>
+        withResource(devCb) { _ =>
+          withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+            cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).safeMap(toHost),
+              devCb.numRows())
+            it = cb.rowIterator()
+            // In order to match the numOutputRows metric in the generated code we update
+            // numOutputRows for each batch. This is less accurate than doing it at output
+            // because it will over count the number of rows output in the case of a limit,
+            // but it is more efficient.
+            numOutputRows += cb.numRows()
+          }
         }
+      }
+    } finally {
+      // Leaving the GPU for a while: if this iterator is configured to release
+      // the semaphore, do it now.
+      if (releaseSemaphore) {
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
       }
     }
   }
@@ -321,6 +337,11 @@ case class GpuColumnarToRowExec(
     } else {
       cdata.mapPartitions(f)
     }
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
   }
 }
 

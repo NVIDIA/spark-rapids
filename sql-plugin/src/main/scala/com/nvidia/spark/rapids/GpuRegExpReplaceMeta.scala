@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,17 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuStringReplace}
+import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
+
+trait GpuRegExpReplaceOpt extends Serializable
+
+@SerialVersionUID(100L)
+object GpuRegExpStringReplace extends GpuRegExpReplaceOpt
+
+@SerialVersionUID(100L)
+object GpuRegExpStringReplaceMulti extends GpuRegExpReplaceOpt
 
 class GpuRegExpReplaceMeta(
     expr: RegExpReplace,
@@ -30,11 +38,11 @@ class GpuRegExpReplaceMeta(
   private var javaPattern: Option[String] = None
   private var cudfPattern: Option[String] = None
   private var replacement: Option[String] = None
-  private var canUseGpuStringReplace = false
+  private var searchList: Option[Seq[String]] = None
+  private var replaceOpt: Option[GpuRegExpReplaceOpt] = None
   private var containsBackref: Boolean = false
 
   override def tagExprForGpu(): Unit = {
-    GpuRegExpUtils.tagForRegExpEnabled(this)
     replacement = expr.rep match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null => Some(s.toString)
       case _ => None
@@ -42,24 +50,32 @@ class GpuRegExpReplaceMeta(
 
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
-          canUseGpuStringReplace = true
-        } else {
-          try {
-            javaPattern = Some(s.toString())
-            val (pat, repl) = 
-                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, replacement)
-            GpuRegExpUtils.validateRegExpComplexity(this, pat)
-            cudfPattern = Some(pat.toRegexString)
-            repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
-                case (hasBackref, convertedRep) =>
-                  containsBackref = hasBackref
-                  replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
-            }
-          } catch {
-            case e: RegexUnsupportedException =>
-              willNotWorkOnGpu(e.getMessage)
+        javaPattern = Some(s.toString())
+        try {
+          val (pat, repl) =
+              new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
+                  replacement)
+          repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
+              case (hasBackref, convertedRep) =>
+                containsBackref = hasBackref
+                replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
           }
+          if (!containsBackref && GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+            replaceOpt = Some(GpuRegExpStringReplace)
+          } else {
+              searchList = GpuRegExpUtils.getChoicesFromRegex(pat)
+              searchList match {
+                case Some(_) if !containsBackref =>
+                  replaceOpt = Some(GpuRegExpStringReplaceMulti)
+                case _ =>
+                  GpuRegExpUtils.tagForRegExpEnabled(this)
+                  GpuRegExpUtils.validateRegExpComplexity(this, pat)
+                  cudfPattern = Some(pat.toRegexString)
+              }
+          }
+        } catch {
+          case e: RegexUnsupportedException =>
+            willNotWorkOnGpu(e.getMessage)
         }
 
       case _ =>
@@ -81,19 +97,27 @@ class GpuRegExpReplaceMeta(
     // ignore the pos expression which must be a literal 1 after tagging check
     require(childExprs.length == 4,
       s"Unexpected child count for RegExpReplace: ${childExprs.length}")
-    if (canUseGpuStringReplace) {
-      GpuStringReplace(lhs, regexp, rep)
-    } else {
-      (javaPattern, cudfPattern, replacement) match {
-        case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
-          if (containsBackref) {
-            GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)
-          } else {
-            GpuRegExpReplace(lhs, regexp, rep, javaPattern, cudfPattern, cudfReplacement)
-          }
-        case _ =>
-          throw new IllegalStateException("Expression has not been tagged correctly")
-      }
+    replaceOpt match {
+      case None =>
+        (javaPattern, cudfPattern, replacement) match {
+          case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
+            if (containsBackref) {
+              GpuRegExpReplaceWithBackref(lhs, regexp, rep)(cudfPattern, cudfReplacement)
+            } else {
+              GpuRegExpReplace(lhs, regexp, rep)(javaPattern, cudfPattern, cudfReplacement,
+                  None, None)
+            }
+          case _ =>
+            throw new IllegalStateException("Expression has not been tagged correctly")
+        }
+      case _ =>
+        (javaPattern, replacement) match {
+          case (Some(javaPattern), Some(replacement)) =>
+            GpuRegExpReplace(lhs, regexp, rep)(javaPattern, javaPattern, replacement,
+                searchList, replaceOpt)
+          case _ =>
+            throw new IllegalStateException("Expression has not been tagged correctly")
+        }
     }
   }
 }

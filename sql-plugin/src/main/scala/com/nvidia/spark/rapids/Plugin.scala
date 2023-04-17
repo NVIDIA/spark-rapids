@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.reflect.InvocationTargetException
 import java.time.ZoneId
 import java.util.Properties
 
@@ -28,7 +29,7 @@ import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
-import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
+import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -76,6 +77,8 @@ object RapidsPluginUtils extends Logging {
     val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion.")
   }
+
+  val extraPlugins = getExtraPlugins
 
   def logPluginMode(conf: RapidsConf): Unit = {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
@@ -167,6 +170,50 @@ object RapidsPluginUtils extends Logging {
     props.load(resource)
     props
   }
+
+  private def loadExtensions[T <: AnyRef](extClass: Class[T], classes: Seq[String]): Seq[T] = {
+    classes.flatMap { name =>
+      try {
+        val klass = TrampolineUtil.classForName[T](name)
+        require(extClass.isAssignableFrom(klass),
+          s"$name is not a subclass of ${extClass.getName()}.")
+        Some(klass.getConstructor().newInstance())
+      } catch {
+        case _: NoSuchMethodException =>
+          throw new NoSuchMethodException(
+            s"$name did not have a zero-argument constructor or a" +
+              " single-argument constructor that accepts SparkConf. Note: if the class is" +
+              " defined inside of another Scala class, then its constructors may accept an" +
+              " implicit parameter that references the enclosing class; in this case, you must" +
+              " define the class as a top-level class in order to prevent this extra" +
+              " parameter from breaking Spark's ability to find a valid constructor.")
+
+        case e: InvocationTargetException =>
+          e.getCause() match {
+            case uoe: UnsupportedOperationException =>
+              logDebug(s"Extension $name not being initialized.", uoe)
+              logInfo(s"Extension $name not being initialized.")
+              None
+
+            case null => throw e
+            case cause => throw cause
+          }
+      }
+    }
+  }
+
+  private def getExtraPlugins: Seq[SparkPlugin] = {
+    val resourceName = "spark-rapids-extra-plugins"
+    val classLoader = RapidsPluginUtils.getClass.getClassLoader
+    val resource = classLoader.getResourceAsStream(resourceName)
+    if (resource == null) {
+      logDebug(s"Could not find file $resourceName in the classpath, not loading extra plugins")
+      Seq.empty
+    } else {
+      val pluginClasses = scala.io.Source.fromInputStream(resource).getLines().toSeq
+      loadExtensions(classOf[SparkPlugin], pluginClasses)
+    }
+  }
 }
 
 /**
@@ -174,6 +221,8 @@ object RapidsPluginUtils extends Logging {
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+  private lazy val extraDriverPlugins =
+    RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
 
   override def receive(msg: Any): AnyRef = {
     if (rapidsShuffleHeartbeatManager == null) {
@@ -205,7 +254,18 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
     }
+    logDebug("Loading extra driver plugins: " +
+      s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")
+    extraDriverPlugins.foreach(_.init(sc, pluginContext))
     conf.rapidsConfMap
+  }
+
+  override def registerMetrics(appId: String, pluginContext: PluginContext): Unit = {
+    extraDriverPlugins.foreach(_.registerMetrics(appId, pluginContext))
+  }
+
+  override def shutdown(): Unit = {
+    extraDriverPlugins.foreach(_.shutdown())
   }
 }
 
@@ -214,6 +274,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
+  private lazy val extraExecutorPlugins =
+    RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
 
   override def init(
       pluginContext: PluginContext,
@@ -263,6 +325,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         }
       }
 
+      logDebug("Loading extra executor plugins: " +
+        s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
+      extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize()
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
@@ -365,6 +430,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+    extraExecutorPlugins.foreach(_.shutdown())
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
@@ -389,6 +455,15 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       case other =>
         logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
+    extraExecutorPlugins.foreach(_.onTaskFailed(failureReason))
+  }
+
+  override def onTaskStart(): Unit = {
+    extraExecutorPlugins.foreach(_.onTaskStart())
+  }
+
+  override def onTaskSucceeded(): Unit = {
+    extraExecutorPlugins.foreach(_.onTaskSucceeded())
   }
 }
 

@@ -24,15 +24,20 @@ package com.databricks.sql.transaction.tahoe.rapids
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.FileAction
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, DeltaInvariantCheckerExec}
+import com.databricks.sql.transaction.tahoe.files.TahoeBatchFileIndex
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, NamedExpression}
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.rapids.delta.{DeltaShufflePartitionsUtil, GpuOptimizeWriteExchangeExec, OptimizeWriteExchangeExec}
+import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.util.Clock
 
 /**
@@ -48,7 +53,7 @@ import org.apache.spark.util.Clock
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 abstract class GpuOptimisticTransactionBase
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
+    (deltaLog: DeltaLog, snapshot: Snapshot, val rapidsConf: RapidsConf)
     (implicit clock: Clock)
   extends OptimisticTransaction(deltaLog, snapshot)(clock)
   with DeltaLogging {
@@ -128,6 +133,50 @@ abstract class GpuOptimisticTransactionBase
       inputData: Dataset[_],
       additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
     writeFiles(inputData, None, additionalConstraints)
+  }
+
+  protected def applyOptimizeWriteIfNeeded(
+      spark: SparkSession,
+      physicalPlan: SparkPlan,
+      partitionSchema: StructType,
+      isOptimize: Boolean): SparkPlan = {
+    val optimizeWriteEnabled = !isOptimize &&
+        spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_WRITE_ENABLED)
+            .orElse(DeltaConfigs.OPTIMIZE_WRITE.fromMetaData(metadata)).getOrElse(false)
+    if (optimizeWriteEnabled) {
+      val planWithoutTopRepartition =
+        DeltaShufflePartitionsUtil.removeTopRepartition(physicalPlan)
+      val partitioning = DeltaShufflePartitionsUtil.partitioningForRebalance(
+        physicalPlan.output, partitionSchema, spark.sessionState.conf.numShufflePartitions)
+      planWithoutTopRepartition match {
+        case p: GpuExec =>
+          val partMeta = GpuOverrides.wrapPart(partitioning, rapidsConf, None)
+          partMeta.tagForGpu()
+          if (partMeta.canThisBeReplaced) {
+            val plan = GpuOptimizeWriteExchangeExec(partMeta.convertToGpu(), p)
+            if (GpuShuffleEnv.useGPUShuffle(rapidsConf)) {
+              GpuCoalesceBatches(plan, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
+            } else {
+              GpuShuffleCoalesceExec(plan, rapidsConf.gpuTargetBatchSizeBytes)
+            }
+          } else {
+            GpuColumnarToRowExec(OptimizeWriteExchangeExec(partitioning, p))
+          }
+        case p =>
+          OptimizeWriteExchangeExec(partitioning, p)
+      }
+    } else {
+      physicalPlan
+    }
+  }
+
+  protected def isOptimizeCommand(plan: LogicalPlan): Boolean = {
+    val leaves = plan.collectLeaves()
+    leaves.size == 1 && leaves.head.collect {
+      case LogicalRelation(HadoopFsRelation(
+      index: TahoeBatchFileIndex, _, _, _, _, _), _, _, _) =>
+        index.actionType.equals("Optimize")
+    }.headOption.getOrElse(false)
   }
 
   protected def convertToCpu(plan: SparkPlan): SparkPlan = plan match {

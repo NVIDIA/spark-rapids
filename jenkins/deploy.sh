@@ -36,17 +36,20 @@ set -ex
 
 SIGN_FILE=${1:-"false"}
 DIST_PL=${DIST_PL:-"dist"}
-SQL_PL=${SQL_PL:-"sql-plugin"}
-POM_FILE=${POM_FILE:-`find "$DIST_PL/target/extra-resources/" -name pom.xml`}
-OUT_PATH=${OUT_PATH:-"$DIST_PL/target"}
-SIGN_TOOL=${SIGN_TOOL:-"gpg"}
-MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
 
-MVN="mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 -s $MVN_SETTINGS"
 ###### Build the path of jar(s) to be deployed ######
+MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
+MVN="mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 -s $MVN_SETTINGS"
 ART_ID=`$MVN help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
+ART_GROUP_ID=`$MVN help:evaluate -q -pl $DIST_PL -Dexpression=project.groupId -DforceStdout`
 ART_VER=`$MVN help:evaluate -q -f $DIST_PL -Dexpression=project.version -DforceStdout`
 CUDA_CLASSIFIER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=cuda.version -DforceStdout`
+
+SQL_PL=${SQL_PL:-"sql-plugin"}
+POM_FILE=${POM_FILE:-"$DIST_PL/target/parallel-world/META-INF/maven/${ART_GROUP_ID}/${ART_ID}/pom.xml"}
+OUT_PATH=${OUT_PATH:-"$DIST_PL/target"}
+SIGN_TOOL=${SIGN_TOOL:-"gpg"}
+
 FPATH="$OUT_PATH/$ART_ID-$ART_VER"
 cp $FPATH-$CUDA_CLASSIFIER.jar $FPATH.jar
 

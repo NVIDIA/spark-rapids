@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     sliceRDD(child.executeColumnar(), limit, 0)
   }
 
@@ -158,7 +158,7 @@ case class GpuGlobalLimitExec(limit: Int = -1, child: SparkPlan,
 
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch]  = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch]  = {
     super.sliceRDD(child.executeColumnar(), limit, offset)
   }
 }
@@ -235,8 +235,7 @@ object GpuTopN extends Arm {
       inputBatches: GpuMetric,
       inputRows: GpuMetric,
       outputBatches: GpuMetric,
-      outputRows: GpuMetric,
-      spillCallback: SpillCallback): Iterator[ColumnarBatch] =
+      outputRows: GpuMetric): Iterator[ColumnarBatch] =
     new Iterator[ColumnarBatch]() {
       override def hasNext: Boolean = iter.hasNext
 
@@ -272,8 +271,7 @@ object GpuTopN extends Arm {
               }
             }
             pending =
-                Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-                  spillCallback))
+                Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
         val ret = pending.get.getColumnarBatch()
@@ -314,9 +312,9 @@ case class GpuTopN(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SORT_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
-  ) ++ spillMetrics
+  )
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val sorter = new GpuSorter(gpuSortOrder, child.output)
     val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val opTime = gpuLongMetric(OP_TIME)
@@ -326,14 +324,13 @@ case class GpuTopN(
     val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val sortTime = gpuLongMetric(SORT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
-    val callback = GpuMetric.makeSpillCallback(allMetrics)
     val localLimit = limit
     val localProjectList = projectList
     val childOutput = child.output
 
     child.executeColumnar().mapPartitions { iter =>
       val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
-        inputBatches, inputRows, outputBatches, outputRows, callback)
+        inputBatches, inputRows, outputBatches, outputRows)
       if (localProjectList != childOutput) {
         topN.map { batch =>
           GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
