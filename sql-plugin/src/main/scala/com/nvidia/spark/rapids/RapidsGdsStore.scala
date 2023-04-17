@@ -23,6 +23,7 @@ import java.util.function.BiFunction
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -33,7 +34,7 @@ import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     batchWriteBufferSize: Long)
-    extends RapidsBufferStore(StorageTier.GDS) with Arm {
+    extends RapidsBufferStore(StorageTier.GDS) {
   private[this] val batchSpiller = new BatchSpiller()
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,

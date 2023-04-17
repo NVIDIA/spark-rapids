@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.math.RoundingMode
 
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -26,7 +27,7 @@ import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuSinglePartitioningSuite extends FunSuite with Arm {
+class GpuSinglePartitioningSuite extends FunSuite {
   private def buildBatch(): ColumnarBatch = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)

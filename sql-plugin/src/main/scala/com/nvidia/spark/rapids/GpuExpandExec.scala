@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.NvtxColor
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -109,8 +110,7 @@ class GpuExpandIterator(
     boundProjections: Seq[Seq[GpuExpression]],
     metrics: Map[String, GpuMetric],
     it: Iterator[ColumnarBatch])
-  extends Iterator[ColumnarBatch]
-  with Arm {
+  extends Iterator[ColumnarBatch] {
 
   private var cb: ColumnarBatch = _
   private var projectionIndex = 0

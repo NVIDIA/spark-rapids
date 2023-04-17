@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.MemoryBuffer
-import com.nvidia.spark.rapids.Arm
 import com.nvidia.spark.rapids.shuffle._
 import org.openucx.jucx.UcxCallback
 import org.openucx.jucx.ucp.UcpRequest
@@ -46,7 +45,7 @@ private[ucx] abstract class UCXAmCallback {
 }
 
 class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
-  extends UCXConnection(ucx) with ServerConnection with Logging with Arm {
+  extends UCXConnection(ucx) with ServerConnection with Logging {
   override def startManagementPort(host: String): Int = {
     ucx.startListener(host)
   }
@@ -144,8 +143,7 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
 }
 
 class UCXClientConnection(peerExecutorId: Long, ucx: UCX, transport: UCXShuffleTransport)
-  extends UCXConnection(peerExecutorId, ucx) with Arm
-  with ClientConnection {
+  extends UCXConnection(peerExecutorId, ucx) with ClientConnection {
 
   override def toString: String = {
     s"UCXClientConnection(ucx=$ucx, " +

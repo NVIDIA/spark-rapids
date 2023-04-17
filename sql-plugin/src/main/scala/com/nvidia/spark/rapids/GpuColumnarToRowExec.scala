@@ -20,6 +20,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -42,7 +43,7 @@ class AcceleratedColumnarToRowIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
-    streamTime: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
+    streamTime: GpuMetric) extends Iterator[InternalRow] with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -200,7 +201,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     streamTime: GpuMetric,
     nullSafe: Boolean = false,
-    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] with Arm {
+    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] {
   // GPU batches read in must be closed by the receiver (us)
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null

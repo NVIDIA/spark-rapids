@@ -21,7 +21,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.FileUtils.withTempPath
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 
-class GpuFileScanPrunePartitionSuite extends SparkQueryCompareTestSuite with Arm {
+class GpuFileScanPrunePartitionSuite extends SparkQueryCompareTestSuite {
 
   private def testGpuFileScanOutput(
       func: DataFrame => DataFrame,

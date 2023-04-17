@@ -24,8 +24,8 @@ package com.nvidia.spark.rapids.delta
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnView, DType}
-import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{Arm, GpuScalar}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuScalar
 import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF, ShimUsesMetadataFields}
 
 import org.apache.spark.sql.Column
@@ -36,7 +36,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
 /** GPU version of Delta Lake's StatisticsCollection. */
-trait GpuStatisticsCollection extends ShimUsesMetadataFields with Arm {
+trait GpuStatisticsCollection extends ShimUsesMetadataFields {
   def tableDataSchema: StructType
   def dataSchema: StructType
   val numIndexedCols: Int

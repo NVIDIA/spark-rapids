@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 

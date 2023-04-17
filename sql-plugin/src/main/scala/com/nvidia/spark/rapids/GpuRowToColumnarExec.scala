@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 
@@ -33,7 +34,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-private class GpuRowToColumnConverter(schema: StructType) extends Serializable with Arm {
+private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
     f => GpuRowToColumnConverter.getConverterForType(f.dataType, f.nullable)
   }
@@ -592,7 +593,7 @@ class RowToColumnarIterator(
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
     streamTime: GpuMetric = NoopMetric,
-    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
+    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0

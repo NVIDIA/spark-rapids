@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
@@ -60,7 +61,7 @@ trait RapidsBufferHandle extends AutoCloseable {
  */
 class RapidsBufferCatalog(
     deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.deviceStorage)
-  extends AutoCloseable with Arm with Logging {
+  extends AutoCloseable with Logging {
 
   /** Map of buffer IDs to buffers sorted by storage tier */
   private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
@@ -643,7 +644,7 @@ class RapidsBufferCatalog(
   }
 }
 
-object RapidsBufferCatalog extends Logging with Arm {
+object RapidsBufferCatalog extends Logging {
 
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 

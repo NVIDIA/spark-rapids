@@ -21,6 +21,7 @@ import java.math.BigInteger
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression, SparkShimImpl}
 
@@ -32,7 +33,7 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object AddOverflowChecks extends Arm {
+object AddOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
@@ -108,7 +109,7 @@ object AddOverflowChecks extends Arm {
   }
 }
 
-object GpuAnsi extends Arm {
+object GpuAnsi {
   def needBasicOpOverflowCheck(dt: DataType): Boolean =
     dt.isInstanceOf[IntegralType]
 
@@ -379,7 +380,7 @@ abstract class GpuSubtractBase(failOnError: Boolean)
   }
 }
 
-trait GpuDecimalMultiplyBase extends GpuExpression with Arm {
+trait GpuDecimalMultiplyBase extends GpuExpression {
 
   def dataType: DecimalType
   def failOnError: Boolean
@@ -480,7 +481,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression with Arm {
   override def nullable: Boolean = left.nullable || right.nullable
 }
 
-object DecimalMultiplyChecks extends Arm {
+object DecimalMultiplyChecks {
   // For Spark the final desired output is
   // new_scale = lhs.scale + rhs.scale
   // new_precision = lhs.precision + rhs.precision + 1
@@ -607,7 +608,7 @@ object DecimalMultiplyChecks extends Arm {
   }
 }
 
-object GpuDivModLike extends Arm {
+object GpuDivModLike {
   def replaceZeroWithNull(v: ColumnVector): ColumnVector = {
     var zeroScalar: Scalar = null
     var nullScalar: Scalar = null

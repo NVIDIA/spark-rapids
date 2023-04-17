@@ -78,7 +78,7 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
         conf["spark.sql.orc.impl"] = "hive"
     assert_gpu_and_cpu_sql_writes_are_equal_collect(spark_tmp_table_factory, do_write, conf=conf)
 
-@allow_non_gpu("DataWritingCommandExec")
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_confs", [
@@ -99,7 +99,7 @@ def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tm
             spark_tmp_table_factory.get(), storage, data_table)),
         "DataWritingCommandExec", conf=confs)
 
-@allow_non_gpu("DataWritingCommandExec")
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_opts", [
@@ -117,7 +117,7 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
             spark_tmp_table_factory.get(), opts_string, storage, data_table)),
         "DataWritingCommandExec")
 
-@allow_non_gpu("DataWritingCommandExec")
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not (is_hive_available() and is_spark_33X()),
                     reason="Requires Hive and Spark 3.3.X to write bucketed Hive tables")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)

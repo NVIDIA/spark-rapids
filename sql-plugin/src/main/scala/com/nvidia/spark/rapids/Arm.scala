@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 /** Implementation of the automatic-resource-management pattern */
-trait Arm {
+object Arm {
 
   /** Executes the provided code block and then closes the resource */
   def withResource[T <: AutoCloseable, V](r: T)(block: T => V): V = {

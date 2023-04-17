@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
@@ -291,7 +292,7 @@ case class BatchedOps(running: Seq[NamedExpression],
   def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
 }
 
-object GpuWindowExec extends Arm {
+object GpuWindowExec {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
@@ -582,7 +583,7 @@ case class AggAndReplace[T](agg: T, nullReplacePolicy: Option[ReplacePolicy])
  */
 case class BoundGpuWindowFunction(
     windowFunc: GpuWindowFunction,
-    boundInputLocations: Array[Int]) extends Arm {
+    boundInputLocations: Array[Int]) {
 
   /**
    * Get the operations to perform a scan aggregation.
@@ -638,7 +639,7 @@ case class BoundGpuWindowFunction(
 
 case class ParsedBoundary(isUnbounded: Boolean, value: Either[BigInt, Long])
 
-object GroupedAggregations extends Arm {
+object GroupedAggregations {
   /**
    * Get the window options for an aggregation
    * @param orderSpec the order by spec
@@ -812,7 +813,7 @@ object GroupedAggregations extends Arm {
  * Window aggregations that are grouped together. It holds the aggregation and the offsets of
  * its input columns, along with the output columns it should write the result to.
  */
-class GroupedAggregations extends Arm {
+class GroupedAggregations {
   import GroupedAggregations._
 
   // The window frame to a map of the window function to the output locations for the result
@@ -1168,7 +1169,7 @@ class GroupedAggregations extends Arm {
  * Calculates the results of window operations. It assumes that any batching of the data
  * or fixups after the fact to get the right answer is done outside of this.
  */
-trait BasicWindowCalc extends Arm {
+trait BasicWindowCalc {
   val boundWindowOps: Seq[GpuExpression]
   val boundPartitionSpec: Seq[GpuExpression]
   val boundOrderSpec: Seq[SortOrder]
@@ -1303,7 +1304,7 @@ class GpuWindowIterator(
   }
 }
 
-object GpuBatchedWindowIterator extends Arm {
+object GpuBatchedWindowIterator {
   def cudfAnd(lhs: cudf.ColumnVector,
       rhs: cudf.ColumnVector): cudf.ColumnVector = {
     withResource(lhs) { lhs =>

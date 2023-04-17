@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuMapUtils}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuMapUtils}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -132,7 +133,7 @@ case class GpuCreateMap(
   }
 }
 
-object GpuCreateMap extends Arm {
+object GpuCreateMap {
   def apply(children: Seq[Expression]): GpuCreateMap = {
     new GpuCreateMap(children,
       SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))

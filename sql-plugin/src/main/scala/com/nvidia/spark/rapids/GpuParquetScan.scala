@@ -32,6 +32,7 @@ import scala.math.max
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
@@ -476,7 +477,7 @@ class HMBInputFile(buffer: HostMemoryBuffer) extends InputFile {
   override def newStream(): SeekableInputStream = new HMBSeekableInputStream(buffer, getLength)
 }
 
-private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) extends Arm {
+private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -1136,7 +1137,7 @@ case class GpuParquetPartitionReaderFactory(
     metrics: Map[String, GpuMetric],
     @transient params: Map[String, String],
     alluxioPathReplacementMap: Option[Map[String, String]])
-  extends ShimFilePartitionReaderFactory(params) with Arm with Logging {
+  extends ShimFilePartitionReaderFactory(params) with Logging {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -1178,7 +1179,7 @@ case class GpuParquetPartitionReaderFactory(
   }
 }
 
-trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
+trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     with MultiFileReaderFunctions {
   // the size of Parquet magic (at start+end) and footer length values
   val PARQUET_META_SIZE: Long = 4 + 4 + 4
@@ -2322,7 +2323,7 @@ class MultiFileCloudParquetPartitionReader(
   }
 }
 
-object MakeParquetTableProducer extends Arm {
+object MakeParquetTableProducer {
   def apply(
       useChunkedReader: Boolean,
       conf: Configuration,
@@ -2403,7 +2404,7 @@ case class ParquetTableReader(
     readDataSchema: StructType,
     clippedParquetSchema: MessageType,
     filePath: Option[Path],
-    onTableSize: Long => Unit) extends GpuDataProducer[Table] with Arm {
+    onTableSize: Long => Unit) extends GpuDataProducer[Table] {
   private[this] val reader = new ParquetChunkedReader(chunkSizeByteLimit, opts, buffer, offset, len)
 
   override def hasNext: Boolean = reader.hasNext

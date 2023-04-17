@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.execution.python
 import ai.rapids.cudf
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 

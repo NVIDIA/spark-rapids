@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatest.mockito.MockitoSugar
@@ -27,8 +28,7 @@ import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
 class WindowRetrySuite
     extends RmmSparkRetrySuiteBase
-        with MockitoSugar
-        with Arm {
+        with MockitoSugar {
   private def buildInputBatch() = {
     val windowTable = new Table.TestBuilder()
       .column(1.asInstanceOf[java.lang.Integer], 1, 1, 1)

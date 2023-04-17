@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
@@ -29,7 +30,7 @@ import org.apache.spark.sql.types.{DataType, LongType}
 
 class WithRetrySuite
     extends FunSuite
-        with BeforeAndAfterEach with MockitoSugar with Arm {
+        with BeforeAndAfterEach with MockitoSugar {
 
   private def buildBatch: SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()

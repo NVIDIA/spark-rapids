@@ -36,6 +36,7 @@ package org.apache.spark.sql.hive.rapids.shims
 import ai.rapids.cudf.{CSVWriterOptions, DType, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, RapidsConf, WriteFileOp}
+import com.nvidia.spark.rapids.Arm.withResource
 import java.nio.charset.Charset
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 

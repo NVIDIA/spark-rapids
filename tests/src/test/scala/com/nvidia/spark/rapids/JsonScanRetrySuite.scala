@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 import org.apache.spark.sql.catalyst.json.rapids.JsonPartitionReader
 import org.apache.spark.sql.types._
 
-class JsonScanRetrySuite extends RmmSparkRetrySuiteBase with Arm {
+class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
   test("test simple retry") {
     val bufferer = HostLineBuffererFactory.createBufferer(100, Array('\n'.toByte))
     bufferer.add("{\"a\": 1, \"b\": 2".getBytes, 0, 14)

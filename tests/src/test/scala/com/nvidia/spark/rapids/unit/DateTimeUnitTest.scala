@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.unit
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuLiteral, GpuUnitTests}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.rapids.{GpuDateAdd, GpuDateSub}

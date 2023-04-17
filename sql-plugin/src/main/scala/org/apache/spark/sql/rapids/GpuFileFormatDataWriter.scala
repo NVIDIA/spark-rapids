@@ -22,6 +22,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -135,7 +136,6 @@ class GpuSingleDirectoryDataWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm 
   with WriterUtil {
   private var fileCounter: Int = _
   private var recordsInFile: Long = _
@@ -219,7 +219,6 @@ class GpuDynamicPartitionDataSingleWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm 
   with WriterUtil{
 
   /** Wrapper class for status of a unique single output writer. */
@@ -692,7 +691,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     committer: FileCommitProtocol,
     spec: GpuConcurrentOutputWriterSpec)
     extends GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
-        with Arm with Logging {
+        with Logging {
 
   // Keep all the unclosed writers, key is partition directory string.
   // Note: if fall back to sort-based mode, also use the opened writers in the map.
