@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>23.02.0-SNAPSHOT</version>
+    <version>23.06.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -84,8 +84,6 @@
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark311.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -96,46 +94,6 @@
                 <module>tests</module>
                 <module>udf-compiler</module>
                 <module>api_validation</module>
-                <module>aggregator</module>
-            </modules>
-        </profile>
-        <profile>
-            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=312db -->
-            <id>release312db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312db</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>312db</buildver>
-                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
-                <scala.plugin.version>3.4.4</scala.plugin.version>
-                <spark.version.classifier>spark312db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
-                <spark.version>${spark312db.version}</spark.version>
-                <spark.test.version>${spark312db.version}</spark.test.version>
-                <hadoop.client.version>2.7.4</hadoop.client.version>
-                <rat.consoleOutput>true</rat.consoleOutput>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark312db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
-            </properties>
-
-            <modules>
-                <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -152,8 +110,6 @@
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark312.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -180,36 +136,6 @@
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark313.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
-            </properties>
-            <modules>
-                <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
-                <module>api_validation</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release314</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>314</value>
-                </property>
-            </activation>
-            <properties>
-                <buildver>314</buildver>
-                <spark.version>${spark314.version}</spark.version>
-                <spark.test.version>${spark314.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark314.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -236,8 +162,6 @@
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark320.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -263,8 +187,6 @@
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark321.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -290,8 +212,6 @@
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -323,8 +243,6 @@
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark322.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -350,8 +268,6 @@
                 <spark.version>${spark323.version}</spark.version>
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark323.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -389,8 +305,6 @@
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-                <spark.shim.sources>${spark321db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-spark321db</module>
@@ -416,9 +330,7 @@
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark330.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -445,9 +357,7 @@
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark331.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -474,9 +384,35 @@
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark332.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release333</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>333</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>333</buildver>
+                <spark.version>${spark333.version}</spark.version>
+                <spark.test.version>${spark333.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+                <spark.shim.sources>${spark333.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -503,9 +439,7 @@
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
-                <spark.shim.sources>${spark340.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -531,9 +465,7 @@
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
-                <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -584,9 +516,7 @@
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-                <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-spark330db</module>
@@ -654,7 +584,8 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <spark-rapids-jni.version>23.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-jni.version>23.06.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>23.06.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -686,9 +617,7 @@
          please update the snapshot-shims profile as well so it is accurate -->
         <spark311.version>3.1.1</spark311.version>
         <spark312.version>3.1.2</spark312.version>
-        <spark312db.version>3.1.2-databricks</spark312db.version>
         <spark313.version>3.1.3</spark313.version>
-        <spark314.version>3.1.4-SNAPSHOT</spark314.version>
         <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
         <spark321cdh.version>3.2.1.3.2.7171000.0-3</spark321cdh.version>
@@ -697,8 +626,9 @@
         <spark323.version>3.2.3</spark323.version>
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
-        <spark332.version>3.3.2-SNAPSHOT</spark332.version>
-        <spark340.version>3.4.0-SNAPSHOT</spark340.version>
+        <spark332.version>3.3.2</spark332.version>
+        <spark333.version>3.3.3-SNAPSHOT</spark333.version>
+        <spark340.version>3.4.0</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <mockito.version>3.6.0</mockito.version>
@@ -725,6 +655,60 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
+
+        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
+        <!-- TODO: Add 340 to noSnapshot.buildvers when 3.4.0 shim is complete
+             See https://github.com/NVIDIA/spark-rapids/issues/5824
+        -->
+        <noSnapshot.buildvers>
+            311,
+            312,
+            313,
+            320,
+            321,
+            321cdh,
+            322,
+            323,
+            330,
+            331,
+            332,
+            330cdh
+        </noSnapshot.buildvers>
+        <snapshot.buildvers>
+            333
+        </snapshot.buildvers>
+        <databricks.buildvers>
+            321db,
+            330db
+        </databricks.buildvers>
+        <!--
+          Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
+          Base shim version (311 currently) should be covered in default mvn verify command of premerge script,
+          so base shim version is removed from the premergeUT list.
+          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+        -->
+        <premergeUT1.buildvers>
+            320
+        </premergeUT1.buildvers>
+        <premergeUT2.buildvers>
+            330
+        </premergeUT2.buildvers>
+        <premergeUTF8.buildvers>
+            320
+        </premergeUTF8.buildvers>
+        <jdk11.buildvers>
+            312,
+            321,
+            331
+        </jdk11.buildvers>
+        <all.buildvers>
+            ${noSnapshot.buildvers},
+            ${snapshot.buildvers},
+            ${databricks.buildvers},
+            340
+        </all.buildvers>
+        <shimplify.shims>${all.buildvers}</shimplify.shims>
+        <cpd.sourceType>main</cpd.sourceType>
     </properties>
 
     <dependencyManagement>
@@ -846,13 +830,26 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.2.0</version>
+                    <version>3.3.0</version>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
-                  <version>3.0.0</version>
+                  <version>3.1.0</version>
                   <executions>
+                    <execution>
+                        <id>shimplify-shim-sources</id>
+                        <goals><goal>run</goal></goals>
+                        <phase>generate-sources</phase>
+                        <configuration>
+                            <target xmlns:ac="antlib:net.sf.antcontrib">
+                                <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
+                                    <attribute name="if"/>
+                                </scriptdef>
+                                <shimplify if="shimplify"/>
+                            </target>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>generate-build-info</id>
                         <phase>generate-resources</phase>
@@ -884,6 +881,21 @@
                             <goal>run</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <id>duplicate-code-detector</id>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <phase>none</phase>
+                        <configuration>
+                            <target>
+                                <java classname="net.sourceforge.pmd.cpd.CPD">
+                                    <arg line="--dir ${project.basedir}/src/${cpd.sourceType}"/>
+                                    <arg line="${cpd.argLine}"/>
+                                </java>
+                            </target>
+                        </configuration>
+                    </execution>
                   </executions>
                 <dependencies>
                     <dependency>
@@ -895,6 +907,16 @@
                         <groupId>ant-contrib</groupId>
                         <artifactId>ant-contrib</artifactId>
                         <version>1.0b3</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.python</groupId>
+                        <artifactId>jython-standalone</artifactId>
+                        <version>2.7.2</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>net.sourceforge.pmd</groupId>
+                        <artifactId>pmd-dist</artifactId>
+                        <version>6.55.0</version>
                     </dependency>
                 </dependencies>
                 </plugin>
@@ -982,6 +1004,7 @@
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
                         <addJavacArgs>${scala.javac.args}</addJavacArgs>
+                        <secondaryCacheDir>${spark.rapids.source.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -1111,23 +1134,23 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
-                <!--
-                This is an alternative implementation of the scalastyle check invocation,
-                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
-                - All scala files are checked at once regardless of the module, so the developer
-                  can focus on addressing violations without being distracted by the build issues
-                  in-between
-                - We don't have to hardcode the source code roots added dynamically by other maven
-                  plugins to the project
-                - The scalastyle launch cost is amortized across all modules
-                -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
+                <!-- parent-pom only executions -->
                 <inherited>false</inherited>
                 <executions>
                     <execution>
+                        <!--
+                        This is an alternative implementation of the scalastyle check invocation,
+                        a replacement for scalastyle-maven-plugin. It's motivated to address the following:
+                        - All scala files are checked at once regardless of the module, so the developer
+                        can focus on addressing violations without being distracted by the build issues
+                        in-between
+                        - We don't have to hardcode the source code roots added dynamically by other maven
+                        plugins to the project
+                        - The scalastyle launch cost is amortized across all modules
+                        -->
                         <id>scalastyle-all-modules</id>
                         <phase>verify</phase>
                         <goals><goal>run</goal></goals>
@@ -1183,6 +1206,34 @@
                         <version>1.0.0</version>
                     </dependency>
                 </dependencies>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-shimple-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.dest}/main/scala</source>
+                                <source>${spark.shim.dest}/main/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shimple-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.dest}/test/scala</source>
+                                <source>${spark.shim.dest}/test/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

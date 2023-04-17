@@ -21,7 +21,9 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuSemaphore, NoopMetric, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -56,7 +58,7 @@ class RapidsShuffleIterator(
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
-    with Logging with Arm {
+    with Logging {
 
   /**
    * General trait encapsulating either a buffer or an error. Used to hand off batches
@@ -335,7 +337,7 @@ class RapidsShuffleIterator(
     // thread to schedule the fetches for us, it may be something we consider in the future, given
     // memory pressure.
     // No good way to get a metric in here for semaphore time.
-    taskContext.foreach(GpuSemaphore.acquireIfNecessary(_, NoopMetric))
+    taskContext.foreach(GpuSemaphore.acquireIfNecessary(_))
 
     if (!started) {
       // kick off if we haven't already
@@ -345,9 +347,14 @@ class RapidsShuffleIterator(
 
     val blockedStart = System.currentTimeMillis()
     var result: Option[ShuffleClientResult] = None
-
-    result = pollForResult(timeoutSeconds)
+    RmmSpark.threadCouldBlockOnShuffle()
+    try {
+      result = pollForResult(timeoutSeconds)
+    } finally {
+      RmmSpark.threadDoneWithShuffle()
+    }
     val blockedTime = System.currentTimeMillis() - blockedStart
+
     result match {
       case Some(BufferReceived(handle)) =>
         val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.Optional
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.types.{ArrayType, BinaryType, ByteType, DataType, MapType, StructField, StructType}
 
@@ -30,7 +31,7 @@ import org.apache.spark.sql.types.{ArrayType, BinaryType, ByteType, DataType, Ma
  *
  * At this time this is strictly a place for casting methods
  */
-object ColumnCastUtil extends Arm {
+object ColumnCastUtil {
 
   /**
    * Transforms a ColumnView into a new ColumnView using a `PartialFunction` or returns None

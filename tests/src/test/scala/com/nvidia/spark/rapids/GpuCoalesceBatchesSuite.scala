@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.nio.file.Files
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.CodecType
 import org.apache.arrow.memory.RootAllocator
 import org.apache.arrow.vector.IntVector
@@ -261,7 +262,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         streamTime = NoopMetric,
         concatTime = NoopMetric,
         copyBufTime = NoopMetric,
-        semTime = NoopMetric,
         opTime = NoopMetric,
         peakDevMemory = NoopMetric,
         opName = "concat test",
@@ -291,7 +291,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
-      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -316,7 +315,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
-      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -356,7 +354,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
-      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -392,7 +389,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
       WrappedGpuMetric(new SQLMetric("t9", 0)),
-      WrappedGpuMetric(new SQLMetric("t10", 0)),
       "testcoalesce",
       useArrowCopyOpt = false)
 
@@ -532,7 +528,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      RapidsBuffer.defaultSpillCallback,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 
@@ -616,7 +611,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      RapidsBuffer.defaultSpillCallback,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 

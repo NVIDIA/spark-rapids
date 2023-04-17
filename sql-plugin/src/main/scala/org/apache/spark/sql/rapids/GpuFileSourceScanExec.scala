@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -452,12 +452,12 @@ case class GpuFileSourceScanExec(
     } else {
       Map.empty[String, GpuMetric]
     }
-  } ++ staticMetrics ++ spillMetrics
+  } ++ staticMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val scanTime = gpuLongMetric("scanTime")
     inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
@@ -512,7 +512,7 @@ case class GpuFileSourceScanExec(
 
     val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
       BucketingUtils
-        .getBucketId(new Path(f.filePath).getName)
+        .getBucketId(new Path(f.filePath.toString()).getName)
         .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
@@ -42,9 +43,8 @@ class GpuKeyBatchingIterator(
     numOutputBatches: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
-    peakDevMemory: GpuMetric,
-    spillCallback: SpillCallback)
-    extends Iterator[ColumnarBatch] with Arm {
+    peakDevMemory: GpuMetric)
+    extends Iterator[ColumnarBatch] {
   private val pending = mutable.Queue[SpillableColumnarBatch]()
   private var pendingSize: Long = 0
 
@@ -177,7 +177,7 @@ class GpuKeyBatchingIterator(
               // Everything is for a single key, so save it away and try the next batch...
               pending +=
                   SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               pendingSize += cbSize
             } else {
               var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
@@ -190,7 +190,7 @@ class GpuKeyBatchingIterator(
                   peak += savedSize
                   pending +=
                       SpillableColumnarBatch(tables(1), types,
-                        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
                   pendingSize += savedSize
                   numOutputRows += ret.numRows()
                   numOutputBatches += 1
@@ -223,14 +223,13 @@ object GpuKeyBatchingIterator {
       numOutputBatches: GpuMetric,
       concatTime: GpuMetric,
       opTime: GpuMetric,
-      peakDevMemory: GpuMetric,
-      spillCallback: SpillCallback): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
+      peakDevMemory: GpuMetric): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
     val sorter = new GpuSorter(unboundOrderSpec, schema)
     val types = schema.map(_.dataType)
     def makeIter(iter: Iterator[ColumnarBatch]): GpuKeyBatchingIterator = {
       new GpuKeyBatchingIterator(iter, sorter, types, targetSizeBytes,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-        concatTime, opTime, peakDevMemory, spillCallback)
+        concatTime, opTime, peakDevMemory)
     }
     makeIter
   }

@@ -33,8 +33,8 @@ writes, set spark.rapids.sql.format.delta.write.enabled=false.
 
 The RAPIDS Accelerator supports the following software configurations for accelerating
 Delta Lake writes:
-- Delta Lake version 2.0.x on Apache Spark 3.2.x
-- Delta Lake version 2.1.x and 2.2.x on Apache Spark 3.3.x
+- Delta Lake version 2.0.1 on Apache Spark 3.2.x
+- Delta Lake version 2.1.1 and 2.2.0 on Apache Spark 3.3.x
 - Delta Lake on Databricks 10.4 LTS
 - Delta Lake on Databricks 11.3 LTS
 
@@ -50,9 +50,36 @@ operation which is typically triggered via the DataFrame `write` API, e.g.:
 Table creation from selection, table insertion from SQL, and table merges are not currently
 GPU accelerated. These operations will fallback to the CPU.
 
-[Automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
-during Delta Lake writes is not supported. Write operations that are configured to
-automatically optimize or automatically compact will fallback to the CPU.
+#### Automatic Optimization of Writes
+
+Delta Lake on Databricks has
+[automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
+features for optimized writes and automatic compaction.
+
+Optimized writes are supported only on Databricks platforms. The algorithm used is similar but
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of the optimized write.
+
+| Configuration                                               | Default | Description                                                                                |
+|-------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------|
+| spark.databricks.delta.optimizeWrite.binSize                | 512     | Target uncompressed partition size in megabytes                                            |
+| spark.databricks.delta.optimizeWrite.smallPartitionFactor   | 0.5     | Merge partitions smaller than this factor multiplied by the target partition size          |
+| spark.databricks.delta.optimizeWrite.mergedPartitionFactor  | 1.2     | Avoid combining partitions larger than this factor multiplied by the target partition size |
+
+Automatic compaction is supported only on Databricks platforms. The algorithm is similar but 
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of automatic compaction.
+
+| Configuration                                                       | Default | Description                                                                                            |
+|---------------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------------------|
+| spark.databricks.delta.autoCompact.enabled                          | false   | Enable/disable auto compaction for writes to Delta directories                                         |
+| spark.databricks.delta.properties.defaults.autoOptimize.autoCompact | false   | Whether to enable auto compaction by default, if spark.databricks.delta.autoCompact.enabled is not set |
+| spark.databricks.delta.autoCompact.minNumFiles                      | 50      | Minimum number of files in the Delta directory before which auto optimize does not begin compaction    |
+
+Note that optimized write support requires round-robin partitioning of the data, and round-robin
+partitioning requires sorting across all columns for deterministic operation. If the GPU cannot
+support sorting a particular column type in order to support the round-robin partitioning, the
+Delta Lake write will fallback to the CPU.
 
 ### RapidsDeltaWrite Node in Query Plans
 
@@ -62,3 +89,57 @@ dedicated node in query plans, as it is implicitly covered by higher-level opera
 SaveIntoDataSourceCommand that wrap the entire query along with the write operation afterwards.
 The RAPIDS Accelerator places a node in the plan being written to mark the point at which the
 write occurs and adds statistics showing the time spent performing the low-level write operation.
+
+## Merging Into Delta Lake Tables
+
+Delta Lake merge acceleration is experimental and is disabled by default. To enable acceleration
+of Delta Lake merge operations, set spark.rapids.sql.command.MergeIntoCommand=true and also set
+spark.rapids.sql.command.MergeIntoCommandEdge=true on Databricks platforms.
+
+Merging into Delta Lake tables via the SQL `MERGE INTO` statement or via the DeltaTable `merge`
+API on non-Databricks platforms is supported.
+
+### Limitations with DeltaTable `merge` API on non-Databricks Platforms
+
+For non-Databricks platforms, the DeltaTable `merge` API directly instantiates a CPU
+`MergeIntoCommand` instance and invokes it. This does not go through the normal Spark Catalyst
+optimizer, and the merge operation will not be visible in the Spark SQL UI on these platforms.
+Since the Catalyst optimizer is bypassed, the RAPIDS Accelerator cannot replace the operation
+with a GPU accelerated version. As a result, DeltaTable `merge` operations on non-Databricks
+platforms will not be GPU accelerated. In those cases the query will need to be modified to use
+a SQL `MERGE INTO` statement instead.
+
+### RapidsProcessDeltaMergeJoin Node in Query Plans
+
+A side-effect of performing GPU accelerated Delta Lake merge operations is a new node will appear
+in the query plan, RapidsProcessDeltaMergeJoin. Normally the Delta Lake merge is performed via
+a join and then post-processing of the join via a MapPartitions node. Instead the GPU performs
+the join post-processing via this new RapidsProcessDeltaMergeJoin node.
+
+## Delete Operations on Delta Lake Tables
+
+Delta Lake delete acceleration is experimental and is disabled by default. To enable acceleration
+of Delta Lake delete operations, set spark.rapids.sql.command.DeleteCommand=true and also set
+spark.rapids.sql.command.DeleteCommandEdge=true on Databricks platforms.
+
+Deleting data from Delta Lake tables via the SQL `DELETE FROM` statement or via the DeltaTable
+`delete` API is supported.
+
+### num_affected_rows Difference with Databricks
+
+The Delta Lake delete command returns a single row result with a `num_affected_rows` column.
+When entire partition files in the table are deleted, the open source Delta Lake and RAPIDS
+Acclerator implementations of delete can return -1 for `num_affected_rows` since it could be
+expensive to open the files and produce an accurate row count. Databricks changed the behavior
+of delete operations that delete entire partition files to return the actual row count.
+This is only a difference in the statistics of the operation, and the table contents will still
+be accurately deleted with the RAPIDS Accelerator.
+
+## Update Operations on Delta Lake Tables
+
+Delta Lake update acceleration is experimental and is disabled by default. To enable acceleration
+of Delta Lake update operations, set spark.rapids.sql.command.Updatecommand=true and also set
+spark.rapids.sql.command.UpdateCommandEdge=true on Databricks platforms.
+
+Updating data from Delta Lake tables via the SQL `UPDATE` statement or via the DeltaTable
+`update` API is supported.

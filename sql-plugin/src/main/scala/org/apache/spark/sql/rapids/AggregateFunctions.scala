@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -307,7 +308,7 @@ class CudfCount(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfCount"
 }
 
-class CudfSum(override val dataType: DataType) extends CudfAggregate with Arm {
+class CudfSum(override val dataType: DataType) extends CudfAggregate {
   // Up to 3.1.1, analyzed plan widened the input column type before applying
   // aggregation. Thus even though we did not explicitly pass the output column type
   // we did not run into integer overflow issues:

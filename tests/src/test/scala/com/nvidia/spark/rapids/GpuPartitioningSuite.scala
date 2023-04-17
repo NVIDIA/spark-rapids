@@ -20,6 +20,7 @@ import java.io.File
 import java.math.RoundingMode
 
 import ai.rapids.cudf.{ColumnVector, Cuda, DType, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -28,7 +29,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuPartitioningSuite extends FunSuite with Arm {
+class GpuPartitioningSuite extends FunSuite {
   var rapidsConf = new RapidsConf(Map[String, String]())
 
   private def buildBatch(): ColumnarBatch = {
@@ -150,8 +151,9 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val spillPriority = 7L
-      val catalog = new RapidsBufferCatalog
-      withResource(new RapidsDeviceMemoryStore(catalog)) { deviceStore =>
+
+      withResource(new RapidsDeviceMemoryStore) { store =>
+        val catalog = new RapidsBufferCatalog(store)
         val partitionIndices = Array(0, 2, 2)
         val gp = new GpuPartitioning {
           override val numPartitions: Int = partitionIndices.length
@@ -195,7 +197,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
               if (GpuCompressedColumnVector.isBatchCompressed(partBatch)) {
                 val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
                 val devBuffer = gccv.getTableBuffer
-                val handle = deviceStore.addBuffer(devBuffer, gccv.getTableMeta, spillPriority)
+                val handle = catalog.addBuffer(devBuffer, gccv.getTableMeta, spillPriority)
                 withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
                   withResource(catalog.acquireBuffer(handle)) { buffer =>
                     withResource(buffer.getColumnarBatch(sparkTypes)) { batch =>

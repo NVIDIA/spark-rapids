@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,16 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.file.Files
 
+import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.RmmSpark
+import org.mockito.Mockito.spy
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.Literal
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Literal, NamedExpression}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.GpuAdd
 import org.apache.spark.sql.types._
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
@@ -44,6 +50,78 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         assert(d >= 0.0)
       })
     }, conf = enableCsvConf())
+  }
+
+  private def buildProjectBatch(): SpillableColumnarBatch = {
+    val projectTable = new Table.TestBuilder()
+        .column(5L, null.asInstanceOf[java.lang.Long], 3L, 1L)
+        .column(6L.asInstanceOf[java.lang.Long], 7L, 8L, 9L)
+        .build()
+    withResource(projectTable) { tbl =>
+      val cb = GpuColumnVector.from(tbl, Seq(LongType, LongType).toArray[DataType])
+      spy(SpillableColumnarBatch(cb, -1))
+    }
+  }
+
+  test("basic retry") {
+    RmmSpark.associateCurrentThreadWithTask(0)
+    try {
+      val expr = GpuAlias(GpuAdd(
+        GpuBoundReference(0, LongType, true)(NamedExpression.newExprId, "a"),
+        GpuBoundReference(1, LongType, true)(NamedExpression.newExprId, "b"), false),
+        "ret")()
+      val sb = buildProjectBatch()
+
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      val result = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, Seq(expr))
+      withResource(result) { cb =>
+        assertResult(4)(cb.numRows)
+        assertResult(1)(cb.numCols)
+        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+        withResource(gcv.getBase.copyToHost()) { hcv =>
+          assert(!hcv.isNull(0))
+          assertResult(11L)(hcv.getLong(0))
+          assert(hcv.isNull(1))
+          assert(!hcv.isNull(2))
+          assertResult(11L)(hcv.getLong(2))
+          assert(!hcv.isNull(3))
+          assertResult(10L)(hcv.getLong(3))
+        }
+      }
+    } finally {
+      RmmSpark.removeThreadAssociation(0)
+    }
+  }
+
+  test("tiered retry") {
+    RmmSpark.associateCurrentThreadWithTask(0)
+    try {
+      val a = AttributeReference("a", LongType)()
+      val b = AttributeReference("b", LongType)()
+      val simpleAdd = GpuAdd(a, b, false)
+      val fullAdd = GpuAlias(GpuAdd(simpleAdd, simpleAdd, false), "ret")()
+      val tp = GpuBindReferences.bindGpuReferencesTiered(Seq(fullAdd), Seq(a, b), true)
+      val sb = buildProjectBatch()
+
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      val result = tp.projectAndCloseWithRetrySingleBatch(sb)
+      withResource(result) { cb =>
+        assertResult(4)(cb.numRows)
+        assertResult(1)(cb.numCols)
+        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+        withResource(gcv.getBase.copyToHost()) { hcv =>
+          assert(!hcv.isNull(0))
+          assertResult(22L)(hcv.getLong(0))
+          assert(hcv.isNull(1))
+          assert(!hcv.isNull(2))
+          assertResult(22L)(hcv.getLong(2))
+          assert(!hcv.isNull(3))
+          assertResult(20L)(hcv.getLong(3))
+        }
+      }
+    } finally {
+      RmmSpark.removeThreadAssociation(0)
+    }
   }
 
   testSparkResultsAreEqual("Test literal values in select", mixedFloatDf) {

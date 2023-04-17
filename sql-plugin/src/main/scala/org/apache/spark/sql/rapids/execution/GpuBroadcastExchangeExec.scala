@@ -26,7 +26,9 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
+import com.google.common.collect.MapMaker
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
@@ -41,7 +43,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
@@ -49,7 +51,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-object SerializedHostTableUtils extends Arm {
+object SerializedHostTableUtils {
   /**
    * Read in a cudf serialized table into host memory
    */
@@ -93,7 +95,7 @@ object SerializedHostTableUtils extends Arm {
 class SerializeConcatHostBuffersDeserializeBatch(
     data: Array[SerializeBatchDeserializeHostBuffer],
     output: Seq[Attribute])
-  extends Serializable with Arm with AutoCloseable with Logging {
+  extends Serializable with AutoCloseable with Logging {
   @transient private var dataTypes = output.map(_.dataType).toArray
   @transient private var headers = data.map(_.header)
   @transient private var buffers = data.map(_.buffer)
@@ -118,7 +120,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         try {
           val res = if (headers.isEmpty) {
             SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           } else {
             withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
               tableInfo =>
@@ -126,10 +128,9 @@ class SerializeConcatHostBuffersDeserializeBatch(
                 if (table == null) {
                   val numRows = tableInfo.getNumRows
                   SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
-                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+                    SpillPriorities.ACTIVE_BATCHING_PRIORITY)
                 } else {
-                  SpillableColumnarBatch(table, dataTypes,
-                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+                  SpillableColumnarBatch(table, dataTypes, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
                 }
             }
           }
@@ -241,7 +242,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
 @SerialVersionUID(100L)
 class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
-  extends Serializable with AutoCloseable with Arm {
+  extends Serializable with AutoCloseable {
   @transient private var columns = GpuColumnVector.extractBases(batch).map(_.copyToHost())
   @transient var header: JCudfSerialization.SerializedTableHeader = null
   @transient var buffer: HostMemoryBuffer = null
@@ -290,7 +291,7 @@ class GpuBroadcastMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends
-  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
+  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) with Logging {
 
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
@@ -312,7 +313,8 @@ class GpuBroadcastMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    GpuBroadcastExchangeExec(exchange.mode, childPlans.head.convertIfNeeded())
+    GpuBroadcastExchangeExec(exchange.mode, childPlans.head.convertIfNeeded())(
+      exchange.canonicalized.asInstanceOf[BroadcastExchangeExec])
   }
 }
 
@@ -500,6 +502,11 @@ abstract class GpuBroadcastExchangeExecBase(
       sizeInBytes = metrics("dataSize").value,
       rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
   }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
+  }
 }
 
 object GpuBroadcastExchangeExecBase {
@@ -533,9 +540,54 @@ object GpuBroadcastExchangeExecBase {
       SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
 }
 
-case class GpuBroadcastExchangeExec(mode: BroadcastMode, child: SparkPlan)
+case class GpuBroadcastExchangeExec(
+    mode: BroadcastMode,
+    child: SparkPlan)
+    (val cpuCanonical: BroadcastExchangeExec)
     extends GpuBroadcastExchangeExecBase(mode, child) {
+
+  override def otherCopyArgs: Seq[AnyRef] = Seq(cpuCanonical)
+
+  private var _isGpuPlanningComplete = false
+
+  /**
+   * Returns true if this node and children are finished being optimized by the RAPIDS Accelerator.
+   */
+  def isGpuPlanningComplete: Boolean = _isGpuPlanningComplete
+
+  /**
+   * Method to call after all RAPIDS Accelerator optimizations have been applied
+   * to indicate this node and its children are done being planned by the RAPIDS Accelerator.
+   * Some optimizations, such as AQE exchange reuse fixup, need to know when a node will no longer
+   * be updated so it can be tracked for reuse.
+   */
+  def markGpuPlanningComplete(): Unit = {
+    if (!_isGpuPlanningComplete) {
+      _isGpuPlanningComplete = true
+      ExchangeMappingCache.trackExchangeMapping(cpuCanonical, this)
+    }
+  }
+
   override def doCanonicalize(): SparkPlan = {
-    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
+    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)(cpuCanonical)
+  }
+}
+
+/** Caches the mappings from canonical CPU exchanges to the GPU exchanges that replaced them */
+object ExchangeMappingCache extends Logging {
+  import scala.collection.JavaConverters._
+  private val cache = new MapMaker().weakValues().makeMap[Exchange, Exchange]().asScala
+
+  /** Try to find a recent GPU exchange that has replaced the specified CPU canonical plan. */
+  def findGpuExchangeReplacement(cpuCanonical: Exchange): Option[Exchange] = {
+    cache.get(cpuCanonical)
+  }
+
+  /** Add a GPU exchange to the exchange cache */
+  def trackExchangeMapping(cpuCanonical: Exchange, gpuExchange: Exchange): Unit = {
+    val old = findGpuExchangeReplacement(cpuCanonical)
+    if (!old.exists(_.asInstanceOf[GpuBroadcastExchangeExec].isGpuPlanningComplete)) {
+      cache.put(cpuCanonical, gpuExchange)
+    }
   }
 }

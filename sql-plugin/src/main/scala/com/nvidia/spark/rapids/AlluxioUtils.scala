@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,13 @@ import java.io.FileNotFoundException
 
 import scala.util.control.NonFatal
 
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
-import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
+import org.apache.spark.sql.catalyst.expressions.{DynamicPruning, Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
@@ -70,7 +71,7 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
  * to replace paths and then we have the config that specifies direct paths to replace and
  * user has to manually mount those.
  */
-object AlluxioUtils extends Logging with Arm {
+object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
   private val ALLUXIO_SCHEME = "alluxio://"
   private val mountedBuckets: scala.collection.mutable.Map[String, String] =
@@ -101,9 +102,9 @@ object AlluxioUtils extends Logging with Arm {
     }
   }
 
-  // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
-  private def readAlluxioMasterAndPort: (String, String) = {
-    alluxioMasterAndPortReader.readAlluxioMasterAndPort()
+  // By default, read from /opt/alluxio, refer to `spark.rapids.alluxio.home` config in `RapidsConf`
+  private def readAlluxioMasterAndPort(conf: RapidsConf): (String, String) = {
+    alluxioMasterAndPortReader.readAlluxioMasterAndPort(conf)
   }
 
   // Read out alluxio.master.hostname, alluxio.master.rpc.port
@@ -125,7 +126,7 @@ object AlluxioUtils extends Logging with Arm {
       } else if (conf.getAlluxioAutoMountEnabled) {
         // auto-mount is enabled
         if (!isInitMountPointsForAutoMount) {
-          val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort
+          val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort(conf)
           alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio client.
           try {
@@ -366,10 +367,11 @@ object AlluxioUtils extends Logging with Arm {
     val replaceFunc = genFuncForTaskTimeReplacement(pathsToReplace)
 
     files.map { file =>
-      val replacedFileInfo = replaceFunc(file.filePath)
+      val replacedFileInfo = replaceFunc(file.filePath.toString())
       if (replacedFileInfo.wasReplaced) {
         logDebug(s"TASK_TIME replaced ${file.filePath} with ${replacedFileInfo.fileStr}")
-        PartitionedFileInfoOptAlluxio(PartitionedFile(file.partitionValues,
+        PartitionedFileInfoOptAlluxio(
+          PartitionedFileUtilsShim.newPartitionedFile(file.partitionValues,
           replacedFileInfo.fileStr, file.start, file.length),
           Some(file))
       } else {
@@ -444,7 +446,7 @@ object AlluxioUtils extends Logging with Arm {
   def getOrigPathFromReplaced(pfs: Array[PartitionedFile],
       pathsToReplace: Map[String, String]): Array[PartitionedFileInfoOptAlluxio] = {
     pfs.map { pf =>
-      val file = pf.filePath
+      val file = pf.filePath.toString()
       // pathsToReplace contain strings of exact paths to replace
       val matchedSet = pathsToReplace.filter { case (_, alluxioPattern) =>
         file.startsWith(alluxioPattern)
@@ -458,7 +460,8 @@ object AlluxioUtils extends Logging with Arm {
         val replacedFile = file.replaceFirst(matchedSet.head._2, matchedSet.head._1)
         logDebug(s"getOrigPath replacedFile: $replacedFile")
         PartitionedFileInfoOptAlluxio(pf,
-          Some(PartitionedFile(pf.partitionValues, replacedFile, pf.start, file.length)))
+          Some(PartitionedFileUtilsShim.newPartitionedFile(pf.partitionValues, replacedFile,
+            pf.start, file.length)))
       } else {
         PartitionedFileInfoOptAlluxio(pf, None)
       }
@@ -526,8 +529,9 @@ object AlluxioUtils extends Logging with Arm {
 
           // With the base Spark FileIndex type we don't know how to modify it to
           // just replace the paths so we have to try to recompute.
-          def isDynamicPruningFilter(e: Expression): Boolean =
-            e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+          def isDynamicPruningFilter(e: Expression): Boolean = {
+            e.isInstanceOf[DynamicPruning] || e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+          }
 
           val partitionDirs = relation.location.listFiles(
             partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)

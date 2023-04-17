@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
@@ -35,7 +36,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
-class BufferToStreamWriter(outputStream: DataOutputStream) extends HostBufferConsumer with Arm {
+class BufferToStreamWriter(outputStream: DataOutputStream) extends HostBufferConsumer {
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
 
   override def handleBuffer(hostBuffer: HostMemoryBuffer, length: Long): Unit = {
@@ -79,7 +80,7 @@ class StreamToBufferProvider(inputStream: DataInputStream) extends HostBufferPro
  * A trait that can be mixed-in with `GpuPythonRunnerBase`. It implements the logic from
  * Python (Arrow) to GPU/JVM (ColumnarBatch).
  */
-trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
+trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
 
   /**
    * Default to `Int.MaxValue` to try to read as many as possible.
@@ -93,8 +94,6 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
   private[python] final def setMinReadTargetBatchSize(size: Int): Unit = {
     minReadTargetBatchSize = size
   }
-
-  def semWait: GpuMetric
 
   /** Convert the table received from the Python side to a batch. */
   protected def toBatch(table: Table): ColumnarBatch
@@ -169,7 +168,7 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
               case SpecialLengths.START_ARROW_STREAM =>
                 val builder = ArrowIPCOptions.builder()
                 builder.withCallback(() =>
-                  GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait))
+                  GpuSemaphore.acquireIfNecessary(TaskContext.get()))
                 arrowReader = Table.readArrowIPCChunked(builder.build(),
                   new StreamToBufferProvider(stream))
                 read()
@@ -210,7 +209,6 @@ abstract class GpuArrowPythonRunnerBase(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    val semWait: GpuMetric,
     onDataWriteFinished: () => Unit = null)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
@@ -290,7 +288,6 @@ class GpuArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    override val semWait: GpuMetric,
     pythonOutSchema: StructType,
     onDataWriteFinished: () => Unit = null)
   extends GpuArrowPythonRunnerBase(
@@ -301,7 +298,6 @@ class GpuArrowPythonRunner(
     timeZoneId,
     conf,
     batchSize,
-    semWait,
     onDataWriteFinished) {
 
   def toBatch(table: Table): ColumnarBatch = {

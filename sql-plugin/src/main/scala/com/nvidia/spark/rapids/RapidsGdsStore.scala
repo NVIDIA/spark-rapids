@@ -23,6 +23,7 @@ import java.util.function.BiFunction
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -32,9 +33,8 @@ import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 /** A buffer store using GPUDirect Storage (GDS). */
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
-    batchWriteBufferSize: Long,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
+    batchWriteBufferSize: Long)
+    extends RapidsBufferStore(StorageTier.GDS) {
   private[this] val batchSpiller = new BatchSpiller()
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
@@ -61,9 +61,8 @@ class RapidsGdsStore(
       override val id: RapidsBufferId,
       override val size: Long,
       override val meta: TableMeta,
-      spillPriority: Long,
-      spillCallback: SpillCallback)
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
+      spillPriority: Long)
+      extends RapidsBufferBase(id, size, meta, spillPriority) {
     override val storageTier: StorageTier = StorageTier.GDS
 
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
@@ -71,8 +70,8 @@ class RapidsGdsStore(
 
   class RapidsGdsSingleShotBuffer(
       id: RapidsBufferId, path: File, fileOffset: Long, size: Long, meta: TableMeta,
-      spillPriority: Long, spillCallback: SpillCallback)
-      extends RapidsGdsBuffer(id, size, meta, spillPriority, spillCallback) {
+      spillPriority: Long)
+      extends RapidsGdsBuffer(id, size, meta, spillPriority) {
 
     override def materializeMemoryBuffer: MemoryBuffer = {
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
@@ -130,8 +129,7 @@ class RapidsGdsStore(
       fileOffset,
       other.size,
       other.meta,
-      other.getSpillPriority,
-      other.getSpillCallback)
+      other.getSpillPriority)
   }
 
   class BatchSpiller() extends AutoCloseable {
@@ -173,8 +171,7 @@ class RapidsGdsStore(
           currentOffset,
           other.size,
           other.meta,
-          other.getSpillPriority,
-          other.getSpillCallback)
+          other.getSpillPriority)
         currentOffset += alignUp(deviceBuffer.getLength)
         pendingBuffers += gdsBuffer
         gdsBuffer
@@ -223,9 +220,8 @@ class RapidsGdsStore(
         size: Long,
         meta: TableMeta,
         spillPriority: Long,
-        spillCallback: SpillCallback,
         var isPending: Boolean = true)
-        extends RapidsGdsBuffer(id, size, meta, spillPriority, spillCallback) {
+        extends RapidsGdsBuffer(id, size, meta, spillPriority) {
 
       override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
         closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>

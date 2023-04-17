@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.{Assertion, FunSuite}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
@@ -146,7 +145,7 @@ object SparkSessionHolder extends Logging {
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends FunSuite with Arm {
+trait SparkQueryCompareTestSuite extends FunSuite {
   import SparkSessionHolder.withSparkSession
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
@@ -2048,7 +2047,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     assume(isSpark340OrLater, "Spark version not 3.4.0+")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = SparkShimImpl.getSparkShimVersion
+    val sparkShimVersion = ShimLoader.getShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)

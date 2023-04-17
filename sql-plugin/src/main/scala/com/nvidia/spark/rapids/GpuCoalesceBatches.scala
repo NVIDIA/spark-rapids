@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -172,6 +174,13 @@ sealed abstract class CoalesceSizeGoal extends CoalesceGoal {
 trait RequireSingleBatchLike
 
 /**
+ * Trait used for pattern matching for goals that could be split, as they
+ * only specify that batches won't be too much bigger than a maximum target
+ * size in bytes.
+ */
+trait SplittableGoal
+
+/**
  * A single batch is required as the input to a node in the SparkPlan. This means
  * all of the data for a given task is in a single batch. This should be avoided
  * as much as possible because it can result in running out of memory or run into
@@ -209,7 +218,9 @@ case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
  * limitations in cudf for nested type columns.
  * @param targetSizeBytes the size of each batch in bytes.
  */
-case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGoal {
+case class TargetSize(override val targetSizeBytes: Long)
+    extends CoalesceSizeGoal
+        with SplittableGoal {
   require(targetSizeBytes <= Integer.MAX_VALUE,
     "Target cannot exceed 2GB without checks for cudf row count limit")
 }
@@ -235,7 +246,7 @@ case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
 }
 
 abstract class AbstractGpuCoalesceIterator(
-    batches: Iterator[ColumnarBatch],
+    inputIter: Iterator[ColumnarBatch],
     goal: CoalesceSizeGoal,
     numInputRows: GpuMetric,
     numInputBatches: GpuMetric,
@@ -244,11 +255,17 @@ abstract class AbstractGpuCoalesceIterator(
     streamTime: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
-    opName: String) extends Iterator[ColumnarBatch] with Arm with Logging {
+    opName: String) extends Iterator[ColumnarBatch] with Logging {
 
-  private val iter = new CollectTimeIterator(s"$opName: collect", batches, streamTime)
+  private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
+
+  /**
+   * This iterator is redefined if this coalesce iterator is under a `SplittableGoal`
+   * and so might retry and split given OOMs
+   */
+  private var coalesceBatchIterator: Iterator[ColumnarBatch] = Iterator.empty
 
   /**
    * This is defined iff `goal` is `RequireSingleBatchWithFilter` and we have
@@ -262,7 +279,8 @@ abstract class AbstractGpuCoalesceIterator(
   protected def hasOnDeck: Boolean
 
   /**
-   * Save a batch for later processing.
+   * Save a batch for later processing. In case of an exception raised while
+   * saving the batch, saveOnDeck guarantees it closes batch.
    */
   protected def saveOnDeck(batch: ColumnarBatch): Unit
 
@@ -287,27 +305,25 @@ abstract class AbstractGpuCoalesceIterator(
   Option(TaskContext.get())
       .foreach(_.addTaskCompletionListener[Unit](_ => clearOnDeck()))
 
-  override def hasNext: Boolean = {
+  private def getHasOnDeck: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
       val cb = iter.next()
-      try {
-        withResource(new MetricRange(opTime)) { _ =>
-          val numRows = cb.numRows()
-          numInputBatches += 1
-          numInputRows += numRows
-          if (numRows > 0) {
-            saveOnDeck(cb)
-          } else {
-            cleanupInputBatch(cb)
-          }
-        }
-      } catch {
-        case t: Throwable =>
+      withResource(new MetricRange(opTime)) { _ =>
+        val numRows = cb.numRows()
+        numInputBatches += 1
+        numInputRows += numRows
+        if (numRows > 0) {
+          saveOnDeck(cb)
+        } else {
           cleanupInputBatch(cb)
-          throw t
+        }
       }
     }
     hasOnDeck
+  }
+
+  override def hasNext: Boolean = {
+    coalesceBatchIterator.hasNext || getHasOnDeck
   }
 
   /**
@@ -330,6 +346,23 @@ abstract class AbstractGpuCoalesceIterator(
    * @return the concated batches on the GPU.
    */
   def concatAllAndPutOnGPU(): ColumnarBatch
+
+  /**
+   * True for coalesce iterators that support an iterator that can retry
+   * and produce smaller batches on OOMs.
+   */
+  protected val supportsRetryIterator: Boolean = true
+
+  /**
+   * Function that returns a retry iterator that returns coalesced batches, as much
+   * as possible.
+   *
+   * Note this throws if the subclass does not support splitting its input.
+   * (supportsRetryIterator = false)
+   *
+   * @return an iterator that should be used to obtain coalesced batches
+   */
+  def getCoalesceRetryIterator: Iterator[ColumnarBatch]
 
   /**
    * Called to cleanup any state when a batch is done (even if there was a failure)
@@ -359,135 +392,193 @@ abstract class AbstractGpuCoalesceIterator(
   }
 
   /**
-   * Each call to next() will combine incoming batches up to the limit specified
-   * by [[RapidsConf.GPU_BATCH_SIZE_BYTES]]. However, if any incoming batch is greater
-   * than this size it will be passed through unmodified.
+   * Add input batches to the `batches` collection up to the limit specified
+   * by the goal. Note: for a size goal, if any incoming batch is greater than this size
+   * it will be passed through unmodified.
+   *
+   * If the coalesce goal is `RequireSingleBatch` then an exception will be thrown if there
+   * is remaining data after the first batch is added.
+   *
+   * @note protected for testing
+   * @return boolean that is true if this call reached the last input batch.
+   */
+  protected def populateCandidateBatches(): Boolean = {
+    var numRows: Long = 0 // to avoid overflows
+    var numBytes: Long = 0
+
+    // check if there is a batch "on deck" from a previous call to next()
+    if (hasOnDeck) {
+      val batch = popOnDeck()
+      numRows += batch.numRows()
+      numBytes += getBatchDataSize(batch)
+      addBatch(batch)
+    }
+
+    // there is a hard limit of 2^31 rows
+    while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
+      val cbFromIter = iter.next()
+
+      var cb = if (inputFilterExpression.isDefined) {
+        // If we have reached the cuDF limit once, proactively filter batches
+        // after that first limit is reached.
+        GpuFilter(cbFromIter, inputFilterExpression.get)
+      } else {
+        cbFromIter
+      }
+
+      closeOnExcept(cb) { _ =>
+        val nextRows = cb.numRows()
+        numInputBatches += 1
+
+        // filter out empty batches
+        if (nextRows > 0) {
+          numInputRows += nextRows
+          val nextBytes = getBatchDataSize(cb)
+
+          // calculate the new sizes based on this input batch being added to the current
+          // output batch
+          val wouldBeRows = numRows + nextRows
+          val wouldBeBytes = numBytes + nextBytes
+
+          if (wouldBeRows > Int.MaxValue) {
+            goal match {
+              case RequireSingleBatch =>
+                throw new IllegalStateException("A single batch is required for this operation," +
+                    s" but cuDF only supports ${Int.MaxValue} rows. At least $wouldBeRows" +
+                    s" are in this partition. Please try increasing your partition count.")
+              case RequireSingleBatchWithFilter(filterExpression) =>
+                // filter what we had already stored
+                val filteredDown = GpuFilter(concatAllAndPutOnGPU(), filterExpression)
+                closeOnExcept(filteredDown) { _ =>
+                  // filter the incoming batch as well
+                  closeOnExcept(GpuFilter(cb, filterExpression)) { filteredCb =>
+                    cb = null // null out `cb` to prevent multiple close calls
+                    val filteredWouldBeRows = filteredDown.numRows() + filteredCb.numRows()
+                    if (filteredWouldBeRows > Int.MaxValue) {
+                      throw new IllegalStateException(
+                        "A single batch is required for this operation, but cuDF only supports " +
+                            s"${Int.MaxValue} rows. At least $filteredWouldBeRows are in this " +
+                            "partition, even after filtering nulls. " +
+                            "Please try increasing your partition count.")
+                    }
+                    if (inputFilterExpression.isEmpty) {
+                      inputFilterExpression = Some(filterExpression)
+                      logWarning("Switched to null-filtering mode. This coalesce iterator " +
+                          "succeeded to fit rows under the cuDF limit only after null filtering. " +
+                          "Please try increasing your partition count.")
+                    }
+                    numRows = filteredWouldBeRows
+                    numBytes = getBatchDataSize(filteredDown) + getBatchDataSize(filteredCb)
+                    addBatch(filteredDown)
+                    addBatch(filteredCb)
+                  }
+                }
+              case _ => saveOnDeck(cb) // not a single batch requirement
+            }
+          } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
+            saveOnDeck(cb)
+          } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
+            // There are no explicit checks for the concatenate result exceeding the cudf 2^31
+            // row count limit for any column. We are relying on cudf's concatenate to throw
+            // an exception if this occurs and limiting performance-oriented goals to under
+            // 2GB data total to avoid hitting that error.
+            saveOnDeck(cb)
+          } else {
+            addBatch(cb)
+            numRows = wouldBeRows
+            numBytes = wouldBeBytes
+          }
+        } else {
+          cleanupInputBatch(cb)
+        }
+      }
+    }
+
+    val isLastBatch = !(hasOnDeck || iter.hasNext)
+
+    // enforce single batch limit when appropriate
+    if (!isLastBatch) {
+      goal match {
+        case _: RequireSingleBatchLike =>
+          throw new IllegalStateException("A single batch is required for this operation," +
+              " Please try increasing your partition count.")
+        case _ =>
+      }
+    }
+    isLastBatch
+  }
+
+  var wasLastBatch: Boolean = false
+
+  /**
+   * Each call to next() will combine batches according to the goal specified.
+   * However, if any incoming batch is greater than this size it will be passed
+   * through unmodified.
    *
    * If the coalesce goal is `RequireSingleBatch` then an exception will be thrown if there
    * is remaining data after the first batch is produced.
    *
+   * If OOMs occur while coalescing (which may include decompression depending on the
+   * instance), this may be retried, and as a result `ColumnarBatch` may be smaller than
+   * desired, since we follow a "coalesce half of the batches" strategy, which should
+   * half the number of batches that are candidates for coalesce at each OOM, leaving the rest
+   * for a subsequent call to `next`.
+   *
    * @return The coalesced batch
    */
   override def next(): ColumnarBatch = withResource(new MetricRange(opTime)) { _ =>
-    // reset batch state
-    batchInitialized = false
-    batchRowLimit = 0
-
-    try {
-      var numRows: Long = 0 // to avoid overflows
-      var numBytes: Long = 0
-
-      // check if there is a batch "on deck" from a previous call to next()
-      if (hasOnDeck) {
-        val batch = popOnDeck()
-        numRows += batch.numRows()
-        numBytes += getBatchDataSize(batch)
-        addBatch(batch)
+    if (coalesceBatchIterator.hasNext) {
+      val batch = coalesceBatchIterator.next()
+      if (wasLastBatch) {
+        // if the coalesce iterator is empty, and nothing is left on deck
+        if (!hasNext) {
+          GpuColumnVector.tagAsFinalBatch(batch)
+        } // else, we already marked `wasLastBatch`, will check it again
+          // next time.
       }
+      numOutputRows += batch.numRows()
+      numOutputBatches += 1
+      batch
+    } else {
+      // reset batch state
+      batchInitialized = false
+      batchRowLimit = 0
 
-      // there is a hard limit of 2^31 rows
-      while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
-        val cbFromIter = iter.next()
-
-        var cb = if (inputFilterExpression.isDefined) {
-          // If we have reached the cuDF limit once, proactively filter batches
-          // after that first limit is reached.
-          GpuFilter(cbFromIter, inputFilterExpression.get)
+      try {
+        val isLastBatch = if (!coalesceBatchIterator.hasNext) {
+          populateCandidateBatches()
         } else {
-          cbFromIter
+          wasLastBatch
         }
 
-        closeOnExcept(cb) { _ =>
-          val nextRows = cb.numRows()
-          numInputBatches += 1
-
-          // filter out empty batches
-          if (nextRows > 0) {
-            numInputRows += nextRows
-            val nextBytes = getBatchDataSize(cb)
-
-            // calculate the new sizes based on this input batch being added to the current
-            // output batch
-            val wouldBeRows = numRows + nextRows
-            val wouldBeBytes = numBytes + nextBytes
-
-            if (wouldBeRows > Int.MaxValue) {
-              goal match {
-                case RequireSingleBatch =>
-                  throw new IllegalStateException("A single batch is required for this operation," +
-                    s" but cuDF only supports ${Int.MaxValue} rows. At least $wouldBeRows" +
-                    s" are in this partition. Please try increasing your partition count.")
-                case RequireSingleBatchWithFilter(filterExpression) =>
-                  // filter what we had already stored
-                  val filteredDown = GpuFilter(concatAllAndPutOnGPU(), filterExpression)
-                  closeOnExcept(filteredDown) { _ =>
-                    // filter the incoming batch as well
-                    closeOnExcept(GpuFilter(cb, filterExpression)) { filteredCb =>
-                      cb = null // null out `cb` to prevent multiple close calls
-                      val filteredWouldBeRows = filteredDown.numRows() + filteredCb.numRows()
-                      if (filteredWouldBeRows > Int.MaxValue) {
-                        throw new IllegalStateException(
-                          "A single batch is required for this operation, but cuDF only supports " +
-                            s"${Int.MaxValue} rows. At least $filteredWouldBeRows are in this " +
-                            "partition, even after filtering nulls. " +
-                            "Please try increasing your partition count.")
-                      }
-                      if (inputFilterExpression.isEmpty) {
-                        inputFilterExpression = Some(filterExpression)
-                        logWarning("Switched to null-filtering mode. This coalesce iterator " +
-                          "succeeded to fit rows under the cuDF limit only after null filtering. " +
-                          "Please try increasing your partition count.")
-                      }
-                      numRows = filteredWouldBeRows
-                      numBytes = getBatchDataSize(filteredDown) + getBatchDataSize(filteredCb)
-                      addBatch(filteredDown)
-                      addBatch(filteredCb)
-                    }
-                  }
-                case _ => saveOnDeck(cb) // not a single batch requirement
+        withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
+          goal match {
+            case _: SplittableGoal if supportsRetryIterator =>
+              coalesceBatchIterator = getCoalesceRetryIterator
+              val batch = coalesceBatchIterator.next()
+              if (isLastBatch) {
+                if (!hasNext) {
+                  GpuColumnVector.tagAsFinalBatch(batch)
+                } else {
+                  wasLastBatch = true // but couldn't mark this one because there are leftovers
+                }
               }
-            } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
-              saveOnDeck(cb)
-            } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
-              // There are no explicit checks for the concatenate result exceeding the cudf 2^31
-              // row count limit for any column. We are relying on cudf's concatenate to throw
-              // an exception if this occurs and limiting performance-oriented goals to under
-              // 2GB data total to avoid hitting that error.
-              saveOnDeck(cb)
-            } else {
-              addBatch(cb)
-              numRows = wouldBeRows
-              numBytes = wouldBeBytes
-            }
-          } else {
-            cleanupInputBatch(cb)
+              numOutputRows += batch.numRows()
+              numOutputBatches += 1
+              batch
+            case _ =>
+              val singleBatch = concatAllAndPutOnGPU()
+              if (isLastBatch) {
+                GpuColumnVector.tagAsFinalBatch(singleBatch)
+              }
+              numOutputRows += singleBatch.numRows()
+              numOutputBatches += 1
+              singleBatch
           }
         }
+      } finally {
+        cleanupConcatIsDone()
       }
-
-      val isLastBatch = !(hasOnDeck || iter.hasNext)
-
-      // enforce single batch limit when appropriate
-      if (!isLastBatch) {
-        goal match {
-          case _: RequireSingleBatchLike =>
-            throw new IllegalStateException("A single batch is required for this operation," +
-                " Please try increasing your partition count.")
-          case _ =>
-        }
-      }
-
-      numOutputRows += numRows
-      numOutputBatches += 1
-      withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
-        val batch = concatAllAndPutOnGPU()
-        if (isLastBatch) {
-          GpuColumnVector.tagAsFinalBatch(batch)
-        }
-        batch
-      }
-    } finally {
-      cleanupConcatIsDone()
     }
   }
 
@@ -497,6 +588,38 @@ abstract class AbstractGpuCoalesceIterator(
       batchInitialized = true
     }
     addBatchToConcat(batch)
+  }
+
+  /**
+   * Splits a `BatchesToCoalesce` instance into two.
+   * @return Seq[BatchesToCoalesce] with 2 items.
+   */
+  protected def splitBatchesToCoalesceFn: BatchesToCoalesce => Seq[BatchesToCoalesce] = {
+    (batchesToCoalesce: BatchesToCoalesce) => {
+      closeOnExcept(batchesToCoalesce) { _ =>
+        val it = batchesToCoalesce.batches
+        val numBatches = it.length
+        if (numBatches <= 1) {
+          throw new OutOfMemoryError(s"Cannot split a sequence of $numBatches batches")
+        }
+        val res = it.splitAt(numBatches / 2)
+        Seq(BatchesToCoalesce(res._1), BatchesToCoalesce(res._2))
+      }
+    }
+  }
+}
+
+/**
+ * A helper class that contains a sequence of SpillableColumnarBatch and that
+ * can be used to split the sequence into two. This class is auto closeable,
+ * as it is sent to code that will close it, and in turn close the SpillableColumnarBatch
+ * instances in `batches`
+ * @param batches a sequence of `SpillableColumnarBatch` to manage.
+ */
+case class BatchesToCoalesce(batches: Array[SpillableColumnarBatch])
+    extends AutoCloseable {
+  override def close(): Unit = {
+    batches.safeClose()
   }
 }
 
@@ -511,7 +634,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     concatTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: SpillCallback,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -522,10 +644,11 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime,
     concatTime,
     opTime,
-    opName) with Arm {
+    opName) {
 
   protected val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
-  private var maxDeviceMemory: Long = 0
+
+  protected var maxDeviceMemory: Long = 0
 
   override def initNewBatch(batch: ColumnarBatch): Unit = {
     batches.safeClose()
@@ -533,22 +656,30 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
-    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-      spillCallback))
+    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
 
-  protected def popAll(): Array[ColumnarBatch] = {
-    closeOnExcept(batches.toArray.safeMap(_.getColumnarBatch())) { wip =>
-      batches.safeClose()
-      batches.clear()
-      wip
-    }
-  }
-
-  override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(popAll(), sparkTypes)
+  private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
+    val wip = batches.safeMap(_.getColumnarBatch())
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
+  }
+
+  override def concatAllAndPutOnGPU(): ColumnarBatch = {
+    val candidates = batches.clone()
+    batches.clear()
+    withRetryNoSplit(candidates) { attempt =>
+      concatBatches(attempt.toArray)
+    }
+  }
+
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
+    val candidates = BatchesToCoalesce(batches.clone().toArray)
+    batches.clear()
+    withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
+      concatBatches(attempt.batches)
+    }
   }
 
   override def cleanupConcatIsDone(): Unit = {
@@ -561,9 +692,11 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override protected def hasOnDeck: Boolean = onDeck.isDefined
 
   override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
-    assert(onDeck.isEmpty)
-    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-      spillCallback))
+    // wrap batch on a closeOnExcept, in case assert throws
+    closeOnExcept(batch) { _ =>
+      assert(onDeck.isEmpty)
+    }
+    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
   }
 
   override protected def clearOnDeck(): Unit = {
@@ -596,7 +729,6 @@ class GpuCompressionAwareCoalesceIterator(
     concatTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: SpillCallback,
     opName: String,
     codecConfigs: TableCompressionCodecConfig)
   extends GpuCoalesceIterator(
@@ -609,15 +741,12 @@ class GpuCompressionAwareCoalesceIterator(
     concatTime = concatTime,
     opTime = opTime,
     peakDevMemory = peakDevMemory,
-    spillCallback, opName) {
+    opName) {
 
   private[this] var codec: TableCompressionCodec = _
 
-  override protected def popAll(): Array[ColumnarBatch] = {
-    closeOnExcept(batches.toArray.safeMap(_.getColumnarBatch())) { wip =>
-      batches.safeClose()
-      batches.clear()
-
+  private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
+    val toConcat = closeOnExcept(batches.safeMap(_.getColumnarBatch())) { wip =>
       val compressedBatchIndices = wip.zipWithIndex.filter { pair =>
         GpuCompressedColumnVector.isBatchCompressed(pair._1)
       }.map(_._2)
@@ -630,7 +759,7 @@ class GpuCompressionAwareCoalesceIterator(
           codec = TableCompressionCodec.getCodec(descr.codec, codecConfigs)
         }
         withResource(codec.createBatchDecompressor(maxDecompressBatchMemory,
-            Cuda.DEFAULT_STREAM)) { decompressor =>
+          Cuda.DEFAULT_STREAM)) { decompressor =>
           compressedVecs.foreach { cv =>
             val buffer = cv.getTableBuffer
             val bufferMeta = cv.getTableMeta.bufferMeta
@@ -643,14 +772,38 @@ class GpuCompressionAwareCoalesceIterator(
               val cv = compressedVecs(outputIndex)
               val batchIndex = compressedBatchIndices(outputIndex)
               val compressedBatch = wip(batchIndex)
-              wip(batchIndex) =
-                  MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
-              compressedBatch.close()
+              withResource(compressedBatch) { _ =>
+                // the decompressed batch should get a new meta without codec information
+                // so that future materializations of the batch don't get confused and attempt
+                // to use GpuCompressedColumnVector instead of GpuPackedTableColumn
+                wip(batchIndex) =
+                  MetaUtils.getBatchFromMeta(
+                    outputBuffer, MetaUtils.dropCodecs(cv.getTableMeta), sparkTypes)
+              }
             }
           }
         }
       }
       wip
+    }
+    val onGPU = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(toConcat, sparkTypes)
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(onGPU) * 2
+    onGPU
+  }
+
+  override def concatAllAndPutOnGPU(): ColumnarBatch = {
+    val candidates = batches.clone()
+    batches.clear()
+    withRetryNoSplit(candidates) { attempt =>
+      concatBatches(attempt.toArray)
+    }
+  }
+
+  override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
+    val candidates = BatchesToCoalesce(batches.clone().toArray)
+    batches.clear()
+    withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
+      concatBatches(attempt.batches)
     }
   }
 }
@@ -672,7 +825,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  ) ++ spillMetrics
+  )
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new IllegalStateException("ROW BASED PROCESSING IS NOT SUPPORTED")
@@ -698,7 +851,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
       child.outputOrdering
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -721,21 +874,20 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
         Iterator.single(combinedCb)
       }
     } else {
-      val callback = GpuMetric.makeSpillCallback(allMetrics)
       goal match {
         case sizeGoal: CoalesceSizeGoal =>
           batches.mapPartitions { iter =>
             new GpuCompressionAwareCoalesceIterator(
               iter, dataTypes, sizeGoal, decompressMemoryTarget,
               numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
-              concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches",
+              concatTime, opTime, peakDevMemory, "GpuCoalesceBatches",
               localCodecConfigs)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-            concatTime, opTime, peakDevMemory, callback)
+            concatTime, opTime, peakDevMemory)
           batches.mapPartitions { iter =>
             f(iter)
           }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,6 @@ package com.nvidia.spark.rapids
 
 import java.nio.charset.Charset
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
@@ -26,6 +24,26 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
 
   private val conf = new SparkConf()
     .set(RapidsConf.ENABLE_REGEXP.key, "true")
+
+  test("Plan toString should not leak internal details of ternary expressions") {
+    assume(isUnicodeEnabled())
+    // see https://github.com/NVIDIA/spark-rapids/issues/7924 for background, but our ternary
+    // operators, such as GpuRegexpExtract have additional attributes (cuDF patterns) that we
+    // do not want displayed when printing a plan
+    val conf = new SparkConf()
+      .set(RapidsConf.ENABLE_REGEXP.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "FileSourceScanExec,CollectLimitExec,DeserializeToObjectExec")
+    withGpuSparkSession(spark => {
+      spark.read.csv("src/test/resources/strings.csv").createTempView("t")
+      val df = spark.sql("SELECT t._c0, regexp_extract(t._c0, '(.*) (.*) (.*)', 2) FROM t")
+      df.collect()
+      val planString = df.queryExecution.executedPlan.toString()
+      val planStringWithoutAttrRefs = planString.replaceAll("#[0-9]+", "")
+      assert(planStringWithoutAttrRefs.contains(
+        "regexp_extract(_c0, (.*) (.*) (.*), 2) AS regexp_extract(_c0, (.*) (.*) (.*), 2)"))
+    }, conf)
+  }
 
   testGpuFallback(
     "String regexp_replace replace str columnar fall back",
@@ -43,7 +61,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => {
       // this test is only valid in Spark 3.0.x because the expression is NullIntolerant
       // since Spark 3.1.0 and gets replaced with a null literal instead
-      val isValidTestForSparkVersion = SparkShimImpl.getSparkShimVersion match {
+      val isValidTestForSparkVersion = ShimLoader.getShimVersion match {
         case SparkShimVersion(major, minor, _) => major == 3 && minor == 0
         case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor == 0
@@ -97,18 +115,16 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
       frame.selectExpr("regexp_replace(strings,'\\(foo\\)','D')")
   }
 
-  // https://github.com/NVIDIA/spark-rapids/issues/5659
-  testGpuFallback("String regexp_extract regex 1",
-    "ProjectExec", extractStrings, conf = conf,
-    execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec")) {
-    frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
+  testSparkResultsAreEqual("String regexp_extract regex 1", extractStrings, conf = conf) {
+    frame => 
+      assume(isUnicodeEnabled())
+      frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 1)")
   }
 
-  // https://github.com/NVIDIA/spark-rapids/issues/5659
-  testGpuFallback("String regexp_extract regex 2",
-    "ProjectExec", extractStrings, conf = conf,
-    execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec")) {
-    frame => frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
+  testSparkResultsAreEqual("String regexp_extract regex 2", extractStrings, conf = conf) {
+    frame => 
+      assume(isUnicodeEnabled())
+      frame.selectExpr("regexp_extract(strings, '^([a-z]*)([0-9]*)([a-z]*)$', 2)")
   }
 
   // note that regexp_extract with a literal string gets replaced with the literal result of

@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -63,7 +63,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims.GpuFlatMapGroupsInPandasExecMeta
+import org.apache.spark.sql.rapids.execution.python.GpuFlatMapGroupsInPandasExecMeta
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
 import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
@@ -400,6 +400,9 @@ sealed trait FileFormatType
 object CsvFormatType extends FileFormatType {
   override def toString = "CSV"
 }
+object HiveDelimitedTextFormatType extends FileFormatType {
+  override def toString = "HiveText"
+}
 object ParquetFormatType extends FileFormatType {
   override def toString = "Parquet"
 }
@@ -521,11 +524,32 @@ object GpuOverrides extends Logging {
   }
 
   /**
+   * On some Spark platforms, AQE planning can result in old CPU exchanges being placed in the
+   * plan even after they have been replaced previously. This looks for subquery reuses of CPU
+   * exchanges that can be replaced with recently planned GPU exchanges that match the original
+   * CPU plan
+   */
+  def fixupCpuReusedExchanges(plan: SparkPlan): SparkPlan = {
+    plan.transformUp {
+      case bqse: BroadcastQueryStageExec =>
+        bqse.plan match {
+          case ReusedExchangeExec(output, b: BroadcastExchangeExec) =>
+            val cpuCanonical = b.canonicalized.asInstanceOf[BroadcastExchangeExec]
+            val gpuExchange = ExchangeMappingCache.findGpuExchangeReplacement(cpuCanonical)
+            gpuExchange.map { g =>
+              SparkShimImpl.newBroadcastQueryStageExec(bqse, ReusedExchangeExec(output, g))
+            }.getOrElse(bqse)
+          case _ => bqse
+        }
+    }
+  }
+
+  /**
    * Searches the plan for ReusedExchangeExec instances containing a GPU shuffle where the
    * output types between the two plan nodes do not match. In such a case the ReusedExchangeExec
    * will be updated to match the GPU shuffle output types.
    */
-  def fixupReusedExchangeExecs(plan: SparkPlan): SparkPlan = {
+  def fixupReusedExchangeOutputs(plan: SparkPlan): SparkPlan = {
     def outputTypesMatch(a: Seq[Attribute], b: Seq[Attribute]): Boolean =
       a.corresponds(b)((x, y) => x.dataType == y.dataType)
     plan.transformUp {
@@ -569,6 +593,11 @@ object GpuOverrides extends Logging {
     lit.value == null
   }
 
+  def isSupportedStringReplacePattern(strLit: String): Boolean = {
+    // check for regex special characters, except for \u0000 which we can support
+    !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+  }
+
   def isSupportedStringReplacePattern(exp: Expression): Boolean = {
     extractLit(exp) match {
       case Some(Literal(null, _)) => false
@@ -578,7 +607,7 @@ object GpuOverrides extends Logging {
           false
         } else {
           // check for regex special characters, except for \u0000 which we can support
-          !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+          isSupportedStringReplacePattern(strLit)
         }
       case _ => false
     }
@@ -781,9 +810,14 @@ object GpuOverrides extends Logging {
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          GpuTypeShims.additionalCsvSupportedTypes,
+        GpuTypeShims.additionalCsvSupportedTypes,
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.cpuAtomics)),
+    (HiveDelimitedTextFormatType, FileFormatChecks(
+      // Keep the supported types in sync with GpuHiveTextFileUtils.isSupportedType.
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      sparkSig = TypeSig.all)),
     (DeltaFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
@@ -1696,11 +1730,12 @@ object GpuOverrides extends Logging {
     ),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
+      // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553
+      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", (TypeSig.integral + TypeSig.fp).withPsNote(TypeEnum.DECIMAL,
           s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
             TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
+        ("rhs", (TypeSig.integral + TypeSig.fp), TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.dataType match {
@@ -1945,16 +1980,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
-      }),
-    expr[Remainder](
-      "Remainder or modulo",
-      ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRemainder(lhs, rhs)
       }),
     expr[AggregateExpression](
       "Aggregate expression",
@@ -2357,6 +2382,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringSplit](
        "Splits `str` around occurrences that match `regex`",
+      // Java's split API produces different behaviors than cudf when splitting with empty pattern
       ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
         TypeSig.ARRAY.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
@@ -2410,58 +2436,7 @@ object GpuOverrides extends Logging {
           }
         }
       }),
-    expr[ElementAt](
-      "Returns element of array at given(1-based) index in value if column is array. " +
-        "Returns value for the given key in value if column is map.",
-      ExprChecks.binaryProject(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all,
-        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY) +
-          TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
-            TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY)
-            .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
-          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
-          .withPsNote(
-            Seq(TypeEnum.BOOLEAN, TypeEnum.BYTE, TypeEnum.SHORT, TypeEnum.LONG,
-              TypeEnum.FLOAT, TypeEnum.DOUBLE, TypeEnum.DATE, TypeEnum.TIMESTAMP,
-              TypeEnum.STRING, TypeEnum.DECIMAL), "Unsupported as array index."),
-          TypeSig.all)),
-      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          // To distinguish the supported nested type between Array and Map
-          val checks = in.left.dataType match {
-            case _: MapType =>
-              // Match exactly with the checks for GetMapValue
-              ExprChecks.binaryProject(
-                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(),
-                TypeSig.all,
-                ("map",
-                  TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
-                    TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
-                  TypeSig.MAP.nested(TypeSig.all)),
-                ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all))
-            case _: ArrayType =>
-              // Match exactly with the checks for GetArrayItem
-              ExprChecks.binaryProject(
-                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(),
-                TypeSig.all,
-                ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP +
-                  TypeSig.BINARY),
-                  TypeSig.ARRAY.nested(TypeSig.all)),
-                ("ordinal", TypeSig.INT, TypeSig.INT))
-            case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
-          }
-          checks.tag(this)
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuElementAt(lhs, rhs, failOnError = in.failOnError)
-        }
-      }),
+    GpuElementAtMeta.elementAtRule(false),
     expr[MapKeys](
       "Returns an unordered array containing the keys of the map",
       ExprChecks.unaryProject(
@@ -2504,6 +2479,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
+      // Java's split API produces different behaviors than cudf when splitting with empty pattern
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)),
@@ -3392,7 +3368,7 @@ object GpuOverrides extends Logging {
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
     expr[JsonTuple](
-      "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
+      "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
       ExprChecks.projectOnly(
         TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
@@ -3402,13 +3378,13 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (childExprs.length >= 50) {
-            // If the number of field parameters is too large, fall back to CPU to avoid 
+            // If the number of field parameters is too large, fall back to CPU to avoid
             // potential performance problems.
             willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
           }
           // If any field argument contains special characters as follows, fall back to CPU.
           (a.children.tail).map { fieldExpr =>
-            extractLit(fieldExpr).foreach { field => 
+            extractLit(fieldExpr).foreach { field =>
               if (field.value != null) {
                 val fieldStr = field.value.asInstanceOf[UTF8String].toString
                 val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
@@ -3662,9 +3638,10 @@ object GpuOverrides extends Logging {
         (a, conf, p, r) => new SaveIntoDataSourceCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
 
-  val runnableCmds = commonRunnableCmds ++ 
-    GpuHiveOverrides.runnableCmds ++ 
-    SparkShimImpl.getRunnableCmds
+  val runnableCmds = commonRunnableCmds ++
+    GpuHiveOverrides.runnableCmds ++
+      ExternalSource.runnableCmds ++
+      SparkShimImpl.getRunnableCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
@@ -3706,13 +3683,7 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
           TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
         TypeSig.all),
-      (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
-        override val childScans: scala.Seq[ScanMeta[_]] =
-          Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
-
-        override def convertToGpu(): GpuExec =
-          GpuBatchScanExec(p.output, childScans.head.convertToGpu())
-      }),
+      (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
       ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
@@ -4313,11 +4284,17 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (plan.conf.adaptiveExecutionEnabled) {
       // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
       // distribution expressions are not semantically equal.
-      val newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+      var newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+
+      // Some Spark implementations are caching CPU exchanges for reuse which can be problematic
+      // when the RAPIDS Accelerator replaces the original exchange.
+      if (conf.isAqeExchangeReuseFixupEnabled && plan.conf.exchangeReuseEnabled) {
+        newPlan = GpuOverrides.fixupCpuReusedExchanges(newPlan)
+      }
 
       // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
       // compared to the desired buffer type from a reused GPU shuffle.
-      GpuOverrides.fixupReusedExchangeExecs(newPlan)
+      GpuOverrides.fixupReusedExchangeOutputs(newPlan)
     } else {
       plan
     }

@@ -39,8 +39,8 @@ you focus on the Spark applications which are best suited for the GPU.
 
 The profiling tool outputs SQL plan metrics and also prints out actual query plans to provide more
 insights.  In the following example the profiling tool output for a specific Spark application shows
-that it has a query with a large `HashAggregate` and `SortMergeJoin`. Those are indicators for a
-good candidate application for the RAPIDS Accelerator.
+that it has a query with a large  (processing millions of rows) `HashAggregate` and `SortMergeJoin`. 
+Those are indicators for a good candidate application for the RAPIDS Accelerator.
 
 ```
 +--------+-----+------+----------------------------------------------------+-------------+------------------------------------+-------------+----------+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, RegexProgram}
+import com.nvidia.spark.rapids.Arm.withResource
 import java.sql.{Date, Timestamp}
 import org.scalatest.BeforeAndAfterEach
 import scala.collection.mutable.ListBuffer
@@ -282,7 +283,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
     withResource(ColumnVector.fromStrings(values: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(v.stringReplaceWithBackrefs(rule.search, rule.replace)) { actual =>
+        val prog = new RegexProgram(rule.search)
+        withResource(v.stringReplaceWithBackrefs(prog, rule.replace)) { actual =>
           CudfTestHelper.assertColumnsAreEqual(expected, actual)
         }
       }

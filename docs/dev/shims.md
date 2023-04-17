@@ -48,8 +48,8 @@ inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression`
 has a varying source code depending on the Spark version we compile against to overcome this
 issue as you can see e.g., comparing TreeNode:
 
-1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
-2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/post320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
+1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark311/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L28)
+2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark320/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L37)
 
 This resolves compile-time problems, however, now we face the problem at run time.
 
@@ -68,17 +68,17 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 Spark 3.0.2's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark3xx-common/
+jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark320/
 ```
 
 ### Late Inheritance in Public Classes
@@ -96,7 +96,7 @@ by having the documented facade classes with a shim specifier in their package n
 The second issue that every parent class/trait in the inheritance graph is loaded using the classloader outside
 Plugin's control. Therefore, all this bytecode must reside in the conventional jar location, and it must
 be bitwise-identical across *all* shims. The only way to keep the source code for shared functionality unduplicated,
-(i.e., in `sql-plugin/src/main/scala` as opposed to be duplicated in `sql-plugin/src/main/3*/scala` source code roots)
+(i.e., in `sql-plugin/src/main/scala` as opposed to be duplicated in `sql-plugin/src/main/spark3*/scala` source code roots)
 is to delay inheriting `ShuffleManager` until as late as possible, as close as possible to the facade class where we
 have to split the source code anyway. Use traits as much as possible for flexibility.
 

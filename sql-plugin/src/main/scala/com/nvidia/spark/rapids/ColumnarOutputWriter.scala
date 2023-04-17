@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.io.OutputStream
 import scala.collection.mutable
 
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -62,7 +63,9 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
  * `org.apache.spark.sql.execution.datasources.OutputWriter`.
  */
 abstract class ColumnarOutputWriter(context: TaskAttemptContext,
-    dataSchema: StructType, rangeName: String) extends HostBufferConsumer with Arm {
+    dataSchema: StructType,
+    rangeName: String,
+    includeRetry: Boolean) extends HostBufferConsumer {
 
   val tableWriter: TableWriter
   val conf = context.getConfiguration
@@ -82,6 +85,12 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   def writeBufferedData(): Unit = {
     ColumnarOutputWriter.writeBufferedData(buffers, tempBuffer, outputStream)
+  }
+
+  def dropBufferedData(): Unit = buffers.dequeueAll {
+    case (buffer, _) =>
+      buffer.close()
+      true
   }
 
   /**
@@ -140,6 +149,40 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
    * @return time in ns taken to write the batch
    */
   private[this] def writeBatch(batch: ColumnarBatch): Long = {
+    if (includeRetry) {
+      writeBatchWithRetry(batch)
+    } else {
+      writeBatchNoRetry(batch)
+    }
+  }
+
+  private[this] def writeBatchWithRetry(batch: ColumnarBatch): Long = {
+    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    RmmRapidsRetryIterator.withRetry(sb, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { sb =>
+      val cr = new CheckpointRestore {
+        override def checkpoint(): Unit = ()
+        override def restore(): Unit = dropBufferedData()
+      }
+      val startTimestamp = System.nanoTime
+      withResource(sb.getColumnarBatch()) { cb =>
+        RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
+          withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+            withResource(GpuColumnVector.from(cb)) { table =>
+              scanTableBeforeWrite(table)
+              anythingWritten = true
+              tableWriter.write(table)
+            }
+          }
+        }
+      }
+      GpuSemaphore.releaseIfNecessary(TaskContext.get)
+      val gpuTime = System.nanoTime - startTimestamp
+      writeBufferedData()
+      gpuTime
+    }.sum
+  }
+
+  private[this] def writeBatchNoRetry(batch: ColumnarBatch): Long = {
     var needToCloseBatch = true
     try {
       val startTimestamp = System.nanoTime

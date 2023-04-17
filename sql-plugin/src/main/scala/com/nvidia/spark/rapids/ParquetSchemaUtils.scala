@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.{Locale, Optional}
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ColumnView, DType, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
@@ -29,7 +30,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
-object ParquetSchemaUtils extends Arm {
+object ParquetSchemaUtils {
   // Copied from Spark
   private val SPARK_PARQUET_SCHEMA_NAME = "spark_schema"
   // Copied from Spark
@@ -559,6 +560,14 @@ object ParquetSchemaUtils extends Arm {
     cv.getType.equals(DType.INT32) && Seq(ByteType, ShortType, DateType).contains(dt)
   }
 
+  private def needSignedUpcast(cv: ColumnView, dt: DataType): Boolean = {
+    cv.getType match {
+      case DType.INT8 => dt == ShortType || dt == IntegerType
+      case DType.INT16 => dt == IntegerType
+      case _ => false
+    }
+  }
+
   // Wrap up all required casts for Parquet schema evolution
   //
   // Note: The behavior of unsigned to signed is decided by the Spark,
@@ -568,9 +577,8 @@ object ParquetSchemaUtils extends Arm {
   private def evolveSchemaCasts(cv: ColumnView, dt: DataType): ColumnView = {
     if (needDecimalCast(cv, dt)) {
       cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
-    } else if (needUnsignedToSignedCast(cv, dt)) {
-      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
-    } else if (needInt32Downcast(cv, dt)) {
+    } else if (needUnsignedToSignedCast(cv, dt) || needInt32Downcast(cv, dt) ||
+        needSignedUpcast(cv, dt)) {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
     } else if (DType.STRING.equals(cv.getType) && dt == BinaryType) {
       // Ideally we would bitCast the STRING to a LIST, but that does not work.

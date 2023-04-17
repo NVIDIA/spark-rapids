@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -32,7 +34,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * If the data is needed after `allowSpilling` is called the implementations should get the data
  * back and cache it again until allowSpilling is called once more.
  */
-trait LazySpillable extends AutoCloseable {
+trait LazySpillable extends AutoCloseable with CheckpointRestore {
 
   /**
    * Indicate that we are done using the data for now and it can be spilled.
@@ -51,7 +53,7 @@ trait LazySpillable extends AutoCloseable {
  *
  * This is a LazySpillable instance so the life cycle follows that too.
  */
-trait JoinGatherer extends LazySpillable with Arm {
+trait JoinGatherer extends LazySpillable {
   /**
    * Gather the next n rows from the join gather maps.
    *
@@ -88,6 +90,7 @@ trait JoinGatherer extends LazySpillable with Arm {
    * If the data is all fixed width return the size of each row, otherwise return None.
    */
   def getFixedWidthBitSize: Option[Int]
+
 
   /**
    * Do a complete/expensive job to get the number of rows that can be gathered to get close
@@ -134,7 +137,7 @@ trait JoinGatherer extends LazySpillable with Arm {
   }
 }
 
-object JoinGatherer extends Arm {
+object JoinGatherer {
   def apply(gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
       outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
@@ -213,9 +216,8 @@ trait LazySpillableColumnarBatch extends LazySpillable {
 
 object LazySpillableColumnarBatch {
   def apply(cb: ColumnarBatch,
-      spillCallback: SpillCallback,
       name: String): LazySpillableColumnarBatch =
-    new LazySpillableColumnarBatchImpl(cb, spillCallback, name)
+    new LazySpillableColumnarBatchImpl(cb, name)
 
   def spillOnly(wrapped: LazySpillableColumnarBatch): LazySpillableColumnarBatch = wrapped match {
     case alreadyGood: AllowSpillOnlyLazySpillableColumnarBatchImpl => alreadyGood
@@ -229,7 +231,7 @@ object LazySpillableColumnarBatch {
  * where the data itself needs to out live the JoinGatherer it is handed off to.
  */
 case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableColumnarBatch)
-    extends LazySpillableColumnarBatch with Arm {
+    extends LazySpillableColumnarBatch {
   override def getBatch: ColumnarBatch =
     wrapped.getBatch
 
@@ -253,6 +255,12 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
     wrapped.allowSpilling()
   }
 
+  override def checkpoint(): Unit =
+    wrapped.checkpoint()
+
+  override def restore(): Unit =
+    wrapped.restore()
+
   override def toString: String = s"SPILL_ONLY $wrapped"
 }
 
@@ -261,8 +269,7 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
  */
 class LazySpillableColumnarBatchImpl(
     cb: ColumnarBatch,
-    spillCallback: SpillCallback,
-    name: String) extends LazySpillableColumnarBatch with Arm {
+    name: String) extends LazySpillableColumnarBatch {
 
   private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
   private var spill: Option[SpillableColumnarBatch] = None
@@ -292,11 +299,13 @@ class LazySpillableColumnarBatchImpl(
     if (spill.isEmpty && cached.isDefined) {
       withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
-        spill = Some(SpillableColumnarBatch(cached.get,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          spillCallback))
-        // Putting data in a SpillableColumnarBatch takes ownership of it.
-        cached = None
+        try {
+          spill = Some(SpillableColumnarBatch(cached.get,
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        } finally {
+          // Putting data in a SpillableColumnarBatch takes ownership of it.
+          cached = None
+        }
       }
     }
     cached.foreach(_.close())
@@ -310,10 +319,16 @@ class LazySpillableColumnarBatchImpl(
     spill = None
   }
 
+  override def checkpoint(): Unit =
+    allowSpilling()
+
+  override def restore(): Unit =
+    allowSpilling()
+
   override def toString: String = s"SpillableBatch $name $numCols X $numRows"
 }
 
-trait LazySpillableGatherMap extends LazySpillable with Arm {
+trait LazySpillableGatherMap extends LazySpillable {
   /**
    * How many rows total are in this gather map
    */
@@ -328,8 +343,8 @@ trait LazySpillableGatherMap extends LazySpillable with Arm {
 }
 
 object LazySpillableGatherMap {
-  def apply(map: GatherMap, spillCallback: SpillCallback, name: String): LazySpillableGatherMap =
-    new LazySpillableGatherMapImpl(map, spillCallback, name)
+  def apply(map: GatherMap, name: String): LazySpillableGatherMap =
+    new LazySpillableGatherMapImpl(map, name)
 
   def leftCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
     new LeftCrossGatherMap(leftCount, rightCount)
@@ -343,7 +358,6 @@ object LazySpillableGatherMap {
  */
 class LazySpillableGatherMapImpl(
     map: GatherMap,
-    spillCallback: SpillCallback,
     name: String) extends LazySpillableGatherMap {
 
   override val getRowCount: Long = map.getRowCount
@@ -358,7 +372,12 @@ class LazySpillableGatherMapImpl(
   private def getBuffer = {
     if (cached.isEmpty) {
       withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
-        cached = spill.map(_.getDeviceBuffer())
+        cached = spill.map { sb =>
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            sb.getDeviceBuffer()
+          }
+        }
       }
     }
     cached.get
@@ -367,12 +386,14 @@ class LazySpillableGatherMapImpl(
   override def allowSpilling(): Unit = {
     if (spill.isEmpty && cached.isDefined) {
       withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
-        // First time we need to allow for spilling
-        spill = Some(SpillableBuffer(cached.get,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          spillCallback))
-        // Putting data in a SpillableBuffer takes ownership of it.
-        cached = None
+        try {
+          // First time we need to allow for spilling
+          spill = Some(SpillableBuffer(cached.get,
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        } finally {
+          // Putting data in a SpillableBuffer takes ownership of it.
+          cached = None
+        }
       }
     }
     cached.foreach(_.close())
@@ -385,6 +406,12 @@ class LazySpillableGatherMapImpl(
     spill.foreach(_.close())
     spill = None
   }
+
+  override def checkpoint(): Unit =
+    allowSpilling()
+
+  override def restore(): Unit =
+    allowSpilling()
 }
 
 abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
@@ -412,6 +439,14 @@ abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
   override def close(): Unit = {
     // NOOP, we don't cache anything on the GPU
   }
+  override def checkpoint(): Unit = {
+    // NOOP, we don't cache anything on the GPU
+  }
+
+  override def restore(): Unit = {
+    // NOOP, we don't cache anything on the GPU
+  }
+
 }
 
 class LeftCrossGatherMap(leftCount: Int, rightCount: Int) extends
@@ -503,12 +538,25 @@ class JoinGathererImpl(
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
+  private var gatheredUpToCheckpoint: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
   private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
     val dts = data.dataTypes
     val fw = JoinGathererImpl.fixedWidthRowSizeBits(dts)
     val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
     (fw, nullVal)
+  }
+
+  override def checkpoint: Unit = {
+    gatheredUpToCheckpoint = gatheredUpTo
+    gatherMap.checkpoint()
+    data.checkpoint()
+  }
+
+  override def restore: Unit = {
+    gatheredUpTo = gatheredUpToCheckpoint
+    gatherMap.restore()
+    data.restore()
   }
 
   override def toString: String = {
@@ -619,6 +667,15 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   override def isDone: Boolean = left.isDone
 
   override def numRowsLeft: Long = left.numRowsLeft
+
+  override def checkpoint: Unit = {
+    left.checkpoint
+    right.checkpoint
+  }
+  override def restore: Unit = {
+    left.restore
+    right.restore
+  }
 
   override def allowSpilling(): Unit = {
     left.allowSpilling()

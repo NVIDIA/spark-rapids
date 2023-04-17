@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore, NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -133,7 +134,10 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
             NoopMetric,
             NoopMetric,
             NoopMetric,
-            nullSafe).foreach { row =>
+            nullSafe,
+            // ensure `releaseSemaphore` is false so we don't release the semaphore
+            // mid projection.
+            releaseSemaphore = false).foreach { row =>
           retRow.update(0, evaluateRow(row))
           retConverter.append(retRow, 0, builder)
         }

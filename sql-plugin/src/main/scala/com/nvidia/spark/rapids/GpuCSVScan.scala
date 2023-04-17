@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -334,6 +335,29 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
 }
 
 
+object CSVPartitionReader {
+  def readToTable(
+      dataBufferer: HostLineBufferer,
+      cudfSchema: Schema,
+      decodeTime: GpuMetric,
+      csvOpts: cudf.CSVOptions.Builder,
+      formatName: String,
+      partFile: PartitionedFile): Table = {
+    val dataSize = dataBufferer.getLength
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
+        withResource(new NvtxWithMetrics(formatName + " decode", NvtxColor.DARK_GREEN,
+          decodeTime)) { _ =>
+          Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+        }
+      }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+  }
+}
+
 class CSVPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -375,17 +399,11 @@ class CSVPartitionReader(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,
       readDataSchema: StructType,
-      isFirstChunk: Boolean): Table = {
+      isFirstChunk: Boolean,
+      decodeTime: GpuMetric): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    val dataSize = dataBufferer.getLength
-    try {
-      withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
-      }
-    } catch {
-      case e: Exception =>
-        throw new IOException(s"Error when processing file [$partFile]", e)
-    }
+    CSVPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, csvOpts,
+      getFileFormatShortName, partFile)
   }
 }

@@ -16,10 +16,15 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -30,8 +35,8 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv, GpuTaskMetrics}
+import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -170,7 +175,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       e.plan match {
@@ -661,6 +667,82 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => plan
   }
 
+  /** Mark nodes as GPU planning completed. */
+  private def markGpuPlanningComplete(plan: SparkPlan): SparkPlan = {
+    plan.foreach {
+      case g: GpuBroadcastExchangeExec => g.markGpuPlanningComplete()
+      case _ =>
+    }
+    plan
+  }
+
+  /**
+   * On some Spark platforms, AQE planning ends up not reusing as many GPU exchanges as possible.
+   * This searches the plan for any GPU broadcast exchanges and checks if their original CPU plans
+   * match any other previously seen GPU broadcasts with the same CPU plan.
+   */
+  private def fixupAdaptiveExchangeReuse(p: SparkPlan): SparkPlan = {
+    def doFixup(plan: SparkPlan): SparkPlan = {
+      plan.transformUp {
+        case g: GpuBroadcastExchangeExec =>
+          ExchangeMappingCache.findGpuExchangeReplacement(g.cpuCanonical).map { other =>
+            if (other eq g) {
+              g
+            } else {
+              ReusedExchangeExec(g.output, other)
+            }
+          }.getOrElse(g)
+      }
+    }
+
+    // If an exchange is at the top of the plan being remapped, this is likely due to AQE
+    // re-planning, and we're not allowed to change an exchange to a reused exchange in that case.
+    p match {
+      case e: Exchange => e.mapChildren(doFixup)
+      case _ => doFixup(p)
+    }
+  }
+
+  private def insertStageLevelMetrics(plan: SparkPlan): Unit = {
+    val sc = SparkSession.active.sparkContext
+    val gen = new AtomicInteger(0)
+    val allMetrics = mutable.Map[Int, GpuTaskMetrics]()
+    insertStageLevelMetrics(sc, plan, gen.getAndIncrement(), gen, allMetrics)
+  }
+
+  private def insertStageLevelMetrics(sc: SparkContext,
+      plan: SparkPlan,
+      currentStageId: Int,
+      stageIdGen: AtomicInteger,
+      allMetrics: mutable.Map[Int, GpuTaskMetrics]): Unit = {
+    plan match {
+      case shuffle: Exchange =>
+        shuffle.children.foreach { child =>
+          val newStageId = stageIdGen.getAndIncrement()
+          insertStageLevelMetrics(sc, child, newStageId, stageIdGen, allMetrics)
+        }
+      case gpu: GpuExec if gpu.supportsColumnar =>
+        // We only want to insert metrics for one of the execs per stage, but that can
+        // have problems because we want it to be deserialized before any of the metrics
+        // are used, but depending on how the iterators work, that might not happen, so to
+        // be safe for now we are going to include it everywhere
+        val metrics = allMetrics.getOrElse(currentStageId, {
+          val newMetrics = new GpuTaskMetrics
+          newMetrics.register(sc)
+          allMetrics.put(currentStageId, newMetrics)
+          newMetrics
+        })
+        gpu.setTaskMetrics(metrics)
+        gpu.children.foreach { child =>
+          insertStageLevelMetrics(sc, child, currentStageId, stageIdGen, allMetrics)
+        }
+      case other =>
+        other.children.foreach { child =>
+          insertStageLevelMetrics(sc, child, currentStageId, stageIdGen, allMetrics)
+        }
+    }
+  }
+
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
@@ -703,11 +785,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // need to apply any remaining rules that should have been applied.
         updatedPlan = SparkShimImpl.applyPostShimPlanRules(updatedPlan)
 
+        updatedPlan = markGpuPlanningComplete(updatedPlan)
+        if (rapidsConf.isAqeExchangeReuseFixupEnabled &&
+            plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
+          updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
+        }
+
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
         }
 
+        insertStageLevelMetrics(updatedPlan)
         updatedPlan
       }
     } else {

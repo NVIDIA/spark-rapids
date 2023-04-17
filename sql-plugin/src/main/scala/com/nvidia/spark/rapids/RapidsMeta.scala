@@ -646,7 +646,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      !childPlans.exists(_.supportsColumnar) &&
+        !SparkShimImpl.isExecutorBroadcastShuffle(wrapped.asInstanceOf[ShuffleExchangeExec]) &&
+        !childPlans.exists(_.supportsColumnar) &&
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.supportsColumnar))) {
 
@@ -688,6 +689,36 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
     // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
     fixUpExchangeOverhead()
+
+    // 3) Some child nodes can't run on GPU if parent nodes can't run on GPU.
+    // WriteFilesExec is a new operator from Spark version 340,
+    // Did not extract a shim code for simplicity
+    tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
+  }
+
+  /**
+   * tag child node can't run on GPU if parent node can't run on GPU and child node is a `typeName`
+   * From Spark 340, plan is like:
+   *    InsertIntoHadoopFsRelationCommand
+   *    +- WriteFiles
+   *      +- sub plan
+   * Instead of:
+   *    InsertIntoHadoopFsRelationCommand
+   *    +- sub plan
+   * WriteFiles is a temporary node and does not have input and output, it acts like a tag node.
+   * @param p        plan
+   * @param typeName type name
+   */
+  private def tagChildAccordingToParent(p: SparkPlanMeta[SparkPlan], typeName: String): Unit = {
+    p.childPlans.foreach(e => tagChildAccordingToParent(e, typeName))
+    if (p.wrapped.getClass.getSimpleName.equals(typeName)) {
+      assert(p.parent.isDefined)
+      if (!p.parent.get.canThisBeReplaced) {
+        // parent can't run on GPU, also tag this.
+        p.willNotWorkOnGpu(
+          s"$typeName can't run on GPU because parent can't run on GPU")
+      }
+    }
   }
 
   override final def tagSelfForGpu(): Unit = {
@@ -960,6 +991,7 @@ object DataTypeMeta {
       Some(expr.dataType)
     } catch {
       case _: java.lang.UnsupportedOperationException => None
+      case _: org.apache.spark.SparkException => None
     }
     new DataTypeMeta(wrapped, overrideType)
   }
@@ -1023,17 +1055,35 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
+  /**
+   * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
+   * is done.
+   * By default a TimeZoneAwareExpression always requires the timezone tagging, but
+   * there are some exceptions, e.g. 'Cast', who requires timezone tagging only when it
+   * has timezone sensitive type as input or output.
+   *
+   * Override this to match special cases.
+   */
+  protected def needTimezoneTagging: Boolean = {
+    // A TimeZoneAwareExpression with no timezone sensitive types as input/output will
+    // escape from the timezone tagging in the prior type checks. So ask for tagging here.
+    // e.g. 'UnixTimestamp' with 'DateType' as the input, timezone will be taken into
+    // account when converting a Date to a Long.
+    !(dataType +: childExprs.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
+  }
+
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
       willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
+    tagExprForGpu()
     wrapped match {
-      case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.zoneId)
+      case tzAware: TimeZoneAwareExpression if needTimezoneTagging =>
+        checkTimeZoneId(tzAware.zoneId)
       case _ => // do nothing
     }
-    tagExprForGpu()
   }
 
   /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
@@ -37,6 +38,8 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType))
 
   def seedExpression: Expression = child
+
+  override lazy val deterministic: Boolean = false
 
   /**
    * Record ID within each partition. By being transient, the Random Number Generator is

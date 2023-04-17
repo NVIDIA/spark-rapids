@@ -296,38 +296,21 @@ The JSON format read is a very experimental feature which is expected to have so
 it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
 `spark.rapids.sql.format.json.read.enabled`.
 
-Currently, the GPU accelerated JSON reader doesn't support column pruning, which will likely make 
-this difficult to use or even test. The user must specify the full schema or just let Spark infer 
-the schema from the JSON file. eg,
-
-We have a `people.json` file with below content
-
+Reading input containing invalid JSON format (in any row) will throw runtime exception.
+An example of valid input is as following:
 ``` console
-{"name":"Michael"}
 {"name":"Andy", "age":30}
 {"name":"Justin", "age":19}
 ```
 
-Both below ways will work
+The following input is invalid and will cause error:
+```console
+{"name":"Andy", "age":30} ,,,,
+{"name":"Justin", "age":19}
+```
 
-- Inferring the schema
-
-  ``` scala
-  val df = spark.read.json("people.json")
-  ```
-
-- Specifying the full schema
-
-  ``` scala
-  val schema = StructType(Seq(StructField("name", StringType), StructField("age", IntegerType)))
-  val df = spark.read.schema(schema).json("people.json")
-  ```
-
-While the below code will not work in the current version,
-
-``` scala
-val schema = StructType(Seq(StructField("name", StringType)))
-val df = spark.read.schema(schema).json("people.json")
+```console
+{"name":  Justin", "age":19}
 ```
 
 ### JSON supporting types
@@ -344,7 +327,6 @@ Due to such limitations, the input JSON schema must be `MAP<STRING,STRING>` and 
  ```
 scala> val df = Seq("{}", "BAD", "{\"A\": 100}").toDF
 df: org.apache.spark.sql.DataFrame = [value: string]
-
 scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
 +----------+
 |   entries|
@@ -437,18 +419,23 @@ disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=fal
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+- Word and non-word boundaries, `\b` and `\B`
+- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
+  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
+  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
-- Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
+- Line anchor `$` is not supported in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
+- String anchor `\z` is not supported
 - Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
   or more results
-- Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
+- Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
@@ -456,12 +443,6 @@ The following regular expression patterns are not yet supported on the GPU and w
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - `regexp_replace` does not support back-references
-
-The following regular expression patterns are known to potentially produce different results on the GPU
-vs the CPU.
-
-- Word and non-word boundaries, `\b` and `\B`
-
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
@@ -771,6 +752,9 @@ double quotes around strings in JSON data, whereas Spark allows single quotes ar
 data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None` in PySpark or
 `Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
 updated in a future release to more closely match Spark.
+
+If the JSON has a single quote `'` in the path, the GPU query may fail with `ai.rapids.cudf.CudfException`.
+More examples are in [issue-12483](https://github.com/rapidsai/cudf/issues/12483).
 
 ## Approximate Percentile
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -49,7 +50,7 @@ case class GroupArgs(
  * It plays the similar role to the Spark 'PandasGroupUtils', but dealing with 'ColumnarBatch',
  * instead of 'InternalRow'.
  */
-private[python] object BatchGroupUtils extends Arm {
+private[python] object BatchGroupUtils {
 
   /**
    * It mainly does 2 things:
@@ -163,8 +164,7 @@ private[python] object BatchGroupUtils extends Arm {
       dedupAttrs: Seq[Attribute],
       groupingOffsetsInDedup: Seq[Int],
       inputRows: GpuMetric,
-      inputBatches: GpuMetric,
-      spillCallback: SpillCallback): Iterator[ColumnarBatch] = {
+      inputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     val dedupRefs = GpuBindReferences.bindReferences(dedupAttrs, inputAttrs)
     val dedupIter = inputIter.map { batch =>
       // Close the original input batches.
@@ -175,7 +175,7 @@ private[python] object BatchGroupUtils extends Arm {
       }
     }
     // Groups rows on the batches being projected
-    BatchGroupedIterator(dedupIter, dedupAttrs, groupingOffsetsInDedup, spillCallback)
+    BatchGroupedIterator(dedupIter, dedupAttrs, groupingOffsetsInDedup)
   }
 
   /**
@@ -261,8 +261,7 @@ private[python] object BatchGroupUtils extends Arm {
 private[python] class BatchGroupedIterator private(
     input: Iterator[ColumnarBatch],
     inputAttributes: Seq[Attribute],
-    groupingIndices: Seq[Int],
-    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with Arm {
+    groupingIndices: Seq[Int]) extends Iterator[ColumnarBatch] {
 
   private val batchesQueue: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
@@ -307,8 +306,7 @@ private[python] class BatchGroupedIterator private(
           tables.foreach { t =>
             batchesQueue.enqueue(SpillableColumnarBatch(
               GpuColumnVectorFromBuffer.from(t, inputTypes),
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              spillCallback))
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
       }
@@ -321,17 +319,16 @@ private[python] class BatchGroupedIterator private(
 
 }
 
-private[python] object BatchGroupedIterator extends Arm {
+private[python] object BatchGroupedIterator {
 
   /**
    * Create a `BatchGroupedIterator` instance
    */
   def apply(wrapped: Iterator[ColumnarBatch],
             inputAttributes: Seq[Attribute],
-            groupingIndices: Seq[Int],
-            spillCallback: SpillCallback): Iterator[ColumnarBatch] = {
+            groupingIndices: Seq[Int]): Iterator[ColumnarBatch] = {
     if (wrapped.hasNext) {
-      new BatchGroupedIterator(wrapped, inputAttributes, groupingIndices, spillCallback)
+      new BatchGroupedIterator(wrapped, inputAttributes, groupingIndices)
     } else {
       Iterator.empty
     }
@@ -398,7 +395,7 @@ class CombiningIterator(
     pythonOutputIter: Iterator[ColumnarBatch],
     pythonArrowReader: GpuPythonArrowOutput,
     numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+    numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] {
 
   // For `hasNext` we are waiting on the queue to have something inserted into it
   // instead of waiting for a result to be ready from Python. The reason for this
@@ -444,7 +441,7 @@ class CoGroupedIterator(
     leftGroupOffsets: Seq[Int],
     rightGroupedIter: Iterator[ColumnarBatch],
     rightSchema: Seq[Attribute],
-    rightGroupOffsets: Seq[Int]) extends Iterator[(ColumnarBatch, ColumnarBatch)] with Arm {
+    rightGroupOffsets: Seq[Int]) extends Iterator[(ColumnarBatch, ColumnarBatch)] {
 
   // Same with CPU, use the left grouping key for comparison.
   private val groupSchema = leftGroupOffsets.map(leftSchema(_))

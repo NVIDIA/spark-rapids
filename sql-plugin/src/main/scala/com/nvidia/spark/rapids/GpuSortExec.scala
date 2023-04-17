@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 import scala.collection.mutable.{ArrayBuffer, ArrayStack}
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -115,21 +116,15 @@ case class GpuSortExec(
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = {
-    val required = Map(
+  override lazy val additionalMetrics: Map[String, GpuMetric] =
+    Map(
       OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
       SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
       PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
-    if (sortType == OutOfCoreSort) {
-      required ++ spillMetrics
-    } else {
-      required
-    }
-  }
 
   private lazy val targetSize = GpuSortExec.targetSize(conf)
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val sorter = new GpuSorter(gpuSortOrder, output)
 
     val sortTime = gpuLongMetric(SORT_TIME)
@@ -142,10 +137,9 @@ case class GpuSortExec(
     child.executeColumnar().mapPartitions { cbIter =>
       if (outOfCore) {
         val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
-        val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
           targetSize, opTime, sortTime, outputBatch, outputRows,
-          peakDevMemory, spillCallback)
+          peakDevMemory)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter
       } else {
@@ -164,7 +158,7 @@ case class GpuSortEachBatchIterator(
     sortTime: GpuMetric = NoopMetric,
     outputBatches: GpuMetric = NoopMetric,
     outputRows: GpuMetric = NoopMetric,
-    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
+    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): ColumnarBatch = {
@@ -252,9 +246,8 @@ case class GpuOutOfCoreSortIterator(
     sortTime: GpuMetric,
     outputBatches: GpuMetric,
     outputRows: GpuMetric,
-    peakDevMemory: GpuMetric,
-    spillCallback: SpillCallback) extends Iterator[ColumnarBatch]
-    with Arm with AutoCloseable {
+    peakDevMemory: GpuMetric) extends Iterator[ColumnarBatch]
+    with AutoCloseable {
 
   // There are so many places where we might hit a new peak that it gets kind of complex
   // so we are picking a few places that are likely to increase the amount of memory used.
@@ -324,7 +317,7 @@ case class GpuOutOfCoreSortIterator(
         val ct = splits.head
         memUsed += ct.getBuffer.getLength
         val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         sortedSize += sp.sizeInBytes
         sorted.add(sp)
       }
@@ -359,7 +352,7 @@ case class GpuOutOfCoreSortIterator(
         memUsed += splits.map(_.getBuffer.getLength).sum
         val stillPending = if (hasFullySortedData) {
           val sp = SpillableColumnarBatch(splits.head, sorter.projectedBatchTypes,
-            SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           sortedSize += sp.sizeInBytes
           sorted.add(sp)
           splits.slice(1, splits.length)
@@ -372,7 +365,7 @@ case class GpuOutOfCoreSortIterator(
           case (ct: ContiguousTable, lower: UnsafeRow) =>
             if (ct.getRowCount > 0) {
               val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,
-                SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               pending.add(sp, lower)
             } else {
               ct.close()

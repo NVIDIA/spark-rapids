@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +24,29 @@ import org.scalatest.mockito.MockitoSugar
 import org.scalatest.time.{Seconds, Span}
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.SparkSession
 
 class GpuSemaphoreSuite extends FunSuite
     with BeforeAndAfterEach with MockitoSugar with TimeLimits  with TimeLimitedTests {
   val timeLimit = Span(10, Seconds)
 
-  override def beforeEach(): Unit = GpuSemaphore.shutdown()
-  override def afterEach(): Unit = GpuSemaphore.shutdown()
+  override def beforeEach(): Unit = {
+    GpuSemaphore.shutdown()
+    // semaphore tests depend on a SparkEnv being available
+    val activeSession = SparkSession.getActiveSession
+    if (activeSession.isEmpty) {
+      SparkSession.builder
+        .appName("semaphoreTests")
+        .master("local[1]")
+        .getOrCreate()
+    }
+  }
+
+  override def afterEach(): Unit = {
+    GpuSemaphore.shutdown()
+    SparkSession.getActiveSession.foreach(_.stop())
+    SparkSession.clearActiveSession()
+  }
 
   def mockContext(taskAttemptId: Long): TaskContext = {
     val context = mock[TaskContext]
@@ -46,18 +62,18 @@ class GpuSemaphoreSuite extends FunSuite
   test("Double release is not an error") {
     GpuDeviceManager.setRmmTaskInitEnabled(false)
     val context = mockContext(1)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+    GpuSemaphore.acquireIfNecessary(context)
+    GpuSemaphore.acquireIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
   }
 
   test("Completion listener registered on first acquire") {
     val context = mockContext(1)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+    GpuSemaphore.acquireIfNecessary(context)
     verify(context, times(1)).addTaskCompletionListener[Unit](any())
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+    GpuSemaphore.acquireIfNecessary(context)
+    GpuSemaphore.acquireIfNecessary(context)
     verify(context, times(1)).addTaskCompletionListener[Unit](any())
   }
 }

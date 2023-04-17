@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,9 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
@@ -397,7 +398,7 @@ object LegacyTimeParserPolicy extends TimeParserPolicy
 object ExceptionTimeParserPolicy extends TimeParserPolicy
 object CorrectedTimeParserPolicy extends TimeParserPolicy
 
-object GpuToTimestamp extends Arm {
+object GpuToTimestamp {
   // We are compatible with Spark for these formats when the timeParserPolicy is CORRECTED
   // or EXCEPTION. It is possible that other formats may be supported but these are the only
   // ones that we have tests for.
@@ -489,9 +490,19 @@ object GpuToTimestamp extends Arm {
         // the string as well which works well for fixed-length formats but if/when we want to
         // support variable-length formats (such as timestamps with milliseconds) then we will need
         // to use regex instead.
-        withResource(col.matchesRe(fmt.validRegex)) { matches =>
+        val prog = new RegexProgram(fmt.validRegex, CaptureGroups.NON_CAPTURE)
+        val isTimestamp = withResource(col.matchesRe(prog)) { matches =>
           withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
             isTimestamp.and(matches)
+          }
+        }
+        withResource(isTimestamp) { _ =>
+          withResource(col.getCharLengths) { len =>
+            withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
+              withResource(len.equalTo(expectedLen)) { lenMatches =>
+                lenMatches.and(isTimestamp)
+              }
+            }
           }
         }
       case _ =>
@@ -569,14 +580,15 @@ object GpuToTimestamp extends Arm {
     val fixedUp = rulesWithSeparator
       .foldLeft(rejectLeadingNewlineThenStrip(lhs))((cv, regexRule) => {
         withResource(cv) {
-          _.stringReplaceWithBackrefs(regexRule.search, regexRule.replace)
+          _.stringReplaceWithBackrefs(new RegexProgram(regexRule.search), regexRule.replace)
         }
       })
 
     // check the final value against a regex to determine if it is valid or not, so we produce
     // null values for any invalid inputs
     withResource(Scalar.fromNull(dtype)) { nullValue =>
-      withResource(fixedUp.matchesRe(format.validRegex)) { isValidDate =>
+      val prog = new RegexProgram(format.validRegex, CaptureGroups.NON_CAPTURE)
+      withResource(fixedUp.matchesRe(prog)) { isValidDate =>
         withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
           isValidDate.ifElse(timestamp, nullValue)
         }
@@ -589,7 +601,8 @@ object GpuToTimestamp extends Arm {
    * and then strip all leading and trailing whitespace.
    */
   private def rejectLeadingNewlineThenStrip(lhs: GpuColumnVector) = {
-    withResource(lhs.getBase.matchesRe("\\A[ \\t]*[\\n]+")) { hasLeadingNewline =>
+    val prog = new RegexProgram("\\A[ \\t]*[\\n]+", CaptureGroups.NON_CAPTURE)
+    withResource(lhs.getBase.matchesRe(prog)) { hasLeadingNewline =>
       withResource(Scalar.fromNull(DType.STRING)) { nullValue =>
         withResource(lhs.getBase.strip()) { stripped =>
           hasLeadingNewline.ifElse(nullValue, stripped)

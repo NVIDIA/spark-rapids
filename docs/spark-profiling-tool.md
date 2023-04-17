@@ -33,7 +33,7 @@ more information.
 The Profiling tool requires the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, 
 you can download the Spark distribution to any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/22.12.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.04.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar). 
 
@@ -54,7 +54,7 @@ There are 3 modes of operation for the Profiling tool:
     on each application individually and outputs a file per application
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
            com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
            <eventlogs | eventlog directories ...>
     ```
@@ -66,7 +66,7 @@ There are 3 modes of operation for the Profiling tool:
     together and you get one file for all applications.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --combined
            <eventlogs | eventlog directories ...>
     ```
@@ -76,7 +76,7 @@ There are 3 modes of operation for the Profiling tool:
     The Compare mode will use more memory if comparing lots of applications.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --compare
            <eventlogs | eventlog directories ...>
     ```
@@ -583,7 +583,7 @@ The _Auto-Tuner_ output has 2 main sections:
 ```
 Profiling tool for the RAPIDS Accelerator and Apache Spark
 
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 

@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleIterator, RapidsShuffleTransport}
 
 import org.apache.spark.{InterruptibleIterator, TaskContext}
@@ -55,7 +56,7 @@ class RapidsCachingReader[K, C](
     transport: Option[RapidsShuffleTransport],
     catalog: ShuffleBufferCatalog,
     sparkTypes: Array[DataType])
-  extends ShuffleReader[K, C]  with Arm with Logging {
+  extends ShuffleReader[K, C] with Logging {
 
   override def read(): Iterator[Product2[K, C]] = {
     val readRange = new NvtxRange(s"RapidsCachingReader.read", NvtxColor.DARK_GREEN)
@@ -142,7 +143,7 @@ class RapidsCachingReader[K, C](
       try {
         val cachedIt = cachedBufferHandles.iterator.map(bufferHandle => {
           // No good way to get a metric in here for semaphore wait time
-          GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+          GpuSemaphore.acquireIfNecessary(context)
           val cb = withResource(catalog.acquireBuffer(bufferHandle)) { buffer =>
             buffer.getColumnarBatch(sparkTypes)
           }

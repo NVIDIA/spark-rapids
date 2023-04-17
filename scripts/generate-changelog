@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,13 +44,13 @@ Github personal access token: https://github.com/settings/tokens, and make you h
 Usage:
     cd spark-rapids/
 
-    # generate changelog for releases 22.02 to 22.12
+    # generate changelog for releases 23.02 to 23.02
     scripts/generate-changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> \
-    --releases=22.02,22.04,22.06,22.08,22.10,22.12
+    --releases=23.02
 
-    # generate changelog for releases 22.02 to 22.12 to /tmp/CHANGELOG.md
+    # To a separate file like /tmp/CHANGELOG.md
     GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog \
-    --releases=22.02,22.04,22.06,22.08,22.10,22.12 \
+    --releases=23.02 \
     --path=/tmp/CHANGELOG.md
 """
 import os

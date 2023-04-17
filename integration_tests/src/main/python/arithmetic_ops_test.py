@@ -113,13 +113,14 @@ def test_subtraction(data_gen):
                 f.col('b') - f.lit(None).cast(data_type),
                 f.col('a') - f.col('b')))
 
-@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
-    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0),
-    DecimalGen(30, 10)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
-    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
+    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
+    DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
+    DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
+    DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
 @pytest.mark.parametrize('addOrSub', ['+', '-'])
-def test_addition_subtraction_mixed_decimal(lhs, rhs, addOrSub):
+def test_addition_subtraction_mixed(lhs, rhs, addOrSub):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a {addOrSub} b")
     )
@@ -180,11 +181,12 @@ def test_multiplication_ansi_overflow():
         ansi_enabled_conf,
         exception_str)
 
-@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
-    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0),
-    DecimalGen(30, 10)], ids=idfn)
-@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
-    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
+    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
+    DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
+    DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
+    DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
 def test_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
@@ -270,6 +272,7 @@ def test_int_division_mixed(lhs, rhs):
                 'a DIV b'))
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.skipif(is_databricks113_or_later() or is_spark_340_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
 def test_mod(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -280,9 +283,25 @@ def test_mod(data_gen):
                 f.col('b') % f.lit(None).cast(data_type),
                 f.col('a') % f.col('b')))
 
+# This test is only added because we are skipping test_mod for spark 3.4 and databricks 11.3 because of https://github.com/NVIDIA/spark-rapids/issues/7595
+# Once that is resolved we should remove this test and not skip test_mod for spark 3.4 and db 11.3
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.skipif(not is_databricks113_or_later() and is_before_spark_340(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
+def test_mod_db11_3(data_gen):
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, data_gen).select(
+            f.col('a') % f.lit(100).cast(data_type),
+            f.lit(-12).cast(data_type) % f.col('b'),
+            f.lit(None).cast(data_type) % f.col('a'),
+            f.col('b') % f.lit(None).cast(data_type),
+            f.col('a') % f.col('b')))
+
 # pmod currently falls back for Decimal(precision=38)
 # https://github.com/NVIDIA/spark-rapids/issues/6336
-_pmod_gens = numeric_gens + [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
+# only testing numeric_gens because of https://github.com/NVIDIA/spark-rapids/issues/7553
+_pmod_gens = numeric_gens
+test_pmod_fallback_decimal_gens = [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
                               _decimal_gen_30_2, _decimal_gen_36_5,
                               DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
                               _decimal_gen_7_7]
@@ -298,8 +317,9 @@ def test_pmod(data_gen):
                 'pmod(b, cast(null as {}))'.format(string_type),
                 'pmod(a, b)'))
 
+
 @allow_non_gpu("ProjectExec", "Pmod")
-@pytest.mark.parametrize('data_gen', [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
+@pytest.mark.parametrize('data_gen', test_pmod_fallback_decimal_gens + [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
 def test_pmod_fallback(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_fallback_collect(
@@ -321,6 +341,7 @@ def test_mod_pmod_long_min_value():
 
 # pmod currently falls back for Decimal(precision=38)
 # https://github.com/NVIDIA/spark-rapids/issues/6336
+@pytest.mark.xfail(reason='Decimals type disabled https://github.com/NVIDIA/spark-rapids/issues/7553')
 @pytest.mark.parametrize('data_gen', [decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0,
                                       decimal_gen_128bit, _decimal_gen_30_2, _decimal_gen_36_5], ids=idfn)
 @pytest.mark.parametrize('overflow_exp', [
@@ -348,7 +369,7 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
-    if is_before_spark_314() or ((not is_before_spark_320()) and is_before_spark_322()):
+    if is_before_spark_322():
         exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)"
     elif is_databricks113_or_later() or not is_before_spark_340():
         exception_content = "[NUMERIC_VALUE_OUT_OF_RANGE] -12 cannot be represented as Decimal(7, 7)"
@@ -370,10 +391,88 @@ def test_mod_pmod_by_zero_not_ansi(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'pmod(a, cast(0 as {}))'.format(string_type),
-            'pmod(cast(-12 as {}), cast(0 as {}))'.format(string_type, string_type),
-            'a % (cast(0 as {}))'.format(string_type),
-            'cast(-12 as {}) % cast(0 as {})'.format(string_type, string_type)),
+            'pmod(cast(-12 as {}), cast(0 as {}))'.format(string_type, string_type)),
         {'spark.sql.ansi.enabled': 'false'})
+    # Skip decimal tests for mod on spark 3.4 and databricks 11.3, reason=https://github.com/NVIDIA/spark-rapids/issues/7595
+    if is_before_spark_340() or not is_databricks113_or_later():
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'a % (cast(0 as {}))'.format(string_type),
+                'cast(-12 as {}) % cast(0 as {})'.format(string_type, string_type)),
+            {'spark.sql.ansi.enabled': 'false'})
+
+mod_mixed_decimals_lhs = [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2),
+                           DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)]
+mod_mixed_decimals_rhs = [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12),
+                          DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)]
+mod_mixed_lhs = [byte_gen, short_gen, int_gen, long_gen]
+mod_mixed_lhs.extend(pytest.param(t, marks=pytest.mark.skipif(is_databricks113_or_later() or not is_before_spark_340(),
+                                     reason='https://github.com/NVIDIA/spark-rapids/issues/7595')) for t in mod_mixed_decimals_lhs)
+mod_mixed_rhs = [byte_gen, short_gen, int_gen, long_gen]
+mod_mixed_rhs.extend(pytest.param(t, marks=pytest.mark.skipif(is_databricks113_or_later() or not is_before_spark_340(),
+                                     reason='https://github.com/NVIDIA/spark-rapids/issues/7595')) for t in mod_mixed_decimals_rhs)
+@pytest.mark.parametrize('lhs', mod_mixed_lhs, ids=idfn)
+@pytest.mark.parametrize('rhs', mod_mixed_rhs, ids=idfn)
+def test_mod_mixed(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(not is_databricks113_or_later() or is_spark_340_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
+@pytest.mark.parametrize('lhs', mod_mixed_decimals_lhs, ids=idfn)
+@pytest.mark.parametrize('rhs', mod_mixed_decimals_rhs, ids=idfn)
+def test_mod_fallback(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"), 'Remainder')
+
+# Split into 4 tests to permute https://github.com/NVIDIA/spark-rapids/issues/7553 failures
+# @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
+#     DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
+#     DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)], ids=idfn)
+# @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
+#     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
+#     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+# def test_mod_mixed(lhs, rhs):
+#     assert_gpu_and_cpu_are_equal_collect(
+#         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
+
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+def test_pmod_mixed_numeric(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
+    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
+    ], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+def test_pmod_mixed_decimal_lhs(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        "Pmod")
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
+    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)
+    ], ids=idfn)
+def test_pmod_mixed_decimal_rhs(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        "Pmod")
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
+    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
+    ], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
+    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)
+    ], ids=idfn)
+def test_pmod_mixed_decimal(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        "Pmod")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_signum(data_gen):
@@ -940,7 +1039,7 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
 
 # Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
 # throw exceptions for overflow even ANSI mode is enabled.
-@pytest.mark.skipif(not is_before_spark_320() or is_databricks91_or_later(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', div_overflow_exprs)
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):

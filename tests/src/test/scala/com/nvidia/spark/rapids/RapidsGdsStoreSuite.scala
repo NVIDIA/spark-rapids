@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import ai.rapids.cudf.{ContiguousTable, CuFile, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, times, verify, when}
@@ -31,7 +32,7 @@ import org.apache.spark.storage.BlockId
 
 object GdsTest extends Tag("GdsTest")
 
-class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
+class RapidsGdsStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
  test("single shot spill with shared path", GdsTest) {
    println("Trying to load CuFile")
@@ -57,11 +58,11 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
        .thenReturn(paths(1))
    paths.foreach(f => assert(!f.exists))
    val spillPriority = -7
-   val catalog = spy(new RapidsBufferCatalog)
    val batchWriteBufferSize = 16384 // Holds 2 buffers.
-   withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
+   withResource(new RapidsDeviceMemoryStore) { devStore =>
+     val catalog = spy(new RapidsBufferCatalog(devStore))
      withResource(new RapidsGdsStore(
-       diskBlockManager, batchWriteBufferSize, catalog)) { gdsStore =>
+       diskBlockManager, batchWriteBufferSize)) { gdsStore =>
 
        devStore.setSpillStore(gdsStore)
        assertResult(0)(gdsStore.currentSize)
@@ -70,8 +71,8 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
        val bufferHandles = new Array[RapidsBufferHandle](bufferIds.length)
 
        bufferIds.zipWithIndex.foreach { case(id, ix) =>
-         val (size, handle) = addTableToStore(devStore, id, spillPriority)
-         devStore.synchronousSpill(0)
+         val (size, handle) = addTableToCatalog(catalog, id, spillPriority)
+         catalog.synchronousSpill(devStore, 0)
          bufferSizes(ix) = size
          bufferHandles(ix) = handle
        }
@@ -109,14 +110,14 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
     val path = bufferId.getDiskPath(null)
     assert(!path.exists)
     val spillPriority = -7
-    val catalog = spy(new RapidsBufferCatalog)
-    withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsGdsStore(mock[RapidsDiskBlockManager], 4096, catalog)) {
+    withResource(new RapidsDeviceMemoryStore) { devStore =>
+      val catalog = spy(new RapidsBufferCatalog(devStore))
+      withResource(new RapidsGdsStore(mock[RapidsDiskBlockManager], 4096)) {
         gdsStore =>
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
-        val (bufferSize, handle) = addTableToStore(devStore, bufferId, spillPriority)
-        devStore.synchronousSpill(0)
+        val (bufferSize, handle) = addTableToCatalog(catalog, bufferId, spillPriority)
+        catalog.synchronousSpill(devStore, 0)
         assertResult(bufferSize)(gdsStore.currentSize)
         assert(path.exists)
         assertResult(bufferSize)(path.length)
@@ -140,15 +141,14 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
     }
   }
 
-  private def addTableToStore(
-      devStore: RapidsDeviceMemoryStore,
+  private def addTableToCatalog(
+      catalog: RapidsBufferCatalog,
       bufferId: RapidsBufferId,
       spillPriority: Long): (Long, RapidsBufferHandle) = {
     withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      val handle = devStore.addContiguousTable(bufferId, ct, spillPriority,
-        RapidsBuffer.defaultSpillCallback, false)
+      val handle = catalog.addContiguousTable(bufferId, ct, spillPriority, false)
       (bufferSize, handle)
     }
   }

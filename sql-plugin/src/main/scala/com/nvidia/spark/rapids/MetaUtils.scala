@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.google.flatbuffers.FlatBufferBuilder
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format._
 
 import org.apache.spark.internal.Logging
@@ -29,7 +30,7 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-object MetaUtils extends Arm {
+object MetaUtils {
   // Used in cases where the `tableId` is not known at meta creation. 
   // We pick a non-zero integer since FlatBuffers prevent mutating the 
   // field if originally set to the default value as specified in the 
@@ -200,6 +201,53 @@ object MetaUtils extends Arm {
       GpuColumnVectorFromBuffer.from(table, deviceBuffer, meta, sparkTypes)
     }
   }
+
+  /**
+   * Copies BufferMeta not setting codecs in the new BufferMeta, and setting both
+   * the size and uncompressed size to be buffMeta.uncompressedSize (this is because
+   * the incoming BufferMeta was for a compressed buffer)
+   */
+  private def copyBufferMetaNoCodec(fbb: FlatBufferBuilder, buffMeta: BufferMeta): Int = {
+    BufferMeta.startBufferMeta(fbb)
+    BufferMeta.addId(fbb, buffMeta.id)
+    BufferMeta.addSize(fbb, buffMeta.uncompressedSize)
+    BufferMeta.addUncompressedSize(fbb, buffMeta.uncompressedSize)
+    BufferMeta.endBufferMeta(fbb)
+  }
+
+  /**
+   * Build a copy of the input `TableMeta` but ignoring any codecs specified in `BufferMeta`
+   * This is necessary after a decompression, such that batches that are reconstituted
+   * have a metadata that indicate they are not compressed.
+   * @param tableMeta - the incoming metadata with codec specifications
+   * @return a TableMeta without codecs
+   */
+  def dropCodecs(tableMeta: TableMeta): TableMeta = {
+    val fbb = new FlatBufferBuilder(1024)
+    val originalBufferMeta = tableMeta.bufferMeta()
+    val buffMetaOffset = if (originalBufferMeta != null) {
+      Some(copyBufferMetaNoCodec(fbb, originalBufferMeta))
+    } else {
+      None
+    }
+
+    val packedMetaBuffer = tableMeta.packedMetaAsByteBuffer()
+    val packedMetaOffset = if (packedMetaBuffer != null) {
+      val destBuffer = fbb.createUnintializedVector(1, packedMetaBuffer.remaining(), 1)
+      destBuffer.put(packedMetaBuffer)
+      Some(fbb.endVector())
+    } else {
+      None
+    }
+
+    TableMeta.startTableMeta(fbb)
+    buffMetaOffset.foreach(bmo => TableMeta.addBufferMeta(fbb, bmo))
+    packedMetaOffset.foreach(pmo => TableMeta.addPackedMeta(fbb, pmo))
+    TableMeta.addRowCount(fbb, tableMeta.rowCount())
+    fbb.finish(TableMeta.endTableMeta(fbb))
+    // copy the message to trim the backing array to only what is needed
+    TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
+  }
 }
 
 class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
@@ -315,6 +363,7 @@ object ShuffleMetadata extends Logging{
   def buildBufferTransferRequest(fbb: FlatBufferBuilder, bufferId: Int): Int = {
     BufferTransferRequest.createBufferTransferRequest(fbb, bufferId)
   }
+
 
   def buildBufferTransferResponse(bufferMetas: Seq[BufferMeta]): ByteBuffer = {
     val fbb = new FlatBufferBuilder(1024, bbFactory)

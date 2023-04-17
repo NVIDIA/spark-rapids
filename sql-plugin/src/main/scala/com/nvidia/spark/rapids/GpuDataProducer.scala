@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -113,7 +114,7 @@ class WrappedGpuDataProducer[T, U](
 object EmptyTableReader extends EmptyGpuDataProducer[Table]
 
 class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBatch])
-    extends GpuColumnarBatchIterator(true) with Arm {
+    extends GpuColumnarBatchIterator(true) {
 
   override def hasNext: Boolean = pending.nonEmpty
 
@@ -143,20 +144,17 @@ class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBat
  * held and will not be released before the first table is consumed. This is also fitting with
  * the semantics of how we use an Iterator[ColumnarBatch] pointing to GPU data.
  */
-object CachedGpuBatchIterator extends Arm {
+object CachedGpuBatchIterator {
   private[this] def makeSpillableAndClose(table: Table,
-      dataTypes: Array[DataType],
-      spillCallback: SpillCallback): SpillableColumnarBatch = {
+      dataTypes: Array[DataType]): SpillableColumnarBatch = {
     withResource(table) { _ =>
       SpillableColumnarBatch(GpuColumnVector.from(table, dataTypes),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-        spillCallback)
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     }
   }
 
   def apply(producer: GpuDataProducer[Table],
-      dataTypes: Array[DataType],
-      spillCallback: SpillCallback): GpuColumnarBatchIterator = {
+      dataTypes: Array[DataType]): GpuColumnarBatchIterator = {
     withResource(producer) { _ =>
       if (producer.hasNext) {
         // Special case for the first one.
@@ -168,9 +166,9 @@ object CachedGpuBatchIterator extends Arm {
             ret
           } else {
             val pending = mutable.Queue.empty[SpillableColumnarBatch]
-            pending += makeSpillableAndClose(firstTable, dataTypes, spillCallback)
+            pending += makeSpillableAndClose(firstTable, dataTypes)
             producer.foreach { t =>
-              pending += makeSpillableAndClose(t, dataTypes, spillCallback)
+              pending += makeSpillableAndClose(t, dataTypes)
             }
             new CachedGpuBatchIterator(pending)
           }

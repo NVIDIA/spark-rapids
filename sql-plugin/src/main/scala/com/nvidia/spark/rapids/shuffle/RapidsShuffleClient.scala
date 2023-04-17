@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.{MetadataResponse, TableMeta, TransferState}
 
 import org.apache.spark.internal.Logging
@@ -92,7 +93,7 @@ class RapidsShuffleClient(
     exec: Executor,
     clientCopyExecutor: Executor,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
-      extends Logging with Arm with AutoCloseable {
+      extends Logging with AutoCloseable {
 
   // these are handlers that are interested (live spark tasks) in peer failure handling
   private val liveHandlers =
@@ -439,8 +440,7 @@ class RapidsShuffleClient(
     } else {
       // no device data, just tracking metadata
       catalog.addDegenerateRapidsBuffer(
-        meta,
-        RapidsBuffer.defaultSpillCallback)
+        meta)
 
     }
   }
@@ -464,5 +464,10 @@ class RapidsShuffleClient(
   def unregisterPeerErrorListener(handler: RapidsShuffleFetchHandler): Unit = {
     logDebug(s"Unregister $handler from client for ${connection.getPeerExecutorId}")
     liveHandlers.remove(handler)
+    // Make sure we remove the handler from the transport as well, otherwise
+    // we could have a host memory leak: https://github.com/NVIDIA/spark-rapids/issues/7997
+    // At this stage this should not cancel any requests because the task should have
+    // completed, but it will also remove `handler` from internal tracking in `transport`.
+    transport.cancelPending(handler)
   }
 }

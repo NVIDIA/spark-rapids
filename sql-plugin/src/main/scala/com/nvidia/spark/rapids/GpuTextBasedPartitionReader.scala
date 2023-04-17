@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import java.util.Optional
 import scala.collection.mutable.ListBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
@@ -73,7 +74,7 @@ object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
  * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
  * the lines.
  */
-class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
   private var buffer = HostMemoryBuffer.allocate(size)
   private var location: Long = 0
 
@@ -127,7 +128,7 @@ object HostStringColBuffererFactory extends LineBuffererFactory[HostStringColBuf
 /**
  * Buffer the lines as a HostColumnVector of strings, one per line.
  */
-class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
   // We had to jump through some hoops so that we could grow the string columns dynamically
   //  might be nice to have this in CUDF, but this works fine too.
   private var dataBuffer = HostMemoryBuffer.allocate(size)
@@ -210,7 +211,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric],
     bufferFactory: FACT)
-  extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
+  extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
   import GpuMetric._
 
   private var batch: Option[ColumnarBatch] = None
@@ -222,7 +223,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   metrics = execMetrics
 
   private lazy val estimatedHostBufferSize: Long = {
-    val rawPath = new Path(partFile.filePath)
+    val rawPath = new Path(partFile.filePath.toString())
     val fs = rawPath.getFileSystem(conf)
     val path = fs.makeQualified(rawPath)
     val fileSize = fs.getFileStatus(path).getLen
@@ -320,13 +321,11 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
 
         // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         // The buffer that is sent down
-        val table = withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
-          NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-          readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk)
-        }
+        val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk,
+            metrics(GPU_DECODE_TIME))
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
         // parse boolean and numeric columns that were read as strings
@@ -445,7 +444,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
 
     // filter by regexp first to eliminate invalid entries
     val regexpFiltered = withResource(lhs.strip()) { stripped =>
-      withResource(stripped.matchesRe(regex)) { matchesRe =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      withResource(stripped.matchesRe(prog)) { matchesRe =>
         withResource(Scalar.fromNull(DType.STRING)) { nullString =>
           matchesRe.ifElse(stripped, nullString)
         }
@@ -460,8 +460,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
       // date/time formats that contain the `@` character
       val placeholder = "@"
-      withResource(regexpFiltered.stringReplaceWithBackrefs(
-        raw"(\.\d{3})(Z?)\Z", raw"\1$placeholder\2")) { tmp =>
+      val prog = new RegexProgram(raw"(\.\d{3})(Z?)\Z")
+      withResource(regexpFiltered.stringReplaceWithBackrefs(prog, raw"\1$placeholder\2")) { tmp =>
         withResource(Scalar.fromString(placeholder)) { from =>
           withResource(Scalar.fromString("000")) { to =>
             tmp.stringReplace(from, to)
@@ -551,7 +551,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     dataBuffer: BUFF,
     cudfSchema: Schema,
     readDataSchema: StructType,
-    isFirstChunk: Boolean): Table
+    isFirstChunk: Boolean,
+    decodeTime: GpuMetric): Table
 
   /**
    * File format short name used for logging and other things to uniquely identity

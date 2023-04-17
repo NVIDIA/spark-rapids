@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -232,7 +233,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val files = if (options.ignoreExtension) {
       partFiles
     } else {
-      partFiles.filter(_.filePath.endsWith(".avro"))
+      partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
     new GpuMultiFileCloudAvroPartitionReader(conf, files, numThreads, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix,
@@ -267,7 +268,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
           AvroBlockMeta(null, 0L, Seq.empty)
       }
-      val fPath = new Path(new URI(file.filePath))
+      val fPath = new Path(new URI(file.filePath.toString()))
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         AvroSingleDataBlockInfo(
             fPath,
@@ -296,7 +297,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
 }
 
 /** A trait collecting common methods across the 3 kinds of avro readers */
-trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase =>
+trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
   private val avroFormat = Some("avro")
 
   def debugDumpPrefix: Option[String]
@@ -325,16 +326,18 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
       .includeColumn(readDataSchema.fieldNames.toSeq: _*)
       .build()
     // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    withResource(new NvtxWithMetrics("Avro decode",
-        NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-      try {
-        Table.readAvro(readOpts, hostBuf, 0, bufSize)
-      } catch {
-        case e: Exception =>
-          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit {
+        withResource(new NvtxWithMetrics("Avro decode",
+          NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readAvro(readOpts, hostBuf, 0, bufSize)
+        }
       }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
     }
   }
 
@@ -532,7 +535,7 @@ class GpuAvroPartitionReader(
     execMetrics: Map[String, GpuMetric])
   extends FilePartitionReaderBase(conf, execMetrics) with GpuAvroReaderBase {
 
-  private val partFilePath = new Path(new URI(partFile.filePath))
+  private val partFilePath = new Path(new URI(partFile.filePath.toString()))
   private val blockIterator: BufferedIterator[BlockInfo] = blockMeta.blocks.iterator.buffered
 
   override def next(): Boolean = {
@@ -641,7 +644,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val optBatch = if (bufAndSizeInfo.hmb == null) {
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val emptyBatch = new ColumnarBatch(Array.empty, bufAndSizeInfo.numRows.toInt)
         Some(addPartitionValues(emptyBatch, partitionValues, partitionSchema))
       } else {
@@ -737,7 +740,8 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufferStartTime = System.nanoTime()
       val startingBytesRead = fileSystemBytesRead()
       val result =
-        withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
+        withResource(AvroFileReader.openDataReader(partFile.filePath.toString(), config)) {
+          reader =>
           // Go to the start of the first block after the start position
           reader.sync(partFile.start)
           if (!reader.hasNextBlock || isDone) {
@@ -1011,7 +1015,7 @@ class GpuMultiFileAvroPartitionReader(
 /** A tool to filter Avro blocks */
 case class AvroFileFilterHandler(
     hadoopConf: Configuration,
-    @transient options: AvroOptions) extends Arm with Logging {
+    @transient options: AvroOptions) extends Logging {
 
   @scala.annotation.nowarn(
     "msg=value ignoreExtension in class AvroOptions is deprecated*"
@@ -1019,8 +1023,9 @@ case class AvroFileFilterHandler(
   val ignoreExtension = options.ignoreExtension
 
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
-    if (ignoreExtension || partFile.filePath.endsWith(".avro")) {
-      withResource(AvroFileReader.openMetaReader(partFile.filePath, hadoopConf)) { reader =>
+    if (ignoreExtension || partFile.filePath.toString().endsWith(".avro")) {
+      withResource(AvroFileReader.openMetaReader(partFile.filePath.toString(), hadoopConf)) {
+        reader =>
         // Get blocks only belong to this split
         reader.sync(partFile.start)
         val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -27,12 +27,13 @@ import scala.util.Random
 import scala.util.hashing.MurmurHash3
 
 import ai.rapids.cudf.{ColumnVector, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object SamplingUtils extends Arm {
+object SamplingUtils {
   private def selectWithoutReplacementFrom(count: Int, rand: Random, cb: ColumnarBatch): Table = {
     val rows = cb.numRows()
     assert(count <= rows)
@@ -101,8 +102,7 @@ object SamplingUtils extends Arm {
           if (runningCb == null) {
             runningCb = SpillableColumnarBatch(
               GpuColumnVector.from(selected, GpuColumnVector.extractTypes(cb)),
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              RapidsBuffer.defaultSpillCallback)
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           } else {
             val concat = withResource(runningCb) { spb =>
               runningCb = null
@@ -115,8 +115,7 @@ object SamplingUtils extends Arm {
             withResource(concat) { concat =>
               runningCb = SpillableColumnarBatch(
                 GpuColumnVector.from(concat, GpuColumnVector.extractTypes(cb)),
-                SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-                RapidsBuffer.defaultSpillCallback)
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
             }
           }
         }
@@ -191,8 +190,7 @@ object SamplingUtils extends Arm {
             rowsSaved = selected.getRowCount
             runningCb = SpillableColumnarBatch(
               GpuColumnVector.from(selected, GpuColumnVector.extractTypes(cb)),
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              RapidsBuffer.defaultSpillCallback)
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           } else {
             withResource(runningCb) { spb =>
               runningCb = null
@@ -209,8 +207,7 @@ object SamplingUtils extends Arm {
                   rowsSaved = concat.getRowCount
                   runningCb = SpillableColumnarBatch(
                     GpuColumnVector.from(concat, GpuColumnVector.extractTypes(cb)),
-                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-                    RapidsBuffer.defaultSpillCallback)
+                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
                 }
               }
             }

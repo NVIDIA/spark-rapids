@@ -27,6 +27,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.sources.{CreatableRelationProvider, Filter}
 import org.apache.spark.util.{SerializableConfiguration, Utils}
@@ -42,7 +43,7 @@ object ExternalSource extends Logging {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator
      * must run successfully without it. */
     Utils.classIsLoadable(avroScanClassName) && {
-      Try(ShimLoader.loadClass(avroScanClassName)).map(_ => true)
+      Try(ShimReflectionUtils.loadClass(avroScanClassName)).map(_ => true)
         .getOrElse {
           logWarning("Avro library not found by the RAPIDS plugin. The Plugin jars are " +
               "likely deployed using a static classpath spark.driver/executor.extraClassPath. " +
@@ -56,7 +57,7 @@ object ExternalSource extends Logging {
 
   private lazy val hasIcebergJar = {
     Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
-        Try(ShimLoader.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
+        Try(ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
   }
 
   private lazy val icebergProvider = IcebergProvider()
@@ -64,6 +65,9 @@ object ExternalSource extends Logging {
   private lazy val deltaProvider = DeltaProvider()
 
   private lazy val creatableRelations = deltaProvider.getCreatableRelationRules
+
+  lazy val runnableCmds: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = deltaProvider.getRunnableCommandRules
 
   lazy val execRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     deltaProvider.getExecRules

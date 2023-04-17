@@ -18,7 +18,8 @@ package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -96,7 +97,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME)) ++ spillMetrics
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -140,7 +141,6 @@ abstract class GpuBroadcastHashJoinExecBase(
       buildSchema: StructType,
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-    val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
     closeOnExcept(bufferedStreamIter) { _ =>
@@ -148,7 +148,7 @@ abstract class GpuBroadcastHashJoinExecBase(
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
 
@@ -166,8 +166,6 @@ abstract class GpuBroadcastHashJoinExecBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
-
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
@@ -181,14 +179,13 @@ abstract class GpuBroadcastHashJoinExecBase(
           buildSchema,
           new CollectTimeIterator("broadcast join stream", it, streamTime),
           allMetrics)
-      withResource(builtBatch) { _ =>
-        doJoin(builtBatch, streamIter, targetSize, spillCallback,
-          numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-      }
+      // builtBatch will be closed in doJoin
+      doJoin(builtBatch, streamIter, targetSize,
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     doColumnarBroadcastJoin()
   }
 }

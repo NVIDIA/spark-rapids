@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import java.util.Collection;
 import java.util.Map;
 
 import com.nvidia.spark.rapids.GpuMetric;
-import com.nvidia.spark.rapids.PartitionedFileUtils;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.expressions.Expression;
@@ -156,7 +156,7 @@ public class GpuParquet {
 
     public CloseableIterable<ColumnarBatch> build() {
       ParquetReadOptions options = buildReaderOptions(file, start, length);
-      PartitionedFile partFile = PartitionedFileUtils.newPartitionedFile(
+      PartitionedFile partFile = PartitionedFileUtilsShim.newPartitionedFile(
           InternalRow.empty(), file.location(), start, length);
       return new GpuParquetReader(file, projectSchema, options, nameMapping, filter, caseSensitive,
           idToConstant, deleteFilter, partFile, conf, maxBatchSizeRows, maxBatchSizeBytes,

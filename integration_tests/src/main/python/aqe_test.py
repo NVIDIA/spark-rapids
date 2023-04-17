@@ -15,17 +15,12 @@
 import pytest
 from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
-# Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
-# SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
-# Below config is to fall back BroadcastNestedLoopJoinExec and ShuffleExchangeExec to CPU for only Databricks-11.3
-# Follow on issue to support/investigate EXECUTOR_BROADCAST - https://github.com/NVIDIA/spark-rapids/issues/7425
-db_113_cpu_bnlj_join_allow=["BroadcastNestedLoopJoinExec", "ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 def create_skew_df(spark, length):
     root = spark.range(0, length)
@@ -128,6 +123,55 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
 
 
+@allow_non_gpu("ProjectExec")
+def test_aqe_broadcast_join_non_columnar_child(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def prep(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000, "http://widgets.net"),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000, "http://widgets.org"),
+            (("Cathy ", "", "Green"), "3", "F", 3000, "http://widgets.net")
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType())
+                  .add("website", StringType()))
+
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
+
+        df2.write.format("parquet").mode("overwrite").save(data_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf2 = spark.read.parquet(data_path)
+        newdf2.createOrReplaceTempView("df2")
+
+        return spark.sql(
+            """
+            select 
+                a.name.firstname,
+                a.name.lastname,
+                b.full_url
+            from df2 a join (select id, concat(website,'/path') as full_url from df2) b
+                on a.id = b.id
+            """
+        )
+
+    conf = copy_and_update(_adaptive_conf, { 'spark.rapids.sql.expression.Concat': 'false' })
+
+    if is_databricks113_or_later():
+        assert_cpu_and_gpu_are_equal_collect_with_capture(do_it, exist_classes="GpuShuffleExchangeExec",conf=conf)
+    else:
+        assert_cpu_and_gpu_are_equal_collect_with_capture(do_it, exist_classes="GpuBroadcastExchangeExec",conf=conf)
+
+
 joins = [
     'inner',
     'cross',
@@ -135,6 +179,13 @@ joins = [
     'left anti',
     'anti'
 ]
+
+
+# Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
+# SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
+# To handle issue in https://github.com/NVIDIA/spark-rapids/issues/7037, we need to allow a 
+# for a CPU ShuffleExchangeExec for a CPU Broadcast join to consume it
+db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 # see https://github.com/NVIDIA/spark-rapids/issues/7037
 # basically this happens when a GPU broadcast exchange is reused from 
@@ -164,7 +215,6 @@ def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
         df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
         df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
 
-        df2.printSchema
         df2.write.format("parquet").mode("overwrite").save(data_path)
 
     with_cpu_session(prep)

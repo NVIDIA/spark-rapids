@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.StorageTier.StorageTier
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
@@ -136,7 +136,6 @@ class GpuSingleDirectoryDataWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm 
   with WriterUtil {
   private var fileCounter: Int = _
   private var recordsInFile: Long = _
@@ -220,7 +219,6 @@ class GpuDynamicPartitionDataSingleWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm 
   with WriterUtil{
 
   /** Wrapper class for status of a unique single output writer. */
@@ -693,7 +691,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     committer: FileCommitProtocol,
     spec: GpuConcurrentOutputWriterSpec)
     extends GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
-        with Arm with Logging {
+        with Logging {
 
   // Keep all the unclosed writers, key is partition directory string.
   // Note: if fall back to sort-based mode, also use the opened writers in the map.
@@ -703,8 +701,6 @@ class GpuDynamicPartitionDataConcurrentWriter(
   TaskContext.get().addTaskCompletionListener[Unit](_ => closeCachesAndWriters())
 
   private val outDataTypes = description.dataColumns.map(_.dataType).toArray
-
-  val spillCallback = RapidsBuffer.defaultSpillCallback
 
   val partitionFlushSize = if (description.concurrentWriterPartitionFlushSize <= 0) {
     // if the property is equal or less than 0, use default value of parquet or orc
@@ -797,18 +793,12 @@ class GpuDynamicPartitionDataConcurrentWriter(
     val opTime = NoopMetric
     val outputBatch = NoopMetric
     val outputRows = NoopMetric
-    val spillCallback = new SpillCallback {
-      override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = {
-      }
-
-      override def semaphoreWaitTime: GpuMetric = NoopMetric
-    }
 
     val targetSize = GpuSortExec.targetSize(spec.batchSize)
     // out of core sort the entire iterator
     GpuOutOfCoreSortIterator(iterator, sorter, cpuOrd, targetSize,
       opTime, sortTime, outputBatch, outputRows,
-      peakDevMemory, spillCallback)
+      peakDevMemory)
   }
 
   /**
@@ -920,7 +910,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
                 val currWriterStatus = concurrentWriters(partitionStr)
                 // create SpillableColumnarBatch to take the owner of `outputCb`
                 currWriterStatus.tableCaches += SpillableColumnarBatch(
-                  outputCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                  outputCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
                 currWriterStatus.deviceBytes += GpuColumnVector.getTotalDeviceMemoryUsed(outputCb)
               }
             }

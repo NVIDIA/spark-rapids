@@ -23,8 +23,9 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
@@ -245,6 +246,31 @@ case class GpuJsonPartitionReaderFactory(
   }
 }
 
+object JsonPartitionReader {
+  def readToTable(
+      dataBufferer: HostLineBufferer,
+      cudfSchema: Schema,
+      decodeTime: GpuMetric,
+      jsonOpts:  cudf.JSONOptions,
+      formatName: String,
+      partFile: PartitionedFile): Table = {
+    val dataSize = dataBufferer.getLength
+    // cuDF does not yet support reading a subset of columns so we have
+    // to apply the read schema projection here
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
+        withResource(new NvtxWithMetrics(formatName + " decode",
+          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+        }
+      }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+  }
+}
+
 class JsonPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -277,32 +303,24 @@ class JsonPartitionReader(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,
       readDataSchema: StructType,
-      hasHeader: Boolean): Table = {
+      hasHeader: Boolean,
+      decodeTime: GpuMetric): Table = {
     val jsonOpts = buildJsonOptions(parsedOptions)
-    val dataSize = dataBufferer.getLength
-    // cuDF does not yet support reading a subset of columns so we have
-    // to apply the read schema projection here
-    withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
-      val jsonTbl = try {
-        Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
-      } catch {
-        case e: Exception =>
-          throw new IOException(s"Error when processing file [$partFile]", e)
-      }
-      withResource(jsonTbl) { tbl =>
-        val columns = new ListBuffer[ColumnVector]()
-        closeOnExcept(columns) { _ =>
-          for (name <- readDataSchema.fieldNames) {
-            val i = cudfSchema.getColumnNames.indexOf(name)
-            if (i == -1) {
-              throw new IllegalStateException(
-                s"read schema contains field named '$name' that is not in the data schema")
-            }
-            columns += tbl.getColumn(i)
+    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, jsonOpts,
+      getFileFormatShortName, partFile)
+    withResource(jsonTbl) { tbl =>
+      val columns = new ListBuffer[ColumnVector]()
+      closeOnExcept(columns) { _ =>
+        for (name <- readDataSchema.fieldNames) {
+          val i = cudfSchema.getColumnNames.indexOf(name)
+          if (i == -1) {
+            throw new IllegalStateException(
+              s"read schema contains field named '$name' that is not in the data schema")
           }
+          columns += tbl.getColumn(i)
         }
-        new Table(columns: _*)
       }
+      new Table(columns: _*)
     }
   }
 
@@ -380,17 +398,18 @@ class JsonPartitionReader(
     // cuDF `isFloat` supports some inputs that are not valid JSON numbers, such as `.1`, `1.`,
     // and `+1` so we use a regular expression to match valid JSON numbers instead
     val jsonNumberRegexp = "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
+    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
     val isValid = if (parsedOptions.allowNonNumericNumbers) {
       withResource(ColumnVector.fromStrings("NaN", "+INF", "-INF", "+Infinity",
         "Infinity", "-Infinity")) { nonNumeric =>
-        withResource(input.matchesRe(jsonNumberRegexp)) { isJsonNumber =>
+        withResource(input.matchesRe(prog)) { isJsonNumber =>
           withResource(input.contains(nonNumeric)) { nonNumeric =>
             isJsonNumber.or(nonNumeric)
           }
         }
       }
     } else {
-      input.matchesRe(jsonNumberRegexp)
+      input.matchesRe(prog)
     }
     withResource(isValid) { _ =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>

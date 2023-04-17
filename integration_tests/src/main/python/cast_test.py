@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_databricks91_or_later, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -88,7 +88,7 @@ values_string_to_data = invalid_values_string_to_date + valid_values_string_to_d
 # Spark 320+ and databricks support Ansi mode when casting string to date
 # This means an exception will be thrown when casting invalid string to date on Spark 320+ or databricks
 # test Spark versions < 3.2.0 and non databricks, ANSI mode
-@pytest.mark.skipif((not is_before_spark_320()) or is_databricks91_or_later(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
+@pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
 def test_cast_string_date_invalid_ansi_before_320():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
@@ -96,19 +96,9 @@ def test_cast_string_date_invalid_ansi_before_320():
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'}, )
 
-# test databricks, ANSI mode, all databricks versions supports Ansi mode when casting string to date
-@pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_cast_string_date_invalid_ansi_databricks(invalid):
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'},
-        error_message="DateTimeException")
-
-# test databricks, ANSI mode, valid values
-@pytest.mark.skipif(not is_databricks91_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-def test_cast_string_date_valid_ansi_databricks():
+# test Spark versions >= 320 and databricks, ANSI mode, valid values
+@pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
+def test_cast_string_date_valid_ansi():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
@@ -635,3 +625,21 @@ def test_cast_day_time_to_integral_side_effect():
 
 def test_cast_binary_to_string():
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(spark, binary_gen).selectExpr("a", "CAST(a AS STRING) as str"))
+
+def test_cast_int_to_string_not_UTC():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, int_gen, 100).selectExpr("a", "CAST(a AS STRING) as str"),
+        {"spark.sql.session.timeZone": "+08"})
+
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (timestamp_gen, 'DATE'),
+        (date_gen, 'TIMESTAMP'),
+        (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params)
+def test_cast_fallback_not_UTC(from_gen, to_type):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, from_gen, 100).selectExpr("CAST(a AS {}) as casted".format(to_type)),
+        "Cast",
+        {"spark.sql.session.timeZone": "+08",
+         "spark.rapids.sql.castStringToTimestamp.enabled": "true"})

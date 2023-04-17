@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, PartitionedTable}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -33,20 +34,8 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
 
   def partitionInternalAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val types = GpuColumnVector.extractTypes(batch)
-    val partedTable = withResource(batch) { batch =>
-      val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
-        withResource(GpuMurmur3Hash.compute(batch, expressions)) { hash =>
-          withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
-            hash.pmod(partsLit, DType.INT32)
-          }
-        }
-      }
-      withResource(parts) { parts =>
-        withResource(GpuColumnVector.from(batch)) { table =>
-          table.partition(parts, numPartitions)
-        }
-      }
-    }
+    val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(batch, expressions,
+      numPartitions, "Calculate part")
     withResource(partedTable) { partedTable =>
       val parts = partedTable.getPartitions
       val tp = partedTable.getTable
@@ -71,4 +60,31 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
       ret.zipWithIndex.filter(_._1 != null)
     }
   }
+}
+
+object GpuHashPartitioningBase {
+
+  val DEFAULT_HASH_SEED: Int = 42
+
+  def hashPartitionAndClose(batch: ColumnarBatch, keys: Seq[Expression], numPartitions: Int,
+      nvtxName: String, seed: Int = DEFAULT_HASH_SEED): PartitionedTable = {
+    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
+          withResource(GpuMurmur3Hash.compute(cb, keys, seed)) { hash =>
+            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+              hash.pmod(partsLit, DType.INT32)
+            }
+          }
+        }
+        withResource(parts) { parts =>
+          withResource(GpuColumnVector.from(cb)) { table =>
+            table.partition(parts, numPartitions)
+          }
+        }
+      }
+    }
+  }
+
 }

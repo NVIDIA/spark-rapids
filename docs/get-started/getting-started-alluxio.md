@@ -198,8 +198,12 @@ NM_hostname_2
       so local data access speed may vary depending on the local storage media. To learn
       more about this topic, please refer to the
       [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
-
-3. Start Alluxio cluster
+3. Create a link to ALLUXIO_HOME  
+    Execute the following commands to create a link `/opt/alluxio` to actual Alluxio Home path:  
+    ```bash
+    ln -s ${ALLUXIO_HOME} /opt/alluxio
+    ```
+4. Start Alluxio cluster
 
    - Format Alluxio
 
@@ -225,7 +229,7 @@ NM_hostname_2
       To verify that Alluxio is running, visit `http://RM_hostname:19999`
       to see the status page of the Alluxio master.
 
-4. Mount an existing data storage to Alluxio
+5. Mount an existing data storage to Alluxio
 
     - Mount S3 bucket
 
@@ -337,7 +341,6 @@ without setting `spark.rapids.alluxio.pathsToReplace`, which takes precedence ov
 ``` shell
 --conf spark.rapids.alluxio.automount.enabled=true
 ```
-If Alluxio is not installed in /opt/alluxio-2.8.0, you should set the environment variable `ALLUXIO_HOME`.
 
 Additional configs:
 ``` shell
@@ -346,14 +349,6 @@ Additional configs:
 The regex is used to match the s3 URI, to decide which bucket we should auto mount.
 The default value is to match all the URIs which start with `s3://` or `s3a://`.
 For exmaple, `^s3a{1,1}://foo.*` will match the buckets which start with `foo`.
-
-```shell
---conf spark.rapids.alluxio.cmd="su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio"
-```
-This cmd config defines a sequence to be used run the Alluxio command by a specific user,
-mostly the user with Alluxio permission. We run the command by user `ubuntu` as default.
-If you have a different user and command path, you can redefine it.
-The default value is suitable for the case of running Alluxio with RAPIDS on Databricks.
 
 ## Configure whether the disks used by Alluxio are fast
 The default value of config `spark.rapids.alluxio.slow.disk` is true, indicating the disks used by Alluxio are slow.   

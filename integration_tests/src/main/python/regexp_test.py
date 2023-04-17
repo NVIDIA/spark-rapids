@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-_regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
+_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -114,6 +114,7 @@ def test_split_re_no_limit():
             'split(a, "[bf]")',
             'split(a, "[o]")',
             'split(a, "^(boo|foo):$")',
+            'split(a, "(bo+|fo{2}):$")',
             'split(a, "[bf]$:")',
             'split(a, "b[o]+")',
             'split(a, "b[o]*")',
@@ -273,6 +274,23 @@ def test_re_replace_issue_5492():
         'RegExpReplace',
         conf=_regexp_conf)
 
+def test_re_replace_escaped_chars():
+    # https://github.com/NVIDIA/spark-rapids/issues/7892
+    gen = mk_str_gen('.{0,5}TEST[\n\r\t\f\a\b\u001b]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "\\\\t", " ")',
+            'REGEXP_REPLACE(a, "\\\\n", " ")',
+            'REGEXP_REPLACE(a, "TEST\\\\n", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\r", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\f", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\a", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\b", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\e", "PROD")',
+            'REGEXP_REPLACE(a, "TEST[\\\\r\\\\n]", "PROD")'),
+        conf=_regexp_conf)
+
+
 def test_re_replace_backrefs():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
     assert_gpu_and_cpu_are_equal_collect(
@@ -287,7 +305,6 @@ def test_re_replace_backrefs():
         ),
         conf=_regexp_conf)
 
-@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/7090')
 def test_re_replace_anchors():
     gen = mk_str_gen('.{0,2}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?') \
         .with_special_case("TEST") \
@@ -306,11 +323,7 @@ def test_re_replace_anchors():
             'REGEXP_REPLACE(a, "\\\\ATEST$", "PROD")',
             'REGEXP_REPLACE(a, "^TEST\\\\Z", "PROD")',
             'REGEXP_REPLACE(a, "TEST\\\\Z", "PROD")',
-            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
-            'REGEXP_REPLACE(a, "\\\\zTEST", "PROD")',
             'REGEXP_REPLACE(a, "^TEST$", "PROD")',
-            'REGEXP_REPLACE(a, "^TEST\\\\z", "PROD")',
-            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
         ),
         conf=_regexp_conf)
 
@@ -415,21 +428,23 @@ def test_regexp_extract():
                 'regexp_extract(a, "([0-9]+)", 1)',
                 'regexp_extract(a, "([0-9])([abcd]+)", 1)',
                 'regexp_extract(a, "([0-9])([abcd]+)", 2)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 1)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 2)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 1)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 2)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)',
                 'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)", 3)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)'),
+                'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)$", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)$", 3)'),
         conf=_regexp_conf)
 
 def test_regexp_extract_no_match():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 0)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 1)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 2)',
-                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)\\z", 3)'),
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 0)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 1)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 2)',
+                'regexp_extract(a, "^([0-9]+)([a-z]+)([0-9]+)$", 3)'),
         conf=_regexp_conf)
 
 # if we determine that the index is out of range we fall back to CPU and let
@@ -502,6 +517,25 @@ def test_character_classes():
                 'regexp_extract(a, "[123]", 0)',
                 'regexp_replace(a, "[\\\\0101-\\\\0132]", "@")',
                 'regexp_replace(a, "[\\\\x41-\\\\x5a]", "@")',
+            ),
+        conf=_regexp_conf)
+
+def test_regexp_choice():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'rlike(a, "[abcd]|[123]")',
+                'rlike(a, "[^\n\r]|abcd")',
+                'rlike(a, "abd1a$|^ab2a")',
+                'rlike(a, "[a-c]*|[\n]")',
+                'rlike(a, "[a-c]+|[\n]")',
+                'regexp_extract(a, "(abc1a$|^ab2ab|a3abc)", 1)',
+                'regexp_extract(a, "(abc1a$|ab2ab$)", 1)',
+                'regexp_extract(a, "(ab+|^ab)", 1)',
+                'regexp_extract(a, "(ab*|^ab)", 1)',
+                'regexp_replace(a, "[abcd]$|^abc", "@")',
+                'regexp_replace(a, "[ab]$|[cd]$", "@")',
+                'regexp_replace(a, "[ab]+|^cd1", "@")'
             ),
         conf=_regexp_conf)
 
@@ -655,7 +689,9 @@ def test_rlike():
                 'a rlike "a{2}"',
                 'a rlike "a{1,3}"',
                 'a rlike "a{1,}"',
-                'a rlike "a[bc]d"'),
+                'a rlike "a[bc]d"',
+                'a rlike "a[bc]d"',
+                'a rlike "^[a-d]*$"'),
         conf=_regexp_conf)
 
 def test_rlike_embedded_null():
@@ -788,9 +824,63 @@ def test_regexp_replace_unicode_support():
             'REGEXP_REPLACE(a, "TEST䤫", "PROD")',
             'REGEXP_REPLACE(a, "TEST[䤫]", "PROD")',
             'REGEXP_REPLACE(a, "TEST.*\\\\d", "PROD")',
+            'REGEXP_REPLACE(a, "TEST[85]*$", "PROD")',
             'REGEXP_REPLACE(a, "TEST.+$", "PROD")',
         ),
         conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_fallback():
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
+
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "[a-z]+", "PROD")',
+            'REGEXP_REPLACE(a, "aa", "PROD")',
+        ),
+        cpu_fallback_class_name='RegExpReplace',
+        conf=conf
+    )
+
+@pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
+def test_regexp_replace_simple(regexp_enabled):
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "aa", "PROD")',
+            'REGEXP_REPLACE(a, "ab", "PROD")',
+            'REGEXP_REPLACE(a, "ae", "PROD")',
+            'REGEXP_REPLACE(a, "bc", "PROD")',
+            'REGEXP_REPLACE(a, "fa", "PROD")'
+        ),
+        conf=conf
+    )
+
+@pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
+def test_regexp_replace_multi_optimization(regexp_enabled):
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "aa|bb", "PROD")',
+            'REGEXP_REPLACE(a, "(aa)|(bb)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc", "PROD")',
+            'REGEXP_REPLACE(a, "(aa)|(bb)|(cc)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
+            'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+        ),
+        conf=conf
+    )
+
 
 def test_regexp_split_unicode_support():
     data_gen = mk_str_gen('([bf]o{0,2}青){1,7}') \
@@ -824,7 +914,7 @@ def test_regexp_memory_fallback():
         ),
         cpu_fallback_class_name='RLike',
         conf={ 
-            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
@@ -846,7 +936,7 @@ def test_regexp_memory_ok():
             'a rlike "1|2|3|4|5|6"'
         ),
         conf={ 
-            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }

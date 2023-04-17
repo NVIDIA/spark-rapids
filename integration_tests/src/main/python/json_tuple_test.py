@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import allow_non_gpu
 
@@ -32,6 +32,14 @@ def test_json_tuple(json_str_pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "a", "email", "owner", "b", "b$", "b$$")'),
+        conf={'spark.sql.parser.escapedStringLiterals': 'true'})
+
+def test_json_tuple_select_non_generator_col():
+    gen = StringGen(pattern="{\"Zipcode\":\"abc\",\"ZipCodeType\":\"STANDARD\",\"City\":\"PARC PARQUE\",\"State\":\"PR\"}")
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, [('a', gen)]),
+            'table',
+            'select a, json_tuple(a, \"Zipcode\", \"ZipCodeType\", \"City\", \"State\") from table',
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 @allow_non_gpu('GenerateExec', 'JsonTuple')

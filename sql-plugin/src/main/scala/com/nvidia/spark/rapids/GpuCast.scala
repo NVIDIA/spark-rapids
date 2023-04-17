@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,9 @@ import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
 import ai.rapids.cudf
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
@@ -157,9 +158,12 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
       stringToAnsiDate)
+
+  // timezone tagging in type checks is good enough, so always false
+  override protected val needTimezoneTagging: Boolean = false
 }
 
-object GpuCast extends Arm {
+object GpuCast {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
   private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
@@ -653,7 +657,8 @@ object GpuCast extends Arm {
         // the decimal point and the last non-zero digit
         // the second group (non-capture) covers the remaining zeroes
         withResource(firstPass) { _ =>
-          firstPass.stringReplaceWithBackrefs("(\\.[0-9]*[1-9]+)(?:0+)?$", "\\1")
+          val prog = new RegexProgram("(\\.[0-9]*[1-9]+)(?:0+)?$")
+          firstPass.stringReplaceWithBackrefs(prog, "\\1")
         }
       }
     }
@@ -975,7 +980,8 @@ object GpuCast extends Arm {
       regex: String,
       cudfFormat: String): ColumnVector = {
 
-    val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+    val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+    val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
         isMatch.and(isTimestamp)
       }
@@ -991,13 +997,14 @@ object GpuCast extends Arm {
   }
 
     /** This method does not close the `input` ColumnVector. */
-  def convertDateOr(
+    def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
       orElse: ColumnVector): ColumnVector = {
-
-    val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+    
+    val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+    val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
         isMatch.and(isTimestamp)
       }
@@ -1082,7 +1089,8 @@ object GpuCast extends Arm {
       cudfFormat: String): ColumnVector = {
 
     withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { orElse =>
-      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      val isValidTimestamp = withResource(input.matchesRe(prog)) { isMatch =>
         withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
           isMatch.and(isTimestamp)
         }
@@ -1103,7 +1111,8 @@ object GpuCast extends Arm {
       orElse: ColumnVector): ColumnVector = {
 
     withResource(orElse) { orElse =>
-      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      val isValidTimestamp = withResource(input.matchesRe(prog)) { isMatch =>
         withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
           isMatch.and(isTimestamp)
         }
@@ -1142,7 +1151,8 @@ object GpuCast extends Arm {
       }
 
       val isValidTimestamp = withResource(isCudfMatch) { _ =>
-        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+        val prog = new RegexProgram(TIMESTAMP_REGEX_FULL, CaptureGroups.NON_CAPTURE)
+        withResource(input.matchesRe(prog)) { isRegexMatch =>
           isCudfMatch.and(isRegexMatch)
         }
       }
@@ -1168,7 +1178,8 @@ object GpuCast extends Arm {
 
     // prepend today's date to timestamp formats without dates
     sanitizedInput = withResource(sanitizedInput) { _ =>
-      sanitizedInput.stringReplaceWithBackrefs(TIMESTAMP_REGEX_NO_DATE, s"${todayStr}T\\1")
+      val prog = new RegexProgram(TIMESTAMP_REGEX_NO_DATE)
+      sanitizedInput.stringReplaceWithBackrefs(prog, s"${todayStr}T\\1")
     }
 
     withResource(sanitizedInput) { sanitizedInput =>

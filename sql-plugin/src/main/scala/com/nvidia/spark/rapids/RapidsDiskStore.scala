@@ -21,20 +21,20 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
 /** A buffer store using files on the local disks. */
-class RapidsDiskStore(
-    diskBlockManager: RapidsDiskBlockManager,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
-    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
-    extends RapidsBufferStore(StorageTier.DISK, catalog) {
+class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
+    extends RapidsBufferStore(StorageTier.DISK) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
-  override protected def createBuffer(incoming: RapidsBuffer, incomingBuffer: MemoryBuffer,
+  override protected def createBuffer(
+      incoming: RapidsBuffer,
+      incomingBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     withResource(incomingBuffer) { _ =>
       val hostBuffer = incomingBuffer match {
@@ -61,9 +61,7 @@ class RapidsDiskStore(
         fileOffset,
         incoming.size,
         incoming.meta,
-        incoming.getSpillPriority,
-        incoming.getSpillCallback,
-        deviceStorage)
+        incoming.getSpillPriority)
     }
   }
 
@@ -94,11 +92,9 @@ class RapidsDiskStore(
       fileOffset: Long,
       size: Long,
       meta: TableMeta,
-      spillPriority: Long,
-      spillCallback: SpillCallback,
-      deviceStorage: RapidsDeviceMemoryStore)
+      spillPriority: Long)
       extends RapidsBufferBase(
-        id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {
+        id, size, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK
