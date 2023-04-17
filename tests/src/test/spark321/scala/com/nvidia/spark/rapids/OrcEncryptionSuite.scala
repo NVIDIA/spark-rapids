@@ -53,7 +53,7 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
     "Write encrypted ORC fallback",
     "DataWritingCommandExec",
     intsDf,
-    execsAllowedNonGpu = Seq("ShuffleExchangeExec", "DataWritingCommandExec")) {
+    execsAllowedNonGpu = Seq("ShuffleExchangeExec", "DataWritingCommandExec", "WriteFilesExec")) {
     frame =>
       // ORC encryption is only allowed in 3.2+
       val isValidTestForSparkVersion = ShimLoader.getShimVersion match {
