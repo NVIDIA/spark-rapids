@@ -468,11 +468,6 @@ object GpuOverrides extends Logging {
     case _ => false
   }
 
-  private[this] def isArrayType(dataType: DataType) = dataType match {
-    case ArrayType(_, _) => true
-    case _ => false
-  }
-
   // this listener mechanism is global and is intended for use by unit tests only
   private lazy val listeners: ListBuffer[GpuOverridesListener] =
     new ListBuffer[GpuOverridesListener]()
