@@ -26,7 +26,6 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.DataType
 
 case class GpuKnownNullable(child: Expression) extends GpuUnaryExpression {
-
   override def dataType: DataType = child.dataType
   override def nullable: Boolean = true
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.incRefCount()
