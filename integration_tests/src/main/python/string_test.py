@@ -443,8 +443,9 @@ def test_translate():
                 'translate("AaBbCc", "abc", "123")',
                 'translate("AaBbCc", "abc", "1")'))
 
-@pytest.mark.skipif(is_before_spark_320(), reason="https://issues.apache.org/jira/browse/SPARK-34094")
-def test_translate_spark320_or_later():
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2+ does translate() support unicode \
+    characters with code point >= U+10000. See https://issues.apache.org/jira/browse/SPARK-34094")
+def test_translate_large_codepoints():
     gen = mk_str_gen('.{0,5}TEST[\ud720 \U0010FFFF A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
