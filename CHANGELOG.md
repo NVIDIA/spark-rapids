@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-04-14
+Generated on 2023-04-17
 
 ## Release 23.04
 
@@ -27,6 +27,8 @@ Generated on 2023-04-14
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#8111](https://github.com/NVIDIA/spark-rapids/issues/8111)|[BUG] test_delta_delete_entire_table failed in databricks 10.4 runtime|
+|[#8074](https://github.com/NVIDIA/spark-rapids/issues/8074)|[BUG] test_parquet_read_nano_as_longs_31x failed on Dataproc|
 |[#7997](https://github.com/NVIDIA/spark-rapids/issues/7997)|[BUG] executors died with too much off heap in yarn UCX CI `udf_test`|
 |[#8067](https://github.com/NVIDIA/spark-rapids/issues/8067)|[BUG] extras jar sometimes fails to load|
 |[#8038](https://github.com/NVIDIA/spark-rapids/issues/8038)|[BUG] vector leaked when running NDS 3TB with memory restricted|
@@ -81,6 +83,10 @@ Generated on 2023-04-14
 ### PRs
 |||
 |:---|:---|
+|[#8127](https://github.com/NVIDIA/spark-rapids/pull/8127)|Avoid SQL result check of Delta Lake full delete on Databricks|
+|[#8098](https://github.com/NVIDIA/spark-rapids/pull/8098)|Fix loading of ORC files with missing column names|
+|[#8110](https://github.com/NVIDIA/spark-rapids/pull/8110)|Update ML integration page docs page [skip ci]|
+|[#8103](https://github.com/NVIDIA/spark-rapids/pull/8103)|Add license of spark-rapids private in NOTICE-binary[skip ci]|
 |[#8100](https://github.com/NVIDIA/spark-rapids/pull/8100)|Update/improve EMR getting started documentation [skip ci]|
 |[#8101](https://github.com/NVIDIA/spark-rapids/pull/8101)|Improve OOM exception messages|
 |[#8087](https://github.com/NVIDIA/spark-rapids/pull/8087)|Add an FAQ entry on encryption support [skip ci]|
