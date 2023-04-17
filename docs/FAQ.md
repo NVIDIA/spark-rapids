@@ -39,7 +39,7 @@ release.
 
 ### What hardware is supported?
 
-The plugin is tested and supported on P100, V100, T4, A2, A10, A30 and A100 NVIDIA L4 Tensor Core GPUs.  It is possible
+The plugin is tested and supported on P100, V100, T4, A2, A10, A30, A100 and L4 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
 does not support [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
