@@ -15,7 +15,8 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_contains_ansi_cast
+    assert_gpu_and_cpu_are_equal_collect, run_with_cpu_and_gpu_return_df, assert_equal
+from conftest import spark_jvm
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
@@ -171,7 +172,13 @@ def do_hive_copy(spark_tmp_table_factory, gen, type1, type2):
         # Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
         return spark.sql("""INSERT INTO {} SELECT c0 FROM {}""".format(t3, t2))
 
-    assert_cpu_and_gpu_contains_ansi_cast(
-        lambda spark: do_test(spark),
-        {'spark.sql.ansi.enabled': 'true',
-        'spark.sql.storeAssignmentPolicy': 'ANSI'})
+    from_cpu, cpu_df, from_gpu, gpu_df = run_with_cpu_and_gpu_return_df(
+        do_test, 'COLLECT_WITH_DATAFRAME',
+        conf={
+            'spark.sql.ansi.enabled': 'true',
+            'spark.sql.storeAssignmentPolicy': 'ANSI'})
+
+    jvm = spark_jvm()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(cpu_df._jdf)
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(gpu_df._jdf)
+    assert_equal(from_cpu, from_gpu)

@@ -518,7 +518,7 @@ def run_with_cpu(func,
 
     return from_cpu
 
-def run_with_cpu_and_gpu(func,
+def run_with_cpu_and_gpu_return_df(func,
     mode,
     conf={}):
     (bring_back, collect_type) = _prep_func_for_compare(func, mode)
@@ -529,7 +529,8 @@ def run_with_cpu_and_gpu(func,
         global cpu_start
         cpu_start = time.time()
         global from_cpu
-        from_cpu = with_cpu_session(bring_back, conf=conf)
+        global cpu_df
+        from_cpu, cpu_df = with_cpu_session(bring_back, conf=conf)
         global cpu_end
         cpu_end = time.time()
 
@@ -538,7 +539,8 @@ def run_with_cpu_and_gpu(func,
         global gpu_start
         gpu_start = time.time()
         global from_gpu
-        from_gpu = with_gpu_session(bring_back, conf=conf)
+        global gpu_df
+        from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
         global gpu_end
         gpu_end = time.time()
 
@@ -551,6 +553,12 @@ def run_with_cpu_and_gpu(func,
         from_cpu.sort(key=_RowCmp)
         from_gpu.sort(key=_RowCmp)
 
+    return (from_cpu, cpu_df, from_gpu, gpu_df)
+
+def run_with_cpu_and_gpu(func,
+    mode,
+    conf={}):
+    from_cpu, cpu_df, from_gpu, gpu_df = run_with_cpu_and_gpu_return_df(func, mode, conf)
     return (from_cpu, from_gpu)
 
 def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
@@ -638,25 +646,3 @@ def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
         else:
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
-
-def assert_cpu_and_gpu_contains_ansi_cast(func, conf):
-    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT_WITH_DATAFRAME')
-
-    conf = _prep_incompat_conf(conf)
-
-    print('### CPU RUN ###')
-    cpu_start = time.time()
-    from_cpu, cpu_df = with_cpu_session(bring_back, conf=conf)
-    cpu_end = time.time()
-    print('### GPU RUN ###')
-    gpu_start = time.time()
-    from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
-    gpu_end = time.time()
-    jvm = spark_jvm()
-    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
-        gpu_end - gpu_start, cpu_end - cpu_start))
-
-    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(cpu_df._jdf)
-    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(gpu_df._jdf)
-
-    assert_equal(from_cpu, from_gpu)
