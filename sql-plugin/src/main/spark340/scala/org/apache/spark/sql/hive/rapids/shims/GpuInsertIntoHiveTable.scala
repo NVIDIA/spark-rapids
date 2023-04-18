@@ -15,26 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
 import java.util.Locale
+
+import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
@@ -46,7 +34,7 @@ import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Literal}
+import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SparkPlan
@@ -55,10 +43,8 @@ import org.apache.spark.sql.execution.datasources.FileFormatWriter
 import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
-import org.apache.spark.sql.hive.client.hive._
 import org.apache.spark.sql.hive.execution.{InsertIntoHiveTable, SaveAsHiveFile}
 import org.apache.spark.sql.rapids.GpuFileFormatWriter
-import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // Base trait from which all hive insert statement physical execution extends.
@@ -70,14 +56,14 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
   // - Apache Spark 3.4 has removed all that logic.
   // - GPU Hive text writer does not support compression for output.
   protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
-                               plan: SparkPlan,
-                               hadoopConf: Configuration,
-                               fileFormat: ColumnarFileFormat,
-                               outputLocation: String,
-                               customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
-                               partitionAttributes: Seq[Attribute] = Nil,
-                               bucketSpec: Option[BucketSpec] = None,
-                               options: Map[String, String] = Map.empty): Set[String] = {
+      plan: SparkPlan,
+      hadoopConf: Configuration,
+      fileFormat: ColumnarFileFormat,
+      outputLocation: String,
+      customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
+      partitionAttributes: Seq[Attribute] = Nil,
+      bucketSpec: Option[BucketSpec] = None,
+      options: Map[String, String] = Map.empty): Set[String] = {
 
     val committer = FileCommitProtocol.instantiate(
       sparkSession.sessionState.conf.fileCommitProtocolClass,
@@ -103,9 +89,9 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
 }
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
-                                       conf: RapidsConf,
-                                       parent: Option[RapidsMeta[_,_,_]],
-                                       rule: DataFromReplacementRule)
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_,_,_]],
+    rule: DataFromReplacementRule)
   extends DataWritingCommandMeta[InsertIntoHiveTable](cmd, conf, parent, rule) {
 
   private var fileFormat: Option[ColumnarFileFormat] = None
@@ -124,7 +110,8 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
       query = wrapped.query,
       overwrite = wrapped.overwrite,
       ifPartitionNotExists = wrapped.ifPartitionNotExists,
-      outputColumnNames = wrapped.outputColumnNames
+      outputColumnNames = wrapped.outputColumnNames,
+      tmpLocation = cmd.hiveTmpPath.externalTempPath
     )
   }
 
@@ -138,7 +125,8 @@ case class GpuInsertIntoHiveTable(
     query: LogicalPlan,
     overwrite: Boolean,
     ifPartitionNotExists: Boolean,
-    outputColumnNames: Seq[String]) extends GpuSaveAsHiveFile {
+    outputColumnNames: Seq[String],
+    tmpLocation: Path) extends GpuSaveAsHiveFile {
 
   /**
    * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
@@ -161,8 +149,6 @@ case class GpuInsertIntoHiveTable(
       hiveQlTable.getOutputFormatClass,
       hiveQlTable.getMetadata
     )
-    val tableLocation = hiveQlTable.getDataLocation
-    val tmpLocation = getExternalTmpPath(sparkSession, hadoopConf, tableLocation)
 
     try {
       processInsert(sparkSession,
@@ -175,7 +161,7 @@ case class GpuInsertIntoHiveTable(
     } finally {
       // Attempt to delete the staging directory and the inclusive files. If failed, the files are
       // expected to be dropped at the normal termination of VM since deleteOnExit is used.
-      deleteExternalTmpPath(hadoopConf)
+      HiveFileUtil.deleteExternalTmpPath(hadoopConf, tmpLocation)
     }
 
     // un-cache this table.
@@ -361,7 +347,7 @@ case class GpuInsertIntoHiveTable(
           // check. see https://issues.apache.org/jira/browse/HIVE-14380.
           // So we still disable for Hive overwrite for Hive 1.x for better performance because
           // the partition and table are on the same cluster in most cases.
-          if (partitionPath.nonEmpty && overwrite && hiveVersion < v2_0) {
+          if (partitionPath.nonEmpty && overwrite && hiveVersion.fullVersion < "2.0") {
             partitionPath.foreach { path =>
               val fs = path.getFileSystem(hadoopConf)
               if (fs.exists(path)) {
