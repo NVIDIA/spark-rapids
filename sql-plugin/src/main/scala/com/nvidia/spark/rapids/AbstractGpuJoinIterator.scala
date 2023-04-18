@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -132,14 +132,16 @@ abstract class AbstractGpuJoinIterator(
 
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
     withResource(new NvtxWithMetrics(gatherNvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
+      val minTargetSize = Math.min(targetSize, 64 * 1024 * 1024)
+      val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
       val ret = gathererStore.map { gather =>
         gather.checkpoint()
-        withRetryNoSplit[ColumnarBatch] {
+        withRetry(targetSizeWrapper, splitTargetSizeInHalf) { attempt =>
           withRestoreOnRetry(gather) {
-            val nextRows = JoinGatherer.getRowsInNextBatch(gather, targetSize)
+            val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize)
             gather.gatherNext(nextRows)
           }
-        }
+        }.toSeq.head
       }
       if (gathererStore.exists(_.isDone)) {
         gathererStore.foreach(_.close())
