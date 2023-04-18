@@ -61,46 +61,6 @@ import org.apache.spark.sql.rapids.GpuFileFormatWriter
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-// Base trait from which all hive insert statement physical execution extends.
-private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {
-
-  // TODO(future): Examine compressions options.
-  // - Apache Spark 3.1-3 has code to examine Hadoop compression settings
-  //   (and takes a FileSinkDesc instead of FileFormat).
-  // - Apache Spark 3.4 has removed all that logic.
-  // - GPU Hive text writer does not support compression for output.
-  protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
-                               plan: SparkPlan,
-                               hadoopConf: Configuration,
-                               fileFormat: ColumnarFileFormat,
-                               outputLocation: String,
-                               customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
-                               partitionAttributes: Seq[Attribute] = Nil,
-                               bucketSpec: Option[BucketSpec] = None,
-                               options: Map[String, String] = Map.empty): Set[String] = {
-
-    val committer = FileCommitProtocol.instantiate(
-      sparkSession.sessionState.conf.fileCommitProtocolClass,
-      jobId = java.util.UUID.randomUUID().toString,
-      outputPath = outputLocation)
-
-    GpuFileFormatWriter.write(
-      sparkSession = sparkSession,
-      plan = plan,
-      fileFormat = fileFormat,
-      committer = committer,
-      outputSpec =
-        FileFormatWriter.OutputSpec(outputLocation, customPartitionLocations, outputColumns),
-      hadoopConf = hadoopConf,
-      partitionColumns = partitionAttributes,
-      bucketSpec = bucketSpec,
-      statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
-      options = options,
-      useStableSort = false,                  // TODO: Fetch from RapidsConf.
-      concurrentWriterPartitionFlushSize = 0L // TODO: Fetch from RapidsConf.
-     )
-  }
-}
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
                                        conf: RapidsConf,
