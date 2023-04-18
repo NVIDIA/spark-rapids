@@ -35,7 +35,6 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
-
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -57,14 +56,14 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
   // - Apache Spark 3.4 has removed all that logic.
   // - GPU Hive text writer does not support compression for output.
   protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
-                                  plan: SparkPlan,
-                                  hadoopConf: Configuration,
-                                  fileFormat: ColumnarFileFormat,
-                                  outputLocation: String,
-                                  customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
-                                  partitionAttributes: Seq[Attribute] = Nil,
-                                  bucketSpec: Option[BucketSpec] = None,
-                                  options: Map[String, String] = Map.empty): Set[String] = {
+      plan: SparkPlan,
+      hadoopConf: Configuration,
+      fileFormat: ColumnarFileFormat,
+      outputLocation: String,
+      customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
+      partitionAttributes: Seq[Attribute] = Nil,
+      bucketSpec: Option[BucketSpec] = None,
+      options: Map[String, String] = Map.empty): Set[String] = {
 
     val committer = FileCommitProtocol.instantiate(
       sparkSession.sessionState.conf.fileCommitProtocolClass,

@@ -34,7 +34,7 @@ trait HiveProviderCmdShims extends HiveProvider {
 
     GpuOverrides.dataWriteCmd[InsertIntoHiveTable](
       desc = "Command to write to Hive tables",
-      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule)),
+      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule))
 
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
