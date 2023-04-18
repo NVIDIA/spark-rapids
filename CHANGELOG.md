@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-04-17
+Generated on 2023-04-18
 
 ## Release 23.04
 
@@ -83,6 +83,8 @@ Generated on 2023-04-17
 ### PRs
 |||
 |:---|:---|
+|[#8109](https://github.com/NVIDIA/spark-rapids/pull/8109)|Bump up JNI and private version to released 23.04.0|
+|[#7939](https://github.com/NVIDIA/spark-rapids/pull/7939)|[Doc]update download docs for 2304 version[skip ci]|
 |[#8127](https://github.com/NVIDIA/spark-rapids/pull/8127)|Avoid SQL result check of Delta Lake full delete on Databricks|
 |[#8098](https://github.com/NVIDIA/spark-rapids/pull/8098)|Fix loading of ORC files with missing column names|
 |[#8110](https://github.com/NVIDIA/spark-rapids/pull/8110)|Update ML integration page docs page [skip ci]|
