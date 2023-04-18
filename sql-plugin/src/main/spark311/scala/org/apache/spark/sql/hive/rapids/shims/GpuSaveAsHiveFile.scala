@@ -30,8 +30,23 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
+
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
+
+import org.apache.hadoop.conf.Configuration
+
+import org.apache.spark.internal.io.FileCommitProtocol
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.BucketSpec
+import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.FileFormatWriter
+import org.apache.spark.sql.hive.execution.SaveAsHiveFile
+import org.apache.spark.sql.rapids.GpuFileFormatWriter
 
 // Base trait from which all hive insert statement physical execution extends.
 private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {
