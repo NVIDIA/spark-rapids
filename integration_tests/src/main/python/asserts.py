@@ -639,7 +639,7 @@ def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
-def assert_cpu_and_gpu_write_contains_ansi_cast(func, conf):
+def assert_cpu_and_gpu_contains_ansi_cast(func, conf):
     (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT_WITH_DATAFRAME')
 
     conf = _prep_incompat_conf(conf)

@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_write_contains_ansi_cast
+    assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_contains_ansi_cast
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
@@ -154,42 +154,24 @@ def test_optimized_hive_bucketed_fallback(gens, storage, planned_write, spark_tm
         {"spark.sql.optimizer.plannedWrite.enabled": planned_write})
 
 def test_hive_copy_ints_to_long(spark_tmp_table_factory):
-    t1 = spark_tmp_table_factory.get()
-    with_cpu_session(lambda spark: unary_op_df(spark, int_gen).createOrReplaceTempView(t1))
-    def foo(spark):
-        t2 = spark_tmp_table_factory.get()
-        t3 = spark_tmp_table_factory.get()
-
-        spark.sql("""CREATE TABLE {} (c0 INT) USING PARQUET""".format(t2))
-        spark.sql("""INSERT INTO {} SELECT a FROM {}""".format(t2, t1))
-
-        spark.sql("""CREATE TABLE {} (c0 BIGINT) USING PARQUET""".format(t3))
-
-        # Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
-        return spark.sql("""INSERT INTO {} SELECT c0 FROM {}""".format(t3, t2))
-
-    assert_cpu_and_gpu_write_contains_ansi_cast(
-        lambda spark: foo(spark),
-        {'spark.sql.ansi.enabled': 'true',
-        'spark.sql.storeAssignmentPolicy': 'ANSI'})
+    do_hive_copy(spark_tmp_table_factory, int_gen, "INT", "BIGINT")
 
 def test_hive_copy_longs_to_float(spark_tmp_table_factory):
+    do_hive_copy(spark_tmp_table_factory, long_gen, "BIGINT", "FLOAT")
+
+def do_hive_copy(spark_tmp_table_factory, gen, type1, type2):
     t1 = spark_tmp_table_factory.get()
-    with_cpu_session(lambda spark: unary_op_df(spark, long_gen).createOrReplaceTempView(t1))
-    def foo(spark):
+    with_cpu_session(lambda spark: unary_op_df(spark, gen).createOrReplaceTempView(t1))
+    def do_test(spark):
         t2 = spark_tmp_table_factory.get()
         t3 = spark_tmp_table_factory.get()
-
-        spark.sql("""CREATE TABLE {} (c0 BIGINT) USING PARQUET""".format(t2))
+        spark.sql("""CREATE TABLE {} (c0 {}) USING PARQUET""".format(t2, type1))
         spark.sql("""INSERT INTO {} SELECT a FROM {}""".format(t2, t1))
-
-        spark.sql("""CREATE TABLE {} (c0 FLOAT) USING PARQUET""".format(t3))
-
+        spark.sql("""CREATE TABLE {} (c0 {}) USING PARQUET""".format(t3, type2))
         # Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
         return spark.sql("""INSERT INTO {} SELECT c0 FROM {}""".format(t3, t2))
 
-    assert_cpu_and_gpu_write_contains_ansi_cast(
-        lambda spark: foo(spark),
+    assert_cpu_and_gpu_contains_ansi_cast(
+        lambda spark: do_test(spark),
         {'spark.sql.ansi.enabled': 'true',
         'spark.sql.storeAssignmentPolicy': 'ANSI'})
-
