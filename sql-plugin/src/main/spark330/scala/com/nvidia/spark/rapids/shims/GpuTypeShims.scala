@@ -218,25 +218,6 @@ object GpuTypeShims {
    */
   def additionalCsvSupportedTypes: TypeSig = TypeSig.DAYTIME
 
-  def typesDayTimeCanCastTo: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
-
-  def typesYearMonthCanCastTo: TypeSig = TypeSig.integral
-
-  def typesDayTimeCanCastToOnSpark: TypeSig = TypeSig.DAYTIME + TypeSig.STRING + TypeSig.integral
-
-  def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING +
-      TypeSig.integral
-
-  def additionalTypesBooleanCanCastTo: TypeSig = TypeSig.TIMESTAMP
-
-  def additionalTypesDateCanCastTo:TypeSig = TypeSig.BOOLEAN + TypeSig.integral + TypeSig.fp
-
-  def additionalTypesTimestampCanCastTo:TypeSig = TypeSig.BOOLEAN
-
-  def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.YEARMONTH + TypeSig.DAYTIME
-
-  def additionalTypesStringCanCastTo: TypeSig = TypeSig.DAYTIME
-
   /**
    * Get additional Parquet supported types for this Shim
    */
