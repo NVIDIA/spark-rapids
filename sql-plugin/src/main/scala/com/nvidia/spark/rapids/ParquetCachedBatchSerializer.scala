@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
@@ -477,7 +477,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           Table.readParquet(parquetOptions, parquetCB.buffer, 0, parquetCB.sizeInBytes)
         } catch {
           case e: Exception =>
-            throw new IOException("Error when processing file " + 
+            throw new IOException("Error when processing file " +
                 s"[range: 0-${parquetCB.sizeInBytes}]", e)
         }
         withResource(table) { table =>
@@ -557,7 +557,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       })
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
-      val origSelectedAttributesWithUnambiguousNames = 
+      val origSelectedAttributesWithUnambiguousNames =
         sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
@@ -1200,6 +1200,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
     // From 3.3.0, Spark will check this filed ID config
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(hadoopConf, sqlConf)
+
+    // From 3.3.2, Spark schema converter needs this conf
+    ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(hadoopConf)
 
     hadoopConf
   }

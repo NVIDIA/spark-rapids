@@ -185,6 +185,20 @@ class RegularExpressionParserSuite extends FunSuite {
         RegexSequence(ListBuffer(RegexChar('a')))), None))))
   }
 
+  test("multiple choice (2)") {
+    assert(parse("aa|bb") == RegexChoice(RegexSequence(ListBuffer(RegexChar('a'), RegexChar('a'))),
+          RegexSequence(ListBuffer(RegexChar('b'), RegexChar('b')))
+      ))
+  }
+
+  test("multiple choice (3)") {
+    assert(parse("aa|bb|cc") ==
+          RegexChoice(RegexSequence(ListBuffer(RegexChar('a'), RegexChar('a'))),
+          RegexChoice(RegexSequence(ListBuffer(RegexChar('b'), RegexChar('b'))),
+          RegexSequence(ListBuffer(RegexChar('c'), RegexChar('c')))
+      )))
+  }
+
   test("group containing quantifier") {
     val e = intercept[RegexUnsupportedException] {
       parse("(?)")

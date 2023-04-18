@@ -369,7 +369,7 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
-    if is_before_spark_314() or ((not is_before_spark_320()) and is_before_spark_322()):
+    if is_before_spark_322():
         exception_content = "Decimal(compact,-120000000,20,0}) cannot be represented as Decimal(7, 7)"
     elif is_databricks113_or_later() or not is_before_spark_340():
         exception_content = "[NUMERIC_VALUE_OUT_OF_RANGE] -12 cannot be represented as Decimal(7, 7)"
@@ -1039,7 +1039,7 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
 
 # Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
 # throw exceptions for overflow even ANSI mode is enabled.
-@pytest.mark.skipif(not is_before_spark_320() or is_databricks91_or_later(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', div_overflow_exprs)
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):

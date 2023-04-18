@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,10 @@ jobs:
           . jenkins/version-def.sh
           svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
-          svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
+          # do not add empty snapshot versions
+          if [ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 ]; then
+            svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
+          fi
 
           # add snapshot versions which are not in snapshot property in pom file
           svArrBodySnapshot+=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" 340)

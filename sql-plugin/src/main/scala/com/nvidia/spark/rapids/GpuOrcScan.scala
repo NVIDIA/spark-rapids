@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
 import java.util.concurrent.{Callable, TimeUnit}
+import java.util.regex.Pattern
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -823,20 +824,23 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .build()
 
     // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-        metrics(GPU_DECODE_TIME))) { _ =>
-      try {
-        Table.readORC(parseOpts, hostBuf, 0, bufSize)
-      } catch {
-        case e: Exception => 
-          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+          metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readORC(parseOpts, hostBuf, 0, bufSize)
+        }
+
+        // Execute the schema evolution
+        SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
+          isCaseSensitive, Some(GpuOrcScan.castColumnTo))
       }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
     }
-    // Execute the schema evolution
-    SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
-      isCaseSensitive, Some(GpuOrcScan.castColumnTo))
   }
 }
 
@@ -1075,7 +1079,7 @@ class GpuOrcPartitionReader(
           None
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
           Some(new ColumnarBatch(nullColumns.toArray, numRows))
@@ -1427,7 +1431,21 @@ private case class GpuOrcFileFilterHandler(
         isOrcFloatTypesToStringEnable: Boolean): (TypeDescription, Array[Boolean]) = {
       // all default to false
       val fileIncluded = new Array[Boolean](fileSchema.getMaximumId + 1)
-      val isForcePos = OrcShims.forcePositionalEvolution(conf)
+      val isForcePos = if (OrcShims.forcePositionalEvolution(conf)) {
+        true
+      } else if (GpuOrcPartitionReaderUtils.isMissingColumnNames(fileSchema)) {
+        if (OrcConf.TOLERATE_MISSING_SCHEMA.getBoolean(conf)) {
+          true
+        } else {
+          throw new RuntimeException("Found that schema metadata is missing"
+              + " from file. This is likely caused by"
+              + " a writer earlier than HIVE-4243. Will"
+              + " not try to reconcile schemas")
+        }
+      } else {
+        false
+      }
+
       (checkTypeCompatibility(fileSchema, readSchema, isCaseAware, fileIncluded, isForcePos,
         isOrcFloatTypesToStringEnable),
         fileIncluded)
@@ -1450,6 +1468,7 @@ private case class GpuOrcFileFilterHandler(
           // Check for the top or nested struct types.
           val readFieldNames = readType.getFieldNames.asScala
           val readField2Type = readFieldNames.zip(readType.getChildren.asScala)
+
           val getReadFieldType: (String, Int) => Option[(String, TypeDescription)] =
             if (isForcePos) {
               // Match the top level columns using position rather than column names.
@@ -1547,6 +1566,13 @@ private case class GpuOrcFileFilterHandler(
     }
   }
 
+  private object GpuOrcPartitionReaderUtils {
+    private val missingColumnNamePattern = Pattern.compile("_col\\d+")
+
+    private def isMissingColumnNames(t: TypeDescription): Boolean = {
+      t.getFieldNames.asScala.exists(f => missingColumnNamePattern.matcher(f).matches())
+    }
+  }
 }
 
 /**
@@ -1744,7 +1770,7 @@ class MultiFileCloudOrcPartitionReader(
           new ColumnarBatch(Array.empty, 0)
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = meta.readSchema.fields.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)

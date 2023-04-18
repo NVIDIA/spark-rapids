@@ -23,7 +23,7 @@ from asserts import *
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import *
-from parquet_write_test import parquet_part_write_gens, parquet_write_gens_list, writer_confs
+from parquet_write_test import limited_timestamp, parquet_part_write_gens, parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
 from spark_session import is_before_spark_320, is_before_spark_330, with_cpu_session
 
@@ -57,9 +57,9 @@ def fixup_operation_metrics(opm):
     for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
         opm.pop(k, None)
 
-TMP_TABLE_PATTERN=re.compile("tmp_table_\w+")
-TMP_TABLE_PATH_PATTERN=re.compile("delta.`[^`]*`")
-REF_ID_PATTERN=re.compile("#[0-9]+")
+TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
+TMP_TABLE_PATH_PATTERN=re.compile(r"delta.`[^`]*`")
+REF_ID_PATTERN=re.compile(r"#[0-9]+")
 
 def fixup_operation_parameters(opp):
     """Update the specified operationParameters node to facilitate log comparisons"""
@@ -138,6 +138,13 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
         assert len(cpu_jsons) == len(gpu_jsons), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(file, cpu_json_data, gpu_json_data)
         for cpu_json, gpu_json in zip(cpu_jsons, gpu_jsons):
             assert_delta_log_json_equivalent(file, cpu_json, gpu_json)
+
+def get_last_operation_metrics(path):
+    from delta.tables import DeltaTable
+    return with_cpu_session(lambda spark: DeltaTable.forPath(spark, path)\
+                            .history(1)\
+                            .selectExpr("operationMetrics")\
+                            .head()[0])
 
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
 @delta_lake
@@ -639,8 +646,7 @@ def test_delta_write_multiple_identity_columns(spark_tmp_path):
 @ignore_order
 @pytest.mark.parametrize("confkey", ["optimizeWrite"], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks_runtime() and is_before_spark_330(),
-                    reason="Databricks 10.4 does not properly handle options passed during DataFrame API write")
+@pytest.mark.skipif(is_databricks_runtime(), reason="Optimized write is supported on Databricks")
 def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -654,9 +660,10 @@ def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("confkey", [
-    "delta.autoOptimize",
-    "delta.autoOptimize.optimizeWrite",
-    "delta.autoOptimize.autoCompact" ], ids=idfn)
+    pytest.param("delta.autoOptimize", marks=pytest.mark.skipif(
+        is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
+    pytest.param("delta.autoOptimize.optimizeWrite", marks=pytest.mark.skipif(
+        is_databricks_runtime(), reason="Optimize write is supported on Databricks"))], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Auto optimize only supported on Databricks")
 def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path):
@@ -676,9 +683,10 @@ def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("confkey", [
-    "spark.databricks.delta.optimizeWrite.enabled",
-    "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite",
-    "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact" ], ids=idfn)
+    pytest.param("spark.databricks.delta.optimizeWrite.enabled", marks=pytest.mark.skipif(
+        is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
+    pytest.param("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite", marks=pytest.mark.skipif(
+        is_databricks_runtime(), reason="Optimize write is supported on Databricks"))], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -706,3 +714,176 @@ def test_delta_write_aqe_join(spark_tmp_path):
         data_path,
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+@pytest.mark.parametrize("enable_conf_key", [
+    "spark.databricks.delta.optimizeWrite.enabled",
+    "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite"], ids=idfn)
+@pytest.mark.parametrize("aqe_enabled", [True, False], ids=idfn)
+def test_delta_write_optimized_aqe(spark_tmp_path, enable_conf_key, aqe_enabled):
+    num_chunks = 20
+    def do_write(data_path, is_optimize_write):
+        confs=copy_and_update(delta_writes_enabled_conf, {
+            enable_conf_key : str(is_optimize_write),
+            "spark.sql.adaptive.enabled" : str(aqe_enabled)
+        })
+        assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, int_gen)\
+                .repartition(num_chunks).write.format("delta").save(path),
+            lambda spark, path: spark.read.format("delta").load(path),
+            data_path,
+            conf=confs)
+    data_path = spark_tmp_path + "/DELTA_DATA1"
+    do_write(data_path, is_optimize_write=False)
+    opmetrics = get_last_operation_metrics(data_path + "/GPU")
+    assert int(opmetrics["numFiles"]) == num_chunks
+    data_path = spark_tmp_path + "/DELTA_DATA2"
+    do_write(data_path, is_optimize_write=True)
+    opmetrics = get_last_operation_metrics(data_path + "/GPU")
+    assert int(opmetrics["numFiles"]) == 1
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+def test_delta_write_optimized_supported_types(spark_tmp_path):
+    num_chunks = 20
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.execution.sortBeforeRepartition": "true",
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
+    })
+    simple_gens = [ byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                    string_gen, boolean_gen, date_gen, limited_timestamp() ]
+    genlist = simple_gens + \
+        [ StructGen([("child" + str(i), gen) for i, gen in enumerate(simple_gens)]) ] + \
+        [ StructGen([("x", StructGen([("y", int_gen)]))]) ]
+    gens = [("c" + str(i), gen) for i, gen in enumerate(genlist)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gens) \
+            .repartition(num_chunks).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+    opmetrics = get_last_operation_metrics(data_path + "/GPU")
+    assert int(opmetrics["numFiles"]) < 20
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.execution.sortBeforeRepartition": "true",
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
+    })
+    genlist = [ SetValuesGen(StringType(), ["a", "b", "c"]) ] + \
+              [ x for sublist in parquet_write_gens_list for x in sublist ]
+    gens = [("c" + str(i), gen) for i, gen in enumerate(genlist)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gens) \
+            .write.format("delta").partitionBy("c0").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+
+@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+@pytest.mark.parametrize("gen", [
+    simple_string_to_string_map_gen,
+    StructGen([("x", ArrayGen(int_gen))]),
+    ArrayGen(StructGen([("x", long_gen)]))], ids=idfn)
+def test_delta_write_optimized_unsupported_sort_fallback(spark_tmp_path, gen):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.sql.execution.sortBeforeRepartition": "true",
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
+    })
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        "ExecutedCommandExec",
+        conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+def test_delta_write_optimized_table_confs(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    gpu_data_path = data_path + "/GPU"
+    num_chunks = 20
+    def do_write(confs):
+        assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, int_gen)\
+                .repartition(num_chunks).write.format("delta").mode("overwrite").save(path),
+            lambda spark, path: spark.read.format("delta").load(path),
+            data_path,
+            conf=confs)
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "true"
+    })
+    do_write(confs)
+    opmetrics = get_last_operation_metrics(gpu_data_path)
+    assert int(opmetrics["numFiles"]) == 1
+    # Verify SQL conf takes precedence over table setting
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "false"
+    })
+    do_write(confs)
+    opmetrics = get_last_operation_metrics(gpu_data_path)
+    assert int(opmetrics["numFiles"]) == num_chunks
+    # Verify default conf is not honored after table setting
+    def do_prop_update(spark):
+        spark.sql("ALTER TABLE delta.`{}`".format(gpu_data_path) +
+                  " SET TBLPROPERTIES (delta.autoOptimize.optimizeWrite = true)")
+    with_cpu_session(do_prop_update)
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite" : "false"
+    })
+    do_write(confs)
+    opmetrics = get_last_operation_metrics(gpu_data_path)
+    assert int(opmetrics["numFiles"]) == 1
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+def test_delta_write_optimized_partitioned(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    gpu_data_path = data_path + "/GPU"
+    num_chunks = 20
+    def do_write(confs):
+        assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: two_col_df(spark, int_gen, SetValuesGen(StringType(), ["x", "y"]))\
+                .repartition(num_chunks).write.format("delta")\
+                .mode("overwrite").partitionBy("b").save(path),
+            lambda spark, path: spark.read.format("delta").load(path),
+            data_path,
+            conf=confs)
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "false"
+    })
+    do_write(confs)
+    opmetrics = get_last_operation_metrics(gpu_data_path)
+    assert int(opmetrics["numFiles"]) == 2 * num_chunks
+    # Verify SQL conf takes precedence over table setting
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.databricks.delta.optimizeWrite.enabled" : "true"
+    })
+    do_write(confs)
+    opmetrics = get_last_operation_metrics(gpu_data_path)
+    assert int(opmetrics["numFiles"]) == 2

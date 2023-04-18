@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,24 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
-
 object VersionUtils {
 
   lazy val isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
 
   lazy val isSpark: Boolean = {
-    SparkShimImpl.getSparkShimVersion.isInstanceOf[SparkShimVersion]
+    ShimLoader.getShimVersion.isInstanceOf[SparkShimVersion]
   }
 
   lazy val isDataBricks: Boolean = {
-    SparkShimImpl.getSparkShimVersion.isInstanceOf[DatabricksShimVersion]
+    ShimLoader.getShimVersion.isInstanceOf[DatabricksShimVersion]
   }
 
   lazy val isCloudera: Boolean = {
-    SparkShimImpl.getSparkShimVersion.isInstanceOf[ClouderaShimVersion]
+    ShimLoader.getShimVersion.isInstanceOf[ClouderaShimVersion]
   }
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = SparkShimImpl.getSparkShimVersion
+    val sparkShimVersion = ShimLoader.getShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)

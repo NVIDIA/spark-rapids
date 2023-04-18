@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,11 @@ import java.io.File
 import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange, Rmm, RmmEventHandler}
+import ai.rapids.cudf.{Cuda, Rmm, RmmEventHandler}
 import com.sun.management.HotSpotDiagnosticMXBean
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -35,6 +36,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  *                            depleting the device store
  */
 class DeviceMemoryEventHandler(
+    catalog: RapidsBufferCatalog,
     store: RapidsDeviceMemoryStore,
     oomDumpDir: Option[String],
     isGdsSpillEnabled: Boolean,
@@ -52,7 +54,7 @@ class DeviceMemoryEventHandler(
 
   /**
    * A small helper class that helps keep track of retry counts as we trigger
-   * synchronizes on a depleted store.
+   * synchronizes on a completely spilled store.
    */
   class OOMRetryState {
     private var synchronizeAttempts = 0
@@ -82,19 +84,19 @@ class DeviceMemoryEventHandler(
     }
 
     /**
-     * We reset our counters if `storeSize` is non-zero (as we only track when the store is
-     * depleted), or `retryCount` is less than or equal to what we had previously
-     * recorded in `shouldTrySynchronizing`. We do this to detect that the new failures
-     * are for a separate allocation (we need to give this new attempt a new set of
-     * retries.)
+     * We reset our counters if `storeSpillableSize` is non-zero (as we only track when all
+     * spillable buffers are removed from the store), or `retryCount` is less than or equal
+     * to what we had previously recorded in `shouldTrySynchronizing`.
+     * We do this to detect that the new failures are for a separate allocation (we need to
+     * give this new attempt a new set of retries.)
      *
-     * For example, if an allocation fails and we deplete the store, `retryCountLastSynced`
+     * For example, if an allocation fails and we spill all eligible buffers, `retryCountLastSynced`
      * is set to the last `retryCount` sent to us by cuDF as we keep allowing retries
      * from cuDF. If we succeed, cuDF resets `retryCount`, and so the new count sent to us
      * must be <= than what we saw last, so we can reset our tracking.
      */
-    def resetIfNeeded(retryCount: Int, storeSize: Long): Unit = {
-      if (storeSize != 0 || retryCount <= retryCountLastSynced) {
+    def resetIfNeeded(retryCount: Int, storeSpillableSize: Long): Unit = {
+      if (storeSpillableSize != 0 || retryCount <= retryCountLastSynced) {
         reset()
       }
     }
@@ -108,15 +110,17 @@ class DeviceMemoryEventHandler(
    */
   override def onAllocFailure(allocSize: Long, retryCount: Int): Boolean = {
     // check arguments for good measure
-    require(allocSize >= 0, 
+    require(allocSize >= 0,
       s"onAllocFailure invoked with invalid allocSize $allocSize")
 
-    require(retryCount >= 0, 
+    require(retryCount >= 0,
       s"onAllocFailure invoked with invalid retryCount $retryCount")
 
     try {
-      withResource(new NvtxRange("onAllocFailure", NvtxColor.RED)) { _ =>
+      GpuTaskMetrics.get.spillTime {
         val storeSize = store.currentSize
+        val storeSpillableSize = store.currentSpillableSize
+
         val attemptMsg = if (retryCount > 0) {
           s"Attempt ${retryCount}. "
         } else {
@@ -124,12 +128,12 @@ class DeviceMemoryEventHandler(
         }
 
         val retryState = oomRetryState.get()
-        retryState.resetIfNeeded(retryCount, storeSize)
+        retryState.resetIfNeeded(retryCount, storeSpillableSize)
 
         logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
-          s"$storeSize bytes. $attemptMsg" +
+          s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg" +
           s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes. ")
-        if (storeSize == 0) {
+        if (storeSpillableSize == 0) {
           if (retryState.shouldTrySynchronizing(retryCount)) {
             Cuda.deviceSynchronize()
             logWarning(s"[RETRY ${retryState.getRetriesSoFar}] " +
@@ -149,14 +153,17 @@ class DeviceMemoryEventHandler(
             false
           }
         } else {
-          val targetSize = Math.max(storeSize - allocSize, 0)
+          val targetSize = Math.max(storeSpillableSize - allocSize, 0)
           logDebug(s"Targeting device store size of $targetSize bytes")
-          val amountSpilled = store.synchronousSpill(targetSize)
-          logInfo(s"Spilled $amountSpilled bytes from the device store")
-          if (isGdsSpillEnabled) {
-            TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
-          } else {
-            TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+          val maybeAmountSpilled =
+            catalog.synchronousSpill(store, targetSize, Cuda.DEFAULT_STREAM)
+          maybeAmountSpilled.foreach { amountSpilled =>
+            logInfo(s"Spilled $amountSpilled bytes from the device store")
+            if (isGdsSpillEnabled) {
+              TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
+            } else {
+              TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+            }
           }
           true
         }

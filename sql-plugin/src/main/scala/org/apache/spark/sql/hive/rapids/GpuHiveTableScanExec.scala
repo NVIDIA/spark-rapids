@@ -16,9 +16,9 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
+import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
@@ -175,7 +175,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY),
     "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time")
-  ) ++ semaphoreMetrics
+  )
 
   private lazy val driverMetrics: mutable.HashMap[String, Long] = mutable.HashMap.empty
 
@@ -360,7 +360,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     rdd
   }
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val scanTime = gpuLongMetric("scanTime")
     inputRDD.mapPartitionsInternal { batches =>
@@ -482,7 +482,6 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
 }
 
 // Reader that converts from chunked data buffers into cudf.Table.
-@scala.annotation.nowarn("msg=method stringSplit in class ColumnView is deprecated")
 class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           csvOptions: CSVOptions,
                                           params: Map[String, String],
@@ -499,45 +498,49 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
   override def readToTable(dataBufferer: HostStringColBufferer,
                            inputFileCudfSchema: Schema,
                            requestedOutputDataSchema: StructType,
-                           isFirstChunk: Boolean): Table = {
-    // The delimiter is currently hard coded to ^A. This should be able to support any format
-    //  but we don't want to test that yet
-    val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
-      cv.stringSplit("\u0001", false)
-    }
+                           isFirstChunk: Boolean,
+                           decodeTime: GpuMetric): Table = {
+    withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
+      NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+      // The delimiter is currently hard coded to ^A. This should be able to support any format
+      //  but we don't want to test that yet
+      val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
+        cv.stringSplit("\u0001")
+      }
 
-    // inputFileCudfSchema       == Schema of the input file/buffer.
-    //                              Presented in the order of input columns in the file.
-    // requestedOutputDataSchema == Spark output schema. This is inexplicably sorted alphabetically
-    //                              in HiveTSExec, unlike FileSourceScanExec (which has file-input
-    //                              ordering).
-    //                              This trips up the downstream string->numeric casts in
-    //                              GpuTextBasedPartitionReader.readToTable().
-    // Given that Table.readCsv presents the output columns in the order of the input file,
-    // we need to reorder the table read from the input file in the order specified in
-    // [[requestedOutputDataSchema]] (i.e. requiredAttributes).
+      // inputFileCudfSchema       == Schema of the input file/buffer.
+      //                              Presented in the order of input columns in the file.
+      // requestedOutputDataSchema == Spark output schema. This is inexplicably sorted
+      //                              alphabetically in HiveTSExec, unlike FileSourceScanExec
+      //                              (which has file-input ordering).
+      //                              This trips up the downstream string->numeric casts in
+      //                              GpuTextBasedPartitionReader.readToTable().
+      // Given that Table.readCsv presents the output columns in the order of the input file,
+      // we need to reorder the table read from the input file in the order specified in
+      // [[requestedOutputDataSchema]] (i.e. requiredAttributes).
 
-    withResource(splitTable) { _ =>
-      val nullFormat = params.getOrElse("serialization.null.format", "\\N")
-      withResource(Scalar.fromString(nullFormat)) { nullTag =>
-        withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
-          // This is a bit different because we are dropping columns/etc ourselves
-          val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
-          val outputColumnNames = inputFileCudfSchema.getColumnNames
-          val reorderedColumns = requiredColumnSequence.safeMap { colName =>
-            val colIndex = outputColumnNames.indexOf(colName)
-            if (splitTable.getNumberOfColumns > colIndex) {
-              val col = splitTable.getColumn(colIndex)
-              withResource(col.equalTo(nullTag)) { shouldBeNull =>
-                shouldBeNull.ifElse(nullVal, col)
+      withResource(splitTable) { _ =>
+        val nullFormat = params.getOrElse("serialization.null.format", "\\N")
+        withResource(Scalar.fromString(nullFormat)) { nullTag =>
+          withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
+            // This is a bit different because we are dropping columns/etc ourselves
+            val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
+            val outputColumnNames = inputFileCudfSchema.getColumnNames
+            val reorderedColumns = requiredColumnSequence.safeMap { colName =>
+              val colIndex = outputColumnNames.indexOf(colName)
+              if (splitTable.getNumberOfColumns > colIndex) {
+                val col = splitTable.getColumn(colIndex)
+                withResource(col.equalTo(nullTag)) { shouldBeNull =>
+                  shouldBeNull.ifElse(nullVal, col)
+                }
+              } else {
+                // the column didn't exist in the output, so we need to make an all null one
+                ColumnVector.fromScalar(nullVal, splitTable.getRowCount.toInt)
               }
-            } else {
-              // the column didn't exist in the output, so we need to make an all null one
-              ColumnVector.fromScalar(nullVal, splitTable.getRowCount.toInt)
             }
-          }
-          withResource(reorderedColumns) { _ =>
-            new Table(reorderedColumns: _*)
+            withResource(reorderedColumns) { _ =>
+              new Table(reorderedColumns: _*)
+            }
           }
         }
       }
@@ -586,11 +589,11 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
    *   1. The input strings are not trimmed of whitespace.
    *   2. Invalid date strings do not cause exceptions.
    */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
     // Filter out any dates that do not conform to the `yyyy-MM-dd` format.
     val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z"
-    val regexFiltered = withResource(input.matchesRe(supportedDateRegex)) { matchesRegex =>
+    val prog = new RegexProgram(supportedDateRegex, CaptureGroups.NON_CAPTURE)
+    val regexFiltered = withResource(input.matchesRe(prog)) { matchesRegex =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         matchesRegex.ifElse(input, nullString)
       }
@@ -608,7 +611,6 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     }
   }
 
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   override def castStringToTimestamp(lhs: ColumnVector, sparkFormat: String, dType: DType)
   : ColumnVector = {
     // Currently, only the following timestamp pattern is supported:
@@ -619,7 +621,8 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     // Input strings that do not match this format strictly must be replaced with nulls.
     //                 yyyy-  MM -  dd    HH  :  mm  :  ss [SSS...     ]
     val regex = raw"\A\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}(?:\.\d{1,9})?\Z"
-    val regexFiltered = withResource(lhs.matchesRe(regex)) { matchesRegex =>
+    val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+    val regexFiltered = withResource(lhs.matchesRe(prog)) { matchesRegex =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         matchesRegex.ifElse(lhs, nullString)
       }

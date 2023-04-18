@@ -30,7 +30,7 @@ import org.apache.spark.sql.internal.SQLConf
 
 class AlluxioMasterAndPortReaderMock(master: String, port: String)
   extends AlluxioConfigReader {
-  override def readAlluxioMasterAndPort(): (String, String) = (master, port)
+  override def readAlluxioMasterAndPort(conf: RapidsConf): (String, String) = (master, port)
 }
 
 class AlluxioFSMock extends AlluxioFS {
@@ -76,15 +76,15 @@ class AlluxioUtilsSuite extends FunSuite {
     val partitionedFiles = Array[PartitionedFile](
       PartitionedFileUtilsShim.newPartitionedFile(null, "s3a://bucket_1/a.file", 0, 0),
       PartitionedFileUtilsShim.newPartitionedFile(null, "s3a://bucket_2/b.file", 0, 0),
-      PartitionedFileUtilsShim.newPartitionedFile(null, "my_scheme://bucket_1/1.file", 0, 0)
+      PartitionedFileUtilsShim.newPartitionedFile(null, "myScheme://bucket_1/1.file", 0, 0)
     )
     val replaced = AlluxioUtils.updateFilesTaskTimeIfAlluxio(partitionedFiles, Option(replaceMap))
     assert(replaced.size == 3)
-    assert(replaced(0).toRead.filePath.equals("alluxio://localhost:19998/bucket_1/a.file"))
-    assert(replaced(0).original.get.filePath.equals("s3a://bucket_1/a.file"))
-    assert(replaced(1).toRead.filePath.equals("alluxio://localhost:19998/bucket_2/b.file"))
-    assert(replaced(1).original.get.filePath.equals("s3a://bucket_2/b.file"))
-    assert(replaced(2).toRead.filePath.equals("my_scheme://bucket_1/1.file"))
+    assert(replaced(0).toRead.filePath.toString === "alluxio://localhost:19998/bucket_1/a.file")
+    assert(replaced(0).original.get.filePath.toString === "s3a://bucket_1/a.file")
+    assert(replaced(1).toRead.filePath.toString === "alluxio://localhost:19998/bucket_2/b.file")
+    assert(replaced(1).original.get.filePath.toString === "s3a://bucket_2/b.file")
+    assert(replaced(2).toRead.filePath.toString === "myScheme://bucket_1/1.file")
     assert(replaced(2).original.isEmpty)
   }
 

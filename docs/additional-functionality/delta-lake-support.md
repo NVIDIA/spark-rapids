@@ -50,9 +50,36 @@ operation which is typically triggered via the DataFrame `write` API, e.g.:
 Table creation from selection, table insertion from SQL, and table merges are not currently
 GPU accelerated. These operations will fallback to the CPU.
 
-[Automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
-during Delta Lake writes is not supported. Write operations that are configured to
-automatically optimize or automatically compact will fallback to the CPU.
+#### Automatic Optimization of Writes
+
+Delta Lake on Databricks has
+[automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
+features for optimized writes and automatic compaction.
+
+Optimized writes are supported only on Databricks platforms. The algorithm used is similar but
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of the optimized write.
+
+| Configuration                                               | Default | Description                                                                                |
+|-------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------|
+| spark.databricks.delta.optimizeWrite.binSize                | 512     | Target uncompressed partition size in megabytes                                            |
+| spark.databricks.delta.optimizeWrite.smallPartitionFactor   | 0.5     | Merge partitions smaller than this factor multiplied by the target partition size          |
+| spark.databricks.delta.optimizeWrite.mergedPartitionFactor  | 1.2     | Avoid combining partitions larger than this factor multiplied by the target partition size |
+
+Automatic compaction is supported only on Databricks platforms. The algorithm is similar but 
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of automatic compaction.
+
+| Configuration                                                       | Default | Description                                                                                            |
+|---------------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------------------|
+| spark.databricks.delta.autoCompact.enabled                          | false   | Enable/disable auto compaction for writes to Delta directories                                         |
+| spark.databricks.delta.properties.defaults.autoOptimize.autoCompact | false   | Whether to enable auto compaction by default, if spark.databricks.delta.autoCompact.enabled is not set |
+| spark.databricks.delta.autoCompact.minNumFiles                      | 50      | Minimum number of files in the Delta directory before which auto optimize does not begin compaction    |
+
+Note that optimized write support requires round-robin partitioning of the data, and round-robin
+partitioning requires sorting across all columns for deterministic operation. If the GPU cannot
+support sorting a particular column type in order to support the round-robin partitioning, the
+Delta Lake write will fallback to the CPU.
 
 ### RapidsDeltaWrite Node in Query Plans
 
@@ -97,6 +124,16 @@ spark.rapids.sql.command.DeleteCommandEdge=true on Databricks platforms.
 
 Deleting data from Delta Lake tables via the SQL `DELETE FROM` statement or via the DeltaTable
 `delete` API is supported.
+
+### num_affected_rows Difference with Databricks
+
+The Delta Lake delete command returns a single row result with a `num_affected_rows` column.
+When entire partition files in the table are deleted, the open source Delta Lake and RAPIDS
+Acclerator implementations of delete can return -1 for `num_affected_rows` since it could be
+expensive to open the files and produce an accurate row count. Databricks changed the behavior
+of delete operations that delete entire partition files to return the actual row count.
+This is only a difference in the statistics of the operation, and the table contents will still
+be accurately deleted with the RAPIDS Accelerator.
 
 ## Update Operations on Delta Lake Tables
 

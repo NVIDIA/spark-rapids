@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, should_inject_oom
 from pyspark.sql import DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
@@ -68,6 +68,10 @@ def is_tz_utc(spark=_spark):
 
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
+    if (should_inject_oom()):
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
+    else:
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
@@ -135,9 +139,6 @@ def is_before_spark_312():
 def is_before_spark_313():
     return spark_version() < "3.1.3"
 
-def is_before_spark_314():
-    return spark_version() < "3.1.4"
-
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
@@ -183,9 +184,6 @@ def is_databricks_version_or_later(major, minor):
     db_major = int(parts[0])
     db_minor = int(parts[1])
     return db_minor >= minor if (db_major == major) else db_major >= major
-
-def is_databricks91_or_later():
-    return is_databricks_version_or_later(9, 1)
 
 def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)
