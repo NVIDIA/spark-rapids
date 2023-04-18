@@ -21,7 +21,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
 import re
-from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session, explain_string
+from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session
 
 # Using timestamps from 1970 to work around a cudf ORC bug
 # https://github.com/NVIDIA/spark-rapids/issues/140.
