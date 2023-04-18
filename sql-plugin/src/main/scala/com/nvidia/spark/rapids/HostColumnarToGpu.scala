@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 import org.apache.arrow.memory.{ArrowBuf, ReferenceManager}
 import org.apache.arrow.vector.ValueVector
@@ -41,7 +42,7 @@ object HostColumnarToGpu extends Logging {
 
   // use reflection to get access to a private field in a class
   private def getClassFieldAccessible(className: String, fieldName: String) = {
-    val classObj = ShimLoader.loadClass(className)
+    val classObj = ShimReflectionUtils.loadClass(className)
     val fields = classObj.getDeclaredFields.toList
     val field = fields.filter( x => {
       x.getName.contains(fieldName)

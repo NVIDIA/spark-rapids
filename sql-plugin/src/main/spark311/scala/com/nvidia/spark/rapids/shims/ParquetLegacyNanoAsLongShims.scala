@@ -28,13 +28,18 @@
 {"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
-{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.hadoop.conf.Configuration
 
 object ParquetLegacyNanoAsLongShims {
+  def legacyParquetNanosAsLong(): Boolean = {
+    // this should be true for 3.2.4+, 3.3.2+, 3.4.0+ if
+    //   spark.sql.legacy.parquet.nanosAsLong = true
+    false
+  }
+
   def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
     // LEGACY_PARQUET_NANOS_AS_LONG is only considered in Spark 3.3.2 and later
   }

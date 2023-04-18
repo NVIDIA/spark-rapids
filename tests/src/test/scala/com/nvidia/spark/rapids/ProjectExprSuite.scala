@@ -20,6 +20,7 @@ import java.io.File
 import java.nio.file.Files
 
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito.spy
 

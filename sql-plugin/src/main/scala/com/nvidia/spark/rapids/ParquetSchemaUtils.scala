@@ -21,6 +21,7 @@ import java.util.{Locale, Optional}
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ColumnView, DType, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
@@ -29,7 +30,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
-object ParquetSchemaUtils extends Arm {
+object ParquetSchemaUtils {
   // Copied from Spark
   private val SPARK_PARQUET_SCHEMA_NAME = "spark_schema"
   // Copied from Spark

@@ -23,8 +23,9 @@ import pyarrow as pa
 import pyarrow.parquet as pa_pq
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
+from spark_init_internal import spark_version
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
-from conftest import is_databricks_runtime
+from conftest import is_databricks_runtime, is_dataproc_runtime
 
 
 def read_parquet_df(data_path):
@@ -699,7 +700,7 @@ def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
     return bucketed_4_10e4.join(bucketed_4_10e6, "id")
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 # this test would be better if we could ensure exchanges didn't exist - ie used buckets
@@ -779,6 +780,48 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
+@pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
+@pytest.mark.skipif(is_dataproc_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/8074')
+def test_parquet_read_nano_as_longs_31x(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    # we correctly return timestamp_micros when running against Spark 3.1.x
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path))
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
+def test_parquet_read_nano_as_longs_false(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    conf = copy_and_update(original_parquet_file_reader_conf, {
+            'spark.sql.legacy.parquet.nanosAsLong': False })
+    def read_timestamp_nano_parquet(spark):
+        spark.read.parquet(data_path).collect()
+    assert_gpu_and_cpu_error(
+        read_timestamp_nano_parquet,
+        conf,
+        error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
+def test_parquet_read_nano_as_longs_not_configured(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    def read_timestamp_nano_parquet(spark):
+        spark.read.parquet(data_path).collect()
+    assert_gpu_and_cpu_error(
+        read_timestamp_nano_parquet,
+        conf=original_parquet_file_reader_conf,
+        error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
+
+@pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
+@pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
+@pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
+@allow_non_gpu('FileSourceScanExec, ColumnarToRowExec')
+def test_parquet_read_nano_as_longs_true(std_input_path):
+    data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
+    conf = copy_and_update(original_parquet_file_reader_conf, {
+            'spark.sql.legacy.parquet.nanosAsLong': True })
+    assert_gpu_fallback_collect(
+        lambda spark: spark.read.parquet(data_path),
+        'FileSourceScanExec',
+        conf=conf)
 
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):

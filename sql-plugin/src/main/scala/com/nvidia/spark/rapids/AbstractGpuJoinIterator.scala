@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 
@@ -56,9 +57,7 @@ abstract class AbstractGpuJoinIterator(
     targetSize: Long,
     val opTime: GpuMetric,
     joinTime: GpuMetric)
-    extends Iterator[ColumnarBatch]
-    with Arm
-    with TaskAutoCloseableResource {
+    extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
   private[this] var nextCb: Option[ColumnarBatch] = None
   private[this] var gathererStore: Option[JoinGatherer] = None
 

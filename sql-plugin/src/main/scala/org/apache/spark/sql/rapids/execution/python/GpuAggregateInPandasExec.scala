@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode

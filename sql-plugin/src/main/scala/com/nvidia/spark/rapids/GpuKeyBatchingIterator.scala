@@ -20,6 +20,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
 import org.apache.spark.TaskContext
@@ -45,7 +46,7 @@ class GpuKeyBatchingIterator(
     concatTime: GpuMetric,
     opTime: GpuMetric,
     peakDevMemory: GpuMetric)
-    extends Iterator[ColumnarBatch] with Arm {
+    extends Iterator[ColumnarBatch] {
   private val pending = mutable.Queue[SpillableColumnarBatch]()
   private var pendingSize: Long = 0
 

@@ -23,6 +23,7 @@ import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -334,7 +335,7 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
 }
 
 
-object CSVPartitionReader extends Arm {
+object CSVPartitionReader {
   def readToTable(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,

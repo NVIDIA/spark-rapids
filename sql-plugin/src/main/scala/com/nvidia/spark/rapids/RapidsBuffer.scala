@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -161,7 +162,7 @@ trait RapidsBuffer extends AutoCloseable {
  */
 sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
-    override val meta: TableMeta) extends RapidsBuffer with Arm {
+    override val meta: TableMeta) extends RapidsBuffer {
   override val size: Long = 0L
   override val storageTier: StorageTier = StorageTier.DEVICE
 

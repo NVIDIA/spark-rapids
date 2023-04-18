@@ -21,9 +21,8 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.Arm
 
-object HashUtils extends Arm {
+object HashUtils {
   /**
    * In Spark 3.2.0+ -0.0 is normalized to 0.0, but for everyone else this is a noop
    * @param in the input to normalize

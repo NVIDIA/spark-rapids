@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.Callable
 
 import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.FunSuite
@@ -29,7 +30,7 @@ import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuMultiFileReaderSuite extends FunSuite with Arm {
+class GpuMultiFileReaderSuite extends FunSuite {
 
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)

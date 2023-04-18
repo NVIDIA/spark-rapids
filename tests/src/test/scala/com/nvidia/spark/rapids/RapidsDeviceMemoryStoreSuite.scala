@@ -22,6 +22,7 @@ import java.math.RoundingMode
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
@@ -32,7 +33,7 @@ import org.scalatest.mockito.MockitoSugar
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
-class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
+class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
@@ -309,7 +310,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       throw new UnsupportedOperationException
   }
 
-  class MockSpillStore extends RapidsBufferStore(StorageTier.HOST) with Arm {
+  class MockSpillStore extends RapidsBufferStore(StorageTier.HOST) {
     val spilledBuffers = new ArrayBuffer[RapidsBufferId]
 
     override protected def createBuffer(

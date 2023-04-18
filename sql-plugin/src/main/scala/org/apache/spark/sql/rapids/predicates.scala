@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import scala.language.implicitConversions
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.orc.TypeDescription
 
@@ -32,7 +33,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-object SchemaUtils extends Arm {
+object SchemaUtils {
   // Parquet field ID metadata key
   val FIELD_ID_METADATA_KEY = "parquet.field.id"
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._

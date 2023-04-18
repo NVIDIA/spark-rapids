@@ -169,6 +169,10 @@ object ParquetSchemaClipShims {
             } else {
               TimestampNTZType
             }
+          case timestamp: TimestampLogicalTypeAnnotation if timestamp.getUnit == TimeUnit.NANOS &&
+              ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong =>
+            TrampolineUtil.throwAnalysisException(
+              "GPU does not support spark.sql.legacy.parquet.nanosAsLong")
           case _ => illegalType()
         }
 

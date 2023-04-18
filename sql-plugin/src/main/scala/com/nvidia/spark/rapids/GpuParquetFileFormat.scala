@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}

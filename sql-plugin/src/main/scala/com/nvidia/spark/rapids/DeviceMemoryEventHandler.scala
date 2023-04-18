@@ -40,7 +40,7 @@ class DeviceMemoryEventHandler(
     store: RapidsDeviceMemoryStore,
     oomDumpDir: Option[String],
     isGdsSpillEnabled: Boolean,
-    maxFailedOOMRetries: Int) extends RmmEventHandler with Logging with Arm {
+    maxFailedOOMRetries: Int) extends RmmEventHandler with Logging {
 
   // Flag that ensures we dump stack traces once and not for every allocation
   // failure. The assumption is that unhandled allocations will be fatal

@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.RebaseHelper.withResource
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
@@ -175,7 +175,7 @@ object GpuExec {
   val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
-trait GpuExec extends SparkPlan with Arm {
+trait GpuExec extends SparkPlan {
   import GpuMetric._
   def sparkSession: SparkSession = {
     SparkShimImpl.sessionFromPlan(this)

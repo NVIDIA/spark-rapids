@@ -30,7 +30,8 @@ import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{Arm, BoolUtils, CloseableHolder}
+import com.nvidia.spark.rapids.{BoolUtils, CloseableHolder}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, MONTHS_PER_YEAR}
@@ -76,7 +77,7 @@ import org.apache.spark.sql.types.{DataType, DayTimeIntervalType => DT, YearMont
  * should update correspondingly if Spark fixes this issue
  *
  */
-object GpuIntervalUtils extends Arm {
+object GpuIntervalUtils {
   val MAX_DAY: Long = Long.MaxValue / DAYS.toMicros(1)
   val MAX_HOUR: Long = Long.MaxValue / HOURS.toMicros(1)
   val MAX_MINUTE: Long = Long.MaxValue / MINUTES.toMicros(1)

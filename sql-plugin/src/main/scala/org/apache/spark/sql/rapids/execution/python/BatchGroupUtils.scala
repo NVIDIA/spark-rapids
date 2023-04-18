@@ -20,6 +20,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -49,7 +50,7 @@ case class GroupArgs(
  * It plays the similar role to the Spark 'PandasGroupUtils', but dealing with 'ColumnarBatch',
  * instead of 'InternalRow'.
  */
-private[python] object BatchGroupUtils extends Arm {
+private[python] object BatchGroupUtils {
 
   /**
    * It mainly does 2 things:
@@ -260,7 +261,7 @@ private[python] object BatchGroupUtils extends Arm {
 private[python] class BatchGroupedIterator private(
     input: Iterator[ColumnarBatch],
     inputAttributes: Seq[Attribute],
-    groupingIndices: Seq[Int]) extends Iterator[ColumnarBatch] with Arm {
+    groupingIndices: Seq[Int]) extends Iterator[ColumnarBatch] {
 
   private val batchesQueue: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
@@ -318,7 +319,7 @@ private[python] class BatchGroupedIterator private(
 
 }
 
-private[python] object BatchGroupedIterator extends Arm {
+private[python] object BatchGroupedIterator {
 
   /**
    * Create a `BatchGroupedIterator` instance
@@ -394,7 +395,7 @@ class CombiningIterator(
     pythonOutputIter: Iterator[ColumnarBatch],
     pythonArrowReader: GpuPythonArrowOutput,
     numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+    numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] {
 
   // For `hasNext` we are waiting on the queue to have something inserted into it
   // instead of waiting for a result to be ready from Python. The reason for this
@@ -440,7 +441,7 @@ class CoGroupedIterator(
     leftGroupOffsets: Seq[Int],
     rightGroupedIter: Iterator[ColumnarBatch],
     rightSchema: Seq[Attribute],
-    rightGroupOffsets: Seq[Int]) extends Iterator[(ColumnarBatch, ColumnarBatch)] with Arm {
+    rightGroupOffsets: Seq[Int]) extends Iterator[(ColumnarBatch, ColumnarBatch)] {
 
   // Same with CPU, use the left grouping key for comparison.
   private val groupSchema = leftGroupOffsets.map(leftSchema(_))

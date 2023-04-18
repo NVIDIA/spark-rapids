@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import scala.collection.mutable
 import alluxio.AlluxioURI
 import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
 import alluxio.grpc.MountPOptions
+import com.nvidia.spark.rapids.Arm.withResource
 
 /**
  * interfaces for Alluxio file system.
@@ -28,7 +29,7 @@ import alluxio.grpc.MountPOptions
  *   get mount points
  *   mount
  */
-class AlluxioFS extends Arm {
+class AlluxioFS {
   private var masterHost: String = _
   private var masterPort: Int = _
   private var masterHostAndPort: Option[String] = None

@@ -22,6 +22,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.ExecutionContext
 
 import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 

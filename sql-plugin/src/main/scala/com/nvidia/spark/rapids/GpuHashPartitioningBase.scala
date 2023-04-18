@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, PartitionedTable}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -61,7 +62,7 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
   }
 }
 
-object GpuHashPartitioningBase extends Arm {
+object GpuHashPartitioningBase {
 
   val DEFAULT_HASH_SEED: Int = 42
 
