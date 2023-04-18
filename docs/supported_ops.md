@@ -13726,7 +13726,7 @@ are limited.
 <td rowSpan="4">StringTranslate</td>
 <td rowSpan="4">`translate`</td>
 <td rowSpan="4">StringTranslate operator</td>
-<td rowSpan="4">None</td>
+<td rowSpan="4">This is not 100% compatible with the Spark version because the GPU implementation supports all unicode code points. In Spark versions < 3.2.0, translate() does not support unicode characters with code point >= U+10000 (See SPARK-34094)</td>
 <td rowSpan="4">project</td>
 <td>input</td>
 <td> </td>

@@ -2967,12 +2967,10 @@ object GpuOverrides extends Logging {
             input: Expression,
             from: Expression,
             to: Expression): GpuExpression =
-          // Compatible with Spark 3.2+. Only in Spark 3.2+ does translate() support
-          // unicode characters with code point >= U+10000. Since it was a bug fix,
-          // we have kept it in all versions.
-          // See https://issues.apache.org/jira/browse/SPARK-34094.
           GpuStringTranslate(input, from, to)
-      }),
+      }).incompat("the GPU implementation supports all unicode code points. In Spark versions " +
+          "< 3.2.0, translate() does not support unicode characters with code point >= U+10000 " +
+          "(See SPARK-34094)"),
     expr[StartsWith](
       "Starts with",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
