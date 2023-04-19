@@ -22,6 +22,7 @@ import org.apache.spark.sql.execution.SparkPlan
 trait PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
   def isAnsiCast(e: Expression): Boolean
+  def isAnsiCastOptionallyAliased(e: Expression): Boolean
 }
 
 object PlanShims {
@@ -33,5 +34,8 @@ object PlanShims {
 
   def isAnsiCast(e: Expression): Boolean = {
     shims.isAnsiCast(e)
+  }
+  def isAnsiCastOptionallyAliased(e: Expression): Boolean = {
+    shims.isAnsiCastOptionallyAliased(e)
   }
 }

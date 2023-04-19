@@ -20,10 +20,10 @@ import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
-import com.nvidia.spark.rapids.{GpuAlias, PlanShims, PlanUtils}
+import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -134,11 +134,8 @@ object ExecutionPlanCaptureCallback {
     val executedPlan = ExecutionPlanCaptureCallback
       .extractExecutedPlan(df.queryExecution.executedPlan)
     assert(containsPlanMatching(executedPlan,
-      _.expressions.exists {
-        case Alias(e, _) => PlanShims.isAnsiCast(e)
-        case GpuAlias(e, _) => PlanShims.isAnsiCast(e)
-        case e => PlanShims.isAnsiCast(e)
-      }), "Plan does not contain an ansi cast")
+      _.expressions.exists(PlanShims.isAnsiCastOptionallyAliased)),
+        "Plan does not contain an ansi cast")
   }
 
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
