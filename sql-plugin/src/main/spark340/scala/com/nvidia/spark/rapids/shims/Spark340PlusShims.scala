@@ -22,8 +22,8 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.sql.catalyst.expressions.{Expression, KnownNullable}
 import org.apache.spark.sql.catalyst.expressions.Empty2Null
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
@@ -89,6 +89,14 @@ trait Spark340PlusShims extends Spark331PlusShims {
           TypeSig.STRING, TypeSig.STRING),
         (a, conf, p, r) => new UnaryExprMeta[Empty2Null](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
+        }
+      ),
+      GpuOverrides.expr[KnownNullable](
+        "Tags the expression as being nullable",
+        ExprChecks.unaryProjectInputMatchesOutput(
+          TypeSig.all, TypeSig.all),
+        (a, conf, p, r) => new UnaryExprMeta[KnownNullable](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = GpuKnownNullable(child)
         }
       ),
       GpuElementAtMeta.elementAtRule(true)
