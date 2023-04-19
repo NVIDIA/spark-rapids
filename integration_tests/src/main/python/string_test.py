@@ -346,6 +346,7 @@ def test_substring():
                 'SUBSTRING(a, 0, 10)',
                 'SUBSTRING(a, 0, 0)'))
 
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/8147")
 def test_substring_column():
     str_gen = mk_str_gen('.{0,30}')
     assert_gpu_and_cpu_are_equal_collect(
