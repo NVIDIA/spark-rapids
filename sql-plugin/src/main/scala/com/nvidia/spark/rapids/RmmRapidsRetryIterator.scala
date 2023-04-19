@@ -620,7 +620,8 @@ object RmmRapidsRetryIterator extends Logging {
         val newTarget = target.targetSize / 2
         if (newTarget < target.minSize) {
           throw new SplitAndRetryOOM(
-            s"GPU OutOfMemory: targetSize cannot be split further!")
+            s"GPU OutOfMemory: targetSize: ${target.targetSize} cannot be split further!" +
+                s" minimum: ${target.minSize}")
         }
         Seq(AutoCloseableTargetSize(newTarget, target.minSize))
       }
