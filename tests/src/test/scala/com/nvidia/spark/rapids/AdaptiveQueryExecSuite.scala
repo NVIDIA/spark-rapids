@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -276,7 +276,7 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
       // force DataWritingCommandExec onto CPU for this test because we want to verify that
       // the read will still happen on GPU with a CPU write
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec,WriteFilesExec")
       .set("spark.rapids.sql.exec.DataWritingCommandExec", "false")
 
       withGpuSparkSession(spark => {
