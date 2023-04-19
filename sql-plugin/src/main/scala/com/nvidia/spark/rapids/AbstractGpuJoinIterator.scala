@@ -132,7 +132,7 @@ abstract class AbstractGpuJoinIterator(
 
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
     withResource(new NvtxWithMetrics(gatherNvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
-      val minTargetSize = Math.min(targetSize, 64 * 1024 * 1024)
+      val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
       val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
       val ret = gathererStore.map { gather =>
         gather.checkpoint()
@@ -141,7 +141,7 @@ abstract class AbstractGpuJoinIterator(
             val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize)
             gather.gatherNext(nextRows)
           }
-        }.toSeq.head
+        }.next()
       }
       if (gathererStore.exists(_.isDone)) {
         gathererStore.foreach(_.close())

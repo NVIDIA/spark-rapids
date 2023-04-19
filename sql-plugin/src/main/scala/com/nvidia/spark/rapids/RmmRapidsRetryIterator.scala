@@ -648,5 +648,5 @@ trait CheckpointRestore {
  * size.
  */
 case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
-  override def close() = {}
+  override def close(): Unit = ()
 }
