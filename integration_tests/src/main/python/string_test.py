@@ -430,6 +430,7 @@ def test_replace():
                 'REPLACE(a, NULL, "PROD")',
                 'REPLACE(a, "T", "")'))
 
+@incompat
 def test_translate():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -443,6 +444,7 @@ def test_translate():
                 'translate("AaBbCc", "abc", "123")',
                 'translate("AaBbCc", "abc", "1")'))
 
+@incompat
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2+ does translate() support unicode \
     characters with code point >= U+10000. See https://issues.apache.org/jira/browse/SPARK-34094")
 def test_translate_large_codepoints():
