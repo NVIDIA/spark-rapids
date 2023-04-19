@@ -558,7 +558,7 @@ def run_with_cpu_and_gpu_return_df(func,
 def run_with_cpu_and_gpu(func,
     mode,
     conf={}):
-    from_cpu, cpu_df, from_gpu, gpu_df = run_with_cpu_and_gpu_return_df(func, mode, conf)
+    from_cpu, _, from_gpu, _ = run_with_cpu_and_gpu_return_df(func, mode, conf)
     return (from_cpu, from_gpu)
 
 def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
