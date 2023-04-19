@@ -21,14 +21,14 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{BoolUtils, FloatUtils, GpuCast, GpuColumnVector}
+import com.nvidia.spark.rapids.{BoolUtils, FloatUtils, GpuColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.DataType
@@ -113,15 +113,5 @@ object AnsiUtil {
         }
       }
     }
-  }
-
-  def isAnsiCast(e: Expression): Boolean = e match {
-    case c: GpuCast => c.ansiMode
-    case _: AnsiCast => true
-    case _: Cast =>
-      val m = e.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(e)
-    case _ => false
   }
 }

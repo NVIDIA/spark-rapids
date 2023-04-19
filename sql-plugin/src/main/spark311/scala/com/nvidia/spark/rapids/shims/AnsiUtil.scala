@@ -28,9 +28,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.GpuCast
 
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 import org.apache.spark.sql.types.DataType
 
 object AnsiUtil {
@@ -40,15 +38,5 @@ object AnsiUtil {
 
   def castFloatToTimestampAnsi(floatInput: ColumnView, toType: DataType): ColumnVector = {
     throw new IllegalArgumentException("Unsupported operation in this Shim")
-  }
-
-  def isAnsiCast(e: Expression): Boolean = e match {
-    case c: GpuCast => c.ansiMode
-    case _: AnsiCast => true
-    case _: Cast =>
-      val m = e.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(e)
-    case _ => false
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.PlanShims
+import com.nvidia.spark.rapids.GpuCast
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.catalyst.expressions.{Cast, EvalMode, Expression}
 
-class PlanShimsImpl extends PlanShims {
-  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
-  def isAnsiCast(e: Expression): Boolean = AnsiCastShim.isAnsiCast(e)
+object AnsiCastShim {
+  def isAnsiCast(e: Expression): Boolean = e match {
+    case c: GpuCast => c.ansiMode
+    case c: Cast => c.evalMode == EvalMode.ANSI
+    case _ => false
+  }
 }

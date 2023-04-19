@@ -35,12 +35,11 @@ import com.nvidia.spark.rapids.PlanShims
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
-
 class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
     case p: CommandResultExec => p.commandPhysicalPlan
     case _ => plan
   }
 
-  def isAnsiCast(e: Expression): Boolean = AnsiUtil.isAnsiCast(e)
+  def isAnsiCast(e: Expression): Boolean = AnsiCastShim.isAnsiCast(e)
 }
