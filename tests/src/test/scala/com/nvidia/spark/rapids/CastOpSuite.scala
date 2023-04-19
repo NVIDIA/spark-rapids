@@ -524,7 +524,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
+  def before3_4_0(s: SparkSession): (Boolean, String) = {
+    (s.version < "3.4.0", s"Spark version must be prior to 3.4.0")
+  }
+
+  def since3_4_0(s: SparkSession): (Boolean, String) = {
+    (s.version >= "3.4.0", s"Spark version must be at least 3.4.0")
+  }
+
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
+    assumeCondition = before3_4_0) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -537,6 +546,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(LongType),
       col("date").cast(TimestampType))
    }
+
+  testSparkResultsAreEqual("Test cast from date Spark 3.4.0+", timestampDatesMsecParquet,
+    assumeCondition = since3_4_0) {
+    frame =>
+      frame.select(
+        col("date"),
+        col("date").cast(TimestampType))
+  }
 
   testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))

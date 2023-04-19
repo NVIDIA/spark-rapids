@@ -360,6 +360,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StringReplace"></a>spark.rapids.sql.expression.StringReplace|`replace`|StringReplace operator|true|None|
 <a name="sql.expression.StringSplit"></a>spark.rapids.sql.expression.StringSplit|`split`|Splits `str` around occurrences that match `regex`|true|None|
 <a name="sql.expression.StringToMap"></a>spark.rapids.sql.expression.StringToMap|`str_to_map`|Creates a map after splitting the input string into pairs of key-value strings|true|None|
+<a name="sql.expression.StringTranslate"></a>spark.rapids.sql.expression.StringTranslate|`translate`|StringTranslate operator|true|This is not 100% compatible with the Spark version because the GPU implementation supports all unicode code points. In Spark versions < 3.2.0, translate() does not support unicode characters with code point >= U+10000 (See SPARK-34094)|
 <a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|`trim`|StringTrim operator|true|None|
 <a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|`ltrim`|StringTrimLeft operator|true|None|
 <a name="sql.expression.StringTrimRight"></a>spark.rapids.sql.expression.StringTrimRight|`rtrim`|StringTrimRight operator|true|None|

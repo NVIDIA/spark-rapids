@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.ControlThrowable
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -86,6 +87,9 @@ object Arm {
     try {
       block(r)
     } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
       case t: Throwable =>
         r.safeClose(t)
         throw t
@@ -97,6 +101,9 @@ object Arm {
     try {
       block(r)
     } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
       case t: Throwable =>
         r.safeClose(t)
         throw t
@@ -108,6 +115,9 @@ object Arm {
     try {
       block(r)
     } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
       case t: Throwable =>
         r.safeClose(t)
         throw t
@@ -119,6 +129,9 @@ object Arm {
     try {
       block(r)
     } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
       case t: Throwable =>
         r.safeClose(t)
         throw t
@@ -130,6 +143,9 @@ object Arm {
     try {
       block(r)
     } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
       case t: Throwable =>
         r.foreach(_.safeClose(t))
         throw t
@@ -141,6 +157,9 @@ object Arm {
     try {
       block(r)
     } catch {
+      case t: ControlThrowable =>
+        // Don't close for these cases..
+        throw t
       case t: Throwable =>
         r.safeFree(t)
         throw t
