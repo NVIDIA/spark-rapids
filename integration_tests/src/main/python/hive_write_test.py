@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ from conftest import spark_jvm
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
-import re
 from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session
 
 # Using timestamps from 1970 to work around a cudf ORC bug
