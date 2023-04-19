@@ -16,10 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
 
 trait PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
+  def isAnsiCast(e: Expression): Boolean
 }
 
 object PlanShims {
@@ -27,5 +29,9 @@ object PlanShims {
 
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = {
     shims.extractExecutedPlan(plan)
+  }
+
+  def isAnsiCast(e: Expression): Boolean = {
+    shims.isAnsiCast(e)
   }
 }

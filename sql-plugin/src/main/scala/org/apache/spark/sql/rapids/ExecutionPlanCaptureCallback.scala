@@ -21,7 +21,6 @@ import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.{GpuAlias, PlanShims, PlanUtils}
-import com.nvidia.spark.rapids.shims.AnsiUtil
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
@@ -136,9 +135,9 @@ object ExecutionPlanCaptureCallback {
       .extractExecutedPlan(df.queryExecution.executedPlan)
     assert(containsPlanMatching(executedPlan,
       _.expressions.exists {
-        case Alias(e, _) => AnsiUtil.isAnsiCast(e)
-        case GpuAlias(e, _) => AnsiUtil.isAnsiCast(e)
-        case e => AnsiUtil.isAnsiCast(e)
+        case Alias(e, _) => PlanShims.isAnsiCast(e)
+        case GpuAlias(e, _) => PlanShims.isAnsiCast(e)
+        case e => PlanShims.isAnsiCast(e)
       }), "Plan does not contain an ansi cast")
   }
 

@@ -23,8 +23,10 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.PlanShims
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
 
 class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
+  def isAnsiCast(e: Expression): Boolean = AnsiUtil.isAnsiCast(e)
 }

@@ -33,6 +33,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.PlanShims
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
 
 class PlanShimsImpl extends PlanShims {
@@ -40,4 +41,6 @@ class PlanShimsImpl extends PlanShims {
     case p: CommandResultExec => p.commandPhysicalPlan
     case _ => plan
   }
+
+  def isAnsiCast(e: Expression): Boolean = AnsiUtil.isAnsiCast(e)
 }
