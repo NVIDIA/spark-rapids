@@ -20,6 +20,8 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -717,15 +719,13 @@ case class GpuGenerateExec(
           GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
 
         child.executeColumnar().flatMap { inputFromChild =>
-          withResource(inputFromChild) { input =>
-            doGenerate(input, genProjectList, othersProjectList,
-              numOutputRows, numOutputBatches, opTime)
-          }
+          doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,
+            numOutputRows, numOutputBatches, opTime)
         }
     }
   }
 
-  private def doGenerate(input: ColumnarBatch,
+  private def doGenerateAndClose(input: ColumnarBatch,
       genProjectList: Seq[GpuExpression],
       othersProjectList: Seq[GpuExpression],
       numOutputRows: GpuMetric,
@@ -735,44 +735,67 @@ case class GpuGenerateExec(
       // Project input columns, setting other columns ahead of generator's input columns.
       // With the projected batches and an offset, generators can extract input columns or
       // other required columns separately.
-      val projectedInput = GpuProjectExec.project(input, othersProjectList ++ genProjectList)
-      withResource(projectedInput) { projIn =>
-        // 1. compute split indices of input batch
-        val splitIndices = generator.inputSplitIndices(
-          projIn,
-          othersProjectList.length,
-          outer,
-          new RapidsConf(conf).gpuTargetBatchSizeBytes)
-        // 2. split up input batch with indices
-        makeSplitIterator(projIn, splitIndices).map { splitIn =>
-          withResource(splitIn) { splitIn =>
-            // 3. apply generation on each (sub)batch
-            val ret = generator.generate(splitIn, othersProjectList.length, outer)
-            numOutputBatches += 1
-            numOutputRows += ret.numRows()
-            ret
+      val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+        SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+        othersProjectList ++ genProjectList)
+      val ret = withResource(SpillableColumnarBatch(projectedInput,
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { scb =>
+        val targetSizeWrapper = AutoCloseableTargetSize(
+          new RapidsConf(conf).gpuTargetBatchSizeBytes, 16L * 1024 * 1024)
+        withRetry(targetSizeWrapper, splitTargetSizeInHalf) { attempt =>
+          splitAndGenerate(scb, othersProjectList, attempt.targetSize)
+        }.next()
+      }
+      ret.foreach { cb =>
+        numOutputBatches += 1
+        numOutputRows += cb.numRows()
+      }
+      ret.toIterator
+    }
+  }
+
+  // Split up the input batch and call generate on each split.
+  private def splitAndGenerate(scb: SpillableColumnarBatch,
+      othersProjectList: Seq[GpuExpression],
+      targetSize: Long): Seq[ColumnarBatch] = {
+    val splits = withResource(scb.getColumnarBatch()) { cb =>
+      // 1. compute split indices of input batch
+      val splitIndices = generator.inputSplitIndices(
+      cb, othersProjectList.length, outer, targetSize)
+      // 2. split up input batch with indices
+      makeSplits(cb, splitIndices)
+    }
+    withResource(splits) { _ =>
+      splits.safeMap { spillable =>
+        // 3. apply generation on each (sub)batch
+        withRetryNoSplit(spillable) { attempt =>
+          withResource(attempt.getColumnarBatch()) { batch =>
+            generator.generate(batch, othersProjectList.length, outer)
           }
         }
       }
     }
   }
 
-  private def makeSplitIterator(input: ColumnarBatch,
-      splitIndices: Array[Int]): Iterator[ColumnarBatch] = {
+  // Split a ColumnarBatch according to a list of indices.
+  // Returns a list of spillable batches corresponding to the splits.
+  private def makeSplits(input: ColumnarBatch,
+      splitIndices: Array[Int]): Array[SpillableColumnarBatch] = {
     val schema = GpuColumnVector.extractTypes(input)
 
     if (splitIndices.isEmpty) {
-      withResource(GpuColumnVector.from(input)) { table =>
-        Array(GpuColumnVector.from(table, schema)).iterator
-      }
+      // The caller will close input, so we increment here to offset.
+      Array(SpillableColumnarBatch(GpuColumnVector.incRefCounts(input),
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     } else {
       val splitInput = withResource(GpuColumnVector.from(input)) { table =>
         table.contiguousSplit(splitIndices: _*)
       }
-      splitInput.zipWithIndex.iterator.map { case (ct, i) =>
+      splitInput.zipWithIndex.safeMap { case (ct, i) =>
         closeOnExcept(splitInput.slice(i + 1, splitInput.length)) { _ =>
           withResource(ct) { ct: ContiguousTable =>
-            GpuColumnVector.from(ct.getTable, schema)
+            SpillableColumnarBatch(GpuColumnVector.from(ct.getTable, schema),
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           }
         }
       }
