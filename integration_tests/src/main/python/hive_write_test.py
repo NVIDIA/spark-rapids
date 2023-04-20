@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_gpu_and_cpu_are_equal_collect, run_with_cpu_and_gpu_return_df, assert_equal
+    assert_gpu_and_cpu_are_equal_collect, assert_equal, run_with_cpu_and_gpu
 from conftest import spark_jvm
 from data_gen import *
 from datetime import date, datetime, timezone
@@ -171,7 +171,7 @@ def do_hive_copy(spark_tmp_table_factory, gen, type1, type2):
         # Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
         return spark.sql("""INSERT INTO {} SELECT c0 FROM {}""".format(t3, t2))
 
-    from_cpu, cpu_df, from_gpu, gpu_df = run_with_cpu_and_gpu_return_df(
+    (from_cpu, cpu_df), (from_gpu, gpu_df) = run_with_cpu_and_gpu(
         do_test, 'COLLECT_WITH_DATAFRAME',
         conf={
             'spark.sql.ansi.enabled': 'true',

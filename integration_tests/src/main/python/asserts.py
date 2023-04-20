@@ -518,43 +518,6 @@ def run_with_cpu(func,
 
     return from_cpu
 
-def run_with_cpu_and_gpu_return_df(func,
-    mode,
-    conf={}):
-    (bring_back, collect_type) = _prep_func_for_compare(func, mode)
-    conf = _prep_incompat_conf(conf)
-
-    def run_on_cpu():
-        print('### CPU RUN ###')
-        global cpu_start
-        cpu_start = time.time()
-        global from_cpu
-        global cpu_df
-        from_cpu, cpu_df = with_cpu_session(bring_back, conf=conf)
-        global cpu_end
-        cpu_end = time.time()
-
-    def run_on_gpu():
-        print('### GPU RUN ###')
-        global gpu_start
-        gpu_start = time.time()
-        global from_gpu
-        global gpu_df
-        from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
-        global gpu_end
-        gpu_end = time.time()
-
-    run_on_cpu()
-    run_on_gpu()
-
-    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
-        gpu_end - gpu_start, cpu_end - cpu_start))
-    if should_sort_locally():
-        from_cpu.sort(key=_RowCmp)
-        from_gpu.sort(key=_RowCmp)
-
-    return (from_cpu, cpu_df, from_gpu, gpu_df)
-
 def run_with_cpu_and_gpu(func,
     mode,
     conf={}):
