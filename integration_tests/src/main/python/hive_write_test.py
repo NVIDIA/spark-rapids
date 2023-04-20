@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect, \
+    assert_gpu_and_cpu_are_equal_collect, assert_equal, run_with_cpu_and_gpu
+from conftest import spark_jvm
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
@@ -150,3 +152,32 @@ def test_optimized_hive_bucketed_fallback(gens, storage, planned_write, spark_tm
             AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)),
         "DataWritingCommandExec",
         {"spark.sql.optimizer.plannedWrite.enabled": planned_write})
+
+def test_hive_copy_ints_to_long(spark_tmp_table_factory):
+    do_hive_copy(spark_tmp_table_factory, int_gen, "INT", "BIGINT")
+
+def test_hive_copy_longs_to_float(spark_tmp_table_factory):
+    do_hive_copy(spark_tmp_table_factory, long_gen, "BIGINT", "FLOAT")
+
+def do_hive_copy(spark_tmp_table_factory, gen, type1, type2):
+    t1 = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark: unary_op_df(spark, gen).createOrReplaceTempView(t1))
+    def do_test(spark):
+        t2 = spark_tmp_table_factory.get()
+        t3 = spark_tmp_table_factory.get()
+        spark.sql("""CREATE TABLE {} (c0 {}) USING PARQUET""".format(t2, type1))
+        spark.sql("""INSERT INTO {} SELECT a FROM {}""".format(t2, t1))
+        spark.sql("""CREATE TABLE {} (c0 {}) USING PARQUET""".format(t3, type2))
+        # Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
+        return spark.sql("""INSERT INTO {} SELECT c0 FROM {}""".format(t3, t2))
+
+    (from_cpu, cpu_df), (from_gpu, gpu_df) = run_with_cpu_and_gpu(
+        do_test, 'COLLECT_WITH_DATAFRAME',
+        conf={
+            'spark.sql.ansi.enabled': 'true',
+            'spark.sql.storeAssignmentPolicy': 'ANSI'})
+
+    jvm = spark_jvm()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(cpu_df._jdf)
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(gpu_df._jdf)
+    assert_equal(from_cpu, from_gpu)
