@@ -224,6 +224,7 @@ StringRepeat,4
 StringReplace,4
 StringSplit,4
 StringToMap,4
+StringTranslate,4
 StringTrim,4
 StringTrimLeft,4
 StringTrimRight,4

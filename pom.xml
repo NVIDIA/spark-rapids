@@ -440,6 +440,7 @@
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -1281,5 +1282,23 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+        <repository>
+            <id>central</id>
+            <name>Maven Repository Switchboard</name>
+            <layout>default</layout>
+            <url>https://repo1.maven.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
     </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>central</id>
+            <url>https://repo1.maven.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 </project>
