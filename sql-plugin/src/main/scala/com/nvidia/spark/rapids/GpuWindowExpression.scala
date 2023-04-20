@@ -786,7 +786,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  * </code>
  * which can be output.
  */
-trait BatchedRunningWindowFixer extends AutoCloseable {
+trait BatchedRunningWindowFixer extends AutoCloseable with CheckpointRestore {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -976,6 +976,12 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
     extends BatchedRunningWindowFixer with Logging {
   private var previousResult: Option[Scalar] = None
 
+  override def checkpoint(): Unit = {
+  }
+
+  override def restore(): Unit = {
+  }
+
   def getPreviousResult: Option[Scalar] = previousResult
 
   def updateState(finalOutputColumn: cudf.ColumnVector): Unit = {
@@ -1024,6 +1030,12 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   private val name = "sum"
   private var previousResult: Option[Scalar] = None
   private var previousOverflow: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+  }
+
+  override def restore(): Unit = {
+  }
 
   def updateState(finalOutputColumn: cudf.ColumnVector,
       wasOverflow: Option[cudf.ColumnVector]): Unit = {
@@ -1255,6 +1267,12 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
   // The previous rank value
   private[this] var previousRank: Option[Scalar] = None
 
+  override def checkpoint(): Unit = {
+  }
+
+  override def restore(): Unit = {
+  }
+
   override def needsOrderMask: Boolean = true
 
   override def fixUp(
@@ -1352,6 +1370,12 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
   import DenseRankFixer._
 
   private var previousRank: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+  }
+
+  override def restore(): Unit = {
+  }
 
   override def needsOrderMask: Boolean = true
 
