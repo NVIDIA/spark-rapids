@@ -55,6 +55,7 @@ import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.client.hive._
 import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
+import org.apache.spark.sql.hive.rapids.GpuSaveAsHiveFile
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
