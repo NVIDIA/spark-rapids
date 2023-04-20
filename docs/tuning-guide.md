@@ -248,6 +248,12 @@ Configuration keys:
 
 Default value: `0`
 
+## Input File Caching
+
+If the Spark application accesses the same data multiple times, it may benefit from the
+RAPIDS Accelerator file cache. See the [filecache documentation](additional-functionality/filecache.md)
+for details.
+
 ## Columnar Batch Size
 Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#sql.batchSizeBytes)
 
