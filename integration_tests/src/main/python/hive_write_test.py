@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -134,7 +134,7 @@ def test_optimized_hive_bucketed_fallback_33X(gens, storage, spark_tmp_table_fac
 
 # Since Spark 3.4.0, the internal "SortExec" will be pulled out by default
 # from the FileFormatWriter. Then it is visible in the planning stage.
-@allow_non_gpu("DataWritingCommandExec", "SortExec", "HiveHash")
+@allow_non_gpu("DataWritingCommandExec", "SortExec", "WriteFilesExec")
 @pytest.mark.skipif(not (is_hive_available() and is_spark_340_or_later()),
                     reason="Requires Hive and Spark 3.4+ to write bucketed Hive tables with SortExec pulled out")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
@@ -148,5 +148,5 @@ def test_optimized_hive_bucketed_fallback(gens, storage, planned_write, spark_tm
             """CREATE TABLE {} STORED AS {}
             CLUSTERED BY (b) INTO 3 BUCKETS
             AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)),
-        "DataWritingCommandExec",
+        "ExecutedCommandExec",
         {"spark.sql.optimizer.plannedWrite.enabled": planned_write})
