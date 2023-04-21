@@ -11,9 +11,9 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 9.1 ML, 10.4 ML or 11.3 ML with GPU
-    * AWS: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2), 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
-    * Azure: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
+    * Apache Spark 3.x running in Databricks Runtime 10.4 ML or 11.3 ML with GPU
+    * AWS: 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
+    * Azure: 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
@@ -58,10 +58,6 @@ The number of GPUs per node dictates the number of Spark executors that can run 
    of DecimalTypes with precision greater than 38. There is a bug filed in Apache Spark for it 
    [here](https://issues.apache.org/jira/browse/SPARK-41793), whereas when using the plugin the 
    correct result will be returned.
-
-6. A query may fail when Dynamic File Pruning is enabled. As a workaround, please
-   disable the feature by setting `spark.databricks.optimizer.dynamicFilePruning false`. More details
-   are in [issue-7648](https://github.com/NVIDIA/spark-rapids/issues/7648).
    
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
@@ -70,9 +66,7 @@ cluster meets the prerequisites above by configuring it as follows:
    Prerequisites section.
 2. Choose the number of workers that matches the number of GPUs you want to use.
 3. Select a worker type. On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
-   p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker
-   (although they can be used for the driver node).  For Azure, choose GPU nodes such as
-   Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
+   For Azure, choose GPU nodes such as Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
 4. Select the driver type. Generally this can be set to be the same as the worker.
 5. Start the cluster.
 
@@ -87,9 +81,6 @@ cluster.
    how to import a notebook.  
    Select the version of the RAPIDS Accelerator for Apache Spark based on the Databricks runtime
    version:
-    - [Databricks 9.1 LTS
-    ML](https://docs.databricks.com/release-notes/runtime/9.1ml.html#system-environment) has CUDA 11
-    installed.  Users will need to use 21.12.0 or later on Databricks 9.1 LTS ML. 
    - [Databricks 10.4 LTS
      ML](https://docs.databricks.com/release-notes/runtime/10.4ml.html#system-environment) has CUDA 11
      installed.  Users will need to use 22.04.0 or later on Databricks 10.4 LTS ML.
@@ -131,7 +122,6 @@ cluster.
     spark.task.resource.gpu.amount 0.1
     spark.rapids.memory.pinnedPool.size 2G
     spark.rapids.sql.concurrentGpuTasks 2
-    spark.databricks.optimizer.dynamicFilePruning false
     ```
 
     ![Spark Config](../img/Databricks/sparkconfig.png)
@@ -144,13 +134,16 @@ cluster.
     [`spark.rapids.sql.python.gpu.enabled`](../configs.md#sql.python.gpu.enabled) to `true` to
     enable GPU support for python. Add the path of the plugin jar (supposing it is placed under
     `/databricks/jars/`) to the `spark.executorEnv.PYTHONPATH` option. For more details please go to
-    [GPU Scheduling For Pandas UDF](../additional-functionality/rapids-udfs.md#gpu-scheduling-for-pandas-udf)
+    [GPU Scheduling For Pandas UDF](../additional-functionality/rapids-udfs.md#gpu-support-for-pandas-udf)
 
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-23.02.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-23.04.0.jar:/databricks/spark/python
     ```
+   Note that since python memory pool require installing the cudf library, so you need to install cudf library in 
+   each worker nodes `pip install cudf-cu11 --extra-index-url=https://pypi.nvidia.com` or disable python memory pool
+   `spark.rapids.python.memory.gpu.pooling.enabled=false`.
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
