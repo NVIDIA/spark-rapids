@@ -21,15 +21,12 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.GpuCast
 
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, EvalMode, Expression}
 
 object AnsiCastShim {
   def isAnsiCast(e: Expression): Boolean = e match {
     case c: GpuCast => c.ansiMode
-    case _: Cast =>
-      val m = e.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(e)
+    case c: Cast => c.evalMode == EvalMode.ANSI
     case _ => false
   }
 }
