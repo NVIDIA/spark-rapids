@@ -1496,7 +1496,7 @@ class GpuRunningWindowIterator(
               withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
                 orderEqual =>
                   val fixedUp = withRetryNoSplit {
-                    withRestoreOnRetry(CheckpointableFixers(fixers.values.toSeq)) {
+                    withRestoreOnRetry(fixers.values.toSeq) {
                       fixUpAll(basic, fixers, partsEqual, Some(orderEqual))
                     }
                   }
@@ -1509,7 +1509,7 @@ class GpuRunningWindowIterator(
           } else {
             // No ordering needed
             withRetryNoSplit {
-              withRestoreOnRetry(CheckpointableFixers(fixers.values.toSeq)) {
+              withRestoreOnRetry(fixers.values.toSeq) {
                 fixUpAll(basic, fixers, partsEqual, None)
               }
             }
@@ -1561,12 +1561,6 @@ class GpuRunningWindowIterator(
       }
     }
   }
-}
-
-case class CheckpointableFixers(fixers: Seq[BatchedRunningWindowFixer])
-    extends CheckpointRestore {
-  override def checkpoint(): Unit = fixers.foreach(_.checkpoint())
-  override def restore(): Unit = fixers.foreach(_.restore())
 }
 
 /**
