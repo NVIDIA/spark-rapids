@@ -25,14 +25,14 @@ import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuRunnableCommand}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql._
+import org.apache.spark.sql.catalyst.Row
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.CommandUtils
+import org.apache.spark.sql.execution.command.{CommandUtils, LeafRunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.BaseRelation
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuCreateDataSourceTableAsSelectCommand(
     table: CatalogTable,
@@ -43,9 +43,9 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     gpuFileFormat: ColumnarFileFormat,
     useStableSort: Boolean,
     concurrentWriterPartitionFlushSize: Long)
-  extends GpuRunnableCommand {
+  extends LeafRunnableCommand {
 
-  override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
+  override def run(sparkSession: SparkSession): Seq[ColumnarBatch] = {
     assert(table.tableType != CatalogTableType.VIEW)
     assert(table.provider.isDefined)
 
@@ -67,7 +67,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
 
       saveDataIntoTable(
-        sparkSession, table, table.storage.locationUri, child, SaveMode.Append, tableExists = true)
+        sparkSession, table, table.storage.locationUri, SaveMode.Append, tableExists = true)
     } else {
       table.storage.locationUri.foreach { p =>
         GpuRunnableCommand.assertEmptyRootPath(p, mode, sparkSession.sessionState.newHadoopConf)
@@ -80,7 +80,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         table.storage.locationUri
       }
       val result = saveDataIntoTable(
-        sparkSession, table, tableLocation, child, SaveMode.Overwrite, tableExists = false)
+        sparkSession, table, tableLocation, SaveMode.Overwrite, tableExists = false)
       val newTable = table.copy(
         storage = table.storage.copy(locationUri = tableLocation),
         // We will use the schema of resolved.relation as the schema of the table (instead of
@@ -102,14 +102,13 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
     CommandUtils.updateTableStats(sparkSession, table)
 
-    Seq.empty[ColumnarBatch]
+    Seq.empty[Row]
   }
 
   private def saveDataIntoTable(
       session: SparkSession,
       table: CatalogTable,
       tableLocation: Option[URI],
-      physicalPlan: SparkPlan,
       mode: SaveMode,
       tableExists: Boolean): BaseRelation = {
     // Create the relation based on the input logical plan: `query`.
@@ -124,7 +123,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       origProvider = origProvider,
       gpuFileFormat = gpuFileFormat)
     try {
-      dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan, useStableSort,
+      dataSource.writeAndRead(mode, query, outputColumnNames, useStableSort,
         concurrentWriterPartitionFlushSize)
     } catch {
       case ex: AnalysisException =>
@@ -139,8 +138,4 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
   private val needSort = isPartitioned || isBucketed
 
-  // use same logic as GpuInsertIntoHadoopFsRelationCommand
-  override def requireSingleBatch: Boolean = needSort && useStableSort
-
-  override def child = query
 }

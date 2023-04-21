@@ -37,7 +37,9 @@ reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_fil
         coalesce_parquet_file_reader_conf]
 parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-              'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
+              'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED',
+              'spark.rapids.sql.debug.logTransformations': True,
+              'spark.rapids.sql.explain': 'ALL'}
 
 
 def limited_timestamp(nullable=True):
