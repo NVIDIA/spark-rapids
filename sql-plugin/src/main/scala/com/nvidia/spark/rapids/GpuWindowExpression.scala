@@ -976,10 +976,15 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
     extends BatchedRunningWindowFixer with Logging {
   private var previousResult: Option[Scalar] = None
 
+  // checkpoint
+  private var _previousResult: Option[Scalar] = None
+
   override def checkpoint(): Unit = {
+    _previousResult = previousResult
   }
 
   override def restore(): Unit = {
+    previousResult = _previousResult
   }
 
   def getPreviousResult: Option[Scalar] = previousResult
@@ -1031,10 +1036,18 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   private var previousResult: Option[Scalar] = None
   private var previousOverflow: Option[Scalar] = None
 
+  // checkpoint
+  private var _previousResult: Option[Scalar] = None
+  private var _previousOverflow: Option[Scalar] = None
+
   override def checkpoint(): Unit = {
+    _previousOverflow = previousOverflow
+    _previousResult = previousResult
   }
 
   override def restore(): Unit = {
+    previousOverflow = _previousOverflow
+    previousResult = _previousResult
   }
 
   def updateState(finalOutputColumn: cudf.ColumnVector,
@@ -1267,10 +1280,17 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
   // The previous rank value
   private[this] var previousRank: Option[Scalar] = None
 
+  // checkpoint
+  private[this] var _previousRank: Option[Scalar] = None
+
   override def checkpoint(): Unit = {
+    rowNumFixer.checkpoint()
+    _previousRank = previousRank
   }
 
   override def restore(): Unit = {
+    rowNumFixer.restore()
+    previousRank = _previousRank
   }
 
   override def needsOrderMask: Boolean = true
