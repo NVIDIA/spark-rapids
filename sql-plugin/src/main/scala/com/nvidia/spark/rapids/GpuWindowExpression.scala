@@ -1391,10 +1391,15 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
 
   private var previousRank: Option[Scalar] = None
 
+  // checkpoint
+  private var _previousRank: Option[Scalar] = None
+
   override def checkpoint(): Unit = {
+    _previousRank = previousRank
   }
 
   override def restore(): Unit = {
+    previousRank = _previousRank
   }
 
   override def needsOrderMask: Boolean = true
