@@ -32,9 +32,7 @@ import org.apache.spark.SparkException
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
@@ -71,10 +69,10 @@ abstract class GpuDataSourceBase(
 
   private def originalProvidingInstance() = origProvider.getConstructor().newInstance()
 
-  private def newHadoopConfiguration(): Configuration =
+  private[rapids] def newHadoopConfiguration(): Configuration =
     sparkSession.sessionState.newHadoopConfWithOptions(options)
 
-  private val caseInsensitiveOptions = CaseInsensitiveMap(options)
+  private[rapids] val caseInsensitiveOptions = CaseInsensitiveMap(options)
   private[rapids] val equality = sparkSession.sessionState.conf.resolver
 
   /**
@@ -303,58 +301,6 @@ abstract class GpuDataSourceBase(
 
     relation
   }
-
-  /**
-   * Creates a command node to write the given [[LogicalPlan]] out to the given [[FileFormat]].
-   * The returned command is unresolved and need to be analyzed.
-   */
-  private[rapids] def planForWritingFileFormat(
-      format: ColumnarFileFormat,
-      mode: SaveMode,
-      data: LogicalPlan, useStableSort: Boolean,
-      concurrentWriterPartitionFlushSize: Long): GpuInsertIntoHadoopFsRelationCommand = {
-    // Don't glob path for the write path.  The contracts here are:
-    //  1. Only one output path can be specified on the write path;
-    //  2. Output path must be a legal HDFS style file system path;
-    //  3. It's OK that the output path doesn't exist yet;
-    val allPaths = paths ++ caseInsensitiveOptions.get("path")
-    val outputPath = if (allPaths.length == 1) {
-      val path = new Path(allPaths.head)
-      val fs = path.getFileSystem(newHadoopConfiguration())
-      path.makeQualified(fs.getUri, fs.getWorkingDirectory)
-    } else {
-      throw new IllegalArgumentException("Expected exactly one path to be specified, but " +
-        s"got: ${allPaths.mkString(", ")}")
-    }
-
-    val caseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis
-    PartitioningUtils.validatePartitionColumn(data.schema, partitionColumns, caseSensitive)
-
-    val fileIndex = catalogTable.map(_.identifier).map { tableIdent =>
-      sparkSession.table(tableIdent).queryExecution.analyzed.collect {
-        case LogicalRelation(t: HadoopFsRelation, _, _, _) => t.location
-      }.head
-    }
-    // For partitioned relation r, r.schema's column ordering can be different from the column
-    // ordering of data.logicalPlan (partition columns are all moved after data column).  This
-    // will be adjusted within InsertIntoHadoopFsRelation.
-    GpuInsertIntoHadoopFsRelationCommand(
-      outputPath = outputPath,
-      staticPartitions = Map.empty,
-      ifPartitionNotExists = false,
-      partitionColumns = partitionColumns.map(UnresolvedAttribute.quoted),
-      bucketSpec = bucketSpec,
-      fileFormat = format,
-      options = options,
-      query = data,
-      mode = mode,
-      catalogTable = catalogTable,
-      fileIndex = fileIndex,
-      outputColumnNames = data.output.map(_.name),
-      useStableSort = useStableSort,
-      concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize)
-  }
-
 
   /** Returns an [[InMemoryFileIndex]] that can be used to get partition schema and file list. */
   private def createInMemoryFileIndex(globbedPaths: Seq[Path]): InMemoryFileIndex = {

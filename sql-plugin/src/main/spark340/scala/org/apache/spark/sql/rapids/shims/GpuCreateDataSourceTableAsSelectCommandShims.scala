@@ -25,10 +25,8 @@ import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuRunnableCommand}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.Row
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CommandUtils, LeafRunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.rapids._
@@ -40,12 +38,12 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     query: LogicalPlan,
     outputColumnNames: Seq[String],
     origProvider: Class[_],
-    gpuFileFormat: ColumnarFileFormat,
-    useStableSort: Boolean,
-    concurrentWriterPartitionFlushSize: Long)
+    gpuFileFormat: ColumnarFileFormat)
   extends LeafRunnableCommand {
+  assert(query.resolved)
+  override def innerChildren: Seq[LogicalPlan] = query :: Nil
 
-  override def run(sparkSession: SparkSession): Seq[ColumnarBatch] = {
+  override def run(sparkSession: SparkSession): Seq[Row] = {
     assert(table.tableType != CatalogTableType.VIEW)
     assert(table.provider.isDefined)
 
@@ -123,8 +121,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       origProvider = origProvider,
       gpuFileFormat = gpuFileFormat)
     try {
-      dataSource.writeAndRead(mode, query, outputColumnNames, useStableSort,
-        concurrentWriterPartitionFlushSize)
+      dataSource.writeAndRead(mode, query, outputColumnNames)
     } catch {
       case ex: AnalysisException =>
         logError(s"Failed to write to table ${table.identifier.unquotedString}", ex)
@@ -137,5 +134,4 @@ case class GpuCreateDataSourceTableAsSelectCommand(
   private val isBucketed = table.bucketSpec.nonEmpty
 
   private val needSort = isPartitioned || isBucketed
-
 }

@@ -25,7 +25,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.rapids.{GpuDataSource, GpuOrcFileFormat}
+import org.apache.spark.sql.rapids.{GpuDataSourceBase, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 final class CreateDataSourceTableAsSelectCommandMeta(
@@ -48,7 +48,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
 
     val spark = SparkSession.active
     origProvider =
-      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
+      GpuDataSourceBase.lookupDataSourceWithFallback(cmd.table.provider.get,
+        spark.sessionState.conf)
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
     gpuProvider = origProvider.getConstructor().newInstance() match {
@@ -63,7 +64,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     }
   }
 
-  override def convertToGpu(): GpuRunnableCommand = {
+  override def convertToGpu(): GpuCreateDataSourceTableAsSelectCommand = {
     val newProvider = gpuProvider.getOrElse(
       throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
 
@@ -73,8 +74,6 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       cmd.query,
       cmd.outputColumnNames,
       origProvider,
-      newProvider,
-      conf.stableSort,
-      conf.concurrentWriterPartitionFlushSize)
+      newProvider)
   }
 }

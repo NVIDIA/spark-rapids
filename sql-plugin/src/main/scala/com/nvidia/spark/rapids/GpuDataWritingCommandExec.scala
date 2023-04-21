@@ -44,9 +44,10 @@ trait GpuDataWritingCommand extends DataWritingCommand with ShimUnaryCommand {
 
   override lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
 
-  override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] =
-    throw new UnsupportedOperationException(
-      s"${getClass.getCanonicalName} does not support row-based execution")
+  override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
+    runColumnar(sparkSession, child)
+    Seq.empty[Row]
+  }
 
   def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
 
@@ -74,7 +75,7 @@ object GpuDataWritingCommand {
     }
   }
 
-  def assertEmptyRootPath(tablePath: URI, saveMode: SaveMode, hadoopConf: Configuration) {
+  def assertEmptyRootPath(tablePath: URI, saveMode: SaveMode, hadoopConf: Configuration): Unit = {
     if (saveMode == SaveMode.ErrorIfExists && !getAllowNonEmptyLocationInCTAS) {
       val filePath = new org.apache.hadoop.fs.Path(tablePath)
       val fs = filePath.getFileSystem(hadoopConf)
