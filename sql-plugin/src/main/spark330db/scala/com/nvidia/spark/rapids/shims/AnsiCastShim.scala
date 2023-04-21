@@ -15,31 +15,17 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "330db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.GpuCast
 
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
 
 object AnsiCastShim {
   def isAnsiCast(e: Expression): Boolean = e match {
     case c: GpuCast => c.ansiMode
-    case _: AnsiCast => true
     case _: Cast =>
       val m = e.getClass.getDeclaredField("ansiEnabled")
       m.setAccessible(true)
