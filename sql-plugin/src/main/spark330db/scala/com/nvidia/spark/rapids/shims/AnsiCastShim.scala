@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
+{"spark": "330db"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
