@@ -3358,7 +3358,6 @@ object GpuOverrides extends Logging {
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
-        // TypeSig.MAP.nested(TypeSig.STRING),
         (TypeSig.STRUCT + TypeSig.MAP).nested(TypeSig.all),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
@@ -3367,6 +3366,7 @@ object GpuOverrides extends Logging {
           GpuJsonScan.tagJsonToStructsSupport(a.options, this)
 
         override def convertToGpu(child: Expression): GpuExpression =
+          // GPU implementation currently does not support duplicated json key names in input
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),

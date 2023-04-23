@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable.{ListBuffer, Set}
+import scala.collection.mutable.Set
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
@@ -69,22 +69,12 @@ case class GpuJsonToStructs(
     }
   }
 
-  private def castToStrings(rawTable: cudf.Table): Seq[cudf.ColumnVector] = {
-    (0 until rawTable.getNumberOfColumns).safeMap { i =>
-      val col = rawTable.getColumn(i)
-      if (!cudf.DType.STRING.equals(col.getType)) {
-        col.castTo(cudf.DType.STRING)
-      } else {
-        col.incRefCount()
-      }
-    }
-  }
-
-  private def processFieldNames(names: Seq[String]): Seq[String] = {
+  private def processFieldNames(names: Seq[(String, DataType)]): Seq[(String, DataType)] = {
     val existingNames = Set[String]()
-    // for duplicated field names, only keep the one with the largest index in the sequence
-    names.foldRight(Seq[String]())((name, acc) => 
-        if (existingNames(name)) null+:acc else {existingNames += name; name+:acc})
+    // for duplicated field names, only keep the one with the largest index
+    names.foldRight(Seq[(String, DataType)]())((elem, acc) => {
+      val (name, dtype) = elem
+      if (existingNames(name)) (null, dtype)+:acc else {existingNames += name; (name, dtype)+:acc}})
   }
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
@@ -105,18 +95,24 @@ case class GpuJsonToStructs(
             combined.copyToHost()
           }
           // Step 4: Have cudf parse the JSON data
-          val rawTable = withResource(combinedHost) { combinedHost =>
+          val (names, rawTable) = withResource(combinedHost) { combinedHost =>
             val data = combinedHost.getData
             val start = combinedHost.getStartListOffset(0)
             val end = combinedHost.getEndListOffset(0)
             val length = end - start
 
-            withResource(cudf.Table.readJSON(cudf.JSONOptions.DEFAULT, data, start, length)) { 
-              tableWithMeta => tableWithMeta.releaseTable()
+            withResource(cudf.Table.readJSON(cudf.JSONOptions.DEFAULT, data, start,
+              length)) { tableWithMeta =>
+              val names = tableWithMeta.getColumnNames
+              (names, tableWithMeta.releaseTable())
             }
           }
 
-          val updatedCols = withResource(rawTable) { rawTable =>
+          // process duplicated field names in input struct schema
+          val fieldNames = processFieldNames(struct.fields.map { field => 
+              (field.name, field.dataType)})
+
+          withResource(rawTable) { rawTable =>
             // Step 5: verify that the data looks correct
             if (rawTable.getRowCount != numRows) {
               throw new IllegalStateException("The input data didn't parse correctly and we read " +
@@ -124,31 +120,24 @@ case class GpuJsonToStructs(
                   s"but got ${rawTable.getRowCount}")
             }
 
-            // Step 6: convert any non-string columns back to strings
-            castToStrings(rawTable)
-          }
-
-          // Step 7: get the data based on input struct schema
-          // remove duplicated field names
-          val fieldNames = processFieldNames(struct.fields.map {_.name})
-          val cudfSchema = GpuColumnVector.from(struct)
-          val columns = new ListBuffer[cudf.ColumnVector]()
-          closeOnExcept(columns) { _ =>
-            for (name <- fieldNames) {
-              val i = cudfSchema.getColumnNames.indexOf(name)
-              if (i == -1) { // field name is not in data schema
-                columns += GpuColumnVector.columnVectorFromNull(numRows, StringType)
-              } else{
-                columns += updatedCols(i)
+            // Step 6: get the data based on input struct schema
+            val columns = fieldNames.safeMap { case (name, dtype) =>
+              val i = names.indexOf(name)
+              if (i == -1) {
+                GpuColumnVector.columnVectorFromNull(numRows, dtype)
+              } else {
+                rawTable.getColumn(i).incRefCount
               }
             }
-          }
 
-          // Step 8: turn the data into a Struct
-          withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
-            // Step 9: put nulls back in for nulls and empty strings
-            withResource(GpuScalar.from(null, struct)){ nullVal =>
-              isNullOrEmpty.ifElse(nullVal, structData)
+            // Step 7: turn the data into a Struct
+            withResource(columns) { columns =>
+              withResource(cudf.ColumnVector.makeStruct(columns: _*)) { structData =>
+                // Step 8: put nulls back in for nulls and empty strings
+                withResource(GpuScalar.from(null, struct)) { nullVal =>
+                  isNullOrEmpty.ifElse(nullVal, structData)
+                }
+              }
             }
           }
         }
