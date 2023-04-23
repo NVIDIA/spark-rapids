@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330, is_spark_340_or_later, is_before_spark_340
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -473,7 +473,7 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
                         'input_file_block_length()'),
             conf=updated_conf)
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/CSV_DATA'

@@ -14,34 +14,20 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.hive.rapids.shims
+package org.apache.spark.sql.hive.rapids
+
+import java.nio.charset.Charset
 
 import ai.rapids.cudf.{CSVWriterOptions, DType, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
-import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, RapidsConf, WriteFileOp}
-import java.nio.charset.Charset
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
+import org.apache.spark.sql.hive.rapids.shims.GpuInsertIntoHiveTableMeta
 import org.apache.spark.sql.types.{DataType, StructType}
 
 object GpuHiveTextFileFormat extends Logging {

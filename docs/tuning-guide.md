@@ -152,6 +152,13 @@ performance. Running multiple tasks concurrently on the GPU will reduce the memo
 to each task as they will be sharing the GPU's total memory. As a result, some queries that fail
 to run with a higher concurrent task setting may run successfully with a lower setting.
 
+As of the 23.04 release of the RAPIDS Accelerator for Apache Spark
+many out of memory errors result in parts of the query being rolled back and retried instead
+of a task failure. The fact that this is happening will show up in the task metrics.
+These metrics include `gpuRetryCount` which is the number of times that a retry was attempted.
+As a part of this the normal `OutOfMemoryError` is thrown much less. Instead a `RetryOOM`
+or `SplitAndRetryOOM` exception is thrown.
+
 To mitigate the out of memory errors you can often reduce the batch size, which will keep less
 data active in a batch at a time, but can increase the overall runtime as less data is being
 processed per batch.
@@ -389,7 +396,10 @@ Some operators provide out of core algorithms, or algorithms that can process da
 than can fit in GPU memory. This is often done by breaking the problem up into smaller pieces and
 letting some of those pieces be moved out of GPU memory when not being worked on. Apache Spark does
 similar things when processing data on the CPU. When these types of algorithms are used
-the task level spill metrics will indicate that spilling happened.
+the task level spill metrics will indicate that spilling happened. Be aware that
+the same metrics are used both for both the GPU code and the original Spark CPU code. The
+GPU spills will always be timed and show up as `gpuSpillBlockTime` in the task level
+metrics.
 
 ### Time taken on the CPU
 

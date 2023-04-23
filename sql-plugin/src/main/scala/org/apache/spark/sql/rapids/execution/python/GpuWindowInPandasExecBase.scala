@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -86,7 +87,7 @@ class GroupingIterator(
     wrapped: Iterator[ColumnarBatch],
     partitionSpec: Seq[Expression],
     inputRows: GpuMetric,
-    inputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+    inputBatches: GpuMetric) extends Iterator[ColumnarBatch] {
 
   // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the

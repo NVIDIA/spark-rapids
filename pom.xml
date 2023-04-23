@@ -440,6 +440,7 @@
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -628,7 +629,7 @@
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
         <spark333.version>3.3.3-SNAPSHOT</spark333.version>
-        <spark340.version>3.4.0-SNAPSHOT</spark340.version>
+        <spark340.version>3.4.0</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <mockito.version>3.6.0</mockito.version>
@@ -657,6 +658,9 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
+        <!-- TODO: Add 340 to noSnapshot.buildvers when 3.4.0 shim is complete
+             See https://github.com/NVIDIA/spark-rapids/issues/5824
+        -->
         <noSnapshot.buildvers>
             311,
             312,
@@ -1278,5 +1282,23 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+        <repository>
+            <id>central</id>
+            <name>Maven Repository Switchboard</name>
+            <layout>default</layout>
+            <url>https://repo1.maven.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
     </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>central</id>
+            <url>https://repo1.maven.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 </project>

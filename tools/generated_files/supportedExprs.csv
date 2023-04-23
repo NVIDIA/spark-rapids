@@ -506,6 +506,10 @@ StringToMap,S,`str_to_map`,None,project,str,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,N
 StringToMap,S,`str_to_map`,None,project,pairDelim,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 StringToMap,S,`str_to_map`,None,project,keyValueDelim,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 StringToMap,S,`str_to_map`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA
+StringTranslate,S,`translate`,This is not 100% compatible with the Spark version because the GPU implementation supports all unicode code points. In Spark versions < 3.2.0; translate() does not support unicode characters with code point >= U+10000 (See SPARK-34094),project,input,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
+StringTranslate,S,`translate`,This is not 100% compatible with the Spark version because the GPU implementation supports all unicode code points. In Spark versions < 3.2.0; translate() does not support unicode characters with code point >= U+10000 (See SPARK-34094),project,from,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA
+StringTranslate,S,`translate`,This is not 100% compatible with the Spark version because the GPU implementation supports all unicode code points. In Spark versions < 3.2.0; translate() does not support unicode characters with code point >= U+10000 (See SPARK-34094),project,to,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA
+StringTranslate,S,`translate`,This is not 100% compatible with the Spark version because the GPU implementation supports all unicode code points. In Spark versions < 3.2.0; translate() does not support unicode characters with code point >= U+10000 (See SPARK-34094),project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 StringTrim,S,`trim`,None,project,src,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 StringTrim,S,`trim`,None,project,trimStr,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA,NA,NA,NA
 StringTrim,S,`trim`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA

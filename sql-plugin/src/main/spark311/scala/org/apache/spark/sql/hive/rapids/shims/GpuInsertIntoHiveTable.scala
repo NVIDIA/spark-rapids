@@ -33,8 +33,9 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
 import java.util.Locale
+
+import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
@@ -42,121 +43,20 @@ import org.apache.hadoop.hive.ql.ErrorMsg
 import org.apache.hadoop.hive.ql.plan.TableDesc
 
 import org.apache.spark.SparkException
-import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.{AnalysisException, SparkSession}
-import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
-import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Literal}
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
+import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.CommandUtils
-import org.apache.spark.sql.execution.datasources.FileFormatWriter
 import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.client.hive._
-import org.apache.spark.sql.hive.execution.{InsertIntoHiveTable, SaveAsHiveFile}
-import org.apache.spark.sql.rapids.GpuFileFormatWriter
-import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
+import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
+import org.apache.spark.sql.hive.rapids.{GpuHiveTextFileFormat, GpuSaveAsHiveFile, RapidsHiveErrors}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-private object RapidsHiveErrors {
-  // Lifted from org.apache.spark.sql.errors.QueryErrorsBase.
-  // Converts an error class parameter to its SQL representation
-  def toSQLValue(v: Any, t: DataType): String = Literal.create(v, t) match {
-    case Literal(null, _) => "NULL"
-    case Literal(v: Float, FloatType) =>
-      if (v.isNaN) "NaN"
-      else if (v.isPosInfinity) "Infinity"
-      else if (v.isNegInfinity) "-Infinity"
-      else v.toString
-    case l @ Literal(v: Double, DoubleType) =>
-      if (v.isNaN) "NaN"
-      else if (v.isPosInfinity) "Infinity"
-      else if (v.isNegInfinity) "-Infinity"
-      else l.sql
-    case l => l.sql
-  }
-
-  def requestedPartitionsMismatchTablePartitionsError(
-      table: CatalogTable, partition: Map[String, Option[String]]): Throwable = {
-    new SparkException(
-      s"""
-         |Requested partitioning does not match the ${table.identifier.table} table:
-         |Requested partitions: ${partition.keys.mkString(",")}
-         |Table partitions: ${table.partitionColumnNames.mkString(",")}
-       """.stripMargin)
-  }
-
-  def cannotResolveAttributeError(name: String, outputStr: String): Throwable = {
-    new AnalysisException(
-      s"Unable to resolve $name given [$outputStr]")
-  }
-
-  def writePartitionExceedConfigSizeWhenDynamicPartitionError(
-      numWrittenParts: Int,
-      maxDynamicPartitions: Int,
-      maxDynamicPartitionsKey: String): Throwable = {
-    new SparkException(
-      s"Number of dynamic partitions created is $numWrittenParts" +
-        s", which is more than $maxDynamicPartitions" +
-        s". To solve this try to set $maxDynamicPartitionsKey" +
-        s" to at least $numWrittenParts.")
-  }
-
-  // Lifted from QueryExecutionErrors.
-  def dynamicPartitionKeyNotAmongWrittenPartitionPathsError(key: String): Throwable = {
-    new SparkException(
-      s"Dynamic partition key ${toSQLValue(key, StringType)} is not among written partition paths.")
-  }
-
-  // Lifted from QueryExecutionErrors.
-  def cannotRemovePartitionDirError(partitionPath: Path): Throwable = {
-    new RuntimeException(s"Cannot remove partition directory '$partitionPath'")
-  }
-}
-
-// Base trait from which all hive insert statement physical execution extends.
-private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {
-
-  // TODO(future): Examine compressions options.
-  // - Apache Spark 3.1-3 has code to examine Hadoop compression settings
-  //   (and takes a FileSinkDesc instead of FileFormat).
-  // - Apache Spark 3.4 has removed all that logic.
-  // - GPU Hive text writer does not support compression for output.
-  protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
-                               plan: SparkPlan,
-                               hadoopConf: Configuration,
-                               fileFormat: ColumnarFileFormat,
-                               outputLocation: String,
-                               customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
-                               partitionAttributes: Seq[Attribute] = Nil,
-                               bucketSpec: Option[BucketSpec] = None,
-                               options: Map[String, String] = Map.empty): Set[String] = {
-
-    val committer = FileCommitProtocol.instantiate(
-      sparkSession.sessionState.conf.fileCommitProtocolClass,
-      jobId = java.util.UUID.randomUUID().toString,
-      outputPath = outputLocation)
-
-    GpuFileFormatWriter.write(
-      sparkSession = sparkSession,
-      plan = plan,
-      fileFormat = fileFormat,
-      committer = committer,
-      outputSpec =
-        FileFormatWriter.OutputSpec(outputLocation, customPartitionLocations, outputColumns),
-      hadoopConf = hadoopConf,
-      partitionColumns = partitionAttributes,
-      bucketSpec = bucketSpec,
-      statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
-      options = options,
-      useStableSort = false,                  // TODO: Fetch from RapidsConf.
-      concurrentWriterPartitionFlushSize = 0L // TODO: Fetch from RapidsConf.
-     )
-  }
-}
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
                                        conf: RapidsConf,

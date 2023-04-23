@@ -28,6 +28,7 @@ import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRang
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.google.common.collect.MapMaker
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
@@ -50,7 +51,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-object SerializedHostTableUtils extends Arm {
+object SerializedHostTableUtils {
   /**
    * Read in a cudf serialized table into host memory
    */
@@ -94,7 +95,7 @@ object SerializedHostTableUtils extends Arm {
 class SerializeConcatHostBuffersDeserializeBatch(
     data: Array[SerializeBatchDeserializeHostBuffer],
     output: Seq[Attribute])
-  extends Serializable with Arm with AutoCloseable with Logging {
+  extends Serializable with AutoCloseable with Logging {
   @transient private var dataTypes = output.map(_.dataType).toArray
   @transient private var headers = data.map(_.header)
   @transient private var buffers = data.map(_.buffer)
@@ -241,7 +242,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
 @SerialVersionUID(100L)
 class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
-  extends Serializable with AutoCloseable with Arm {
+  extends Serializable with AutoCloseable {
   @transient private var columns = GpuColumnVector.extractBases(batch).map(_.copyToHost())
   @transient var header: JCudfSerialization.SerializedTableHeader = null
   @transient var buffer: HostMemoryBuffer = null

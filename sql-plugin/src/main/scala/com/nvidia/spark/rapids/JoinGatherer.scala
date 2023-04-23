@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types._
@@ -52,7 +53,7 @@ trait LazySpillable extends AutoCloseable with CheckpointRestore {
  *
  * This is a LazySpillable instance so the life cycle follows that too.
  */
-trait JoinGatherer extends LazySpillable with Arm {
+trait JoinGatherer extends LazySpillable {
   /**
    * Gather the next n rows from the join gather maps.
    *
@@ -136,7 +137,7 @@ trait JoinGatherer extends LazySpillable with Arm {
   }
 }
 
-object JoinGatherer extends Arm {
+object JoinGatherer {
   def apply(gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
       outOfBoundsPolicy: OutOfBoundsPolicy): JoinGatherer =
@@ -230,7 +231,7 @@ object LazySpillableColumnarBatch {
  * where the data itself needs to out live the JoinGatherer it is handed off to.
  */
 case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableColumnarBatch)
-    extends LazySpillableColumnarBatch with Arm {
+    extends LazySpillableColumnarBatch {
   override def getBatch: ColumnarBatch =
     wrapped.getBatch
 
@@ -268,7 +269,7 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
  */
 class LazySpillableColumnarBatchImpl(
     cb: ColumnarBatch,
-    name: String) extends LazySpillableColumnarBatch with Arm {
+    name: String) extends LazySpillableColumnarBatch {
 
   private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
   private var spill: Option[SpillableColumnarBatch] = None
@@ -327,7 +328,7 @@ class LazySpillableColumnarBatchImpl(
   override def toString: String = s"SpillableBatch $name $numCols X $numRows"
 }
 
-trait LazySpillableGatherMap extends LazySpillable with Arm {
+trait LazySpillableGatherMap extends LazySpillable {
   /**
    * How many rows total are in this gather map
    */

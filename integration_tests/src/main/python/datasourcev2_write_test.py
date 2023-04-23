@@ -20,7 +20,7 @@ from pyspark.sql.types import *
 from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not (is_hive_available() and is_spark_330_or_later()), reason="Must have Hive on Spark 3.3+")
 @pytest.mark.parametrize('fileFormat', ['parquet', 'orc'])
 def test_write_hive_bucketed_table_fallback(spark_tmp_table_factory, fileFormat):

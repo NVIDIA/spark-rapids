@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
@@ -29,7 +30,7 @@ import org.apache.spark.sql.types.{DataType, LongType}
 
 class WithRetrySuite
     extends FunSuite
-        with BeforeAndAfterEach with MockitoSugar with Arm {
+        with BeforeAndAfterEach with MockitoSugar {
 
   private def buildBatch: SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()
@@ -239,6 +240,50 @@ class WithRetrySuite
     } finally {
       assert(myCheckpointables(0).value == (initialValue + increment))
       assert(myCheckpointables(1).value == (initialValue + 10 + increment))
+    }
+  }
+
+  test("splitTargetSizeInHalf splits for AutoCloseableTargetSize") {
+    val initialValue = 20L
+    val minValue = 5L
+    val numSplits = 2
+    var doThrow = numSplits
+    var lastSplitSize = 0L
+    val myTarget = AutoCloseableTargetSize(initialValue, minValue)
+    try {
+      withRetry(myTarget, splitTargetSizeInHalf) { attempt =>
+        lastSplitSize = attempt.targetSize
+        if (doThrow > 0) {
+          doThrow = doThrow - 1
+          throw new SplitAndRetryOOM("in tests")
+        }
+      }.toSeq
+    } finally {
+      assert(lastSplitSize >= minValue)
+      assert(lastSplitSize == (initialValue / (2 * numSplits)))
+    }
+  }
+
+  test("splitTargetSizeInHalf on AutoCloseableTargetSize throws if limit reached") {
+    val initialValue = 20L
+    val minValue = 5L
+    val numSplits = 3
+    var doThrow = numSplits
+    var lastSplitSize = 0L
+    val myTarget = AutoCloseableTargetSize(initialValue, minValue)
+    try {
+      assertThrows[SplitAndRetryOOM] {
+        withRetry(myTarget, splitTargetSizeInHalf) { attempt =>
+          lastSplitSize = attempt.targetSize
+          if (doThrow > 0) {
+            doThrow = doThrow - 1
+            throw new SplitAndRetryOOM("in tests")
+          }
+        }.toSeq
+      }
+    } finally {
+      assert(lastSplitSize >= minValue)
+      assert(lastSplitSize == (initialValue / (2 * (numSplits - 1))))
     }
   }
 

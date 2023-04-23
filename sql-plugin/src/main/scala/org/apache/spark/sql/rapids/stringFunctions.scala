@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
@@ -742,7 +743,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
 
 }
 
-trait HasGpuStringReplace extends Arm {
+trait HasGpuStringReplace {
   def doStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
@@ -836,6 +837,109 @@ case class GpuStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuColumnVector,
       replaceExpr: GpuScalar): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+}
+
+case class GpuStringTranslate(
+    srcExpr: Expression,
+    fromExpr: Expression,
+    toExpr: Expression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = srcExpr.dataType
+
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
+
+  override def first: Expression = srcExpr
+  override def second: Expression = fromExpr
+  override def third: Expression = toExpr
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      fromExpr: GpuScalar,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuScalar): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuScalar,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  private def buildLists(fromExpr: GpuScalar, toExpr: GpuScalar): (List[String], List[String]) = {
+    val fromString = fromExpr.getValue.asInstanceOf[UTF8String].toString
+    val toString = toExpr.getValue.asInstanceOf[UTF8String].toString
+    var fromCharsArray = Array[String]()
+    var toCharsArray = Array[String]()
+    var i = 0
+    var j = 0
+    while (i < fromString.length) {
+      val replaceStr = if (j < toString.length) {
+        val repCharCount = Character.charCount(toString.codePointAt(j))
+        val repStr = toString.substring(j, j + repCharCount)
+        j += repCharCount
+        repStr
+      } else {
+        ""
+      }
+      val matchCharCount = Character.charCount(fromString.codePointAt(i))
+      val matchStr = fromString.substring(i, i + matchCharCount)
+      i += matchCharCount
+      fromCharsArray :+= matchStr
+      toCharsArray :+= replaceStr
+    }
+    (fromCharsArray.toList, toCharsArray.toList)
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuScalar,
+      toExpr: GpuScalar): ColumnVector = {
+    // When from or to string is null, return all nulls like the CPU does.
+    if (!fromExpr.isValid || !toExpr.isValid) {
+      GpuColumnVector.columnVectorFromNull(strExpr.getRowCount.toInt, StringType)
+    } else if (fromExpr.getValue.asInstanceOf[UTF8String].numChars() == 0) {
+      // Return original string if search string is empty
+      strExpr.getBase.incRefCount()
+    } else {
+      val (fromStringList, toStringList) = buildLists(fromExpr, toExpr)
+      withResource(ColumnVector.fromStrings(fromStringList: _*)) { fromStringCol =>
+        withResource(ColumnVector.fromStrings(toStringList: _*)) { toStringCol =>
+          strExpr.getBase.stringReplace(fromStringCol, toStringCol)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
+      val2: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuScalar): ColumnVector =
         throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 

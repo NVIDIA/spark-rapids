@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shuffle
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.ShuffleMetadata
 import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}

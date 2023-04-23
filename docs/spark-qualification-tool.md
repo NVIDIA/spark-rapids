@@ -69,7 +69,7 @@ Usage: `spark_rapids_user_tools <CSP> qualification --cpu_cluster <CLUSTER> --ev
 
 The supported CSPs are *dataproc*, *emr*, and *databricks-aws*.  The EVENTLOGS-PATH should be the storage location
 for your eventlogs.  For Dataproc, it should be set to the GCS path.  For EMR and Databricks-AWS, it should be set to
-the S3 path.  THE CLUSTER can be a live cluster or a configuration file representing the cluster instances and size.
+the S3 path.  THE CLUSTER can be a live cluster or a configuration file representing the cluster instances and size. 
 More details are in the above documentation links per CSP environment
 
 Help (to see all options available): `spark_rapids_user_tools <CSP> qualification --help`
@@ -111,7 +111,7 @@ more information.
 The Qualification tool require the Spark 3.x jars to be able to run but do not need an Apache Spark run time.
 If you do not already have Spark 3.x installed, you can download the Spark distribution to
 any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
+- Download the latest jar from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2 Run the Qualification tool
@@ -380,7 +380,7 @@ to [Understanding the Qualification tool output](#understanding-the-qualificatio
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
+- Download the latest jar from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/)
 
 ### Modify your application code to call the api's
 
@@ -467,7 +467,7 @@ with the Rapids Accelerator for Spark.
 - Java 8 or above, Spark 3.0.1+
 
 ### Download the tools jar
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.02.3/)
+- Download the latest jar from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/)
 
 ### Configuration
 
@@ -593,12 +593,16 @@ The report represents the entire app execution, including unsupported operators 
 23. _App Duration Estimated_: True or False indicates if we had to estimate the application duration.
     If we had to estimate it, the value will be `True` and it means the event log was missing the application finished
     event, so we will use the last job or sql execution time we find as the end time used to calculate the duration.
-24. _Unsupported Execs_: reports all the execs that are not supported by GPU in this application. Note that an Exec name  may be
+24. _Unsupported Execs_: reports all the execs that are not supported by GPU in this application. Note that an Exec name may be
     printed in this column if any of the expressions within this Exec is not supported by GPU. If the resultant string
     exceeds maximum limit (25), then ... is suffixed to the STDOUT and full output can be found in the CSV file.
 25. _Unsupported Expressions_: reports all expressions not supported by GPU in this application.
-24. _Read Schema_: shows the datatypes and read formats. This field is only listed when the argument `--report-read-schema`
+26. _Read Schema_: shows the datatypes and read formats. This field is only listed when the argument `--report-read-schema`
     is passed to the CLI.
+27. _Estimated Frequency_: application executions per month assuming uniform distribution, default frequency is daily (30 times per month)
+    and minimum frequency is monthly (1 time per month). For a given log set, determines a logging window using the earliest start time
+    and last end time of all logged applications. Counts the number of executions of a specific `App Name` over the logging window
+    and converts the frequency to per month (30 days). Applications that are only ran once are assigned the default frequency.
 
 **Note:** the Qualification tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 Please refer to [Supported Operators](https://github.com/NVIDIA/spark-rapids/blob/main/docs/supported_ops.md) for more details on UDF.
@@ -974,17 +978,8 @@ Sample output in text:
 ```
 
 ## How to compile the tools jar
-Note: This step is optional.
 
-```bash
-git clone https://github.com/NVIDIA/spark-rapids.git
-cd spark-rapids
-mvn -Pdefault -pl .,tools clean verify -DskipTests
-```
-
-The jar is generated in below directory :
-
-`./tools/target/rapids-4-spark-tools_2.12-<version>.jar`
+See instructions here: https://github.com/NVIDIA/spark-rapids-tools/tree/main/core#build
 
 If any input is a S3 file path or directory path, 2 extra steps are needed to access S3 in Spark:
 1. Download the matched jars based on the Hadoop version:

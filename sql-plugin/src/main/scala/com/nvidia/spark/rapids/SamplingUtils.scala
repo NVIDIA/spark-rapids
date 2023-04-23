@@ -27,12 +27,13 @@ import scala.util.Random
 import scala.util.hashing.MurmurHash3
 
 import ai.rapids.cudf.{ColumnVector, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object SamplingUtils extends Arm {
+object SamplingUtils {
   private def selectWithoutReplacementFrom(count: Int, rand: Random, cb: ColumnarBatch): Table = {
     val rows = cb.numRows()
     assert(count <= rows)

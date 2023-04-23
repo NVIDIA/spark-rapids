@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 import org.apache.arrow.memory.{ArrowBuf, ReferenceManager}
 import org.apache.arrow.vector.ValueVector

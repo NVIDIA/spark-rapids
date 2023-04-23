@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import scala.concurrent.duration._
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.{GpuColumnVector, SparkQueryCompareTestSuite}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetWriter
@@ -1018,7 +1019,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
         }
       },
         // disable timestampNTZ for parquet for 3.4+ tests to pass
-        new SparkConf().set("spark.sql.parquet.timestampNTZ.enabled", "false")
+        new SparkConf().set("spark.sql.parquet.inferTimestampNTZ.enabled", "false")
             .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
 
@@ -1051,7 +1052,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             LocalDateTime.parse("1970-01-01T00:00:00.000002"))), data)
         }
       },
-        new SparkConf().set("spark.sql.parquet.timestampNTZ.enabled", "true")
+        new SparkConf().set("spark.sql.parquet.inferTimestampNTZ.enabled", "true")
             .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
     // INTERVAL is not supported by Spark

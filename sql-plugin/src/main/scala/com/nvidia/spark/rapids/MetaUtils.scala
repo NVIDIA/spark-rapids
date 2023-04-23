@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.google.flatbuffers.FlatBufferBuilder
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format._
 
 import org.apache.spark.internal.Logging
@@ -29,7 +30,7 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-object MetaUtils extends Arm {
+object MetaUtils {
   // Used in cases where the `tableId` is not known at meta creation. 
   // We pick a non-zero integer since FlatBuffers prevent mutating the 
   // field if originally set to the default value as specified in the 

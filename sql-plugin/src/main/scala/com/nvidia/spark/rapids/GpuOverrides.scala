@@ -2956,6 +2956,21 @@ object GpuOverrides extends Logging {
               target: Option[Expression] = None): GpuExpression =
             GpuStringTrimRight(column, target)
         }),
+    expr[StringTranslate](
+      "StringTranslate operator",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("input", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("from", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("to", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new TernaryExprMeta[StringTranslate](in, conf, p, r) {
+        override def convertToGpu(
+            input: Expression,
+            from: Expression,
+            to: Expression): GpuExpression =
+          GpuStringTranslate(input, from, to)
+      }).incompat("the GPU implementation supports all unicode code points. In Spark versions " +
+          "< 3.2.0, translate() does not support unicode characters with code point >= U+10000 " +
+          "(See SPARK-34094)"),
     expr[StartsWith](
       "Starts with",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,

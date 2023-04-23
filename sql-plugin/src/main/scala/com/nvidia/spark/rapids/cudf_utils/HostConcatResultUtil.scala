@@ -18,12 +18,13 @@ package com.nvidia.spark.rapids.cudf_utils
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
-import com.nvidia.spark.rapids.{Arm, GpuColumnVectorFromBuffer, RmmRapidsRetryIterator}
+import com.nvidia.spark.rapids.{GpuColumnVectorFromBuffer, RmmRapidsRetryIterator}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object HostConcatResultUtil extends Arm {
+object HostConcatResultUtil {
   /**
    * Create a rows-only `HostConcatResult`.
    */
