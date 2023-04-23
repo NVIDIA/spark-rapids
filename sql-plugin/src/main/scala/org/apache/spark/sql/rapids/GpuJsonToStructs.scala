@@ -20,6 +20,7 @@ import scala.collection.mutable.Set
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 
