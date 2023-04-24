@@ -1493,6 +1493,8 @@ class GpuRunningWindowIterator(
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
         withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
+
+          // we backup the fixers state and restore it in the event of a retry
           val fixedUp = withRetryNoSplit {
             withRestoreOnRetry(fixers.values.toSeq) {
               if (fixerNeedsOrderMask) {
@@ -1516,6 +1518,9 @@ class GpuRunningWindowIterator(
               }
             }
           }
+
+          // this section is outside of the retry logic because the calls to saveLastParts
+          // and saveLastOrders can close GPU resources
           withResource(fixedUp) { fixed =>
             closeOnExcept(fixedUp) { _ =>
               newLastOrder.foreach(saveLastOrder)
