@@ -1487,7 +1487,7 @@ class GpuRunningWindowIterator(
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
 
-    var newLastOrder: Option[Array[Scalar]] = None
+    var newOrder: Option[Array[Scalar]] = None
 
     withResource(computeBasicWindow(cb)) { basic =>
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
@@ -1504,10 +1504,9 @@ class GpuRunningWindowIterator(
                   // last batch
                   withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
                     orderEqual =>
-                      val fixedUp =
-                        fixUpAll(basic, fixers, partsEqual, Some(orderEqual))
-                      closeOnExcept(fixedUp) { _ =>
-                        newLastOrder = Some(getScalarRow(numRows - 1, orderColumns))
+                      closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) {
+                          fixedUp =>
+                        newOrder = Some(getScalarRow(numRows - 1, orderColumns))
                         fixedUp
                       }
                   }
@@ -1523,7 +1522,7 @@ class GpuRunningWindowIterator(
           // and saveLastOrders can close GPU resources
           withResource(fixedUp) { fixed =>
             closeOnExcept(fixedUp) { _ =>
-              newLastOrder.foreach(saveLastOrder)
+              newOrder.foreach(saveLastOrder)
               saveLastParts(getScalarRow(numRows - 1, partColumns))
             }
             convertToBatch(outputTypes, fixed)
