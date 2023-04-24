@@ -19,7 +19,7 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat}
+import com.nvidia.spark.rapids.ColumnarFileFormat
 
 import org.apache.hadoop.fs.Path
 
@@ -30,8 +30,6 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
 
@@ -50,11 +48,14 @@ case class GpuDataSource(
       partitionColumns, bucketSpec, options, catalogTable, origProvider, gpuFileFormat) {
 
   /**
-   * Creates a command node to write the given [[LogicalPlan]] out to the given [[FileFormat]].
-   * The returned command is unresolved and need to be analyzed.
+   * Creates a command node to write the given [[LogicalPlan]] out to the given
+   * [[FileFormat]].The returned command is unresolved and need to be analyzed.
+   * This specifically is a CPU InsertIntoHadoopFsRelationCommand for Spark 3.4. This is because
+   * in Spark 3.4, the command is executed within the context of the SparkSession, which
+   * will then use the plugin to replace this with a GpuInsertIntoHadoopFsCommand.
    */
   private def planForWritingFileFormat(
-      format: ColumnarFileFormat,
+      format: FileFormat,
       mode: SaveMode,
       data: LogicalPlan): InsertIntoHadoopFsRelationCommand = {
     // Don't glob path for the write path.  The contracts here are:
@@ -80,13 +81,6 @@ case class GpuDataSource(
       }.head
     }
 
-    val fileFormat = format match {
-      case _: GpuParquetFileFormat => new ParquetFileFormat
-      case _: GpuOrcFileFormat => new OrcFileFormat
-      case _ =>
-        throw new IllegalArgumentException(s"Invalid columnar file format: ${format.getClass}")
-    }
-
     // For partitioned relation r, r.schema's column ordering can be different from the column
     // ordering of data.logicalPlan (partition columns are all moved after data column).  This
     // will be adjusted within InsertIntoHadoopFsRelation.
@@ -96,7 +90,7 @@ case class GpuDataSource(
       ifPartitionNotExists = false,
       partitionColumns = partitionColumns.map(UnresolvedAttribute.quoted),
       bucketSpec = bucketSpec,
-      fileFormat = fileFormat,
+      fileFormat = format,
       options = options,
       query = data,
       mode = mode,
@@ -126,8 +120,16 @@ case class GpuDataSource(
       throw QueryCompilationErrors.cannotSaveIntervalIntoExternalStorageError()
     }
 
-    // Only currently support ColumnarFileFormat
-    val cmd = planForWritingFileFormat(gpuFileFormat, mode, data)
+    val format = originalProvidingInstance()
+    if (!format.isInstanceOf[FileFormat]) {
+      throw new IllegalArgumentException(s"Original provider does not extend FileFormat: $format")
+    }
+
+    val cmd = planForWritingFileFormat(format.asInstanceOf[FileFormat], mode, data)
+    // Spark 3.4 doesn't need the child physical plan for metrics anymore, this is now
+    // cleaned up, so we need to run the DataWritingCommand using SparkSession. This actually
+    // calls the plugin transformation process again for a new physical plan with the
+    // DataWritingCommandExec.
     val qe = sparkSession.sessionState.executePlan(cmd)
     qe.assertCommandExecuted()
   

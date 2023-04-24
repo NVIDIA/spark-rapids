@@ -67,7 +67,7 @@ abstract class GpuDataSourceBase(
     origProvider: Class[_],
     gpuFileFormat: ColumnarFileFormat) extends Logging {
 
-  private def originalProvidingInstance() = origProvider.getConstructor().newInstance()
+  private[rapids] def originalProvidingInstance() = origProvider.getConstructor().newInstance()
 
   private[rapids] def newHadoopConfiguration(): Configuration =
     sparkSession.sessionState.newHadoopConfWithOptions(options)
