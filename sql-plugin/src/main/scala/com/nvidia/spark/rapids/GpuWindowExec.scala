@@ -1487,38 +1487,38 @@ class GpuRunningWindowIterator(
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
 
+    var newLastOrder: Option[Array[Scalar]] = None
+
     withResource(computeBasicWindow(cb)) { basic =>
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
         withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
-          val fixedUp = if (fixerNeedsOrderMask) {
-            withResource(GpuProjectExec.project(cb, boundOrderColumns)) { order =>
-              val orderColumns = GpuColumnVector.extractBases(order)
-              // We need to fix up the rows that are part of the same batch as the end of the
-              // last batch
-              withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
-                orderEqual =>
-                  val fixedUp = withRetryNoSplit {
-                    withRestoreOnRetry(fixers.values.toSeq) {
-                      fixUpAll(basic, fixers, partsEqual, Some(orderEqual))
-                    }
+          val fixedUp = withRetryNoSplit {
+            withRestoreOnRetry(fixers.values.toSeq) {
+              if (fixerNeedsOrderMask) {
+                withResource(GpuProjectExec.project(cb, boundOrderColumns)) { order =>
+                  val orderColumns = GpuColumnVector.extractBases(order)
+                  // We need to fix up the rows that are part of the same batch as the end of the
+                  // last batch
+                  withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
+                    orderEqual =>
+                      val fixedUp =
+                        fixUpAll(basic, fixers, partsEqual, Some(orderEqual))
+                      closeOnExcept(fixedUp) { _ =>
+                        newLastOrder = Some(getScalarRow(numRows - 1, orderColumns))
+                        fixedUp
+                      }
                   }
-                  closeOnExcept(fixedUp) { _ =>
-                    saveLastOrder(getScalarRow(numRows - 1, orderColumns))
-                    fixedUp
-                  }
-              }
-            }
-          } else {
-            // No ordering needed
-            withRetryNoSplit {
-              withRestoreOnRetry(fixers.values.toSeq) {
+                }
+              } else {
+                // No ordering needed
                 fixUpAll(basic, fixers, partsEqual, None)
               }
             }
           }
           withResource(fixedUp) { fixed =>
             closeOnExcept(fixedUp) { _ =>
+              newLastOrder.foreach(saveLastOrder)
               saveLastParts(getScalarRow(numRows - 1, partColumns))
             }
             convertToBatch(outputTypes, fixed)
