@@ -480,7 +480,10 @@ def test_roundtrip_with_rebase_values(spark_tmp_path, ts_write_data_gen, date_ti
         data_path,
         conf=all_confs)
 
-@pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
+
+test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]
+
+@pytest.mark.allow_non_gpu(*test_non_empty_ctas_non_gpu_execs)
 @pytest.mark.parametrize('allow_non_empty', [True, False])
 def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
     data_path = spark_tmp_path + "/CTAS"
