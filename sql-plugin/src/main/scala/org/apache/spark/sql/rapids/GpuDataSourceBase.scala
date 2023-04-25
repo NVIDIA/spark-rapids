@@ -22,7 +22,7 @@ import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat}
+import com.nvidia.spark.rapids.GpuParquetFileFormat
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.reflect.ConstructorUtils
 import org.apache.hadoop.conf.Configuration
@@ -64,16 +64,15 @@ abstract class GpuDataSourceBase(
     bucketSpec: Option[BucketSpec] = None,
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None,
-    origProvider: Class[_],
-    gpuFileFormat: ColumnarFileFormat) extends Logging {
+    origProvider: Class[_]) extends Logging {
 
-  private[rapids] def originalProvidingInstance() = origProvider.getConstructor().newInstance()
+  protected def originalProvidingInstance() = origProvider.getConstructor().newInstance()
 
-  private[rapids] def newHadoopConfiguration(): Configuration =
+  protected def newHadoopConfiguration(): Configuration =
     sparkSession.sessionState.newHadoopConfWithOptions(options)
 
-  private[rapids] val caseInsensitiveOptions = CaseInsensitiveMap(options)
-  private[rapids] val equality = sparkSession.sessionState.conf.resolver
+  protected val caseInsensitiveOptions = CaseInsensitiveMap(options)
+  protected val equality = sparkSession.sessionState.conf.resolver
 
   /**
    * Whether or not paths should be globbed before being used to access files.

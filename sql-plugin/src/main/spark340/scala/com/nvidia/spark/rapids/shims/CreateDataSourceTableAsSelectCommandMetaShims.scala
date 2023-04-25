@@ -23,9 +23,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
-import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.rapids.{GpuDataSourceBase, GpuOrcFileFormat}
+import org.apache.spark.sql.rapids.GpuDataSourceBase
 import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 final class CreateDataSourceTableAsSelectCommandMeta(
@@ -36,7 +34,6 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   extends RunnableCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule) {
 
   private var origProvider: Class[_] = _
-  private var gpuProvider: Option[ColumnarFileFormat] = None
 
   override def tagSelfForGpu(): Unit = {
     if (cmd.table.bucketSpec.isDefined) {
@@ -50,30 +47,14 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     origProvider =
       GpuDataSourceBase.lookupDataSourceWithFallback(cmd.table.provider.get,
         spark.sessionState.conf)
-    // Note that the data source V2 always fallsback to the V1 currently.
-    // If that changes then this will start failing because we don't have a mapping.
-    gpuProvider = origProvider.getConstructor().newInstance() match {
-      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark,
-          cmd.table.storage.properties, cmd.query.schema)
-      case ds =>
-        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
-        None
-    }
   }
 
   override def convertToGpu(): GpuCreateDataSourceTableAsSelectCommand = {
-    val newProvider = gpuProvider.getOrElse(
-      throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
-
     GpuCreateDataSourceTableAsSelectCommand(
       cmd.table,
       cmd.mode,
       cmd.query,
       cmd.outputColumnNames,
-      origProvider,
-      newProvider)
+      origProvider)
   }
 }

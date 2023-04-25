@@ -19,7 +19,6 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ColumnarFileFormat
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql._
@@ -41,10 +40,9 @@ case class GpuDataSource(
     bucketSpec: Option[BucketSpec] = None,
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None,
-    origProvider: Class[_],
-    gpuFileFormat: ColumnarFileFormat) 
+    origProvider: Class[_])
       extends GpuDataSourceBase(sparkSession, className, paths, userSpecifiedSchema, 
-      partitionColumns, bucketSpec, options, catalogTable, origProvider, gpuFileFormat) {
+      partitionColumns, bucketSpec, options, catalogTable, origProvider) {
 
   /**
    * Creates a command node to write the given [[LogicalPlan]] out to the given

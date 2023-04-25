@@ -21,7 +21,7 @@ package org.apache.spark.sql.rapids.shims
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuRunnableCommand}
+import com.nvidia.spark.rapids.GpuDataWritingCommand
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql._
@@ -37,8 +37,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     mode: SaveMode,
     query: LogicalPlan,
     outputColumnNames: Seq[String],
-    origProvider: Class[_],
-    gpuFileFormat: ColumnarFileFormat)
+    origProvider: Class[_])
   extends LeafRunnableCommand {
   assert(query.resolved)
   override def innerChildren: Seq[LogicalPlan] = query :: Nil
@@ -68,7 +67,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         sparkSession, table, table.storage.locationUri, SaveMode.Append, tableExists = true)
     } else {
       table.storage.locationUri.foreach { p =>
-        GpuRunnableCommand.assertEmptyRootPath(p, mode, sparkSession.sessionState.newHadoopConf)
+        GpuDataWritingCommand.assertEmptyRootPath(p, mode, sparkSession.sessionState.newHadoopConf)
       }
       assert(table.schema.isEmpty)
       sparkSession.sessionState.catalog.validateTableLocation(table)
@@ -118,8 +117,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       bucketSpec = table.bucketSpec,
       options = table.storage.properties ++ pathOption,
       catalogTable = if (tableExists) Some(table) else None,
-      origProvider = origProvider,
-      gpuFileFormat = gpuFileFormat)
+      origProvider = origProvider)
     try {
       dataSource.writeAndRead(mode, query, outputColumnNames)
     } catch {

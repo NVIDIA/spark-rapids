@@ -58,7 +58,7 @@ case class GpuDataSource(
     origProvider: Class[_],
     gpuFileFormat: ColumnarFileFormat) 
       extends GpuDataSourceBase(sparkSession, className, paths, userSpecifiedSchema, 
-      partitionColumns, bucketSpec, options, catalogTable, origProvider, gpuFileFormat) {
+      partitionColumns, bucketSpec, options, catalogTable, origProvider) {
 
   /**
    * Creates a command node to write the given [[LogicalPlan]] out to the given [[FileFormat]].

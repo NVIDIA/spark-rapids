@@ -45,7 +45,9 @@ trait GpuDataWritingCommand extends DataWritingCommand with ShimUnaryCommand {
   override lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
 
   override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
-    runColumnar(sparkSession, child)
+    Arm.withResource(runColumnar(sparkSession, child)) { batches =>
+      assert(batches.isEmpty)
+    }
     Seq.empty[Row]
   }
 
