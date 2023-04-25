@@ -23,7 +23,9 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
-import org.apache.spark.sql.rapids.GpuDataSourceBase
+import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.rapids.{GpuDataSourceBase, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 final class CreateDataSourceTableAsSelectCommandMeta(
@@ -47,6 +49,16 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     origProvider =
       GpuDataSourceBase.lookupDataSourceWithFallback(cmd.table.provider.get,
         spark.sessionState.conf)
+    origProvider.getConstructor().newInstance() match {
+      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
+      case _: ParquetFileFormat =>
+        GpuParquetFileFormat.tagGpuSupport(this, spark,
+          cmd.table.storage.properties, cmd.query.schema)
+      case ds =>
+        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
+        None
+    }
   }
 
   override def convertToGpu(): GpuCreateDataSourceTableAsSelectCommand = {
