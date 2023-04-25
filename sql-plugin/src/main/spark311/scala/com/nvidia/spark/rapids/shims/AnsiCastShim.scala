@@ -32,8 +32,9 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuCast
+import com.nvidia.spark.rapids.{GpuCast, GpuEvalMode}
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 
 object AnsiCastShim {
@@ -45,5 +46,13 @@ object AnsiCastShim {
       m.setAccessible(true)
       m.getBoolean(e)
     case _ => false
+  }
+
+  def getEvalMode(c: Cast): GpuEvalMode.Value = {
+    if (SparkSession.active.sessionState.conf.ansiEnabled) {
+      GpuEvalMode.ANSI
+    } else {
+      GpuEvalMode.LEGACY
+    }
   }
 }

@@ -22,7 +22,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.expressions.{Cast, Empty2Null, EvalMode, Expression, KnownNullable}
+import org.apache.spark.sql.catalyst.expressions.{Empty2Null, Expression, KnownNullable}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
@@ -78,13 +78,6 @@ trait Spark340PlusShims extends Spark331PlusShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
-  override def getCastEvalMode(cast: Cast): GpuEvalMode.Value = {
-    cast.evalMode match {
-      case EvalMode.LEGACY => GpuEvalMode.LEGACY
-      case EvalMode.ANSI => GpuEvalMode.ANSI
-      case EvalMode.TRY => GpuEvalMode.TRY
-    }
-  }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(

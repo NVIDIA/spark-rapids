@@ -239,20 +239,12 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = false))
   }
 
-  def getCastEvalMode(cast: Cast): GpuEvalMode.Value = {
-    if (SparkSession.active.sessionState.conf.ansiEnabled) {
-      GpuEvalMode.ANSI
-    } else {
-      GpuEvalMode.LEGACY
-    }
-  }
-
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-          getCastEvalMode(cast), conf, p, r,
+          AnsiCastShim.getEvalMode(cast), conf, p, r,
           doFloatToIntCheck = true, stringToAnsiDate = false)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
