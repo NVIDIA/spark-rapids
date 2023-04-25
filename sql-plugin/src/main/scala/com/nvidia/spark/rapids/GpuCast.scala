@@ -40,7 +40,7 @@ import org.apache.spark.sql.types._
 /** Meta-data for cast and ansi_cast. */
 final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression with NullIntolerant](
     cast: INPUT,
-    val ansiEnabled: Boolean,
+    val evalMode: GpuEvalMode.Value,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule,
@@ -52,15 +52,28 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     toTypeOverride: Option[DataType] = None)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
-    new CastExprMeta[INPUT](cast, ansiEnabled, conf, parent, rule,
+  val ansiEnabled = evalMode == GpuEvalMode.ANSI
+
+  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] = {
+    val evalMode = if (ansiEnabled) {
+      GpuEvalMode.ANSI
+    } else {
+      GpuEvalMode.LEGACY
+    }
+    new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
       doFloatToIntCheck, stringToAnsiDate, Some(newToType))
+  }
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
   val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 
-  override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
+  override def tagExprForGpu(): Unit = {
+    if (evalMode == GpuEvalMode.TRY) {
+      willNotWorkOnGpu("try_cast is not supported on the GPU")
+    }
+    recursiveTagExprForGpuCheck()
+  }
 
   private def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,

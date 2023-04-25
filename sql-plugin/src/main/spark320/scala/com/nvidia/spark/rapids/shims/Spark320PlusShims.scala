@@ -139,9 +139,16 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",
       new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-        SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-        doFloatToIntCheck = true, stringToAnsiDate = true)),
+      (cast, conf, p, r) => {
+        val evalMode = if (SparkSession.active.sessionState.conf.ansiEnabled) {
+          GpuEvalMode.ANSI
+        } else {
+          GpuEvalMode.LEGACY
+        }
+        new CastExprMeta[Cast](cast,
+          evalMode, conf, p, r,
+          doFloatToIntCheck = true, stringToAnsiDate = true)
+      }),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(

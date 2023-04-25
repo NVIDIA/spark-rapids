@@ -115,6 +115,17 @@ def test_cast_string_date_invalid_ansi(invalid):
               'spark.sql.ansi.enabled': 'true'},
         error_message="DateTimeException")
 
+# test try_cast in Spark versions >= 320
+@pytest.mark.skipif(is_before_spark_320(), reason="try_cast only in 3.2.0+")
+@allow_non_gpu('ProjectExec', 'Cast')
+@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
+def test_try_cast_fallback(invalid):
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
+        'Cast',
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
+              'spark.sql.ansi.enabled': 'true'})
+
 # test all Spark versions, non ANSI mode, invalid value will be converted to NULL
 def test_cast_string_date_non_ansi():
     data_rows = [(v,) for v in values_string_to_data]
