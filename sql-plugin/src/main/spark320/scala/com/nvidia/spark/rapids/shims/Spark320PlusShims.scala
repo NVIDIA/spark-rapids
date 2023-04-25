@@ -135,18 +135,21 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
+  def getCastEvalMode(cast: Cast): GpuEvalMode.Value = {
+    if (SparkSession.active.sessionState.conf.ansiEnabled) {
+      GpuEvalMode.ANSI
+    } else {
+      GpuEvalMode.LEGACY
+    }
+  }
+
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",
       new CastChecks(),
       (cast, conf, p, r) => {
-        val evalMode = if (SparkSession.active.sessionState.conf.ansiEnabled) {
-          GpuEvalMode.ANSI
-        } else {
-          GpuEvalMode.LEGACY
-        }
         new CastExprMeta[Cast](cast,
-          evalMode, conf, p, r,
+          getCastEvalMode(cast), conf, p, r,
           doFloatToIntCheck = true, stringToAnsiDate = true)
       }),
     GpuOverrides.expr[Average](

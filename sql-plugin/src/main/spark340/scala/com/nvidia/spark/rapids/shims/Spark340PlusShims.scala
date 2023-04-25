@@ -78,21 +78,16 @@ trait Spark340PlusShims extends Spark331PlusShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
+  override def getCastEvalMode(cast: Cast): GpuEvalMode.Value = {
+    cast.evalMode match {
+      case EvalMode.LEGACY => GpuEvalMode.LEGACY
+      case EvalMode.ANSI => GpuEvalMode.ANSI
+      case EvalMode.TRY => GpuEvalMode.TRY
+    }
+  }
+
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[Cast](
-        "Convert a column of one type of data into another type",
-        new CastChecks(),
-        (cast, conf, p, r) => {
-          val evalMode = cast.evalMode match {
-            case EvalMode.LEGACY => GpuEvalMode.LEGACY
-            case EvalMode.ANSI => GpuEvalMode.ANSI
-            case EvalMode.TRY => GpuEvalMode.TRY
-          }
-          new CastExprMeta[Cast](cast,
-            evalMode, conf, p, r,
-            doFloatToIntCheck = true, stringToAnsiDate = true)
-      }),
       // Empty2Null is pulled out of FileFormatWriter by default since Spark 3.4.0,
       // so it is visible in the overriding stage.
       GpuOverrides.expr[Empty2Null](
