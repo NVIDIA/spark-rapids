@@ -383,6 +383,47 @@ def test_window_aggs_for_rows(data_gen, batch_size):
         conf = conf)
 
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    [('grp', RepeatSeqGen(int_gen, length=20)),  # Grouping column.
+     ('ord', StringGen(nullable=True)),          # Order-by column (STRING).
+     ('agg', IntegerGen())]                      # Aggregation column.
+], ids=idfn)
+def test_range_windows_with_string_order_by_column(data_gen, batch_size):
+    """
+    Tests that RANGE window functions can be used with STRING order-by columns.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        'window_agg_table',
+        'SELECT '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord ASC ) as count_1_asc_default, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord DESC ) as count_1_desc_default, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord ASC  '
+        '       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as count_1_asc_UNB_to_CURRENT, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord DESC  '
+        '       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as count_1_desc_UNB_to_CURRENT, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord ASC  '
+        '       RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) as count_1_asc_CURRENT_to_UNB, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord DESC  '
+        '       RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) as count_1_desc_CURRENT_to_UNB, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord ASC  '
+        '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_asc_CURRENT_to_CURRENT, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY ord DESC  '
+        '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_desc_CURRENT_to_CURRENT '
+        ' FROM window_agg_table ',
+        conf={'spark.rapids.sql.batchSizeBytes': batch_size})
+
+
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)

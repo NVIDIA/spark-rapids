@@ -107,7 +107,7 @@ abstract class GpuWindowExpressionMetaBase(
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
                   case ByteType | ShortType | IntegerType | LongType |
-                       DateType | TimestampType | DecimalType() => true
+                       DateType | TimestampType | StringType | DecimalType() => true
                   case _ => false
                 }
               }
