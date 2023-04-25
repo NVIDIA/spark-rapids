@@ -62,8 +62,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     }
 
     val spark = SparkSession.active
-    origProvider =
-      GpuDataSourceBase.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
+    origProvider = GpuDataSourceBase.lookupDataSourceWithFallback(
+      cmd.table.provider.get, spark.sessionState.conf)
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
     gpuProvider = origProvider.getConstructor().newInstance() match {

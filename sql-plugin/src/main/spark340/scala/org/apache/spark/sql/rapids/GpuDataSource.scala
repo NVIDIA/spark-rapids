@@ -20,7 +20,6 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.ColumnarFileFormat
-
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql._
