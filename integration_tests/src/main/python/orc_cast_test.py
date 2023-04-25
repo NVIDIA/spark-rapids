@@ -141,7 +141,8 @@ def test_casting_from_overflow_double_to_timestamp(spark_tmp_path):
 @pytest.mark.parametrize('read_type', ["DECIMAL(9,2)",
                                        "DECIMAL(18,4)",
                                        "DECIMAL(38,6)"])
-def test_casting_decimal_to_decimal(spark_tmp_path, data_gen, read_type):
+@pytest.mark.parametrize('ansi_mode', ["false", "true"])
+def test_casting_decimal_to_decimal(spark_tmp_path, data_gen, read_type, ansi_mode):
     """
     Tests that ORC files with decimal columns written with one set of
     precision and scale are readable with different precision/scale.
@@ -151,5 +152,6 @@ def test_casting_decimal_to_decimal(spark_tmp_path, data_gen, read_type):
         lambda spark: unary_op_df(spark, data_gen).write.orc(orc_path)
     )
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.schema("a " + read_type).orc(orc_path)
+        lambda spark: spark.read.schema("a " + read_type).orc(orc_path),
+        conf={'spark.sql.ansi.enabled': ansi_mode}
     )
