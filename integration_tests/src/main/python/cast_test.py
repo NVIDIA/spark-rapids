@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_spark_32X, is_spark_33X, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -115,8 +115,8 @@ def test_cast_string_date_invalid_ansi(invalid):
               'spark.sql.ansi.enabled': 'true'},
         error_message="DateTimeException")
 
-# test try_cast in Spark versions >= 320
-@pytest.mark.skipif(is_before_spark_320(), reason="try_cast only in 3.2.0+")
+# test try_cast in Spark versions >= 320 < 340
+@pytest.mark.skipif(not (is_spark_32X() or is_spark_33X()), reason="TryCast only in 3.2.x and 3.3.x")
 @allow_non_gpu('ProjectExec', 'TryCast')
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_try_cast_fallback_320(invalid):
