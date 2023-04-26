@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
@@ -731,7 +731,7 @@ case class GpuGenerateExec(
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
-    val splits = withResource(new NvtxWithMetrics("GpuGenerateExec",
+    val splits = withResource(new NvtxWithMetrics("GpuGenerate project split",
       NvtxColor.PURPLE, opTime)) { _ =>
       // Project input columns, setting other columns ahead of generator's input columns.
       // With the projected batches and an offset, generators can extract input columns or
@@ -739,8 +739,7 @@ case class GpuGenerateExec(
       val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
         SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
         othersProjectList ++ genProjectList)
-      getSplits(projectedInput, othersProjectList,
-        new RapidsConf(conf).gpuTargetBatchSizeBytes)
+      getSplits(projectedInput, othersProjectList, new RapidsConf(conf).gpuTargetBatchSizeBytes)
     }
     new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
       numOutputRows, numOutputBatches, opTime)
@@ -768,7 +767,7 @@ case class GpuGenerateExec(
     if (splitIndices.isEmpty) {
       // The caller will close input, so we increment here to offset.
       Array(SpillableColumnarBatch(GpuColumnVector.incRefCounts(input),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY))
     } else {
       val splitInput = withResource(GpuColumnVector.from(input)) { table =>
         table.contiguousSplit(splitIndices: _*)
@@ -777,7 +776,7 @@ case class GpuGenerateExec(
         closeOnExcept(splitInput.slice(i + 1, splitInput.length)) { _ =>
           withResource(ct) { ct: ContiguousTable =>
             SpillableColumnarBatch(ct, schema,
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
         }
       }
