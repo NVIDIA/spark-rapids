@@ -1266,6 +1266,34 @@ trait BasicWindowCalc {
     }
   }
 
+  def computeBasicWindowSpillable(cb: SpillableColumnarBatch): Array[cudf.ColumnVector] = {
+    closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
+      val inputSpillable = SpillableColumnarBatch(
+        GpuProjectExec.project(cb.getColumnarBatch(), initialProjections),
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+
+      // this takes ownership of `inputSpillable`
+      aggregations.doAggsAndClose(
+        isRunningBatched,
+        boundOrderSpec,
+        orderByPositions,
+        partByPositions,
+        inputSpillable,
+        outputColumns)
+
+      // if the window aggregates were successful, lets splice the passThrough
+      // columns
+      passThrough.foreach {
+        case (inputIndex, outputIndex) =>
+          outputColumns(outputIndex) =
+            cb.getColumnarBatch().column(inputIndex)
+              .asInstanceOf[GpuColumnVector].getBase.incRefCount()
+      }
+
+      outputColumns
+    }
+  }
+
   def convertToBatch(dataTypes: Array[DataType],
       cols: Array[cudf.ColumnVector]): ColumnarBatch =
     aggregations.convertToColumnarBatch(dataTypes, cols)
@@ -1483,31 +1511,36 @@ class GpuRunningWindowIterator(
     }
   }
 
-  def computeRunning(cb: ColumnarBatch): ColumnarBatch = {
+  def computeRunning(input: ColumnarBatch): ColumnarBatch = {
     val fixers = fixerIndexMap
-    val numRows = cb.numRows()
+    val numRows = input.numRows()
 
-    var newOrder: Option[Array[Scalar]] = None
-
-    withResource(computeBasicWindow(cb)) { basic =>
-      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
-        val partColumns = GpuColumnVector.extractBases(parts)
-        withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
+    val cbSpillable = SpillableColumnarBatch(input, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    withRetryNoSplit(cbSpillable) { _ =>
+      // note that computeBasicWindowSpillable also creates a spillable
+      // batch based on a projection applied to cbSpillable so this probably
+      // needs more work to avoid creating two spillable batches?
+      withResource(computeBasicWindowSpillable(cbSpillable)) { basic =>
+        withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
+          boundPartitionSpec)) { parts =>
+          val partColumns = GpuColumnVector.extractBases(parts)
 
           // we backup the fixers state and restore it in the event of a retry
-          val fixedUp = withRetryNoSplit {
-            withRestoreOnRetry(fixers.values.toSeq) {
+          var newOrder: Option[Array[Scalar]] = None
+          val fixedUp = withRestoreOnRetry(fixers.values.toSeq) {
+            withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
               if (fixerNeedsOrderMask) {
-                withResource(GpuProjectExec.project(cb, boundOrderColumns)) { order =>
+                withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
+                    boundOrderColumns)) { order =>
                   val orderColumns = GpuColumnVector.extractBases(order)
                   // We need to fix up the rows that are part of the same batch as the end of the
                   // last batch
                   withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
                     orderEqual =>
                       closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) {
-                          fixedUp =>
-                        newOrder = Some(getScalarRow(numRows - 1, orderColumns))
-                        fixedUp
+                        fixedUp =>
+                          newOrder = Some(getScalarRow(numRows - 1, orderColumns))
+                          fixedUp
                       }
                   }
                 }
@@ -1517,7 +1550,6 @@ class GpuRunningWindowIterator(
               }
             }
           }
-
           // this section is outside of the retry logic because the calls to saveLastParts
           // and saveLastOrders can close GPU resources
           withResource(fixedUp) { fixed =>
