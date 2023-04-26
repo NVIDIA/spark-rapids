@@ -222,7 +222,7 @@ else
 
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC -da:ai.rapids.cudf.AssertEmptyNulls -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
-    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
+    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -da:ai.rapids.cudf.AssertEmptyNulls -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='4'
