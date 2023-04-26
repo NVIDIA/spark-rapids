@@ -686,8 +686,7 @@ object GroupedAggregations {
             } else {
               if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
                 windowOptionBuilder.currentRowPreceding()
-              }
-              else {
+              } else {
                 windowOptionBuilder.preceding(preceding.get)
               }
             }
@@ -697,8 +696,7 @@ object GroupedAggregations {
             } else {
               if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
                 windowOptionBuilder.currentRowFollowing()
-              }
-              else {
+              } else {
                 windowOptionBuilder.following(following.get)
               }
             }

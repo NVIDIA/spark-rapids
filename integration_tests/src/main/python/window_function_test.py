@@ -387,7 +387,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
     [('grp', RepeatSeqGen(int_gen, length=20)),  # Grouping column.
-     ('ord', StringGen(nullable=True)),          # Order-by column (STRING).
+     ('ord', LongRangeGen(nullable=True)),       # Order-by column (after cast to STRING).
      ('agg', IntegerGen())]                      # Aggregation column.
 ], ids=idfn)
 def test_range_windows_with_string_order_by_column(data_gen, batch_size):
@@ -398,27 +398,33 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size):
         lambda spark: gen_df(spark, data_gen, length=2048),
         'window_agg_table',
         'SELECT '
+        ' ROW_NUMBER() OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC ) as row_num_asc, '
+        ' RANK() OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC ) as rank_desc, '
+        ' DENSE_RANK() OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC ) as dense_rank_asc, '
         ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord ASC ) as count_1_asc_default, '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC ) as count_1_asc_default, '
+        ' COUNT(agg) OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC ) as count_desc_default, '
+        ' SUM(agg) OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
+        '       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as sum_asc_UNB_to_CURRENT, '
+        ' MIN(agg) OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC  '
+        '       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as min_desc_UNB_to_CURRENT, '
+        ' MAX(agg) OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
+        '       RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) as max_asc_CURRENT_to_UNB, '
         ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord DESC ) as count_1_desc_default, '
-        ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord ASC  '
-        '       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as count_1_asc_UNB_to_CURRENT, '
-        ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord DESC  '
-        '       RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as count_1_desc_UNB_to_CURRENT, '
-        ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord ASC  '
-        '       RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) as count_1_asc_CURRENT_to_UNB, '
-        ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord DESC  '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC  '
         '       RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) as count_1_desc_CURRENT_to_UNB, '
         ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord ASC  '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
         '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_asc_CURRENT_to_CURRENT, '
         ' COUNT(1) OVER '
-        '   (PARTITION BY grp ORDER BY ord DESC  '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC  '
         '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_desc_CURRENT_to_CURRENT '
         ' FROM window_agg_table ',
         conf={'spark.rapids.sql.batchSizeBytes': batch_size})
