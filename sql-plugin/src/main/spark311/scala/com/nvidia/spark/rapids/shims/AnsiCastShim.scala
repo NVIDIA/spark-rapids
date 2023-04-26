@@ -34,25 +34,27 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{GpuCast, GpuEvalMode}
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 
 object AnsiCastShim {
   def isAnsiCast(e: Expression): Boolean = e match {
     case c: GpuCast => c.ansiMode
     case _: AnsiCast => true
-    case _: Cast =>
-      val m = e.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(e)
+    case _: Cast => isAnsiEnabled(e)
     case _ => false
   }
 
   def getEvalMode(c: Cast): GpuEvalMode.Value = {
-    if (SparkSession.active.sessionState.conf.ansiEnabled) {
+    if (isAnsiEnabled(c)) {
       GpuEvalMode.ANSI
     } else {
       GpuEvalMode.LEGACY
     }
+  }
+
+  private def isAnsiEnabled(e: Expression) = {
+    val m = e.getClass.getDeclaredField("ansiEnabled")
+    m.setAccessible(true)
+    m.getBoolean(e)
   }
 }
