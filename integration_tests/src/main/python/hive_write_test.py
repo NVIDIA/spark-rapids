@@ -96,10 +96,11 @@ def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tm
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
     with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
     storage, confs = storage_with_confs
+    fallback_class = "DataWritingCommandExec" if is_before_spark_340() else "ExecutedCommandExec"
     assert_gpu_fallback_collect(
         lambda spark: spark.sql("CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
             spark_tmp_table_factory.get(), storage, data_table)),
-        "DataWritingCommandExec", conf=confs)
+        fallback_class, conf=confs)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
@@ -114,10 +115,11 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
     with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
     storage, opts = storage_with_opts
     opts_string = ", ".join(["'{}'='{}'".format(k, v) for k, v in opts.items()])
+    fallback_class = "DataWritingCommandExec" if is_before_spark_340() else "ExecutedCommandExec"
     assert_gpu_fallback_collect(
         lambda spark: spark.sql("CREATE TABLE {} OPTIONS ({}) STORED AS {} AS SELECT * FROM {}".format(
             spark_tmp_table_factory.get(), opts_string, storage, data_table)),
-        "DataWritingCommandExec")
+        fallback_class)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.skipif(not (is_hive_available() and is_spark_33X()),
@@ -136,7 +138,7 @@ def test_optimized_hive_bucketed_fallback_33X(gens, storage, spark_tmp_table_fac
 
 # Since Spark 3.4.0, the internal "SortExec" will be pulled out by default
 # from the FileFormatWriter. Then it is visible in the planning stage.
-@allow_non_gpu("DataWritingCommandExec", "SortExec", "HiveHash")
+@allow_non_gpu("DataWritingCommandExec", "SortExec", "WriteFilesExec")
 @pytest.mark.skipif(not (is_hive_available() and is_spark_340_or_later()),
                     reason="Requires Hive and Spark 3.4+ to write bucketed Hive tables with SortExec pulled out")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
@@ -150,7 +152,7 @@ def test_optimized_hive_bucketed_fallback(gens, storage, planned_write, spark_tm
             """CREATE TABLE {} STORED AS {}
             CLUSTERED BY (b) INTO 3 BUCKETS
             AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)),
-        "DataWritingCommandExec",
+        "ExecutedCommandExec",
         {"spark.sql.optimizer.plannedWrite.enabled": planned_write})
 
 def test_hive_copy_ints_to_long(spark_tmp_table_factory):

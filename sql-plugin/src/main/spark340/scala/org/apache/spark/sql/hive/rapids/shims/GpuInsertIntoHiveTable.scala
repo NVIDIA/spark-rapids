@@ -15,21 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
@@ -53,15 +39,14 @@ import org.apache.spark.sql.execution.command.CommandUtils
 import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
-import org.apache.spark.sql.hive.client.hive._
 import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
 import org.apache.spark.sql.hive.rapids.{GpuHiveTextFileFormat, GpuSaveAsHiveFile, RapidsHiveErrors}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
-                                       conf: RapidsConf,
-                                       parent: Option[RapidsMeta[_,_,_]],
-                                       rule: DataFromReplacementRule)
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_,_,_]],
+    rule: DataFromReplacementRule)
   extends DataWritingCommandMeta[InsertIntoHiveTable](cmd, conf, parent, rule) {
 
   private var fileFormat: Option[ColumnarFileFormat] = None
@@ -80,7 +65,8 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
       query = wrapped.query,
       overwrite = wrapped.overwrite,
       ifPartitionNotExists = wrapped.ifPartitionNotExists,
-      outputColumnNames = wrapped.outputColumnNames
+      outputColumnNames = wrapped.outputColumnNames,
+      tmpLocation = cmd.hiveTmpPath.externalTempPath
     )
   }
 
@@ -94,7 +80,8 @@ case class GpuInsertIntoHiveTable(
     query: LogicalPlan,
     overwrite: Boolean,
     ifPartitionNotExists: Boolean,
-    outputColumnNames: Seq[String]) extends GpuSaveAsHiveFile {
+    outputColumnNames: Seq[String],
+    tmpLocation: Path) extends GpuSaveAsHiveFile {
 
   /**
    * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
@@ -117,8 +104,6 @@ case class GpuInsertIntoHiveTable(
       hiveQlTable.getOutputFormatClass,
       hiveQlTable.getMetadata
     )
-    val tableLocation = hiveQlTable.getDataLocation
-    val tmpLocation = getExternalTmpPath(sparkSession, hadoopConf, tableLocation)
 
     try {
       processInsert(sparkSession,
@@ -131,7 +116,7 @@ case class GpuInsertIntoHiveTable(
     } finally {
       // Attempt to delete the staging directory and the inclusive files. If failed, the files are
       // expected to be dropped at the normal termination of VM since deleteOnExit is used.
-      deleteExternalTmpPath(hadoopConf)
+      HiveFileUtil.deleteExternalTmpPath(hadoopConf, tmpLocation)
     }
 
     // un-cache this table.
@@ -317,7 +302,7 @@ case class GpuInsertIntoHiveTable(
           // check. see https://issues.apache.org/jira/browse/HIVE-14380.
           // So we still disable for Hive overwrite for Hive 1.x for better performance because
           // the partition and table are on the same cluster in most cases.
-          if (partitionPath.nonEmpty && overwrite && hiveVersion < v2_0) {
+          if (partitionPath.nonEmpty && overwrite && hiveVersion.fullVersion < "2.0") {
             partitionPath.foreach { path =>
               val fs = path.getFileSystem(hadoopConf)
               if (fs.exists(path)) {
