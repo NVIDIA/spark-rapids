@@ -123,7 +123,7 @@ def test_cast_string_date_invalid_ansi(invalid):
 def test_try_cast_fallback(invalid):
     assert_gpu_fallback_collect(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
-        'Cast',
+        'TryCast',
         conf={'spark.rapids.sql.hasExtendedYearValues': False,
               'spark.sql.ansi.enabled': True})
 
