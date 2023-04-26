@@ -115,20 +115,11 @@ def test_cast_string_date_invalid_ansi(invalid):
               'spark.sql.ansi.enabled': 'true'},
         error_message="DateTimeException")
 
-# test try_cast in Spark versions >= 320 < 340
-@pytest.mark.skipif(not (is_spark_32X() or is_spark_33X()), reason="TryCast only in 3.2.x and 3.3.x")
-@allow_non_gpu('ProjectExec', 'TryCast')
-@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_try_cast_fallback_320(invalid):
-    assert_gpu_fallback_collect(
-        lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
-        'TryCast',
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'})
 
 # test try_cast in Spark versions >= 340
-@pytest.mark.skipif(is_before_spark_340(), reason="Cast with EvalMode.TRY only in 3.4.0+")
-@allow_non_gpu('ProjectExec', 'Cast')
+test_try_cast_fallback_non_gpu = ['ProjectExec', 'Cast'] if is_spark_340_or_later() else ['ProjectExec','TryCast']
+@pytest.mark.skipif(is_before_spark_320(), reason="TryCast only in Spark 3.2+")
+@allow_non_gpu(test_try_cast_fallback_non_gpu)
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_try_cast_fallback_340(invalid):
     assert_gpu_fallback_collect(
