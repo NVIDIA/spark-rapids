@@ -52,12 +52,9 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     toTypeOverride: Option[DataType] = None)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  val ansiEnabled = evalMode == GpuEvalMode.ANSI
-
-  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] = {
+  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
     new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
       doFloatToIntCheck, stringToAnsiDate, Some(newToType))
-  }
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
@@ -164,7 +161,7 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   }
 
   override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
+    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId, legacyCastToString,
       stringToAnsiDate)
 
   // timezone tagging in type checks is good enough, so always false
