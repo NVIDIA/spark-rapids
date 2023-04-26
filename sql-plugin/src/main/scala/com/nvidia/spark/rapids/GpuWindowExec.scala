@@ -1521,17 +1521,18 @@ class GpuRunningWindowIterator(
       // batch based on a projection applied to cbSpillable so this probably
       // needs more work to avoid creating two spillable batches?
       withResource(computeBasicWindowSpillable(cbSpillable)) { basic =>
-        withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
-          boundPartitionSpec)) { parts =>
-          val partColumns = GpuColumnVector.extractBases(parts)
+        // we backup the fixers state and restore it in the event of a retry
+        var newOrder: Option[Array[Scalar]] = None
+        var newParts: Option[Array[Scalar]] = None
+        val fixedUp = withRestoreOnRetry(fixers.values.toSeq) {
+          withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
+            boundPartitionSpec)) { parts =>
+            val partColumns = GpuColumnVector.extractBases(parts)
 
-          // we backup the fixers state and restore it in the event of a retry
-          var newOrder: Option[Array[Scalar]] = None
-          val fixedUp = withRestoreOnRetry(fixers.values.toSeq) {
             withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
-              if (fixerNeedsOrderMask) {
+              val fixedUp = if (fixerNeedsOrderMask) {
                 withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
-                    boundOrderColumns)) { order =>
+                  boundOrderColumns)) { order =>
                   val orderColumns = GpuColumnVector.extractBases(order)
                   // We need to fix up the rows that are part of the same batch as the end of the
                   // last batch
@@ -1548,17 +1549,19 @@ class GpuRunningWindowIterator(
                 // No ordering needed
                 fixUpAll(basic, fixers, partsEqual, None)
               }
+              newParts = Some(getScalarRow(numRows - 1, partColumns))
+              fixedUp
             }
           }
-          // this section is outside of the retry logic because the calls to saveLastParts
-          // and saveLastOrders can close GPU resources
-          withResource(fixedUp) { fixed =>
-            closeOnExcept(fixedUp) { _ =>
-              newOrder.foreach(saveLastOrder)
-              saveLastParts(getScalarRow(numRows - 1, partColumns))
-            }
-            convertToBatch(outputTypes, fixed)
+        }
+        // this section is outside of the retry logic because the calls to saveLastParts
+        // and saveLastOrders can potentially close GPU resources
+        withResource(fixedUp) { fixed =>
+          closeOnExcept(fixedUp) { _ =>
+            newOrder.foreach(saveLastOrder)
+            newParts.foreach(saveLastParts)
           }
+          convertToBatch(outputTypes, fixed)
         }
       }
     }
