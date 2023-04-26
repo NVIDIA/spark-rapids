@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_spark_32X, is_spark_33X, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, is_databricks113_or_later, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -121,7 +121,7 @@ test_try_cast_fallback_non_gpu = ['ProjectExec', 'Cast'] if is_spark_340_or_late
 @pytest.mark.skipif(is_before_spark_320(), reason="try_cast only in Spark 3.2+")
 @allow_non_gpu(test_try_cast_fallback_non_gpu)
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_try_cast_fallback_340(invalid):
+def test_try_cast_fallback(invalid):
     assert_gpu_fallback_collect(
         lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
         'Cast',
