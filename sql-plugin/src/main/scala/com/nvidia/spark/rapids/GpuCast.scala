@@ -55,11 +55,6 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   val ansiEnabled = evalMode == GpuEvalMode.ANSI
 
   def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] = {
-    val evalMode = if (ansiEnabled) {
-      GpuEvalMode.ANSI
-    } else {
-      GpuEvalMode.LEGACY
-    }
     new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
       doFloatToIntCheck, stringToAnsiDate, Some(newToType))
   }
