@@ -117,8 +117,8 @@ def test_cast_string_date_invalid_ansi(invalid):
 
 
 # test try_cast in Spark versions >= 340
-test_try_cast_fallback_non_gpu = ['ProjectExec', 'Cast'] if is_spark_340_or_later() else ['ProjectExec','TryCast']
-@pytest.mark.skipif(is_before_spark_320(), reason="TryCast only in Spark 3.2+")
+test_try_cast_fallback_non_gpu = ['ProjectExec', 'Cast'] if is_spark_340_or_later() or is_databricks113_or_later() else ['ProjectExec','TryCast']
+@pytest.mark.skipif(is_before_spark_320(), reason="try_cast only in Spark 3.2+")
 @allow_non_gpu(test_try_cast_fallback_non_gpu)
 @pytest.mark.parametrize('invalid', invalid_values_string_to_date)
 def test_try_cast_fallback_340(invalid):
