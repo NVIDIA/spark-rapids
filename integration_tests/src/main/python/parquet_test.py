@@ -16,7 +16,7 @@ import os
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
-    assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
+    assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_spark_exception
 from data_gen import *
 from marks import *
 import pyarrow as pa
@@ -1395,35 +1395,35 @@ def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
     with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
 
     read_array_long_as_int = StructType([StructField('array_long', ArrayType(IntegerType()))])
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_array_long_as_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
 
     read_arr_arr_int_as_long = StructType(
         [StructField('array_array_int', ArrayType(ArrayType(LongType())))])
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_arr_arr_int_as_long).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
 
     read_struct_flt_as_dbl = StructType([StructField(
         'struct_float', StructType([StructField('f', DoubleType())]))])
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_struct_flt_as_dbl).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
 
     read_struct_arr_int_as_long = StructType([StructField(
         'struct_array_int', StructType([StructField('a', ArrayType(LongType()))]))])
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_struct_arr_int_as_long).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
 
     read_map_str_str_as_str_int = StructType([StructField(
         'map', MapType(StringType(), IntegerType()))])
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
         error_message='Parquet column cannot be converted')
@@ -1452,12 +1452,12 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
             parquet(data_path), conf=encryption_confs)
 
     # test with missing encryption conf reading encrypted file
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect()),
         error_message='Could not read footer for file')
 
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
