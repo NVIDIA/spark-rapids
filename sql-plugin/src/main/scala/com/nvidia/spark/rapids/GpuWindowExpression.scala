@@ -977,14 +977,22 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
   private var previousResult: Option[Scalar] = None
 
   // checkpoint
-  private var _previousResult: Option[Scalar] = None
+  private var checkpointResult: Option[Scalar] = None
 
   override def checkpoint(): Unit = {
-    _previousResult = previousResult
+    checkpointResult = previousResult
   }
 
   override def restore(): Unit = {
-    previousResult = _previousResult
+    if (checkpointResult.isDefined) {
+      // close previous result
+      checkpointResult match {
+        case Some(r) if r != checkpointResult.get =>
+          r.close()
+        case _ =>
+      }
+      checkpointResult = checkpointResult
+    }
   }
 
   def getPreviousResult: Option[Scalar] = previousResult
@@ -1037,17 +1045,33 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   private var previousOverflow: Option[Scalar] = None
 
   // checkpoint
-  private var _previousResult: Option[Scalar] = None
-  private var _previousOverflow: Option[Scalar] = None
+  private var checkpointResult: Option[Scalar] = None
+  private var checkpointOverflow: Option[Scalar] = None
 
   override def checkpoint(): Unit = {
-    _previousOverflow = previousOverflow
-    _previousResult = previousResult
+    checkpointOverflow = previousOverflow
+    checkpointResult = previousResult
   }
 
   override def restore(): Unit = {
-    previousOverflow = _previousOverflow
-    previousResult = _previousResult
+    if (checkpointOverflow.isDefined) {
+      // close previous result
+      previousOverflow match {
+        case Some(r) if r != checkpointOverflow.get =>
+          r.close()
+        case _ =>
+      }
+      previousOverflow = checkpointOverflow
+    }
+    if (checkpointResult.isDefined) {
+      // close previous result
+      previousResult match {
+        case Some(r) if r != checkpointResult.get =>
+          r.close()
+        case _ =>
+      }
+      previousResult = checkpointResult
+    }
   }
 
   def updateState(finalOutputColumn: cudf.ColumnVector,
@@ -1281,16 +1305,24 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
   private[this] var previousRank: Option[Scalar] = None
 
   // checkpoint
-  private[this] var _previousRank: Option[Scalar] = None
+  private[this] var checkpointRank: Option[Scalar] = None
 
   override def checkpoint(): Unit = {
     rowNumFixer.checkpoint()
-    _previousRank = previousRank
+    checkpointRank = previousRank
   }
 
   override def restore(): Unit = {
     rowNumFixer.restore()
-    previousRank = _previousRank
+    if (checkpointRank.isDefined) {
+      // close previous result
+      previousRank match {
+        case Some(r) if r != checkpointRank.get =>
+          r.close()
+        case _ =>
+      }
+      previousRank = checkpointRank
+    }
   }
 
   override def needsOrderMask: Boolean = true
@@ -1392,14 +1424,22 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
   private var previousRank: Option[Scalar] = None
 
   // checkpoint
-  private var _previousRank: Option[Scalar] = None
+  private var checkpointRank: Option[Scalar] = None
 
   override def checkpoint(): Unit = {
-    _previousRank = previousRank
+    checkpointRank = previousRank
   }
 
   override def restore(): Unit = {
-    previousRank = _previousRank
+    if (checkpointRank.isDefined) {
+      // close previous result
+      previousRank match {
+        case Some(r) if r != checkpointRank.get =>
+          r.close()
+        case _ =>
+      }
+      previousRank = checkpointRank
+    }
   }
 
   override def needsOrderMask: Boolean = true
