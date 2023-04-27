@@ -80,9 +80,13 @@ case class GpuJsonToStructs(
     }
   }
 
+  // Process a sequence of field names. If there are duplicated field names, we only keep the field
+  // name with the largest index in the sequence, for others, replace the field names with null.
+  // Example:
+  // Input = [("a", StringType), ("b", StringType), ("a", IntegerType)]
+  // Output = [(null, StringType), ("b", StringType), ("a", IntegerType)]
   private def processFieldNames(names: Seq[(String, DataType)]): Seq[(String, DataType)] = {
     val existingNames = Set[String]()
-    // for duplicated field names, only keep the one with the largest index
     names.foldRight(Seq[(String, DataType)]())((elem, acc) => {
       val (name, dtype) = elem
       if (existingNames(name)) (null, dtype)+:acc else {existingNames += name; (name, dtype)+:acc}})

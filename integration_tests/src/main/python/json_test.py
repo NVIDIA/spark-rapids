@@ -367,7 +367,7 @@ def test_from_json_map():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
-        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @allow_non_gpu('ProjectExec', 'JsonToStructs')
 def test_from_json_map_fallback():
@@ -378,7 +378,7 @@ def test_from_json_map_fallback():
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,INT>')),
         'JsonToStructs',
-        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @pytest.mark.parametrize('data_gen', [StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1234}')])
 @pytest.mark.parametrize('schema', [StructType([StructField("a", StringType())]),
@@ -391,7 +391,7 @@ def test_from_json_struct(data_gen, schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
             .select(f.from_json(f.col('a'), schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": {"name": "Bob", "class": "junior"}}')])
 @pytest.mark.parametrize('schema', [StructType([StructField("teacher", StringType())]),
@@ -401,7 +401,7 @@ def test_from_json_struct_of_struct(data_gen, schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
             .select(f.from_json(f.col('a'), schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": \[{"name": "Bob", "class": "junior"},' \
                                                 r'{"name": "Charlie", "class": "freshman"}\]}')])
@@ -415,4 +415,4 @@ def test_from_json_struct_of_list(data_gen, schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
             .select(f.from_json(f.col('a'), schema)),
-        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})

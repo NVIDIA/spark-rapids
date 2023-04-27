@@ -3373,17 +3373,18 @@ object GpuOverrides extends Logging {
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
-        TypeSig.MAP.nested(TypeSig.STRING) + TypeSig.STRUCT.nested(TypeSig.all),
+        TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
+              "MAP only supports keys and values that are of STRING type") +
+          TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.INT),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
         override def tagExprForGpu(): Unit =
           a.schema match {
-            case map: MapType => {
-              if(!(map.keyType == StringType && map.valueType == StringType)) {
-                willNotWorkOnGpu("JsonToStructs only supports Map<String, String> for " +
-                                 "MapType schema")
-              }
+            case MapType(_: StringType, _: StringType, _) => ()
+            case MapType(kt, vt, _) => {
+              willNotWorkOnGpu("JsonToStructs only supports MapType<StringType, StringType> for " +
+                               s"input MapType schema, but received MapType<$kt, $vt>")
             }
             case _ => ()
           }

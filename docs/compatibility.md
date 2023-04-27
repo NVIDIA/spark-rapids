@@ -313,15 +313,19 @@ The following input is invalid and will cause error:
 {"name":  Justin", "age":19}
 ```
 
+Reading input with duplicated json key names is also incompatible with CPU Spark.
+
 ### JSON supporting types
 
 In the current version, nested types (array, struct, and map types) are not yet supported in regular JSON parsing.
 
 ### `from_json` function
 
-This particular function supports to output a map type with limited functionalities. In particular, the output map is not resulted from a regular JSON parsing but instead it will just contain plain text of key-value pairs extracted directly from the input JSON string.
+This particular function supports to output a map or struct type with limited functionalities.
 
-Due to such limitations, the input JSON schema must be `MAP<STRING,STRING>` and nothing else. Furthermore, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. This may lead to some minor differences in the output if compared to the result of Spark CPU's `from_json`, such as:
+For struct output type, the function only supports struct of struct, array, string and int types. 
+
+In particular, the output map is not resulted from a regular JSON parsing but instead it will just contain plain text of key-value pairs extracted directly from the input JSON string. Due to such limitations, the input JSON map type schema must be `MAP<STRING,STRING>` and nothing else. Furthermore, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. This may lead to some minor differences in the output if compared to the result of Spark CPU's `from_json`, such as:
  * Floating point numbers in the input JSON string such as `1.2000` will not be reformatted to `1.2`. Instead, the output will be the same as the input.
  * If the input JSON is given as multiple rows, any row containing invalid JSON format will lead to an application crash. On the other hand, Spark CPU version just produces nulls for the invalid rows, as shown below:
  ```
