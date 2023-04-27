@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{ColumnVector, GatherMap, NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, LazySpillableColumnarBatch, NvtxWithMetrics, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -75,7 +76,7 @@ abstract class ExistenceJoinIterator(
     withResource(lazyStream.next()) { lazyBatch =>
       withResource(new NvtxWithMetrics("existence join batch", NvtxColor.ORANGE, joinTime)) { _ =>
         opTime.ns {
-          val ret = existenceJoinNextBatch(lazyBatch.getBatch)
+          val ret = existenceJoinNextBatch(lazyBatch)
           spillableBuiltBatch.allowSpilling()
           ret
         }
@@ -89,10 +90,17 @@ abstract class ExistenceJoinIterator(
     }
   }
 
-  private def existenceJoinNextBatch(leftColumnarBatch: ColumnarBatch): ColumnarBatch = {
-    // left columns with exists
-    withResource(existsScatterMap(leftColumnarBatch)) { gatherMap =>
-      existenceJoinResult(leftColumnarBatch, gatherMap)
+  private def existenceJoinNextBatch(
+      spillableLeftBatch: LazySpillableColumnarBatch): ColumnarBatch = {
+    val batches = Seq(spillableBuiltBatch, spillableLeftBatch)
+    batches.foreach(_.checkpoint())
+    withRetryNoSplit {
+      withRestoreOnRetry(batches) {
+        // left columns with exists
+        withResource(existsScatterMap(spillableLeftBatch.getBatch)) { gatherMap =>
+          existenceJoinResult(spillableLeftBatch.getBatch, gatherMap)
+        }
+      }
     }
   }
 

@@ -130,6 +130,14 @@ object ExecutionPlanCaptureCallback {
     assertNotContain(executedPlan, gpuClass)
   }
 
+  def assertContainsAnsiCast(df: DataFrame): Unit = {
+    val executedPlan = ExecutionPlanCaptureCallback
+      .extractExecutedPlan(df.queryExecution.executedPlan)
+    assert(containsPlanMatching(executedPlan,
+      _.expressions.exists(PlanShims.isAnsiCastOptionallyAliased)),
+        "Plan does not contain an ansi cast")
+  }
+
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
     !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
         PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
@@ -172,6 +180,22 @@ object ExecutionPlanCaptureCallback {
           .findFirstIn(sparkPlanStringForRegex)
           .nonEmpty
   }.nonEmpty
+
+  private def containsPlanMatching(plan: SparkPlan, f: SparkPlan => Boolean): Boolean = plan.find {
+    case p if f(p) =>
+      true
+    case p: AdaptiveSparkPlanExec =>
+      containsPlanMatching(p.executedPlan, f)
+    case p: QueryStageExec =>
+      containsPlanMatching(p.plan, f)
+    case p: ReusedSubqueryExec =>
+      containsPlanMatching(p.child, f)
+    case p: ReusedExchangeExec =>
+      containsPlanMatching(p.child, f)
+    case p =>
+      p.children.exists(plan => containsPlanMatching(plan, f))
+  }.nonEmpty
+
 }
 
 /**

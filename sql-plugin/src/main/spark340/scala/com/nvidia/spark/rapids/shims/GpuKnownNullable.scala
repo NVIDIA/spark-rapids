@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,18 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuAlias, PlanShims}
+import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.types.DataType
 
-class PlanShimsImpl extends PlanShims {
-  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
-  def isAnsiCast(e: Expression): Boolean = AnsiCastShim.isAnsiCast(e)
-
-  def isAnsiCastOptionallyAliased(e: Expression): Boolean = e match {
-    case Alias(e, _) => isAnsiCast(e)
-    case GpuAlias(e, _) => isAnsiCast(e)
-    case e => isAnsiCast(e)
-  }
+case class GpuKnownNullable(child: Expression) extends GpuUnaryExpression {
+  override def dataType: DataType = child.dataType
+  override def nullable: Boolean = true
+  override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.incRefCount()
 }

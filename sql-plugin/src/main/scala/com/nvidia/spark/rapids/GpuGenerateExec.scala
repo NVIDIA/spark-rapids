@@ -20,6 +20,8 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -717,65 +719,96 @@ case class GpuGenerateExec(
           GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
 
         child.executeColumnar().flatMap { inputFromChild =>
-          withResource(inputFromChild) { input =>
-            doGenerate(input, genProjectList, othersProjectList,
-              numOutputRows, numOutputBatches, opTime)
-          }
+          doGenerateAndClose(inputFromChild, genProjectList, othersProjectList,
+            numOutputRows, numOutputBatches, opTime)
         }
     }
   }
 
-  private def doGenerate(input: ColumnarBatch,
+  private def doGenerateAndClose(input: ColumnarBatch,
       genProjectList: Seq[GpuExpression],
       othersProjectList: Seq[GpuExpression],
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, opTime)) { _ =>
+    val splits = withResource(new NvtxWithMetrics("GpuGenerate project split",
+      NvtxColor.PURPLE, opTime)) { _ =>
       // Project input columns, setting other columns ahead of generator's input columns.
       // With the projected batches and an offset, generators can extract input columns or
       // other required columns separately.
-      val projectedInput = GpuProjectExec.project(input, othersProjectList ++ genProjectList)
-      withResource(projectedInput) { projIn =>
-        // 1. compute split indices of input batch
-        val splitIndices = generator.inputSplitIndices(
-          projIn,
-          othersProjectList.length,
-          outer,
-          new RapidsConf(conf).gpuTargetBatchSizeBytes)
-        // 2. split up input batch with indices
-        makeSplitIterator(projIn, splitIndices).map { splitIn =>
-          withResource(splitIn) { splitIn =>
-            // 3. apply generation on each (sub)batch
-            val ret = generator.generate(splitIn, othersProjectList.length, outer)
-            numOutputBatches += 1
-            numOutputRows += ret.numRows()
-            ret
+      val projectedInput = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+        SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+        othersProjectList ++ genProjectList)
+      getSplits(projectedInput, othersProjectList, new RapidsConf(conf).gpuTargetBatchSizeBytes)
+    }
+    new GpuGenerateIterator(splits, generator, othersProjectList.length, outer,
+      numOutputRows, numOutputBatches, opTime)
+  }
+
+  // Split up the input batch and call generate on each split.
+  private def getSplits(cb: ColumnarBatch,
+      othersProjectList: Seq[GpuExpression],
+      targetSize: Long): Seq[SpillableColumnarBatch] = {
+    withResource(cb) { _ =>
+      // compute split indices of input batch
+      val splitIndices = generator.inputSplitIndices(
+      cb, othersProjectList.length, outer, targetSize)
+      // split up input batch with indices
+      makeSplits(cb, splitIndices)
+    }
+  }
+
+  // Split a ColumnarBatch according to a list of indices.
+  // Returns a list of spillable batches corresponding to the splits.
+  private def makeSplits(input: ColumnarBatch,
+      splitIndices: Array[Int]): Array[SpillableColumnarBatch] = {
+    val schema = GpuColumnVector.extractTypes(input)
+
+    if (splitIndices.isEmpty) {
+      // The caller will close input, so we increment here to offset.
+      Array(SpillableColumnarBatch(GpuColumnVector.incRefCounts(input),
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+    } else {
+      val splitInput = withResource(GpuColumnVector.from(input)) { table =>
+        table.contiguousSplit(splitIndices: _*)
+      }
+      splitInput.zipWithIndex.safeMap { case (ct, i) =>
+        closeOnExcept(splitInput.slice(i + 1, splitInput.length)) { _ =>
+          withResource(ct) { ct: ContiguousTable =>
+            SpillableColumnarBatch(ct, schema,
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
         }
       }
     }
   }
+}
 
-  private def makeSplitIterator(input: ColumnarBatch,
-      splitIndices: Array[Int]): Iterator[ColumnarBatch] = {
-    val schema = GpuColumnVector.extractTypes(input)
+class GpuGenerateIterator(
+    inputs: Seq[SpillableColumnarBatch],
+    generator: GpuGenerator,
+    generatorOffset: Int,
+    outer: Boolean,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    opTime: GpuMetric) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
+  // Need to ensure these are closed in case of failure.
+  inputs.foreach(scb => use(scb))
 
-    if (splitIndices.isEmpty) {
-      withResource(GpuColumnVector.from(input)) { table =>
-        Array(GpuColumnVector.from(table, schema)).iterator
-      }
-    } else {
-      val splitInput = withResource(GpuColumnVector.from(input)) { table =>
-        table.contiguousSplit(splitIndices: _*)
-      }
-      splitInput.zipWithIndex.iterator.map { case (ct, i) =>
-        closeOnExcept(splitInput.slice(i + 1, splitInput.length)) { _ =>
-          withResource(ct) { ct: ContiguousTable =>
-            GpuColumnVector.from(ct.getTable, schema)
-          }
-        }
-      }
+  // apply generation on each (sub)batch
+  private val retryIter = withRetry(inputs.toIterator, splitSpillableInHalfByRows) { attempt =>
+    withResource(attempt.getColumnarBatch()) { batch =>
+      generator.generate(batch, generatorOffset, outer)
+    }
+  }
+
+  override def hasNext: Boolean = retryIter.hasNext
+  override def next(): ColumnarBatch = {
+    withResource(new NvtxWithMetrics("GpuGenerateIterator", NvtxColor.PURPLE, opTime)) { _ =>
+      val cb = retryIter.next()
+      numOutputBatches += 1
+      numOutputRows += cb.numRows()
+      cb
     }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,21 +18,32 @@
 {"spark": "311"}
 {"spark": "312"}
 {"spark": "313"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "333"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuAlias, PlanShims}
+import com.nvidia.spark.rapids.GpuCast
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, Expression}
 
-class PlanShimsImpl extends PlanShims {
-  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
-  def isAnsiCast(e: Expression): Boolean = AnsiCastShim.isAnsiCast(e)
-
-  def isAnsiCastOptionallyAliased(e: Expression): Boolean = e match {
-    case Alias(e, _) => isAnsiCast(e)
-    case GpuAlias(e, _) => isAnsiCast(e)
-    case e => isAnsiCast(e)
+object AnsiCastShim {
+  def isAnsiCast(e: Expression): Boolean = e match {
+    case c: GpuCast => c.ansiMode
+    case _: AnsiCast => true
+    case _: Cast =>
+      val m = e.getClass.getDeclaredField("ansiEnabled")
+      m.setAccessible(true)
+      m.getBoolean(e)
+    case _ => false
   }
 }

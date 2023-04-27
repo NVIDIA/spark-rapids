@@ -31,13 +31,22 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.PlanShims
+import com.nvidia.spark.rapids.{GpuAlias, PlanShims}
 
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression}
 import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
 
 class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
     case p: CommandResultExec => p.commandPhysicalPlan
     case _ => plan
+  }
+
+  def isAnsiCast(e: Expression): Boolean = AnsiCastShim.isAnsiCast(e)
+
+  def isAnsiCastOptionallyAliased(e: Expression): Boolean = e match {
+    case Alias(e, _) => isAnsiCast(e)
+    case GpuAlias(e, _) => isAnsiCast(e)
+    case e => isAnsiCast(e)
   }
 }
