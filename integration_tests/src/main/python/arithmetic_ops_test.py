@@ -376,8 +376,12 @@ def test_cast_neg_to_decimal_err():
     else:
         exception_content = "Decimal(compact, -120000000, 20, 0) cannot be represented as Decimal(7, 7)"
 
-    exception_type = "java.lang.ArithmeticException: " if is_before_spark_330() \
-        and not is_databricks104_or_later() else "org.apache.spark.SparkArithmeticException: "
+    if is_before_spark_330() and not is_databricks104_or_later():
+            exception_type = "java.lang.ArithmeticException: "
+    elif not is_before_spark_340():
+        exception_type = "pyspark.errors.exceptions.captured.ArithmeticException: "
+    else:
+        exception_type = "org.apache.spark.SparkArithmeticException: "
 
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -973,7 +977,7 @@ def test_greatest(data_gen):
                 f.greatest(*command_args)))
 
 
-def _test_div_by_zero(ansi_mode, expr):
+def _test_div_by_zero(ansi_mode, expr, is_lit=False):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
@@ -984,7 +988,9 @@ def _test_div_by_zero(ansi_mode, expr):
     elif is_before_spark_340() and not is_databricks113_or_later():
         err_message = 'SparkArithmeticException: Division by zero'
     else:
-        err_message = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
+        exception_type = 'SparkArithmeticException: ' \
+            if not is_lit else "pyspark.errors.exceptions.captured.ArithmeticException: "
+        err_message = exception_type + "[DIVIDE_BY_ZERO] Division by zero"
 
     if ansi_mode == 'ansi':
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
@@ -994,14 +1000,15 @@ def _test_div_by_zero(ansi_mode, expr):
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
 
-@pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
-def test_div_by_zero_ansi(expr):
-    _test_div_by_zero(ansi_mode='ansi', expr=expr)
+@pytest.mark.parametrize('expr', ['a/0', 'a/b'])
+@pytest.mark.parametrize('ansi', [True, False])
+def test_div_by_zero(expr, ansi):
+    _test_div_by_zero(ansi_mode=ansi, expr=expr)
 
-@pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
-def test_div_by_zero_nonansi(expr):
-    _test_div_by_zero(ansi_mode='nonAnsi', expr=expr)
-
+# We want to test literals separate from expressions because Spark 3.4 throws different exceptions
+@pytest.mark.parametrize('ansi', [True, False])
+def test_div_by_zero_literal(ansi):
+    _test_div_by_zero(ansi_mode=ansi, expr='1/0', is_lit=True)
 
 def _get_div_overflow_df(spark, expr):
     return spark.createDataFrame(
@@ -1009,24 +1016,15 @@ def _get_div_overflow_df(spark, expr):
         ['a', 'b']
     ).selectExpr(expr)
 
-div_overflow_exprs = [
-    'CAST(-9223372036854775808L as LONG) DIV -1',
-    'a DIV CAST(-1 AS INT)',
-    'a DIV b']
-
-# Only run this test for Spark v3.2.0 and later to verify IntegralDivide will
-# throw exceptions for overflow when ANSI mode is enabled.
-@pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
-@pytest.mark.parametrize('expr', div_overflow_exprs)
-@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
-def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
+def _div_overflow_exception_when(expr, ansi_enabled, is_lit=False):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
     err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() else \
-        'org.apache.spark.SparkArithmeticException'
+        'org.apache.spark.SparkArithmeticException' \
+            if not is_lit else "pyspark.errors.exceptions.captured.ArithmeticException"
     err_mess = ': Overflow in integral divide' \
         if is_before_spark_340() and not is_databricks113_or_later() else \
         ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
-    if ansi_enabled == 'true':
+    if ansi_enabled:
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
             conf=ansi_conf,
@@ -1036,11 +1034,28 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
             func=lambda spark: _get_div_overflow_df(spark, expr),
             conf=ansi_conf)
 
+# Only run this test for Spark v3.2.0 and later to verify IntegralDivide will
+# throw exceptions for overflow when ANSI mode is enabled.
+@pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.parametrize('expr', ['a DIV CAST(-1 AS INT)', 'a DIV b'])
+@pytest.mark.parametrize('ansi_enabled', [False, True])
+def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
+    _div_overflow_exception_when(expr, ansi_enabled)
+
+# Only run this test for Spark v3.2.0 and later to verify IntegralDivide will
+# throw exceptions for overflow when ANSI mode is enabled.
+# We have split this test from test_div_overflow_exception_when_ansi because Spark 3.4
+# throws a different exception for literals
+@pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.parametrize('expr', ['CAST(-9223372036854775808L as LONG) DIV -1'])
+@pytest.mark.parametrize('ansi_enabled', [False, True])
+def test_div_overflow_exception_when_ansi_literal(expr, ansi_enabled):
+    _div_overflow_exception_when(expr, ansi_enabled, is_lit=True)
 
 # Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
 # throw exceptions for overflow even ANSI mode is enabled.
 @pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
-@pytest.mark.parametrize('expr', div_overflow_exprs)
+@pytest.mark.parametrize('expr', ['CAST(-9223372036854775808L as LONG) DIV -1', 'a DIV CAST(-1 AS INT)', 'a DIV b'])
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
