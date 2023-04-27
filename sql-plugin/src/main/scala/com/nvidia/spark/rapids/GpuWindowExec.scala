@@ -1266,7 +1266,19 @@ trait BasicWindowCalc {
     }
   }
 
+  /**
+   * Compute the basic aggregations. In some cases the resulting columns may not be the expected
+   * types.  This could be caused by cudf type differences and can be fixed by calling
+   * `castResultsIfNeeded` or it could be different because the window operations know about a
+   * post processing step that needs to happen prior to `castResultsIfNeeded`.
+   *
+   * @param cb the batch to do window aggregations on.
+   * @return the cudf columns that are the results of doing the aggregations.
+   */
   def computeBasicWindowSpillable(cb: SpillableColumnarBatch): Array[cudf.ColumnVector] = {
+    // this version of computeBasicWindow accepts a SpillableColumnarBatch instead
+    // of a regular ColumnarBatch but note that we also create a new SpillableColumnarBatch
+    // in this method, based on a projection
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
       val inputSpillable = SpillableColumnarBatch(
         GpuProjectExec.project(cb.getColumnarBatch(), initialProjections),
