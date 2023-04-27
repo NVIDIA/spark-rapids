@@ -285,7 +285,7 @@ object GpuOrcScan {
       // bool to string
       case (DType.BOOL8, DType.STRING) =>
         withResource(col.castTo(toDt)) { casted =>
-          // cuDF produces "ture"/"false" while CPU outputs "TRUE"/"FALSE".
+          // cuDF produces "true"/"false" while CPU outputs "TRUE"/"FALSE".
           casted.upper()
         }
 
@@ -372,6 +372,12 @@ object GpuOrcScan {
           }
         }
 
+      case (f: DType, t: DType) if f.isDecimalType && t.isDecimalType =>
+        val fromDataType = DecimalType(f.getDecimalMaxPrecision, -f.getScale)
+        val toDataType = DecimalType(t.getDecimalMaxPrecision, -t.getScale)
+        GpuCast.doCast(col, fromDataType, toDataType, ansiMode=false, legacyCastToString = false,
+          stringToDateAnsiModeEnabled = false)
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -415,6 +421,9 @@ object GpuOrcScan {
           case STRING => isOrcFloatTypesToStringEnable
           case _ => false
         }
+
+      case DECIMAL => toType == DECIMAL
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case _ =>
         false
