@@ -54,11 +54,21 @@ case class GpuJsonToStructs(
         closeOnExcept(isNullOrEmptyInput) { _ =>
           withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { cleaned =>
             withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-              withResource(cleaned.stringContains(lineSep)) { inputHas =>
-                withResource(inputHas.any()) { anyLineSep =>
-                  if (anyLineSep.isValid && anyLineSep.getBoolean) {
-                    throw new IllegalArgumentException("We cannot currently support parsing " +
-                        "JSON that contains a line separator in it")
+              withResource(cudf.Scalar.fromString("\r")) { returnSep =>
+                withResource(cleaned.stringContains(lineSep)) { inputHas =>
+                  withResource(inputHas.any()) { anyLineSep =>
+                    if (anyLineSep.isValid && anyLineSep.getBoolean) {
+                      throw new IllegalArgumentException("We cannot currently support parsing " +
+                          "JSON that contains a line separator in it")
+                    }
+                  }
+                }
+                withResource(cleaned.stringContains(returnSep)) { inputHas =>
+                  withResource(inputHas.any()) { anyReturnSep =>
+                    if (anyReturnSep.isValid && anyReturnSep.getBoolean) {
+                      throw new IllegalArgumentException("We cannot currently support parsing " +
+                          "JSON that contains a carriage return in it")
+                    }
                   }
                 }
               }
@@ -127,7 +137,7 @@ case class GpuJsonToStructs(
               if (i == -1) {
                 GpuColumnVector.columnVectorFromNull(numRows, dtype)
               } else {
-                rawTable.getColumn(i).incRefCount
+                rawTable.getColumn(i).castTo(GpuColumnVector.getRapidsType(dtype))
               }
             }
 

@@ -369,14 +369,49 @@ def test_from_json_map():
             .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
 
+@allow_non_gpu('ProjectExec', 'JsonToStructs')
+def test_from_json_map_fallback():
+    # The test here is working around some inconsistencies in how the keys are parsed for maps
+    # on the GPU the keys are dense, but on the CPU they are sparse
+    json_string_gen = StringGen(r'{"a": \d\d}')
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,INT>')),
+        'JsonToStructs',
+        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+
 @pytest.mark.parametrize('data_gen', [StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1234}')])
 @pytest.mark.parametrize('schema', [StructType([StructField("a", StringType())]),
                                     StructType([StructField("d", StringType())]),
                                     StructType([StructField("a", StringType()), StructField("b", StringType())]),
-                                    StructType([StructField("c", LongType()), StructField("a", StringType())]),
+                                    StructType([StructField("c", IntegerType()), StructField("a", StringType())]),
                                     StructType([StructField("a", StringType()), StructField("a", StringType())])
                                     ])
 def test_from_json_struct(data_gen, schema):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen) \
+            .select(f.from_json(f.col('a'), schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+
+@pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": {"name": "Bob", "class": "junior"}}')])
+@pytest.mark.parametrize('schema', [StructType([StructField("teacher", StringType())]),
+                                    StructType([StructField("student", StructType([StructField("name", StringType()), \
+                                                                                   StructField("class", StringType())]))])])
+def test_from_json_struct_of_struct(data_gen, schema):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen) \
+            .select(f.from_json(f.col('a'), schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+
+@pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": \[{"name": "Bob", "class": "junior"},' \
+                                                r'{"name": "Charlie", "class": "freshman"}\]}')])
+@pytest.mark.parametrize('schema', [StructType([StructField("teacher", StringType())]),
+                                    StructType([StructField("student", ArrayType(StructType([StructField("name", StringType()), \
+                                                                                             StructField("class", StringType())])))]),
+                                    StructType([StructField("teacher", StringType()), \
+                                                StructField("student", ArrayType(StructType([StructField("name", StringType()), \
+                                                                                             StructField("class", StringType())])))])])
+def test_from_json_struct_of_list(data_gen, schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
             .select(f.from_json(f.col('a'), schema)),
