@@ -65,7 +65,7 @@ class WindowRetrySuite
       Seq.empty[SortOrder],
       Array.empty,
       Array.empty,
-      inputBatch,
+      inputBatch.getColumnarBatch(),
       outputColumns)
     withResource(outputColumns) { _ =>
       var rowsLeftToCheck = 4
@@ -94,7 +94,7 @@ class WindowRetrySuite
       Seq.empty[SortOrder],
       Array.empty,
       Array.empty,
-      inputBatch,
+      inputBatch.getColumnarBatch(),
       outputColumns)
     withResource(outputColumns) { _ =>
       var rowsLeftToCheck = 4
@@ -125,7 +125,7 @@ class WindowRetrySuite
       orderSpec,
       Array(0),
       Array.empty,
-      inputBatch,
+      inputBatch.getColumnarBatch(),
       outputColumns)
     withResource(outputColumns) { _ =>
       var rowsLeftToCheck = 4
@@ -159,7 +159,7 @@ class WindowRetrySuite
         Seq.empty[SortOrder],
         Array.empty,
         Array.empty,
-        inputBatch,
+        inputBatch.getColumnarBatch(),
         outputColumns)
     }
     // when we throw we must have closed any columns in `outputColumns` that are not null
@@ -183,7 +183,7 @@ class WindowRetrySuite
       Seq.empty[SortOrder],
       Array.empty,
       Array(1),
-      inputBatch,
+      inputBatch.getColumnarBatch(),
       outputColumns)
     withResource(outputColumns) { _ =>
       var rowsLeftToCheck = 4

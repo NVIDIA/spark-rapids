@@ -1116,34 +1116,32 @@ class GroupedAggregations {
    * after this before you get to a final result.
    */
   def doAggsAndClose(isRunningBatched: Boolean,
-      boundOrderSpec: Seq[SortOrder],
-      orderByPositions: Array[Int],
-      partByPositions: Array[Int],
-      inputSpillable: SpillableColumnarBatch,
-      outputColumns: Array[cudf.ColumnVector]): Unit = {
-    withRetryNoSplit(inputSpillable) { attempt =>
-      // when there are exceptions in this body, we always want to close
-      // `outputColumns` before a likely retry.
-      try {
-        withResource(attempt.getColumnarBatch()) { attemptCb =>
-          doRunningWindowOptimizedAggs(
-            isRunningBatched, partByPositions, attemptCb, outputColumns)
-          doRowAggs(
-            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
-          doRangeAggs(
-            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
-        }
-      } catch {
-        case t: Throwable =>
-          // on exceptions we want to throw away any columns in outputColumns that
-          // are not pass-through
-          val columnsToClose = outputColumns.filter(_ != null)
-          outputColumns.indices.foreach { col =>
-            outputColumns(col) = null
-          }
-          columnsToClose.safeClose(t)
-          throw t
+                     boundOrderSpec: Seq[SortOrder],
+                     orderByPositions: Array[Int],
+                     partByPositions: Array[Int],
+                     input: ColumnarBatch,
+                     outputColumns: Array[cudf.ColumnVector]): Unit = {
+    // when there are exceptions in this body, we always want to close
+    // `outputColumns` before a likely retry.
+    try {
+      withResource(input) { attemptCb =>
+        doRunningWindowOptimizedAggs(
+          isRunningBatched, partByPositions, attemptCb, outputColumns)
+        doRowAggs(
+          boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
+        doRangeAggs(
+          boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
       }
+    } catch {
+      case t: Throwable =>
+        // on exceptions we want to throw away any columns in outputColumns that
+        // are not pass-through
+        val columnsToClose = outputColumns.filter(_ != null)
+        outputColumns.indices.foreach { col =>
+          outputColumns(col) = null
+        }
+        columnsToClose.safeClose(t)
+        throw t
     }
   }
 
@@ -1241,17 +1239,14 @@ trait BasicWindowCalc {
    */
   def computeBasicWindow(cb: ColumnarBatch): Array[cudf.ColumnVector] = {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
-      val inputSpillable = SpillableColumnarBatch(
-        GpuProjectExec.project(cb, initialProjections),
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
 
-      // this takes ownership of `inputSpillable`
+      // this takes ownership of `input`
       aggregations.doAggsAndClose(
         isRunningBatched,
         boundOrderSpec,
         orderByPositions,
         partByPositions,
-        inputSpillable,
+        input = GpuProjectExec.project(cb, initialProjections),
         outputColumns)
 
       // if the window aggregates were successful, lets splice the passThrough
@@ -1260,46 +1255,6 @@ trait BasicWindowCalc {
         case (inputIndex, outputIndex) =>
           outputColumns(outputIndex) =
             cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.incRefCount()
-      }
-
-      outputColumns
-    }
-  }
-
-  /**
-   * Compute the basic aggregations. In some cases the resulting columns may not be the expected
-   * types.  This could be caused by cudf type differences and can be fixed by calling
-   * `castResultsIfNeeded` or it could be different because the window operations know about a
-   * post processing step that needs to happen prior to `castResultsIfNeeded`.
-   *
-   * @param cb the batch to do window aggregations on.
-   * @return the cudf columns that are the results of doing the aggregations.
-   */
-  def computeBasicWindowSpillable(cb: SpillableColumnarBatch): Array[cudf.ColumnVector] = {
-    // this version of computeBasicWindow accepts a SpillableColumnarBatch instead
-    // of a regular ColumnarBatch but note that we also create a new SpillableColumnarBatch
-    // in this method, based on a projection
-    closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
-      val inputSpillable = SpillableColumnarBatch(
-        GpuProjectExec.project(cb.getColumnarBatch(), initialProjections),
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-
-      // this takes ownership of `inputSpillable`
-      aggregations.doAggsAndClose(
-        isRunningBatched,
-        boundOrderSpec,
-        orderByPositions,
-        partByPositions,
-        inputSpillable,
-        outputColumns)
-
-      // if the window aggregates were successful, lets splice the passThrough
-      // columns
-      passThrough.foreach {
-        case (inputIndex, outputIndex) =>
-          outputColumns(outputIndex) =
-            cb.getColumnarBatch().column(inputIndex)
-              .asInstanceOf[GpuColumnVector].getBase.incRefCount()
       }
 
       outputColumns
@@ -1532,7 +1487,7 @@ class GpuRunningWindowIterator(
       // note that computeBasicWindowSpillable also creates a spillable
       // batch based on a projection applied to cbSpillable so this probably
       // needs more work to avoid creating two spillable batches?
-      withResource(computeBasicWindowSpillable(cbSpillable)) { basic =>
+      withResource(computeBasicWindow(cbSpillable.getColumnarBatch())) { basic =>
         // we backup the fixers state and restore it in the event of a retry
         var newOrder: Option[Array[Scalar]] = None
         var newParts: Option[Array[Scalar]] = None
