@@ -432,23 +432,25 @@ case class GpuOutOfCoreSortIterator(
 
       withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
         while(sortedIt.hasNext) {
-          withResource(sortedIt.next()) { sortedTbl =>
+          val sortedTbl = sortedIt.next()
+          val rows = closeOnExcept(sortedTbl) { _ =>
             memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
             peakMemory = Math.max(peakMemory, memUsed)
-            val rows = sortedTbl.getRowCount.toInt
-            // filter out empty batches
-            if (rows > 0) {
-              val sp = withResource(sortedTbl) { _ =>
-                SpillableColumnarBatch(
-                  GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes),
-                  SpillPriorities.ACTIVE_ON_DECK_PRIORITY
-                )
+            sortedTbl.getRowCount.toInt
+          }
+          // filter out empty batches
+          if (rows > 0) {
+            val sp = withResource(sortedTbl) { _ =>
+              closeOnExcept(GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { cb =>
+                SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               }
-              val ret = withRetryNoSplit(sp) { attempt =>
-                splitAfterSort(attempt)
-              }
-              saveSplitResult(ret)
             }
+            val ret = withRetryNoSplit(sp) { attempt =>
+              splitAfterSort(attempt)
+            }
+            saveSplitResult(ret)
+          } else {
+            sortedTbl.close()
           }
         }
       }
