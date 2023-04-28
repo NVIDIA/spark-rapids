@@ -96,6 +96,7 @@ case class GpuJsonToStructs(
     res
   }
 
+  // Given a cudf column, return its Spark type
   private def getSparkType(col: cudf.ColumnView): DataType = {
     col.getType match {
       case cudf.DType.INT8 | cudf.DType.UINT8 => ByteType
@@ -168,6 +169,7 @@ case class GpuJsonToStructs(
                 GpuColumnVector.columnVectorFromNull(numRows, dtype)
               } else {
                 val col = rawTable.getColumn(i)
+                // getSparkType is only used to get the from type for cast
                 doCast(col, getSparkType(col), dtype, false, false, false)
               }
             }
