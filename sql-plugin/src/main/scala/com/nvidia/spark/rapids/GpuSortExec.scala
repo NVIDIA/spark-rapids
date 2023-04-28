@@ -486,7 +486,7 @@ case class GpuOutOfCoreSortIterator(
       // we will ignore the upper bound and the single column because it should not have much
       // of an impact, but if we wanted to be exact we would look at those too.
       peakMemory = Math.max(peakMemory, memUsed)
-      withResource(mergedBatch) { mergedBatch =>
+      val (retBatch, sortedOffset) = closeOnExcept(mergedBatch) { _ =>
         // First we want figure out what is fully sorted from what is not
         val sortSplitOffset = if (pending.isEmpty) {
           // No need to split it
@@ -511,15 +511,23 @@ case class GpuOutOfCoreSortIterator(
           // This is a special case where we have everything we need to output already so why
           // bother with another contig split just to put it into the queue
           withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
-            return Some(sorter.removeProjectedColumns(mergedTbl))
+            (Some(sorter.removeProjectedColumns(mergedTbl)), sortSplitOffset)
           }
+        } else {
+          (None, sortSplitOffset)
         }
+      }
 
-        val mergedSp = closeOnExcept(GpuColumnVector.incRefCounts(mergedBatch)) { _ =>
+      if (retBatch.nonEmpty) {
+        withResource(mergedBatch) { _ =>
+          return retBatch
+        }
+      } else {
+        val mergedSp = closeOnExcept(mergedBatch) { _ =>
           SpillableColumnarBatch(mergedBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         }
         val splitResult = withRetryNoSplit(mergedSp) { attempt =>
-          splitAfterSort(attempt, sortSplitOffset)
+          splitAfterSort(attempt, sortedOffset)
         }
         saveSplitResult(splitResult)
       }
@@ -533,41 +541,45 @@ case class GpuOutOfCoreSortIterator(
    */
   private final def concatOutput(): ColumnarBatch = {
     // combine all the sorted data into a single batch
-    withResource(ArrayBuffer[SpillableColumnarBatch]()) { spillCbs =>
-      var totalBytes = 0L
-      while(!sorted.isEmpty && (spillCbs.isEmpty ||
+    val spillCbs = ArrayBuffer[SpillableColumnarBatch]()
+    var totalBytes = 0L
+    closeOnExcept(spillCbs) { _ =>
+      while (!sorted.isEmpty && (spillCbs.isEmpty ||
           (totalBytes + sorted.peek().sizeInBytes) < targetSize)) {
         val tmp = sorted.pop()
         sortedSize -= tmp.sizeInBytes
         totalBytes += tmp.sizeInBytes
         spillCbs += tmp
       }
-      var memUsed = totalBytes
-      val ret = if (spillCbs.length == 1) {
-        // We cannot concat a single table
-        withResource(spillCbs.head.getColumnarBatch()) { cb =>
-          withResource(GpuColumnVector.from(cb)) { tbl =>
-            sorter.removeProjectedColumns(tbl)
-          }
-        }
-      } else {
-        withRetryNoSplit(spillCbs) { attempt =>
-          val tables = attempt.safeMap { sp =>
-            withResource(sp.getColumnarBatch())(GpuColumnVector.from)
-          }
-          withResource(tables) { _ =>
-            withResource(Table.concatenate(tables: _*)) { combined =>
-              // ignore the output of removing the columns because it is just dropping columns
-              // so it will be smaller than this with not added memory
-              memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(combined)
-              sorter.removeProjectedColumns(combined)
-            }
+    }
+    var memUsed = totalBytes
+    val ret = if (spillCbs.length == 1) {
+      // We cannot concat a single table
+      withRetryNoSplit(spillCbs.head) { attemptSp =>
+        withResource(attemptSp.getColumnarBatch()) { attemptCb =>
+          withResource(GpuColumnVector.from(attemptCb)) { attemptTbl =>
+            sorter.removeProjectedColumns(attemptTbl)
           }
         }
       }
-      peakMemory = Math.max(peakMemory, memUsed)
-      ret
+    } else {
+      // withRetryNoSplit will take over the batches.
+      withRetryNoSplit(spillCbs) { attempt =>
+        val tables = attempt.safeMap { sp =>
+          withResource(sp.getColumnarBatch())(GpuColumnVector.from)
+        }
+        withResource(tables) { _ =>
+          withResource(Table.concatenate(tables: _*)) { combined =>
+            // ignore the output of removing the columns because it is just dropping columns
+            // so it will be smaller than this with not added memory
+            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(combined)
+            sorter.removeProjectedColumns(combined)
+          }
+        }
+      }
     }
+    peakMemory = Math.max(peakMemory, memUsed)
+    ret
   }
 
   override def next(): ColumnarBatch = {
