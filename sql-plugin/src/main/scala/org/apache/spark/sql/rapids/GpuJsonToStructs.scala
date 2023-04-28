@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable.{ArrayBuffer, Set}
-
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -26,7 +24,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
-// import org.apache.spark.sql.types.{AbstractDataType, DataType, MapType, StringType, StructType}
 import org.apache.spark.sql.types._
 
 case class GpuJsonToStructs(
@@ -88,10 +85,15 @@ case class GpuJsonToStructs(
   // Input = [("a", StringType), ("b", StringType), ("a", IntegerType)]
   // Output = [(null, StringType), ("b", StringType), ("a", IntegerType)]
   private def processFieldNames(names: Seq[(String, DataType)]): Seq[(String, DataType)] = {
-    val existingNames = Set[String]()
-    names.foldRight(Seq[(String, DataType)]())((elem, acc) => {
-      val (name, dtype) = elem
-      if (existingNames(name)) (null, dtype)+:acc else {existingNames += name; (name, dtype)+:acc}})
+    val zero = (Set.empty[String], Seq.empty[(String, DataType)])
+    val (_, res) = names.foldRight(zero) { case ((name, dtype), (existingNames, acc)) =>
+      if (existingNames(name)) {
+        (existingNames, (null, dtype) +: acc)
+      } else {
+        (existingNames + name, (name, dtype) +: acc)
+      }
+    }
+    res
   }
 
   private def getSparkType(col: cudf.ColumnView): DataType = {
@@ -106,10 +108,9 @@ case class GpuJsonToStructs(
       case cudf.DType.STRING => StringType
       case cudf.DType.LIST => ArrayType(getSparkType(col.getChildColumnView(0)))
       case cudf.DType.STRUCT =>
-        val structFields = ArrayBuffer.empty[StructField]
-        (0 until col.getNumChildren).foreach { i =>
+        val structFields = (0 until col.getNumChildren).map { i =>
           val child = col.getChildColumnView(i)
-          structFields += StructField("", getSparkType(child))
+          StructField("", getSparkType(child))
         }
         StructType(structFields)
       case t => throw new IllegalArgumentException(
