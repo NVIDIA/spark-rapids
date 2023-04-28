@@ -1219,22 +1219,24 @@ trait BasicWindowCalc {
    */
   def computeBasicWindow(cb: ColumnarBatch): Array[cudf.ColumnVector] = {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
-      // First the pass through unchanged columns
+
+      withResource(GpuProjectExec.project(cb, initialProjections)) { proj =>
+        // this takes ownership of `inputSpillable`
+        aggregations.doAggs(
+          isRunningBatched,
+          boundOrderSpec,
+          orderByPositions,
+          partByPositions,
+          proj,
+          outputColumns)
+      }
+
+      // if the window aggregates were successful, lets splice the passThrough
+      // columns
       passThrough.foreach {
         case (inputIndex, outputIndex) =>
           outputColumns(outputIndex) =
             cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.incRefCount()
-      }
-
-      // make spillable
-      val spillableBatch = SpillableColumnarBatch(
-          GpuProjectExec.project(cb, initialProjections),
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY
-        )
-
-      withRetryNoSplit(spillableBatch) { initProjCb =>
-        aggregations.doAggs(isRunningBatched, boundOrderSpec, orderByPositions,
-          partByPositions, initProjCb.getColumnarBatch(), outputColumns)
       }
 
       outputColumns
@@ -1541,13 +1543,13 @@ class GpuRunningWindowIterator(
   }
 
   override def next(): ColumnarBatch = {
-    withResource(readNextInputBatch()) { cb =>
-      withResource(new NvtxWithMetrics("RunningWindow", NvtxColor.CYAN, opTime)) { _ =>
-        val ret = computeRunning(cb)
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
-      }
+    // TODO maybe should create spillable batch here before calling computeRunning
+    val cb = readNextInputBatch()
+    withResource(new NvtxWithMetrics("RunningWindow", NvtxColor.CYAN, opTime)) { _ =>
+      val ret = computeRunning(cb) // takes ownership of cb
+      numOutputBatches += 1
+      numOutputRows += ret.numRows()
+      ret
     }
   }
 }
