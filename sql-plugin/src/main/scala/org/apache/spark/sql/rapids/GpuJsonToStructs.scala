@@ -16,16 +16,18 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable.Set
+import scala.collection.mutable.{ArrayBuffer, Set}
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.types.{AbstractDataType, DataType, MapType, StringType, StructType}
+// import org.apache.spark.sql.types.{AbstractDataType, DataType, MapType, StringType, StructType}
+import org.apache.spark.sql.types._
 
 case class GpuJsonToStructs(
     schema: DataType,
@@ -92,6 +94,29 @@ case class GpuJsonToStructs(
       if (existingNames(name)) (null, dtype)+:acc else {existingNames += name; (name, dtype)+:acc}})
   }
 
+  private def getSparkType(col: cudf.ColumnView): DataType = {
+    col.getType match {
+      case cudf.DType.INT8 | cudf.DType.UINT8 => ByteType
+      case cudf.DType.INT16 | cudf.DType.UINT16 => ShortType
+      case cudf.DType.INT32 | cudf.DType.UINT32 => IntegerType
+      case cudf.DType.INT64 | cudf.DType.UINT64 => LongType
+      case cudf.DType.FLOAT32 => FloatType
+      case cudf.DType.FLOAT64 => DoubleType
+      case cudf.DType.BOOL8 => BooleanType
+      case cudf.DType.STRING => StringType
+      case cudf.DType.LIST => ArrayType(getSparkType(col.getChildColumnView(0)))
+      case cudf.DType.STRUCT =>
+        val structFields = ArrayBuffer.empty[StructField]
+        (0 until col.getNumChildren).foreach { i =>
+          val child = col.getChildColumnView(i)
+          structFields += StructField("", getSparkType(child))
+        }
+        StructType(structFields)
+      case t => throw new IllegalArgumentException(
+        s"GpuJsonToStructs currently cannot process CUDF column of type $t.")
+    }
+  }
+
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     schema match {
       case _: MapType =>
@@ -141,7 +166,8 @@ case class GpuJsonToStructs(
               if (i == -1) {
                 GpuColumnVector.columnVectorFromNull(numRows, dtype)
               } else {
-                rawTable.getColumn(i).castTo(GpuColumnVector.getRapidsType(dtype))
+                val col = rawTable.getColumn(i)
+                doCast(col, getSparkType(col), dtype, false, false, false)
               }
             }
 
@@ -158,7 +184,7 @@ case class GpuJsonToStructs(
         }
       }
       case _ => throw new IllegalArgumentException(
-        s"GpuJsonToStructs currently does not support schema of type ${schema}.")
+        s"GpuJsonToStructs currently does not support schema of type $schema.")
     }
   }
 

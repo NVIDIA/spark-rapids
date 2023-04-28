@@ -393,10 +393,10 @@ def test_from_json_struct(data_gen, schema):
             .select(f.from_json(f.col('a'), schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": {"name": "Bob", "class": "junior"}}')])
+@pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": {"name": "Bob", "age": 20}}')])
 @pytest.mark.parametrize('schema', [StructType([StructField("teacher", StringType())]),
                                     StructType([StructField("student", StructType([StructField("name", StringType()), \
-                                                                                   StructField("class", StringType())]))])])
+                                                                                   StructField("age", IntegerType())]))])])
 def test_from_json_struct_of_struct(data_gen, schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
