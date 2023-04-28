@@ -1466,42 +1466,46 @@ class GpuRunningWindowIterator(
 
     val cbSpillable = SpillableColumnarBatch(input, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     withRetryNoSplit(cbSpillable) { _ =>
-      // note that computeBasicWindowSpillable also creates a spillable
-      // batch based on a projection applied to cbSpillable so this probably
-      // needs more work to avoid creating two spillable batches?
       withResource(computeBasicWindow(cbSpillable.getColumnarBatch())) { basic =>
-        // we backup the fixers state and restore it in the event of a retry
         var newOrder: Option[Array[Scalar]] = None
         var newParts: Option[Array[Scalar]] = None
-        val fixedUp = withRestoreOnRetry(fixers.values.toSeq) {
-          withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
-            boundPartitionSpec)) { parts =>
-            val partColumns = GpuColumnVector.extractBases(parts)
-
-            withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
-              val fixedUp = if (fixerNeedsOrderMask) {
-                withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
-                  boundOrderColumns)) { order =>
-                  val orderColumns = GpuColumnVector.extractBases(order)
-                  // We need to fix up the rows that are part of the same batch as the end of the
-                  // last batch
-                  withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
-                    orderEqual =>
-                      closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) {
-                        fixedUp =>
-                          newOrder = Some(getScalarRow(numRows - 1, orderColumns))
-                          fixedUp
-                      }
+        val fixedUp = try {
+          // we backup the fixers state and restore it in the event of a retry
+          withRestoreOnRetry(fixers.values.toSeq) {
+            withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
+                boundPartitionSpec)) { parts =>
+              val partColumns = GpuColumnVector.extractBases(parts)
+              withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
+                val fixedUp = if (fixerNeedsOrderMask) {
+                  withResource(GpuProjectExec.project(cbSpillable.getColumnarBatch(),
+                      boundOrderColumns)) { order =>
+                    val orderColumns = GpuColumnVector.extractBases(order)
+                    // We need to fix up the rows that are part of the same batch as the end of the
+                    // last batch
+                    withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
+                      orderEqual =>
+                        closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) {
+                          fixedUp =>
+                            newOrder = Some(getScalarRow(numRows - 1, orderColumns))
+                            fixedUp
+                        }
+                    }
                   }
+                } else {
+                  // No ordering needed
+                  fixUpAll(basic, fixers, partsEqual, None)
                 }
-              } else {
-                // No ordering needed
-                fixUpAll(basic, fixers, partsEqual, None)
+                newParts = Some(getScalarRow(numRows - 1, partColumns))
+                fixedUp
               }
-              newParts = Some(getScalarRow(numRows - 1, partColumns))
-              fixedUp
             }
           }
+        } catch {
+          case t: Throwable =>
+            // avoid leaking unused interim results
+            newOrder.foreach(_.foreach(_.close()))
+            newParts.foreach(_.foreach(_.close()))
+            throw t
         }
         // this section is outside of the retry logic because the calls to saveLastParts
         // and saveLastOrders can potentially close GPU resources
