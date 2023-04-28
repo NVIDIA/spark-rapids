@@ -1221,7 +1221,6 @@ trait BasicWindowCalc {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
 
       withResource(GpuProjectExec.project(cb, initialProjections)) { proj =>
-        // this takes ownership of `inputSpillable`
         aggregations.doAggs(
           isRunningBatched,
           boundOrderSpec,
