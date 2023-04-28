@@ -1729,6 +1729,14 @@ def test_groupby_std_variance(data_gen, conf):
         'var_samp(b)' +
         ' from data_table group by a',
         conf=local_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1000),
+        "data_table",
+        'select ' +
+        'stddev(b),' +
+        'stddev_samp(b)'
+        ' from data_table',
+        conf=local_conf)
 
 
 @ignore_order(local=True)
@@ -1750,6 +1758,14 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
         'var_pop(c),' +
         'var_samp(c)' +
         ' from data_table group by a',
+        conf=local_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1000),
+        "data_table",
+        'select ' +
+        'stddev(c),' +
+        'stddev_samp(c)'
+        ' from data_table',
         conf=local_conf)
 
 
@@ -1788,6 +1804,15 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
                 f.variance('b'),
                 f.var_pop('b'),
                 f.var_samp('b')
+            ),
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf=local_conf)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen, length=1000)
+            .agg(
+                f.stddev('b'),
+                f.stddev_samp('b')
             ),
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
