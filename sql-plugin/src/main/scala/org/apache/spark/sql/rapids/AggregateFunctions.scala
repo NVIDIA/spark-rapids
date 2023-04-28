@@ -505,7 +505,7 @@ class CudfMergeM2 extends CudfAggregate {
                   val delta = mean - mergeMean
                   val newN = n + mergeN
                   mergeM2 += m2 + delta * delta * n.toDouble * mergeN.toDouble / newN.toDouble
-                  mergeMean = (mergeMean * mergeN + mean * n.toDouble) / newN.toDouble
+                  mergeMean = (mergeMean * mergeN.toDouble + mean * n.toDouble) / newN.toDouble
                   mergeN = newN
                 }
               }
