@@ -3274,7 +3274,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
-      ExprChecks.aggNotReduction(
+      ExprChecks.fullAgg(
           TypeSig.DOUBLE, TypeSig.DOUBLE,
           Seq(ParamCheck("input", TypeSig.DOUBLE,
             TypeSig.DOUBLE))),

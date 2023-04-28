@@ -444,30 +444,81 @@ object CudfNthLikeAggregate {
  * In the future, this aggregate class should be removed and the mean values should be
  * generated in the output of libcudf's M2 aggregate.
  */
-class CudfMean(override val dataType: DataType) extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CudfMean is not supported in reduction")
+class CudfMean extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      val count = col.getRowCount - col.getNullCount
+      if (count == 0) {
+        Scalar.fromDouble(0.0)
+      } else {
+        val sum = col.sum(DType.FLOAT64)
+        Scalar.fromDouble(sum.getDouble / count.toDouble)
+      }
+    }
 
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.mean()
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mean()
 
   override val name: String = "CudfMeanForM2"
+
+  override def dataType: DataType = DoubleType
 }
 
 class CudfM2 extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CudfM2 aggregation is not supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      val count = col.getRowCount - col.getNullCount
+      if (count == 0) {
+        Scalar.fromDouble(0.0)
+      } else {
+        val sum = col.sum(DType.FLOAT64)
+        val mean = sum.getDouble / count.toDouble
+        val sumSqr = col.reduce(ReductionAggregation.sumOfSquares(), DType.FLOAT64).getDouble
+        Scalar.fromDouble(sumSqr - mean * mean * count.toDouble)
+      }
+    }
 
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.M2()
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.M2()
 
   override val name: String = "CudfM2"
   override def dataType: DataType = DoubleType
 }
 
 class CudfMergeM2 extends CudfAggregate {
-  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar = _ =>
-    throw new UnsupportedOperationException("CudfMergeM2 aggregation is not supported in reduction")
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      withResource(col.copyToHost()) { hcv =>
+        withResource(hcv.getChildColumnView(0)) { partialN =>
+          withResource(hcv.getChildColumnView(1)) { partialMean =>
+            withResource(hcv.getChildColumnView(2)) { partialM2 =>
+              var mergeN : Double = 0.0
+              var mergeMean : Double = 0.0
+              var mergeM2 : Double = 0.0
+
+              for (i <- 0 until partialN.getRowCount.toInt) {
+                val n = partialN.getDouble(i)
+                if(n > 0) {
+                  val mean = partialMean.getDouble(i)
+                  val m2 = partialM2.getDouble(i)
+                  val delta = mean - mergeMean
+                  val newN = n + mergeN
+                  mergeM2 += m2 + delta * delta * n * mergeN / newN
+                  mergeMean += delta * mergeN / newN
+                  mergeN = newN
+                }
+              }
+
+              withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
+                withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
+                  withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
+                    Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+  }
 
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.mergeM2()
@@ -1994,7 +2045,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
 
   // cudf aggregates
   lazy val cudfCountN: CudfAggregate = new CudfCount(IntegerType)
-  lazy val cudfMean: CudfMean = new CudfMean(DoubleType)
+  lazy val cudfMean: CudfMean = new CudfMean
   lazy val cudfM2: CudfM2 = new CudfM2
 
   // For local update, we need to compute all 3 aggregates: n, avg, m2.
