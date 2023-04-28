@@ -490,24 +490,24 @@ class CudfMergeM2 extends CudfAggregate {
         withResource(hcv.getChildColumnView(0)) { partialN =>
           withResource(hcv.getChildColumnView(1)) { partialMean =>
             withResource(hcv.getChildColumnView(2)) { partialM2 =>
-              var mergeN : Double = 0.0
+              var mergeN : Integer = 0
               var mergeMean : Double = 0.0
               var mergeM2 : Double = 0.0
 
               for (i <- 0 until partialN.getRowCount.toInt) {
-                val n = partialN.getDouble(i)
+                val n = partialN.getInt(i)
                 if(n > 0) {
                   val mean = partialMean.getDouble(i)
                   val m2 = partialM2.getDouble(i)
                   val delta = mean - mergeMean
                   val newN = n + mergeN
-                  mergeM2 += m2 + delta * delta * n * mergeN / newN
-                  mergeMean += delta * mergeN / newN
+                  mergeM2 += m2 + delta * delta * n.toDouble * mergeN.toDouble / newN.toDouble
+                  mergeMean = (mergeMean * mergeN + mean * n.toDouble) / newN.toDouble
                   mergeN = newN
                 }
               }
 
-              withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
+              withResource(ColumnVector.fromInts(mergeN)) { cvMergeN =>
                 withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
                   withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
                     Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
