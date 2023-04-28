@@ -20,7 +20,7 @@
 
 set -ex
 
-CUDF_VER=${CUDF_VER:-23.04}
+CUDF_VER=${CUDF_VER:-23.06}
 CUDA_VER=${CUDA_VER:-11.0}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
@@ -28,8 +28,15 @@ export PATH=/databricks/conda/bin:$PATH
 # Set Python for the running instance
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-# cudf 23.02+ do not support python 3.9. ref: https://docs.rapids.ai/notices/rsn0022/
-[[ "$PYTHON_VERSION" == '3.9' ]] && PYTHON_VERSION='3.8'
+# Rapids 23.06+ drops python 3.8 conda packages. ref: https://docs.rapids.ai/notices/rsn0029/
+if [[ "$(printf '%s\n' "3.9" "${PYTHON_VERSION}" | sort -V | head -n1)" = "3.9" ]]; then
+    # To fix "'lsb_release -a' returned non-zero". ref: https://github.com/pypa/pip/issues/4924
+    [[ -n "$(which lsb_release)" ]] && mv $(which lsb_release) $(which lsb_release)"-bak"
+else
+    # Set python versiomn to make it the same for both shell mode and batch mode
+    echo "Rapids 23.06+ drops python 3.8 or below versions of conda packages"
+    exit -1
+fi
 
 base=$(conda info --base)
 # Create and activate 'cudf-udf' conda env for cudf-udf tests
