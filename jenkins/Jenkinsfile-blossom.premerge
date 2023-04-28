@@ -76,7 +76,7 @@ pipeline {
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CUDA_CLASSIFIER = 'cuda11'
         // DB related ENVs
-        IDLE_TIMEOUT = '240' // 4 hours
+        IDLE_TIMEOUT = '390' // 6.5 hours
         NUM_WORKERS = '0'
         DB_TYPE = getDbType()
         DATABRICKS_HOST = DbUtils.getHost("$DB_TYPE")
@@ -292,7 +292,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 5, unit: 'HOURS') {
+                            timeout(time: 6, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
@@ -324,7 +324,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 5, unit: 'HOURS') {
+                            timeout(time: 6, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
