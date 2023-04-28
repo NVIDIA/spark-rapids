@@ -451,8 +451,9 @@ class CudfMean extends CudfAggregate {
       if (count == 0) {
         Scalar.fromDouble(0.0)
       } else {
-        val sum = col.sum(DType.FLOAT64)
-        Scalar.fromDouble(sum.getDouble / count.toDouble)
+        withResource(col.sum(DType.FLOAT64)) { sum =>
+          Scalar.fromDouble(sum.getDouble / count.toDouble)
+        }
       }
     }
 
@@ -470,10 +471,12 @@ class CudfM2 extends CudfAggregate {
       if (count == 0) {
         Scalar.fromDouble(0.0)
       } else {
-        val sum = col.sum(DType.FLOAT64)
-        val mean = sum.getDouble / count.toDouble
-        val sumSqr = col.reduce(ReductionAggregation.sumOfSquares(), DType.FLOAT64).getDouble
-        Scalar.fromDouble(sumSqr - mean * mean * count.toDouble)
+        withResource(col.sum(DType.FLOAT64)) {sum =>
+          val mean = sum.getDouble / count.toDouble
+          withResource(col.reduce(ReductionAggregation.sumOfSquares(), DType.FLOAT64)) { sumSqr =>
+            Scalar.fromDouble(sumSqr.getDouble - mean * mean * count.toDouble)
+          }
+        }
       }
     }
 
@@ -520,8 +523,7 @@ class CudfMergeM2 extends CudfAggregate {
       }
   }
 
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.mergeM2()
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeM2()
 
   override val name: String = "CudfMergeM2"
   override val dataType: DataType =
