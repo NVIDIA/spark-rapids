@@ -661,10 +661,10 @@ StddevPop,S,`stddev_pop`,None,aggregation,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,
 StddevPop,S,`stddev_pop`,None,aggregation,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 StddevPop,S,`stddev_pop`,None,window,input,NA,NA,NA,NA,NA,NA,NS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 StddevPop,S,`stddev_pop`,None,window,result,NA,NA,NA,NA,NA,NA,NS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
-StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,reduction,input,NA,NA,NA,NA,NA,NA,NS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
-StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,reduction,result,NA,NA,NA,NA,NA,NA,NS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,aggregation,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,aggregation,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,reduction,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,reduction,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,window,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 StddevSamp,S,`stddev_samp`; `std`; `stddev`,None,window,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Sum,S,`sum`,None,aggregation,input,NA,S,S,S,S,S,S,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA

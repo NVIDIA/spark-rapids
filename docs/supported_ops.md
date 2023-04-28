@@ -17433,7 +17433,7 @@ are limited.
 <td rowSpan="6">`stddev_samp`, `std`, `stddev`</td>
 <td rowSpan="6">Aggregation computing sample standard deviation</td>
 <td rowSpan="6">None</td>
-<td rowSpan="2">reduction</td>
+<td rowSpan="2">aggregation</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -17441,7 +17441,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17462,7 +17462,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -17476,7 +17476,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">aggregation</td>
+<td rowSpan="2">reduction</td>
 <td>input</td>
 <td> </td>
 <td> </td>
