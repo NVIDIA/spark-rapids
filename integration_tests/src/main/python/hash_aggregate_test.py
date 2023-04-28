@@ -1808,6 +1808,9 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
+    
+    exist_clz = ['StddevSamp',
+                 'GpuStddevSamp']
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=1000)
             .agg(
