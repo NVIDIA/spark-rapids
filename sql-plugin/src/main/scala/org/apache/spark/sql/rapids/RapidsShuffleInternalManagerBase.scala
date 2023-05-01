@@ -547,10 +547,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
   }
 
-  Option(TaskContext.get()).foreach {_.addTaskCompletionListener[Unit]( _ => {
+  context.addTaskCompletionListener[Unit]( _ => {
     // should not be needed, but just in case
     closeShuffleReadRange()
-  })}
+  })
 
   private def fetchContinuousBlocksInBatch: Boolean = {
     val conf = SparkEnv.get.conf
@@ -637,12 +637,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
 
     // Register a completion handler to close any queued cbs.
-    Option(TaskContext.get()).foreach {_.addTaskCompletionListener[Unit]( _ => {
+    context.addTaskCompletionListener[Unit]( _ => {
       queued.forEach {
         case (_, cb:ColumnarBatch) => cb.close()
       }
       queued.clear()
-    })}
+    })
 
     override def hasNext: Boolean = {
       if (fallbackIter != null) {
