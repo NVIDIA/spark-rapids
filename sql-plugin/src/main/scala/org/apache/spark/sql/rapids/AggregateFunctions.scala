@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
@@ -471,7 +471,7 @@ class CudfM2 extends CudfAggregate {
       if (count == 0) {
         Scalar.fromDouble(0.0)
       } else {
-        withResource(col.sum(DType.FLOAT64)) {sum =>
+        withResource(col.sum(DType.FLOAT64)) { sum =>
           val mean = sum.getDouble / count.toDouble
           withResource(col.reduce(ReductionAggregation.sumOfSquares(), DType.FLOAT64)) { sumSqr =>
             Scalar.fromDouble(sumSqr.getDouble - mean * mean * count.toDouble)
@@ -489,13 +489,16 @@ class CudfM2 extends CudfAggregate {
 class CudfMergeM2 extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      withResource(col.copyToHost()) { hcv =>
+      val hcv = withResource(new NvtxRange("device-to-host", NvtxColor.ORANGE)) { _ =>
+        col.copyToHost()
+      }
+      withResource(hcv) { _ =>
         withResource(hcv.getChildColumnView(0)) { partialN =>
           withResource(hcv.getChildColumnView(1)) { partialMean =>
             withResource(hcv.getChildColumnView(2)) { partialM2 =>
-              var mergeN : Integer = 0
-              var mergeMean : Double = 0.0
-              var mergeM2 : Double = 0.0
+              var mergeN: Integer = 0
+              var mergeMean: Double = 0.0
+              var mergeM2: Double = 0.0
 
               for (i <- 0 until partialN.getRowCount.toInt) {
                 val n = partialN.getInt(i)
