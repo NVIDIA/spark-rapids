@@ -215,7 +215,9 @@ run_iceberg_tests() {
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
   IS_SPARK_33_OR_LATER=0
-  [[ "$(printf '%s\n' "3.3" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.3" ]] && IS_SPARK_33_OR_LATER=1
+  MAJOR_VERSION=$(echo $ICEBERG_SPARK_VER | cut -d. -f1)
+  MINOR_VERSION=$(echo $ICEBERG_SPARK_VER | cut -d. -f2)
+  [[ "$MAJOR_VERSION" -ge "3" ]] && [[ "$MINOR_VERSION" -ge "3" ]] && IS_SPARK_33_OR_LATER=1
 
   # RAPIDS-iceberg does not support Spark 3.3+ yet
   if [[ "$IS_SPARK_33_OR_LATER" = "1" ]]; then
