@@ -1784,9 +1784,9 @@ def test_std_variance_nulls(data_gen, conf, ansi_enabled):
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
 def test_std_variance_partial_replace_fallback(data_gen,
-                                                       conf,
-                                                       replace_mode,
-                                                       aqe_enabled):
+                                               conf,
+                                               replace_mode,
+                                               aqe_enabled):
     local_conf = copy_and_update(conf, {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
                                         'spark.sql.adaptive.enabled': aqe_enabled})
 
