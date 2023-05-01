@@ -489,34 +489,33 @@ class CudfM2 extends CudfAggregate {
 class CudfMergeM2 extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      val hcv = withResource(new NvtxRange("device-to-host", NvtxColor.ORANGE)) { _ =>
-        col.copyToHost()
-      }
-      withResource(hcv) { _ =>
-        withResource(hcv.getChildColumnView(0)) { partialN =>
-          withResource(hcv.getChildColumnView(1)) { partialMean =>
-            withResource(hcv.getChildColumnView(2)) { partialM2 =>
-              var mergeN: Integer = 0
-              var mergeMean: Double = 0.0
-              var mergeM2: Double = 0.0
+      withResource(new NvtxRange("reduction-merge-m2", NvtxColor.ORANGE)) { _ =>
+        withResource(col.copyToHost()) { hcv =>
+          withResource(hcv.getChildColumnView(0)) { partialN =>
+            withResource(hcv.getChildColumnView(1)) { partialMean =>
+              withResource(hcv.getChildColumnView(2)) { partialM2 =>
+                var mergeN: Integer = 0
+                var mergeMean: Double = 0.0
+                var mergeM2: Double = 0.0
 
-              for (i <- 0 until partialN.getRowCount.toInt) {
-                val n = partialN.getInt(i)
-                if(n > 0) {
-                  val mean = partialMean.getDouble(i)
-                  val m2 = partialM2.getDouble(i)
-                  val delta = mean - mergeMean
-                  val newN = n + mergeN
-                  mergeM2 += m2 + delta * delta * n.toDouble * mergeN.toDouble / newN.toDouble
-                  mergeMean = (mergeMean * mergeN.toDouble + mean * n.toDouble) / newN.toDouble
-                  mergeN = newN
+                for (i <- 0 until partialN.getRowCount.toInt) {
+                  val n = partialN.getInt(i)
+                  if (n > 0) {
+                    val mean = partialMean.getDouble(i)
+                    val m2 = partialM2.getDouble(i)
+                    val delta = mean - mergeMean
+                    val newN = n + mergeN
+                    mergeM2 += m2 + delta * delta * n.toDouble * mergeN.toDouble / newN.toDouble
+                    mergeMean = (mergeMean * mergeN.toDouble + mean * n.toDouble) / newN.toDouble
+                    mergeN = newN
+                  }
                 }
-              }
 
-              withResource(ColumnVector.fromInts(mergeN)) { cvMergeN =>
-                withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
-                  withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
-                    Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
+                withResource(ColumnVector.fromInts(mergeN)) { cvMergeN =>
+                  withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
+                    withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
+                      Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
+                    }
                   }
                 }
               }
@@ -524,7 +523,7 @@ class CudfMergeM2 extends CudfAggregate {
           }
         }
       }
-  }
+    }
 
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeM2()
 
