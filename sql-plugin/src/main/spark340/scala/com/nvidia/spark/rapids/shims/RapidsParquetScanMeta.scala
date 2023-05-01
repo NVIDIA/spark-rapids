@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,13 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuParquetScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 
 class RapidsParquetScanMeta(
@@ -39,7 +34,9 @@ class RapidsParquetScanMeta(
   override def tagSelfForGpu(): Unit = {
     GpuParquetScan.tagSupport(this)
     // we are being overly cautious and that Parquet does not support this yet
-    if (pScan.isInstanceOf[SupportsRuntimeFiltering]) {
+    // SupportsRuntimeV2Filtering is actually the parent of SupportsRuntimeFiltering
+    // in 3.4.0, so this should catch both types
+    if (pScan.isInstanceOf[SupportsRuntimeV2Filtering]) {
       willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
         " on datasource V2 yet.")
     }

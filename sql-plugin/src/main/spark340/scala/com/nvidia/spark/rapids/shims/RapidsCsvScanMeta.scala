@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,13 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuCSVScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 
 class RapidsCsvScanMeta(
@@ -45,7 +34,9 @@ class RapidsCsvScanMeta(
   override def tagSelfForGpu(): Unit = {
     GpuCSVScan.tagSupport(this)
     // we are being overly cautious and that Csv does not support this yet
-    if (cScan.isInstanceOf[SupportsRuntimeFiltering]) {
+    // SupportsRuntimeV2Filtering is actually the parent of SupportsRuntimeFiltering
+    // in 3.4.0, so this should catch both types
+    if (cScan.isInstanceOf[SupportsRuntimeV2Filtering]) {
       willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
         " on datasource V2 yet.")
     }
