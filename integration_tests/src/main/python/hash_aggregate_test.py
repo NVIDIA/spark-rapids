@@ -1714,7 +1714,7 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_groupby_std_variance(data_gen, conf):
+def test_std_variance(data_gen, conf):
     local_conf = copy_and_update(conf, {
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
@@ -1745,7 +1745,7 @@ def test_groupby_std_variance(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
+def test_std_variance_nulls(data_gen, conf, ansi_enabled):
     local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1000),
@@ -1783,7 +1783,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
-def test_groupby_std_variance_partial_replace_fallback(data_gen,
+def test_std_variance_partial_replace_fallback(data_gen,
                                                        conf,
                                                        replace_mode,
                                                        aqe_enabled):
