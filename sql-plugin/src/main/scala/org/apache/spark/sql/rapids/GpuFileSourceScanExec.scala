@@ -614,7 +614,7 @@ case class GpuFileSourceScanExec(
     // Update the preferred locations based on the file cache locality
     val locatedPartitions = prunedPartitions.map { partition =>
       val newFiles = partition.files.map { partFile =>
-        val cacheLocations = FileCacheLocalityManager.get.getLocations(partFile.filePath)
+        val cacheLocations = FileCacheLocalityManager.get.getLocations(partFile.filePath.toString)
         if (cacheLocations.nonEmpty) {
           val newLocations = cacheLocations ++ partFile.locations
           PartitionedFileUtilsShim.withNewLocations(partFile, newLocations)
