@@ -588,14 +588,12 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     val numExplodeColumns = if (position) 2 else 1
 
     new Iterator[ColumnarBatch] {
-      // TODO: Perhaps we can make currentBatch spillable in the future
-      // https://github.com/NVIDIA/spark-rapids/issues/1940
-      var currentBatch: ColumnarBatch = _
+      var spillableCurrentBatch: SpillableColumnarBatch = _
       var indexIntoData = 0
 
-      private def closeCurrent(): Unit = if (currentBatch != null) {
-        currentBatch.close()
-        currentBatch = null
+      private def closeCurrent(): Unit = if (spillableCurrentBatch != null) {
+        spillableCurrentBatch.close()
+        spillableCurrentBatch = null
       }
 
       TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrent())
@@ -604,46 +602,49 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         indexIntoData = 0
         closeCurrent()
         if (inputIterator.hasNext) {
-          currentBatch = inputIterator.next()
+          spillableCurrentBatch = SpillableColumnarBatch(inputIterator.next(),
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
         }
       }
 
       override def hasNext: Boolean = {
-        if (currentBatch == null || indexIntoData >= numArrayColumns) {
+        if (spillableCurrentBatch == null || indexIntoData >= numArrayColumns) {
           fetchNextBatch()
         }
-        currentBatch != null
+        spillableCurrentBatch != null
       }
 
       override def next(): ColumnarBatch = {
-        if (currentBatch == null || indexIntoData >= numArrayColumns) {
-          fetchNextBatch()
-        }
-
         withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, opTime)) { _ =>
-          withResource(new Array[ColumnVector](numExplodeColumns + numOtherColumns)) { result =>
-
-            withResource(GpuProjectExec.project(currentBatch, boundOthersProjectList)) { cb =>
-              (0 until cb.numCols()).foreach { i =>
-                result(i) = cb.column(i).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+          // Do projection with boundOthersProjectList and current boundLazyProjectList item
+          val projectCb = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+            SpillableColumnarBatch(
+              spillableCurrentBatch.getColumnarBatch(),
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+            boundOthersProjectList :+ boundLazyProjectList(indexIntoData))
+          withResource(projectCb) { _ =>
+            withResource(new Array[ColumnVector](numOtherColumns + numExplodeColumns)) { result =>
+              val projCols = GpuColumnVector.extractColumns(projectCb)
+              // Copy columns corresponding to boundOthersProjectList
+              (0 until numOtherColumns).foreach { i =>
+                result(i) = projCols(i).getBase.incRefCount()
               }
-            }
-            if (position) {
-              result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) {
-                scalar => ColumnVector.fromScalar(scalar, currentBatch.numRows())
-              }
-            }
-            result(numOtherColumns + numExplodeColumns - 1) =
-                withResource(GpuProjectExec.project(currentBatch,
-                  Seq(boundLazyProjectList(indexIntoData)))) { cb =>
-                  cb.column(0).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+              // Add position column, if needed.
+              if (position) {
+                result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) {
+                  scalar => ColumnVector.fromScalar(scalar, projectCb.numRows())
                 }
+              }
+              // Add the boundLazyProject column
+              result(numOtherColumns + numExplodeColumns - 1) =
+                projCols(numOtherColumns).getBase.incRefCount()
 
-            withResource(new Table(result: _*)) { table =>
-              indexIntoData += 1
-              numOutputBatches += 1
-              numOutputRows += table.getRowCount
-              GpuColumnVector.from(table, outputSchema)
+              withResource(new Table(result: _*)) { table =>
+                indexIntoData += 1
+                numOutputBatches += 1
+                numOutputRows += table.getRowCount
+                GpuColumnVector.from(table, outputSchema)
+              }
             }
           }
         }
