@@ -9,7 +9,7 @@ nav_order: 9
 
 The RAPIDS Accelerator for Apache Spark provides an optional file cache which may improve
 performance of Spark applications that access the same input files multiple times. It caches
-portions of remote files being accessed onto the local filesystem of executors to speed access
+portions of remote files being accessed onto the local filesystem of executors to speedup access
 if that data is accessed again in the same application.
 
 ## Limitations of the File Cache
@@ -23,6 +23,11 @@ filesystem. This is only a problem when individual input files will be overwritt
 lifetime of the application. **If this is a possibility, DO NOT enable the filecache** for that
 application. The application could crash or the application output could become corrupted due to
 the use of stale input data.
+
+The file cache does not perform well if the executor node's local disks are relatively slow. The
+file cache performs best when the local disks are significantly faster than the distributed
+filesystem from which data is being cached. Enabling the file cache when the executor local disks
+are too slow can cause applications to run slower rather than faster.
 
 ## Configuring the File Cache
 
