@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_py4j_exception
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
@@ -122,7 +122,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
                   "TBLPROPERTIES('write.format.default' = '{}') ".format(iceberg_format) + \
                   "AS SELECT * FROM {}".format(tmpview))
     with_cpu_session(setup_iceberg_table)
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda : with_gpu_session(
             lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
             conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
@@ -172,7 +172,7 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
     query = "SELECT * FROM {}".format(table)
     read_conf = {'spark.rapids.sql.format.parquet.reader.type': reader_type}
     if error_msg:
-        assert_py4j_exception(
+        assert_spark_exception(
             lambda : with_gpu_session(lambda spark : spark.sql(query).collect(), conf=read_conf),
             error_msg)
     else:
@@ -550,7 +550,7 @@ def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
                   "AS SELECT * FROM {}".format(tmpview))
         spark.sql("DELETE FROM {} WHERE a < 0".format(table))
     with_cpu_session(setup_iceberg_table)
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda : with_gpu_session(
             lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
             conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
