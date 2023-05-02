@@ -28,6 +28,8 @@ class FileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
 
   private val FILE_SPLITS_PARQUET = "file-splits.parquet"
   private val MAP_OF_STRINGS_PARQUET = "map_of_strings.snappy.parquet"
+  private val SCHEMA_CAN_PRUNE_ORC = "schema-can-prune.orc"
+  private val SCHEMA_CANT_PRUNE_ORC = "schema-cant-prune.orc"
 
   // File cache only supported on Spark 3.2+
   assumeSpark320orLater
@@ -36,7 +38,7 @@ class FileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
     conf.getBoolean("spark.rapids.filecache.enabled", false)
   }
 
-  test("filecache metrics v1") {
+  test("filecache metrics v1 Parquet") {
     val conf = new SparkConf(false)
         .set("spark.rapids.filecache.enabled", "true")
         .set("spark.sql.sources.useV1SourceList", "parquet")
@@ -55,7 +57,7 @@ class FileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  test("filecache metrics v2") {
+  test("filecache metrics v2 Parquet") {
     val conf = new SparkConf(false)
         .set("spark.rapids.filecache.enabled", "true")
         .set("spark.sql.sources.useV1SourceList", "")
@@ -71,6 +73,36 @@ class FileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
       gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuBatchScanExec])
       assert(gpuScan.isDefined)
       checkMetricsFullHit(gpuScan.get.metrics)
+    }, conf)
+  }
+
+  test("filecache metrics v1 ORC") {
+    val conf = new SparkConf(false)
+        .set("spark.rapids.filecache.enabled", "true")
+        .set("spark.sql.sources.useV1SourceList", "orc")
+    withGpuSparkSession({ spark =>
+      assume(isFileCacheEnabled(spark.sparkContext.conf))
+      val df = frameFromOrc(SCHEMA_CAN_PRUNE_ORC)(spark)
+      df.collect()
+      val gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuFileSourceScanExec])
+      assert(gpuScan.isDefined)
+      // no metrics for ORC yet
+      assert(!gpuScan.get.metrics.keys.exists(_.startsWith("filecache")))
+    }, conf)
+  }
+
+  test("filecache metrics v2 ORC") {
+    val conf = new SparkConf(false)
+        .set("spark.rapids.filecache.enabled", "true")
+        .set("spark.sql.sources.useV1SourceList", "")
+    withGpuSparkSession({ spark =>
+      assume(isFileCacheEnabled(spark.sparkContext.conf))
+      val df = frameFromOrc(SCHEMA_CANT_PRUNE_ORC)(spark)
+      df.collect()
+      val gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuBatchScanExec])
+      assert(gpuScan.isDefined)
+      // no metrics for ORC yet
+      assert(!gpuScan.get.metrics.keys.exists(_.startsWith("filecache")))
     }, conf)
   }
 

@@ -20,40 +20,71 @@ import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
 import com.nvidia.spark.rapids.shims.GpuBatchScanExec
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 
 class NoFileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
   private val FILE_SPLITS_PARQUET = "file-splits.parquet"
+  private val SCHEMA_CAN_PRUNE_ORC = "schema-can-prune.orc"
 
   def isFileCacheEnabled(conf: SparkConf): Boolean = {
     conf.getBoolean("spark.rapids.filecache.enabled", false)
   }
 
-  test("no filecache no metrics v1") {
+  test("no filecache no metrics v1 Parquet") {
     val conf = new SparkConf(false)
         .set("spark.rapids.filecache.enabled", "false")
         .set("spark.sql.sources.useV1SourceList", "parquet")
     withGpuSparkSession({ spark =>
       assume(!isFileCacheEnabled(spark.sparkContext.conf))
       val df = frameFromParquet(FILE_SPLITS_PARQUET)(spark)
-      df.collect()
-      val gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuFileSourceScanExec])
-      assert(gpuScan.isDefined)
-      assert(!gpuScan.get.metrics.keys.exists(_.startsWith("filecache")))
+      checkNoMetricsV1(df)
     }, conf)
   }
 
-  test("no filecache no metrics v2") {
+  test("no filecache no metrics v1 ORC") {
+    val conf = new SparkConf(false)
+        .set("spark.rapids.filecache.enabled", "false")
+        .set("spark.sql.sources.useV1SourceList", "orc")
+    withGpuSparkSession({ spark =>
+      val df = frameFromOrc(SCHEMA_CAN_PRUNE_ORC)(spark)
+      checkNoMetricsV1(df)
+    }, conf)
+  }
+
+  test("no filecache no metrics v2 Parquet") {
     val conf = new SparkConf(false)
         .set("spark.rapids.filecache.enabled", "false")
         .set("spark.sql.sources.useV1SourceList", "")
     withGpuSparkSession({ spark =>
       assume(!isFileCacheEnabled(spark.sparkContext.conf))
       val df = frameFromParquet(FILE_SPLITS_PARQUET)(spark)
-      df.collect()
-      val gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuBatchScanExec])
-      assert(gpuScan.isDefined)
-      assert(!gpuScan.get.metrics.keys.exists(_.startsWith("filecache")))
+      checkNoMetricsV2(df)
     }, conf)
+  }
+
+  test("no filecache no metrics v2 ORC") {
+    val conf = new SparkConf(false)
+        .set("spark.rapids.filecache.enabled", "false")
+        .set("spark.sql.sources.useV1SourceList", "")
+    withGpuSparkSession({ spark =>
+      assume(!isFileCacheEnabled(spark.sparkContext.conf))
+      val df = frameFromOrc(SCHEMA_CAN_PRUNE_ORC)(spark)
+      checkNoMetricsV2(df)
+    }, conf)
+  }
+
+  private def checkNoMetricsV1(df: DataFrame): Unit = {
+    df.collect()
+    val gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuFileSourceScanExec])
+    assert(gpuScan.isDefined)
+    assert(!gpuScan.get.metrics.keys.exists(_.startsWith("filecache")))
+  }
+
+  private def checkNoMetricsV2(df: DataFrame): Unit = {
+    df.collect()
+    val gpuScan = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuBatchScanExec])
+    assert(gpuScan.isDefined)
+    assert(!gpuScan.get.metrics.keys.exists(_.startsWith("filecache")))
   }
 }

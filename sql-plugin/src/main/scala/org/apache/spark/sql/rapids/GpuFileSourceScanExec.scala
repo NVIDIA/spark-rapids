@@ -429,7 +429,7 @@ case class GpuFileSourceScanExec(
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  ) ++ createFileCacheMetrics() ++ {
+  ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
         Map(READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME),
@@ -454,6 +454,14 @@ case class GpuFileSourceScanExec(
       Map.empty[String, GpuMetric]
     }
   } ++ staticMetrics
+
+  private lazy val fileCacheMetrics: Map[String, GpuMetric] = {
+    // File cache only supported on Parquet files for now.
+    relation.fileFormat match {
+      case _: GpuReadParquetFileFormat => createFileCacheMetrics()
+      case _ => Map.empty
+    }
+  }
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
