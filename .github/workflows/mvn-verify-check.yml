@@ -49,12 +49,12 @@ jobs:
           # do not add empty snapshot versions
           if [ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 ]; then
             svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
+            svArrBodySnapshot=${svArrBodySnapshot:1}
+            svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
+          else
+            svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot)
           fi
 
-          # add snapshot versions which are not in snapshot property in pom file
-          svArrBodySnapshot+=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" 340)
-          svArrBodySnapshot=${svArrBodySnapshot:1}
-          svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
           echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
           jdkVersionArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
