@@ -1020,7 +1020,7 @@ def _div_overflow_exception_when(expr, ansi_enabled, is_lit=False):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
     err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() else \
         'org.apache.spark.SparkArithmeticException' \
-            if not is_lit else "pyspark.errors.exceptions.captured.ArithmeticException"
+            if not is_lit or not is_spark_340_or_later() else "pyspark.errors.exceptions.captured.ArithmeticException"
     err_mess = ': Overflow in integral divide' \
         if is_before_spark_340() and not is_databricks113_or_later() else \
         ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
