@@ -616,37 +616,19 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 
       override def next(): ColumnarBatch = {
         withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, opTime)) { _ =>
-          // Do projection with boundOthersProjectList and current boundLazyProjectList item
-          val projectCb = GpuProjectExec.projectAndCloseWithRetrySingleBatch(
-            SpillableColumnarBatch(
-              spillableCurrentBatch.getColumnarBatch(),
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
-            boundOthersProjectList :+ boundLazyProjectList(indexIntoData))
-          withResource(projectCb) { _ =>
-            withResource(new Array[ColumnVector](numOtherColumns + numExplodeColumns)) { result =>
-              val projCols = GpuColumnVector.extractColumns(projectCb)
-              // Copy columns corresponding to boundOthersProjectList
-              (0 until numOtherColumns).foreach { i =>
-                result(i) = projCols(i).getBase.incRefCount()
-              }
-              // Add position column, if needed.
-              if (position) {
-                result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) {
-                  scalar => ColumnVector.fromScalar(scalar, projectCb.numRows())
-                }
-              }
-              // Add the boundLazyProject column
-              result(numOtherColumns + numExplodeColumns - 1) =
-                projCols(numOtherColumns).getBase.incRefCount()
-
-              withResource(new Table(result: _*)) { table =>
-                indexIntoData += 1
-                numOutputBatches += 1
-                numOutputRows += table.getRowCount
-                GpuColumnVector.from(table, outputSchema)
-              }
-            }
+          val boundExprs = if (position) {
+            boundOthersProjectList ++ Seq(GpuLiteral.create(indexIntoData, IntegerType),
+              boundLazyProjectList(indexIntoData))
+          } else {
+            boundOthersProjectList :+ boundLazyProjectList(indexIntoData)
           }
+          // Do projection with bound expressions
+          val projectCb =
+            GpuProjectExec.projectWithRetrySingleBatch(spillableCurrentBatch, boundExprs)
+          indexIntoData += 1
+          numOutputBatches += 1
+          numOutputRows += projectCb.numRows()
+          projectCb
         }
       }
     }
