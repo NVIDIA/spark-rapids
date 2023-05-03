@@ -31,10 +31,9 @@ class FileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
   private val SCHEMA_CAN_PRUNE_ORC = "schema-can-prune.orc"
   private val SCHEMA_CANT_PRUNE_ORC = "schema-cant-prune.orc"
 
-  // File cache only supported on Spark 3.2+
-  assumeSpark320orLater
-
   def isFileCacheEnabled(conf: SparkConf): Boolean = {
+    // File cache only supported on Spark 3.2+
+    assumeSpark320orLater
     conf.getBoolean("spark.rapids.filecache.enabled", false)
   }
 
