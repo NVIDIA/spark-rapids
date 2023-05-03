@@ -277,12 +277,13 @@ set_dep_jars()
 # Install dependency jars to MVN repository.
 install_dependencies()
 {
-    local depsPomXml="install-deps-pom.xml"
+    local depsPomXml="$(mktemp /tmp/install-databricks-deps-XXXXXX-pom.xml)"
+    mkdir -p target
     set_sw_versions
     set_jars_prefixes
     set_dep_jars
     echo > ${depsPomXml} '<?xml version="1.0" encoding="UTF-8"?>
-    <project xmlns="http://maven.apache.org/POM/4.0.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
@@ -297,36 +298,49 @@ install_dependencies()
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-install-plugin</artifactId>
+                <version>3.1.0</version>
                 <executions>
     '
     # Please note we are installing all of these dependencies using the Spark version
     # (SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS) to make it easier to specify the dependencies in
     # the pom files
     for key in "${!artifacts[@]}"; do
+
+        # TODO dedicated groups array?
+        # to minimize changes parse group/artifacts apart
+        #
+        echo Generating an execution for ${artifacts[${key}]}
+        dashGroupDashArtifact=(${artifacts[${key}]})
+
+        IFS="=" read -r -a dashGroup <<< "${dashGroupDashArtifact[0]}"
+        groupId=${dashGroup[1]}
+
+        IFS="=" read -r -a dashArtifact <<< "${dashGroupDashArtifact[1]}"
+        artifactId=${dashArtifact[1]}
         echo >> ${depsPomXml} "
                     <execution>
-                        <id>install-db-jar</id>
+                        <id>install-db-jar-${key}</id>
                         <phase>initialize</phase>
-                        <goals><goal>install-file<goal></goals>
+                        <goals><goal>install-file</goal></goals>
                         <configuration>
                             <localRepository>$M2DIR</localRepository>
-                            <file>$JARDIR/${dep_jars[$key]}</file>
-                            <artifactId>${artifacts[$key]}</artifactId>
-                            <version>$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS</version>
+                            <file>${JARDIR}/${dep_jars[$key]}</file>
+                            <groupId>${groupId}</groupId>
+                            <artifactId>${artifactId}</artifactId>
+                            <version>${SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}</version>
                             <packaging>jar</packaging>
                         </configuration>
                     </execution>
                     "
     done
     echo >> ${depsPomXml} '
-                    </executions>
-                </plugin>
-            </plugins>
-        </build>
-    </project>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
     '
-    $MVN_CMD -f ${depsPomXml}
-
+    $MVN_CMD -f ${depsPomXml} initialize
 }
 
 ##########################
