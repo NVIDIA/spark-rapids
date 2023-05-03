@@ -340,6 +340,8 @@ install_dependencies()
 </project>
     '
     $MVN_CMD -f ${depsPomXml} initialize
+    echo "Done with installtion of Databricks dependencies, removing ${depsPomXml}"
+    rm ${depsPomXml}
 }
 
 ##########################
