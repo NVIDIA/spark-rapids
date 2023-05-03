@@ -1267,14 +1267,17 @@ class GpuWindowIterator(
   override def hasNext: Boolean = input.hasNext
 
   override def next(): ColumnarBatch = {
-    withResource(input.next()) { cb =>
-      withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
-        val ret = withResource(computeBasicWindow(cb)) { cols =>
-          convertToBatch(outputTypes, cols)
+    val cbSpillable = SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    withRetryNoSplit(cbSpillable) { _ =>
+      withResource(cbSpillable.getColumnarBatch()) { cb =>
+        withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
+          val ret = withResource(computeBasicWindow(cb)) { cols =>
+            convertToBatch(outputTypes, cols)
+          }
+          numOutputBatches += 1
+          numOutputRows += ret.numRows()
+          ret
         }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
       }
     }
   }
