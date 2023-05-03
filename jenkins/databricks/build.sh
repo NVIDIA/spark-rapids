@@ -298,7 +298,7 @@ install_dependencies()
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-install-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>2.4</version>
                 <executions>
     '
     # Please note we are installing all of these dependencies using the Spark version
@@ -323,7 +323,7 @@ install_dependencies()
                         <phase>initialize</phase>
                         <goals><goal>install-file</goal></goals>
                         <configuration>
-                            <localRepository>$M2DIR</localRepository>
+                            <localRepositoryPath>$M2DIR</localRepositoryPath>
                             <file>${JARDIR}/${dep_jars[$key]}</file>
                             <groupId>${groupId}</groupId>
                             <artifactId>${artifactId}</artifactId>
