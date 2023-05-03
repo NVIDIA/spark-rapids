@@ -584,8 +584,6 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
 
     val numArrayColumns = boundLazyProjectList.length
-    val numOtherColumns = boundOthersProjectList.length
-    val numExplodeColumns = if (position) 2 else 1
 
     new Iterator[ColumnarBatch] {
       var spillableCurrentBatch: SpillableColumnarBatch = _
