@@ -282,16 +282,15 @@ install_dependencies()
     set_sw_versions
     set_jars_prefixes
     set_dep_jars
-    echo > ${depsPomXml} '<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    echo > ${depsPomXml} "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<project xmlns=\"http://maven.apache.org/POM/4.0.0\"
+         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
+         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>com.nvidia</groupId>
-    <artifactId>rapids-4-spark-db-deps-installer</artifactId>
-    <description>bulk dbdeps install</description>
-    <version>23.06.0-SNAPSHOT</version>
+    <artifactId>rapids-4-spark-databricks-deps-installer</artifactId>
+    <description>bulk databricks deps installer</description>
+    <version>${SPARK_PLUGIN_JAR_VERSION}</version>
     <packaging>pom</packaging>
     <build>
         <plugins>
@@ -300,7 +299,7 @@ install_dependencies()
                 <artifactId>maven-install-plugin</artifactId>
                 <version>2.4</version>
                 <executions>
-    '
+    "
     # Please note we are installing all of these dependencies using the Spark version
     # (SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS) to make it easier to specify the dependencies in
     # the pom files
@@ -317,6 +316,7 @@ install_dependencies()
 
         IFS="=" read -r -a dashArtifact <<< "${dashGroupDashArtifact[1]}"
         artifactId=${dashArtifact[1]}
+
         echo >> ${depsPomXml} "
                     <execution>
                         <id>install-db-jar-${key}</id>
