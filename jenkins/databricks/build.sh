@@ -278,7 +278,6 @@ set_dep_jars()
 install_dependencies()
 {
     local depsPomXml="$(mktemp /tmp/install-databricks-deps-XXXXXX-pom.xml)"
-    mkdir -p target
     set_sw_versions
     set_jars_prefixes
     set_dep_jars
