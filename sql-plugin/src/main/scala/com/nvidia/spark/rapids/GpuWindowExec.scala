@@ -1482,8 +1482,8 @@ class GpuRunningWindowIterator(
                     withResource(GpuProjectExec.project(cb,
                       boundOrderColumns)) { order =>
                       val orderColumns = GpuColumnVector.extractBases(order)
-                      // We need to fix up the rows that are part of the same batch as the end of the
-                      // last batch
+                      // We need to fix up the rows that are part of the same batch as the end of
+                      // the last batch
                       withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
                         orderEqual =>
                           closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) {

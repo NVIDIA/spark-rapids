@@ -992,6 +992,7 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
         case _ =>
       }
       previousResult = checkpointResult
+      checkpointResult = None
     }
   }
 
@@ -1062,6 +1063,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         case _ =>
       }
       previousOverflow = checkpointOverflow
+      checkpointOverflow = None
     }
     if (checkpointResult.isDefined) {
       // close previous result
@@ -1071,6 +1073,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         case _ =>
       }
       previousResult = checkpointResult
+      checkpointResult = None
     }
   }
 
@@ -1322,6 +1325,7 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
         case _ =>
       }
       previousRank = checkpointRank
+      checkpointRank = None
     }
   }
 
@@ -1439,6 +1443,7 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
         case _ =>
       }
       previousRank = checkpointRank
+      checkpointRank = None
     }
   }
 
