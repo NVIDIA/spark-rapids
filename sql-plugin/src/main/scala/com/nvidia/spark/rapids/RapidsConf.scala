@@ -489,7 +489,7 @@ object RapidsConf {
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
       .integerConf
-      .createWithDefault(1)
+      .createWithDefault(2)
 
   val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
     .doc("Number of threads used to spill shuffle data to disk in the background.")
@@ -503,7 +503,7 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
       s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
-    .createWithDefault(Integer.MAX_VALUE)
+    .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
     .doc("Soft limit on the maximum number of rows the reader will read per batch. " +

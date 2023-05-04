@@ -24,25 +24,35 @@ import org.apache.spark.internal.config.ConfigEntry
 
 object RapidsPrivateUtil {
   def getPrivateConfigs(): Seq[ConfEntry[_]] = {
-    withResource(Source.fromResource("spark-rapids-extra-configs-classes").bufferedReader()) { r =>
+    getPrivateConfigs("spark-rapids-extra-configs-classes", isStartup=false) ++
+        getPrivateConfigs("spark-rapids-extra-startup-configs-classes", isStartup=true)
+  }
+
+  private def getPrivateConfigs(resourceName: String, isStartup: Boolean): Seq[ConfEntry[_]] = {
+    withResource(Source.fromResource(resourceName).bufferedReader()) { r =>
       val className = r.readLine().trim
       Class.forName(className)
         .getDeclaredConstructor()
         .newInstance()
         .asInstanceOf[Iterable[ConfigEntry[_]]]
-        .map(convert).toSeq
+        .map(c => convert(c, isStartup)).toSeq
     }
   }
 
   /** Convert Spark ConfigEntry to Spark RAPIDS ConfEntry */
-  private def convert(e: ConfigEntry[_]): ConfEntry[_] = {
+  private def convert(e: ConfigEntry[_], isStartup: Boolean): ConfEntry[_] = {
     e.defaultValue match {
-      case None => createEntry[String](e.key, e.doc, _.toString)
-      case Some(value: Boolean) => createEntryWithDefault[Boolean](e.key, e.doc, _.toBoolean, value)
-      case Some(value: Integer) => createEntryWithDefault[Integer](e.key, e.doc, _.toInt, value)
-      case Some(value: Long) => createEntryWithDefault[Long](e.key, e.doc, _.toLong, value)
-      case Some(value: Double) => createEntryWithDefault[Double](e.key, e.doc, _.toDouble, value)
-      case Some(value: String) => createEntryWithDefault[String](e.key, e.doc, _.toString, value)
+      case None => createEntry[String](e.key, e.doc, _.toString, isStartup)
+      case Some(value: Boolean) =>
+        createEntryWithDefault[Boolean](e.key, e.doc, _.toBoolean, value, isStartup)
+      case Some(value: Integer) =>
+        createEntryWithDefault[Integer](e.key, e.doc, _.toInt, value, isStartup)
+      case Some(value: Long) =>
+        createEntryWithDefault[Long](e.key, e.doc, _.toLong, value, isStartup)
+      case Some(value: Double) =>
+        createEntryWithDefault[Double](e.key, e.doc, _.toDouble, value, isStartup)
+      case Some(value: String) =>
+        createEntryWithDefault[String](e.key, e.doc, _.toString, value, isStartup)
       case Some(other) => throw new IllegalStateException(
         s"Unsupported private config defaultValue type: $other")
     }
@@ -52,15 +62,17 @@ object RapidsPrivateUtil {
       key: String,
       doc: String,
       converter: String => T,
-      value: T) = {
+      value: T,
+      isStartup: Boolean) = {
     new ConfEntryWithDefault[T](key, converter, doc, isInternal = false,
-      isStartupOnly = false, value)
+      isStartupOnly = isStartup, value)
   }
 
   private def createEntry[T](
-     key: String,
-     doc: String,
-     converter: String => T) = {
-    new OptionalConfEntry[T](key, converter, doc, isInternal = false, isStartupOnly = false)
+      key: String,
+      doc: String,
+      converter: String => T,
+      isStartup: Boolean) = {
+    new OptionalConfEntry[T](key, converter, doc, isInternal = false, isStartupOnly = isStartup)
   }
 }
