@@ -20,8 +20,9 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{AlluxioCfgUtils, AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, SparkShimImpl}
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.filecache.FileCacheLocalityManager
+import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -428,7 +429,7 @@ case class GpuFileSourceScanExec(
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  ) ++ {
+  ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
         Map(READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME),
@@ -453,6 +454,14 @@ case class GpuFileSourceScanExec(
       Map.empty[String, GpuMetric]
     }
   } ++ staticMetrics
+
+  private lazy val fileCacheMetrics: Map[String, GpuMetric] = {
+    // File cache only supported on Parquet files for now.
+    relation.fileFormat match {
+      case _: GpuReadParquetFileFormat => createFileCacheMetrics()
+      case _ => Map.empty
+    }
+  }
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -602,15 +611,29 @@ case class GpuFileSourceScanExec(
       }
     }.getOrElse(partitions)
 
+    // Update the preferred locations based on the file cache locality
+    val locatedPartitions = prunedPartitions.map { partition =>
+      val newFiles = partition.files.map { partFile =>
+        val cacheLocations = FileCacheLocalityManager.get.getLocations(partFile.filePath.toString)
+        if (cacheLocations.nonEmpty) {
+          val newLocations = cacheLocations ++ partFile.locations
+          PartitionedFileUtilsShim.withNewLocations(partFile, newLocations)
+        } else {
+          partFile
+        }
+      }
+      partition.copy(files = newFiles)
+    }
+
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file reader")
-      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, prunedPartitions,
+      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, locatedPartitions,
         requiredSchema)
     } else {
       logDebug(s"Using Datasource RDD, files are: " +
         s"${prunedPartitions.flatMap(_.files).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      GpuDataSourceRDD(relation.sparkSession.sparkContext, prunedPartitions, readerFactory)
+      GpuDataSourceRDD(relation.sparkSession.sparkContext, locatedPartitions, readerFactory)
     }
   }
 

@@ -262,9 +262,12 @@ def test_array_element_at_ansi_not_fail_all_null_data():
 @pytest.mark.parametrize('index', [0, array_zero_index_gen], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [False, True], ids=idfn)
 def test_array_element_at_zero_index_fail(index, ansi_enabled):
-    message = "SQL array indices start at 1" \
-        if is_before_spark_340() and not is_databricks113_or_later() else \
-        "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
+    if is_spark_340_or_later():
+        message = "org.apache.spark.SparkRuntimeException: [INVALID_INDEX_OF_ZERO] The index 0 is invalid"
+    elif is_databricks113_or_later():
+        message = "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
+    else:
+        message = "SQL array indices start at 1"
 
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(

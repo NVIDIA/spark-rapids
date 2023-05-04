@@ -1188,7 +1188,10 @@ private case class GpuOrcFileFilterHandler(
         // reader to EmptyPartitionReader for throwing exception
         null
       } else {
-        val (requestedColIds, canPruneCols) = resultedColPruneInfo.get
+        val requestedColIds = resultedColPruneInfo.get._1
+        // Normally without column names we cannot prune the file schema to the read schema,
+        // but if no columns are requested from the file (e.g.: row count) then we can prune.
+        val canPruneCols = resultedColPruneInfo.get._2 || requestedColIds.isEmpty
         OrcUtils.orcResultSchemaString(canPruneCols, dataSchema, readDataSchema,
           partitionSchema, conf)
         assert(requestedColIds.length == readDataSchema.length,

@@ -16,8 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.connector.read.Scan
+
 trait GpuBatchScanExecMetrics extends GpuExec {
   import GpuMetric._
+
+  def scan: Scan
 
   override def supportsColumnar = true
 
@@ -27,5 +31,14 @@ trait GpuBatchScanExecMetrics extends GpuExec {
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
+  ) ++ fileCacheMetrics
+
+  lazy val fileCacheMetrics: Map[String, GpuMetric] = {
+    // File cache only supported on Parquet files for now.
+    scan match {
+      case _: GpuParquetScan => createFileCacheMetrics()
+      case _ => Map.empty
+    }
+  }
 }
