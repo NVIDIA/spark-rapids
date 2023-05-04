@@ -632,7 +632,7 @@
         <spark340.version>3.4.0</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
-        <mockito.version>3.6.0</mockito.version>
+        <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
@@ -710,6 +710,24 @@
         </all.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
         <cpd.sourceType>main</cpd.sourceType>
+        <!-- SPARK-36796 for JDK-17 test-->
+        <extraJavaTestArgs>
+            -XX:+IgnoreUnrecognizedVMOptions
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+            --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+            --add-opens=java.base/java.io=ALL-UNNAMED
+            --add-opens=java.base/java.net=ALL-UNNAMED
+            --add-opens=java.base/java.nio=ALL-UNNAMED
+            --add-opens=java.base/java.util=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+            --add-opens=java.base/sun.security.action=ALL-UNNAMED
+            --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+            -Djdk.reflect.useDirectMethodHandle=false
+        </extraJavaTestArgs>
     </properties>
 
     <dependencyManagement>
@@ -924,7 +942,7 @@
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-shade-plugin</artifactId>
-                  <version>3.2.4</version>
+                  <version>3.3.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -1016,7 +1034,7 @@
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m</argLine>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>

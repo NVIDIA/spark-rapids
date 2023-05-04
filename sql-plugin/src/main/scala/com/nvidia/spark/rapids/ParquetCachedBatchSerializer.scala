@@ -29,7 +29,7 @@ import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
@@ -1201,6 +1201,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
     // From 3.3.0, Spark will check this filed ID config
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(hadoopConf, sqlConf)
+
+    // timestamp_NTZ flag is introduced in Spark 3.4.0
+    ParquetTimestampNTZShims.setupTimestampNTZConfig(hadoopConf, sqlConf)
 
     // From 3.3.2, Spark schema converter needs this conf
     ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(hadoopConf)

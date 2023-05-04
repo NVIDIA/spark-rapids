@@ -285,7 +285,7 @@ object GpuOrcScan {
       // bool to string
       case (DType.BOOL8, DType.STRING) =>
         withResource(col.castTo(toDt)) { casted =>
-          // cuDF produces "ture"/"false" while CPU outputs "TRUE"/"FALSE".
+          // cuDF produces "true"/"false" while CPU outputs "TRUE"/"FALSE".
           casted.upper()
         }
 
@@ -372,6 +372,12 @@ object GpuOrcScan {
           }
         }
 
+      case (f: DType, t: DType) if f.isDecimalType && t.isDecimalType =>
+        val fromDataType = DecimalType(f.getDecimalMaxPrecision, -f.getScale)
+        val toDataType = DecimalType(t.getDecimalMaxPrecision, -t.getScale)
+        GpuCast.doCast(col, fromDataType, toDataType, ansiMode=false, legacyCastToString = false,
+          stringToDateAnsiModeEnabled = false)
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -415,6 +421,9 @@ object GpuOrcScan {
           case STRING => isOrcFloatTypesToStringEnable
           case _ => false
         }
+
+      case DECIMAL => toType == DECIMAL
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case _ =>
         false
@@ -1179,7 +1188,10 @@ private case class GpuOrcFileFilterHandler(
         // reader to EmptyPartitionReader for throwing exception
         null
       } else {
-        val (requestedColIds, canPruneCols) = resultedColPruneInfo.get
+        val requestedColIds = resultedColPruneInfo.get._1
+        // Normally without column names we cannot prune the file schema to the read schema,
+        // but if no columns are requested from the file (e.g.: row count) then we can prune.
+        val canPruneCols = resultedColPruneInfo.get._2 || requestedColIds.isEmpty
         OrcUtils.orcResultSchemaString(canPruneCols, dataSchema, readDataSchema,
           partitionSchema, conf)
         assert(requestedColIds.length == readDataSchema.length,

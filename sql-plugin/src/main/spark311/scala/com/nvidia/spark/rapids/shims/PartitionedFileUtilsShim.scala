@@ -21,12 +21,10 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "330"}
 {"spark": "330cdh"}
-{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
@@ -44,4 +42,8 @@ object PartitionedFileUtilsShim {
       filePath: String,
       start: Long,
       length: Long): PartitionedFile = PartitionedFile(partitionValues, filePath, start, length)
+
+  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
+    pf.copy(locations = locations.toArray)
+  }
 }

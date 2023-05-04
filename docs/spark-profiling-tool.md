@@ -20,7 +20,7 @@ configurations based on the worker's information (see [Auto-Tuner support](#auto
 - Java 8 or above, Spark 3.0.1+ jars
 - Spark event log(s) from Spark 2.0 or above version. Supports both rolled and compressed event logs 
   with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes as well as 
-  Databricks-specific rolled and compressed(.gz) event logs. 
+  Databricks-specific rolled and compressed(`.gz`) event logs.
 - The tool does not support nested directories.
   Event log files or event log directories should be at the top level when specifying a directory.
 
@@ -29,24 +29,26 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 [Apache Spark Monitoring](http://spark.apache.org/docs/latest/monitoring.html) documentation for
 more information.
 
-### Step 1 Download the tools jar and Apache Spark 3 distribution
-The Profiling tool requires the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
+### Step 1a: Download the tools jar
+- Download the latest RAPIDS Accelerator for Apache Spark tools jar from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/)
+
+If you want to compile the jar, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar).
+
+### Step 1b: Download the Apache Spark 3 distribution
+The Profiling tool requires the Spark 3.x jars to be able to run but does not need an Apache Spark run time.
 If you do not already have Spark 3.x installed, 
 you can download the Spark distribution to any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/23.04.0/)
-- [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
-If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar). 
+- [Download Apache Spark 3.x](http://spark.apache.org/downloads.html)
 
 ### Step 2 How to run the Profiling tool
-This tool parses the Spark CPU or GPU event log(s) and creates an output report.
-We need to extract the Spark distribution into a local directory if necessary.
-Either set `SPARK_HOME` to point to that directory or just put the path inside of the
+The profiling tool parses the Spark CPU or GPU event log(s) and creates an output report.
+If necessary, extract the Spark distribution into a local directory.  To run the tool, please note the following:
+- Either set `SPARK_HOME` to point to that local directory or add it to the
 classpath `java -cp toolsJar:pathToSparkJars/*:...` when you run the Profiling tool.
-Acceptable input event log paths are files or directories containing spark events logs
+- Acceptable input event log paths are files or directories containing spark events logs
 in the local filesystem, HDFS, S3 or mixed. 
-Please note, if processing a lot of event logs use combined or compare mode.
-Both these modes may need you to increase the java heap size using `-Xmx` option.
-For instance, to specify 30 GB heap size `java -Xmx30g`. 
+- If you are processing a lot of event logs, then use combined or compare mode. Both these modes may need you to increase
+the java heap size using `-Xmx` option.  For instance, to specify 30 GB heap size `java -Xmx30g`.
 
 There are 3 modes of operation for the Profiling tool:
  1. Collection Mode: 
@@ -54,7 +56,7 @@ There are 3 modes of operation for the Profiling tool:
     on each application individually and outputs a file per application
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
            com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
            <eventlogs | eventlog directories ...>
     ```
@@ -66,7 +68,7 @@ There are 3 modes of operation for the Profiling tool:
     together and you get one file for all applications.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --combined
            <eventlogs | eventlog directories ...>
     ```
@@ -76,7 +78,7 @@ There are 3 modes of operation for the Profiling tool:
     The Compare mode will use more memory if comparing lots of applications.
     
     ```bash
-    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
            com.nvidia.spark.rapids.tool.profiling.ProfileMain --compare
            <eventlogs | eventlog directories ...>
     ```
@@ -90,50 +92,52 @@ There are 3 modes of operation for the Profiling tool:
      com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
     ```
 
+Run `--help` for more information.
+
 ## Understanding Profiling tool detailed output and examples
 The default output location is the current directory. 
 The output location can be changed using the `--output-directory` option.
 The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
-If running in normal collect mode, it processes event log individually and outputs files for each application under
+- If running in normal collect mode, it processes event logs individually and outputs files for each application under
 a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
-If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
+- If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
 text file named `rapids_4_spark_tools_combined.log`.
-If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
+- If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
 text file named `rapids_4_spark_tools_compare.log`.
-The output will go into your default filesystem, it supports local filesystem or HDFS.
-Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
+The output will go into your default filesystem and the tool supports local filesystem or HDFS.
+
+If you are on an HDFS cluster, then the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include `file:` in the path.
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
 Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the
 corresponding sub-directory.
 
-There is a 100 characters limit for each output column.
-If the result of the column exceeds this limit, it is suffixed with ... for that column.
+Additional notes:
+- There is a 100 characters limit for each output column. If the result of the column exceeds this limit, it is suffixed with
+`...` for that column.
+- ResourceProfile ids are parsed for the event logs that are from Spark 3.1 or later.  A ResourceProfile allows the user
+to specify executor and task requirements for an RDD that will get applied during a stage.  This allows the user to change
+the resource requirements between stages.
 
-ResourceProfile ids are parsed for the event logs that are from Spark 3.1 or later.
-A ResourceProfile allows the user to specify executor and task requirements
-for an RDD that will get applied during a stage. 
-This allows the user to change the resource requirements between stages.
-  
-Run `--help` for more information.
-
-#### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
+#### A. Collect Information or Compare Information(if more than 1 event logs are as input and option --compare is specified)
 - Application information
+- Application log path mapping
 - Data Source information
 - Executors information
 - Job, stage and SQL ID information
 - SQL to stage information
-- WholeStageCodeGen to node mappings (only applies to CPU plans)
 - Rapids related parameters
 - Spark Properties
-- Rapids Accelerator Jar and cuDF Jar
+- Rapids Accelerator jar
 - SQL Plan Metrics
+- WholeStageCodeGen to node mappings (only applies to CPU plans)
+- IO Metrics
 - Compare Mode: Matching SQL IDs Across Applications
 - Compare Mode: Matching Stage IDs Across Applications
-- Optionally : SQL Plan for each SQL query
-- Optionally : Generates DOT graphs for each SQL query
-- Optionally : Generates timeline graph for application
+- Optionally: SQL Plan for each SQL query
+- Optionally: Generates DOT graphs for each SQL query
+- Optionally: Generates timeline graph for application
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -142,8 +146,8 @@ We can input multiple Spark event logs and this tool can compare environments, e
 - Compare the durations/versions/gpuMode on or off:
 
 
+- Application information
 ```
-### A. Information Collected ###
 Application Information:
 
 +--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
@@ -152,18 +156,6 @@ Application Information:
 |1       |Spark shell|app-20210329165943-0103|user1    |1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false        |
 |2       |Spark shell|app-20210329170243-0018|user1    |1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true         |
 +--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
-```
-
-- Executor information:
-
-```
-Executor Information:
-+--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
-|appIndex|resourceProfileId|numExecutors|executorCores|maxMem     |maxOnHeapMem|maxOffHeapMem|executorMemory|numGpusPerExecutor|executorOffHeap|taskCpu|taskGpu|
-+--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
-|1       |0                |1           |4            |11264537395|11264537395 |0            |20480         |1                 |0              |1      |0.0    |
-|1       |1                |2           |2            |3247335014 |3247335014  |0            |6144          |2                 |0              |2      |2.0    |
-+--------+-----------------+------------+-------------+-----------+------------+-------------+-------------+--------------+------------------+---------------+-------+-------+
 ```
 
 - Data Source information
@@ -187,6 +179,18 @@ Data Source Information:
 |1       |8    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
 |1       |9    |JDBC   |unknown                                                                                                                    |unknown          |                                                                                             |
 +--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
+```
+
+- Executor information:
+
+```
+Executor Information:
++--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
+|appIndex|resourceProfileId|numExecutors|executorCores|maxMem     |maxOnHeapMem|maxOffHeapMem|executorMemory|numGpusPerExecutor|executorOffHeap|taskCpu|taskGpu|
++--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
+|1       |0                |1           |4            |11264537395|11264537395 |0            |20480         |1                 |0              |1      |0.0    |
+|1       |1                |2           |2            |3247335014 |3247335014  |0            |6144          |2                 |0              |2      |2.0    |
++--------+-----------------+------------+-------------+-----------+------------+-------------+-------------+--------------+------------------+---------------+-------+-------+
 ```
 
 - Matching SQL IDs Across Applications:
@@ -235,6 +239,22 @@ large queries and Spark happened to assign the stage IDs slightly differently, o
 cases there are a different number of stages because of slight differences in the plan. This
 is a best effort, and it is not guaranteed to match up all stages in a plan.
 
+- SQL to Stage Information (sorted by stage duration)
+
+Note that not all SQL nodes have a mapping to stage id so some nodes might be missing.
+
+```
+SQL to Stage Information:
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|appIndex|sqlID|jobID|stageId|stageAttemptId|Stage Duration|SQL Nodes(IDs)                                                                                                                                                     |
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|1       |0    |1    |1      |0             |8174          |Exchange(9),WholeStageCodegen (1)(10),Scan(13)                                                                                                                     |
+|1       |0    |1    |2      |0             |8154          |Exchange(16),WholeStageCodegen (3)(17),Scan(20)                                                                                                                    |
+|1       |0    |1    |3      |0             |2148          |Exchange(2),HashAggregate(4),SortMergeJoin(6),WholeStageCodegen (5)(3),Sort(8),WholeStageCodegen (2)(7),Exchange(9),Sort(15),WholeStageCodegen (4)(14),Exchange(16)|
+|1       |0    |1    |4      |0             |126           |HashAggregate(1),WholeStageCodegen (6)(0),Exchange(2)                                                                                                              |
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+```
+
 - Compare Rapids related Spark properties side-by-side:
 
 ```
@@ -251,16 +271,14 @@ Compare Rapids Properties which are set explicitly:
 +-------------------------------------------+----------+----------+
 ```
  
-- List rapids-4-spark and cuDF jars based on classpath: 
+- List rapids-4-spark jars based on classpath:
 
 ```
-Rapids Accelerator Jar and cuDF Jar:
+Rapids Accelerator jar:
 +--------+------------------------------------------------------------+
 |appIndex|Rapids4Spark jars                                           |
 +--------+------------------------------------------------------------+
-|1       |spark://10.10.10.10:43445/jars/cudf-0.19.2-cuda11.jar       |
 |1       |spark://10.10.10.10:43445/jars/rapids-4-spark_2.12-0.5.0.jar|
-|2       |spark://10.10.10.11:41319/jars/cudf-0.19.2-cuda11.jar       |
 |2       |spark://10.10.10.11:41319/jars/rapids-4-spark_2.12-0.5.0.jar|
 +--------+------------------------------------------------------------+
 ```
@@ -275,22 +293,6 @@ Job Information:
 |1       |0    |[0]      |null |1622846402778|1622846410240|
 |1       |1    |[1,2,3,4]|0    |1622846431114|1622846441591|
 +--------+-----+---------+-----+-------------+-------------+
-```
-
-- SQL to Stage Information (sorted by stage duration)
-
-Note that not all SQL nodes have a mapping to stage id so some nodes might be missing.
-
-```
-SQL to Stage Information:
-+--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-|appIndex|sqlID|jobID|stageId|stageAttemptId|Stage Duration|SQL Nodes(IDs)                                                                                                                                                     |
-+--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-|1       |0    |1    |1      |0             |8174          |Exchange(9),WholeStageCodegen (1)(10),Scan(13)                                                                                                                     |
-|1       |0    |1    |2      |0             |8154          |Exchange(16),WholeStageCodegen (3)(17),Scan(20)                                                                                                                    |
-|1       |0    |1    |3      |0             |2148          |Exchange(2),HashAggregate(4),SortMergeJoin(6),WholeStageCodegen (5)(3),Sort(8),WholeStageCodegen (2)(7),Exchange(9),Sort(15),WholeStageCodegen (4)(14),Exchange(16)|
-|1       |0    |1    |4      |0             |126           |HashAggregate(1),WholeStageCodegen (6)(0),Exchange(2)                                                                                                              |
-+--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
 - SQL Plan Metrics for Application for each SQL plan node in each SQL:
@@ -311,7 +313,7 @@ SQL Plan Metrics for Application:
 |1       |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |4,3     |
 ```
 
-- WholeStageCodeGen to Node Mapping:
+- WholeStageCodeGen to Node Mapping (only for CPU logs):
 
 ```
 WholeStageCodeGen Mapping:
@@ -325,85 +327,6 @@ WholeStageCodeGen Mapping:
 |1       |0    |7     |WholeStageCodegen (2)|Sort               |8           |
 ```
 
-- Print SQL Plans (-p option):
-Prints the SQL plan as a text string to a file named `planDescriptions.log`.
-For example if your application id is app-20210507103057-0000, then the
-filename will be `planDescriptions.log`
-
-- Generate DOT graph for each SQL (-g option):
-
-```
-Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
-```
-
-Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file 
-as a graph in pdf format using below command:
-
-```bash
-dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
-```
-
-Or to svg using
-```bash
-dot -Tsvg ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.svg
-```
-
-The pdf or svg file has the SQL plan graph with metrics. The svg file will act a little
-more like the Spark UI and include extra information for nodes when hovering over it with
-a mouse.
-
-As a part of this an effort is made to associate parts of the graph with the Spark stage it is a
-part of. This is not 100% accurate. Some parts of the plan like `TakeOrderedAndProject` may
-be a part of multiple stages and only one of the stages will be selected. `Exchanges` are purposely
-left out of the sections associated with a stage because they cover at least 2 stages and possibly
-more. In other cases we may not be able to determine what stage something was a part of. In those
-cases we mark it as `UNKNOWN STAGE`. This is because we rely on metrics to link a node to a stage.
-If a stage has no metrics, like if the query crashed early, we cannot establish that link.
-
-- Generate timeline for application (--generate-timeline option):
-
-The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
-named `timeline.svg`.  Most web browsers can display this file.  It is a
-timeline view similar to Apache Spark's
-[event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
-
-This displays several data sections.
-
-1. **Tasks** This shows all tasks in the application divided by executor. Please note that this
-   tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
-   The tasks are labeled with the time it took for them to run. There is a breakdown of some metrics
-   per task in the lower half of the task block with different colors used to designate different
-   metrics.
-   1. Yellow is the deserialization time for the task as reported by Spark. This works for both CPU
-   and GPU tasks.
-   2. White is the read time for a task. This is a combination of the "buffer time" GPU SQL metric
-   and the shuffle read time as reported by Spark. The shuffle time works for both CPU and GPU
-   tasks, but "buffer time" only is reported for GPU accelerated file reads.
-   3. Red is the semaphore wait time. This is the amount of time a task spent waiting to get access
-   to the GPU. This only shows up on GPU tasks when DEBUG metrics are enabled. It does not apply to
-   CPU tasks, as they don't go through the Semaphore.
-   4. Green is the "op time" SQL metric along with a few other metrics that also indicate the amount
-   of time the GPU was being used to process data. This is GPU specific.
-   5. Blue is the write time for a task. This is the "write time" SQL metric used when writing out
-   results as files using GPU acceleration, or it is the shuffle write time as reported by Spark.
-   The shuffle metrics work for both CPU and GPU tasks, but the "write time" metrics is GPU specific.
-   6. Anything else is time that is not accounted for by these metrics. Typically, this is time
-   spent on the CPU, but could also include semaphore wait time as DEBUG metrics are not on by
-   default.
-2. **STAGES** This shows the stages times reported by Spark. It starts with when the stage was
-   scheduled and ends when Spark considered the stage done.
-3. **STAGE RANGES** This shows the time from the start of the first task to the end of the last
-   task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
-   This helps to show. How long it takes for a task to start running after it is scheduled, and in
-   many cases how long it took to run all of the tasks in the stage. This is not always true because
-   Spark can intermix tasks from different stages.
-4. **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
-   completed.
-5. **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
-   when it completed.
-
-Tasks and stages all are color coordinated to help know what tasks are associated with a given
-stage. Jobs and SQL are not color coordinated.
 
 #### B. Analysis
 - Job + Stage level aggregated task metrics
@@ -417,8 +340,6 @@ to do some analysis such as detecting possible shuffle skew.
 - Job + Stage level aggregated task metrics:
 
 ```
-### B. Analysis ###
-
 Job + Stage level aggregated task metrics:
 +--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
 |appIndex|ID     |numTasks|Duration|diskBytesSpilled_sum|duration_sum|duration_max|duration_min|duration_avg|executorCPUTime_sum|executorDeserializeCPUTime_sum|executorDeserializeTime_sum|executorRunTime_sum|input_bytesRead_sum|input_recordsRead_sum|jvmGCTime_sum|memoryBytesSpilled_sum|output_bytesWritten_sum|output_recordsWritten_sum|peakExecutionMemory_max|resultSerializationTime_sum|resultSize_max|sr_fetchWaitTime_sum|sr_localBlocksFetched_sum|sr_localBytesRead_sum|sr_remoteBlocksFetched_sum|sr_remoteBytesRead_sum|sr_remoteBytesReadToDisk_sum|sr_totalBytesRead_sum|sw_bytesWritten_sum|sw_recordsWritten_sum|sw_writeTime_sum|
@@ -578,12 +499,95 @@ The _Auto-Tuner_ output has 2 main sections:
   - 'spark.sql.adaptive.enabled' should be enabled for better performance.
   ```
 
+### Generating Visualizations
+
+- Print SQL Plans (--print-plans option):
+Prints the SQL plan as a text string to a file named `planDescriptions.log`.
+
+- Generate DOT graph for each SQL (--generate-dot option):
+
+```
+Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
+```
+
+A dot file will be generated for each query in the application.
+Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file
+as a graph in pdf format using below command:
+
+```bash
+dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
+```
+
+Or to svg using
+```bash
+dot -Tsvg ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.svg
+```
+
+The pdf or svg file has the SQL plan graph with metrics. The svg file will act a little
+more like the Spark UI and include extra information for nodes when hovering over it with
+a mouse.
+
+As a part of this an effort is made to associate parts of the graph with the Spark stage it is a
+part of. This is not 100% accurate. Some parts of the plan like `TakeOrderedAndProject` may
+be a part of multiple stages and only one of the stages will be selected. `Exchanges` are purposely
+left out of the sections associated with a stage because they cover at least 2 stages and possibly
+more. In other cases we may not be able to determine what stage something was a part of. In those
+cases we mark it as `UNKNOWN STAGE`. This is because we rely on metrics to link a node to a stage.
+If a stage has no metrics, like if the query crashed early, we cannot establish that link.
+
+- Generate timeline for application (--generate-timeline option):
+
+The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
+named `timeline.svg`.  Most web browsers can display this file.  It is a
+timeline view similar to Apache Spark's
+[event timeline](https://spark.apache.org/docs/latest/web-ui.html).
+
+This displays several data sections.
+
+1. **Tasks** This shows all tasks in the application divided by executor. Please note that this
+   tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
+   The tasks are labeled with the time it took for them to run. There is a breakdown of some metrics
+   per task in the lower half of the task block with different colors used to designate different
+   metrics.
+   1. Yellow is the deserialization time for the task as reported by Spark. This works for both CPU
+   and GPU tasks.
+   2. White is the read time for a task. This is a combination of the "buffer time" GPU SQL metric
+   and the shuffle read time as reported by Spark. The shuffle time works for both CPU and GPU
+   tasks, but "buffer time" only is reported for GPU accelerated file reads.
+   3. Red is the semaphore wait time. This is the amount of time a task spent waiting to get access
+   to the GPU. When processing logs generated by versions of the spark rapids plugin prior to
+   23.04 this would only show up on GPU tasks when DEBUG metrics are enabled. For logs generated
+   with 23.04 and above it is always on. It does not apply to CPU tasks, as they don't go through
+   the Semaphore.
+   4. Green is the "op time" SQL metric along with a few other metrics that also indicate the amount
+   of time the GPU was being used to process data. This is GPU specific.
+   5. Blue is the write time for a task. This is the "write time" SQL metric used when writing out
+   results as files using GPU acceleration, or it is the shuffle write time as reported by Spark.
+   The shuffle metrics work for both CPU and GPU tasks, but the "write time" metrics is GPU specific.
+   6. Anything else is time that is not accounted for by these metrics. Typically, this is time
+   spent on the CPU, but could also include semaphore wait time as DEBUG metrics are not on by
+   default.
+2. **STAGES** This shows the stages times reported by Spark. It starts with when the stage was
+   scheduled and ends when Spark considered the stage done.
+3. **STAGE RANGES** This shows the time from the start of the first task to the end of the last
+   task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
+   This helps to show. How long it takes for a task to start running after it is scheduled, and in
+   many cases how long it took to run all of the tasks in the stage. This is not always true because
+   Spark can intermix tasks from different stages.
+4. **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
+   completed.
+5. **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
+   when it completed.
+
+Tasks and stages all are color coordinated to help know what tasks are associated with a given
+stage. Jobs and SQL are not color coordinated.
+
 ## Profiling tool options
   
 ```
 Profiling tool for the RAPIDS Accelerator and Apache Spark
 
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
@@ -689,15 +693,15 @@ A template of the worker information is shown below:
     spark.yarn.am.memory: 640m
   ```
 
-  | Property           | Optional | If Missing                                                                                                                   |
-  |--------------------|:--------:|------------------------------------------------------------------------------------------------------------------------------|
-  | system.numCores    |    No    | _Auto-Tuner_ does not calculate recommendations                                                                              |
-  | system.memory      |    No    | _Auto-Tuner_ does not calculate any recommendations                                                                          |
-  | system.numWorkers  |    Yes   | Default: 1                                                                                                                   |
-  | gpu.name           |    Yes   | Default: T4 (Nvidia Tesla T4)                                                                                                |
-  | gpu.memory         |    Yes   | Default: 16G                                                                                                                 |
-  | softwareProperties |    Yes   | This section is optional. The _Auto-Tuner_ reads the configs within the logs of the Apache Spark apps with higher precedence |
 
+| Property           | Optional |                                                          If Missing                                                          |
+|--------------------|:--------:|:----------------------------------------------------------------------------------------------------------------------------:|
+| system.numCores    |    No    | _Auto-Tuner_ does not calculate recommendations                                                                              |
+| system.memory      |    No    | _Auto-Tuner_ does not calculate any recommendations                                                                          |
+| system.numWorkers  |    Yes   | Default: 1                                                                                                                   |
+| gpu.name           |    Yes   | Default: T4 (Nvidia Tesla T4)                                                                                                |
+| gpu.memory         |    Yes   | Default: 16G                                                                                                                 |
+| softwareProperties |    Yes   | This section is optional. The _Auto-Tuner_ reads the configs within the logs of the Apache Spark apps with higher precedence |
 
 ## Profiling tool metrics definitions
 

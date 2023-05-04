@@ -46,8 +46,12 @@ mvn_verify() {
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
         if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
-            env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
-              -Dpytest.TEST_TAGS=''
+            env -u SPARK_HOME \
+              $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
+            # Run filecache tests
+            env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
+              $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+              -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
         # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version

@@ -13,27 +13,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
+{"spark": "330db"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.paths.SparkPath
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import com.nvidia.spark.rapids.{GpuCast, GpuEvalMode}
 
-object PartitionedFileUtilsShim {
-  // Wrapper for case class constructor so Java code can access
-  // the default values across Spark versions.
-  def newPartitionedFile(
-      partitionValues: InternalRow,
-      filePath: String,
-      start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues,
-    SparkPath.fromPathString(filePath), start, length)
+import org.apache.spark.sql.catalyst.expressions.{Cast, EvalMode, Expression}
 
-  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
-    pf.copy(locations = locations.toArray)
+object AnsiCastShim {
+  def isAnsiCast(e: Expression): Boolean = e match {
+    case c: GpuCast => c.ansiMode
+    case c: Cast => c.evalMode == EvalMode.ANSI
+    case _ => false
+  }
+
+  def getEvalMode(c: Cast): GpuEvalMode.Value = {
+    c.evalMode match {
+      case EvalMode.LEGACY => GpuEvalMode.LEGACY
+      case EvalMode.ANSI => GpuEvalMode.ANSI
+      case EvalMode.TRY => GpuEvalMode.TRY
+    }
   }
 }
