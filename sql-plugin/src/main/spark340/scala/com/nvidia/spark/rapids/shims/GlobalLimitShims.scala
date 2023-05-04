@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.{RowCountPlanVisitor, SparkPlanMeta}
 import org.apache.spark.sql.execution.GlobalLimitExec
 
 object GlobalLimitShims {
+
   /**
    * Estimate the number of rows for a GlobalLimitExec.
    */
