@@ -103,7 +103,7 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     }
   }
 
-  test("GPU out-of-core sort with retry when first-pass-split SplitAndRetryOOM") {
+  test("GPU out-of-core sort throws when first-pass-split SplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
@@ -119,26 +119,28 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
 
   test("GPU out-of-core sort with retry when merge-sort-split RetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
-      Iterator(buildBatch),
+      Iterator(buildBatch, buildBatch),
       gpuSorter,
       new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
-      targetSize = 1024,
+      targetSize = 400,
       mergeSortExp = new RetryOOM())
     withResource(outCoreIter) { _ =>
-      withResource(outCoreIter.next()) { cb =>
-        // only one batch
-        assertResult(NUM_ROWS)(cb.numRows())
-        assertResult(true)(GpuColumnVector.isTaggedAsFinalBatch(cb))
+      var numRows = 0
+      while(outCoreIter.hasNext) {
+        withResource(outCoreIter.next()) { cb =>
+          numRows += cb.numRows()
+        }
       }
+      assertResult(NUM_ROWS * 2)(numRows)
     }
   }
 
-  test("GPU out-of-core sort with retry when merge-sort-split SplitAndRetryOOM") {
+  test("GPU out-of-core sort throws when merge-sort-split SplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
-      Iterator(buildBatch),
+      Iterator(buildBatch, buildBatch),
       gpuSorter,
       new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
-      targetSize = 1024,
+      targetSize = 400,
       mergeSortExp = new SplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
       assertThrows[SplitAndRetryOOM] {
@@ -149,26 +151,28 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
 
   test("GPU out-of-core sort with retry when concat-output RetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
-      Iterator(buildBatch),
+      Iterator(buildBatch, buildBatch),
       gpuSorter,
       new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
-      targetSize = 1024,
+      targetSize = 400,
       concatOutExp = new RetryOOM())
     withResource(outCoreIter) { _ =>
-      withResource(outCoreIter.next()) { cb =>
-        // only one batch
-        assertResult(NUM_ROWS)(cb.numRows())
-        assertResult(true)(GpuColumnVector.isTaggedAsFinalBatch(cb))
+      var numRows = 0
+      while (outCoreIter.hasNext) {
+        withResource(outCoreIter.next()) { cb =>
+          numRows += cb.numRows()
+        }
       }
+      assertResult(NUM_ROWS * 2)(numRows)
     }
   }
 
-  test("GPU out-of-core sort with retry when concat-output SplitAndRetryOOM") {
+  test("GPU out-of-core sort throws when concat-output SplitAndRetryOOM") {
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
-      Iterator(buildBatch),
+      Iterator(buildBatch, buildBatch),
       gpuSorter,
       new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
-      targetSize = 1024,
+      targetSize = 400,
       concatOutExp = new SplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
       assertThrows[SplitAndRetryOOM] {
