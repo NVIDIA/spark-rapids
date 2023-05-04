@@ -710,6 +710,24 @@
         </all.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
         <cpd.sourceType>main</cpd.sourceType>
+        <!-- SPARK-36796 for JDK-17 test-->
+        <extraJavaTestArgs>
+            -XX:+IgnoreUnrecognizedVMOptions
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+            --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+            --add-opens=java.base/java.io=ALL-UNNAMED
+            --add-opens=java.base/java.net=ALL-UNNAMED
+            --add-opens=java.base/java.nio=ALL-UNNAMED
+            --add-opens=java.base/java.util=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+            --add-opens=java.base/sun.security.action=ALL-UNNAMED
+            --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+            -Djdk.reflect.useDirectMethodHandle=false
+        </extraJavaTestArgs>
     </properties>
 
     <dependencyManagement>
@@ -1016,7 +1034,7 @@
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls</argLine>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
