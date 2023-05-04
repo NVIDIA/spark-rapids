@@ -69,14 +69,14 @@ cluster meets the prerequisites above by configuring it as follows:
    For Azure, choose GPU nodes such as Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
 4. Select the driver type. Generally this can be set to be the same as the worker.
 5. We will need to create an initialization script for the cluster that installs the RAPIDS jars to the
-cluster. Databricks recommends storing all cluster-scoped init scripts using workspace files. 
-Each user has a Home directory configured under the /Users directory in the workspace.
-Navigate to your home directory in the UI and select **Create** > **File** from the menu,
-create an `init.sh` scripts with contents:   
-```bash
-#!/bin/bash
-sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.04.0.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar
-```
+   cluster. Databricks recommends storing all cluster-scoped init scripts using workspace files. 
+   Each user has a Home directory configured under the /Users directory in the workspace. 
+   Navigate to your home directory in the UI and select **Create** > **File** from the menu, 
+   create an `init.sh` scripts with contents:   
+   ```bash
+   #!/bin/bash
+   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.04.0.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar
+   ```
 6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.
    Change the config values based on the workers you choose. See Apache Spark
    [configuration](https://spark.apache.org/docs/latest/configuration.html) and RAPIDS Accelerator
