@@ -684,13 +684,21 @@ object GroupedAggregations {
             if (preceding.isEmpty) {
               windowOptionBuilder.unboundedPreceding()
             } else {
-              windowOptionBuilder.preceding(preceding.get)
+              if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
+                windowOptionBuilder.currentRowPreceding()
+              } else {
+                windowOptionBuilder.preceding(preceding.get)
+              }
             }
 
             if (following.isEmpty) {
               windowOptionBuilder.unboundedFollowing()
             } else {
-              windowOptionBuilder.following(following.get)
+              if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
+                windowOptionBuilder.currentRowFollowing()
+              } else {
+                windowOptionBuilder.following(following.get)
+              }
             }
 
             if (orderExpr.isAscending) {
@@ -763,6 +771,9 @@ object GroupedAggregations {
           Scalar.fromDecimal(x.getScale, valueLong.get)
         case x if x.getTypeId == DType.DTypeEnum.DECIMAL128 =>
           Scalar.fromDecimal(x.getScale, bound.value.left.get.underlying())
+        case x if x.getTypeId == DType.DTypeEnum.STRING =>
+          // Not UNBOUNDED. The only other supported boundary for String is CURRENT ROW, i.e. 0.
+          Scalar.fromString("")
         case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
       }
       Some(s)

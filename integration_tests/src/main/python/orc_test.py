@@ -424,6 +424,14 @@ def test_missing_column_names(spark_tmp_table_factory, reader_confs):
         reader_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_missing_column_names_count(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
+        reader_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_missing_column_names_with_schema(spark_tmp_table_factory, spark_tmp_path, reader_confs):
     table_name = spark_tmp_table_factory.get()
     table_location = spark_tmp_path + "/ORC_DATA"
@@ -432,6 +440,14 @@ def test_missing_column_names_with_schema(spark_tmp_table_factory, spark_tmp_pat
         lambda spark : spark.read.schema("a int, b string, c int").orc(table_location),
         reader_confs)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_missing_column_names_count_with_schema(spark_tmp_table_factory, spark_tmp_path, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    table_location = spark_tmp_path + "/ORC_DATA"
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name, table_location))
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark : spark.read.schema("a int, b string, c int").orc(table_location),
+        reader_confs)
 
 def setup_orc_file_with_column_names(spark, table_name):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
