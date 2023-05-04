@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.shims.{GlobalLimitShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{LimitShims, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
@@ -440,7 +440,7 @@ object RowCountPlanVisitor {
     case p: QueryStageExec =>
       p.getRuntimeStatistics.rowCount
     case p: GlobalLimitExec =>
-      GlobalLimitShims.visit(plan.asInstanceOf[SparkPlanMeta[GlobalLimitExec]])
+      LimitShims.GlobalLimitShims.visit(plan.asInstanceOf[SparkPlanMeta[GlobalLimitExec]])
     case LocalLimitExec(limit, _) =>
       // LocalLimit applies the same limit for each partition
       val n = limit * plan.wrapped.asInstanceOf[SparkPlan]
