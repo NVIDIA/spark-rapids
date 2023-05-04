@@ -21,12 +21,13 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuOrcScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 
 class RapidsOrcScanMeta(
@@ -39,10 +40,7 @@ class RapidsOrcScanMeta(
   override def tagSelfForGpu(): Unit = {
     GpuOrcScan.tagSupport(this)
     // we are being overly cautious and that Orc does not support this yet
-    if (oScan.isInstanceOf[SupportsRuntimeFiltering]) {
-      willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
-        " on datasource V2 yet.")
-    }
+    TagScanForRuntimeFiltering.tagScanForRuntimeFiltering(this, oScan)
     // Spark[330,_] allows aggregates to be pushed down to ORC
     if (oScan.pushedAggregate.nonEmpty) {
       willNotWorkOnGpu("aggregates pushed into ORC read, which is a metadata only operation")
