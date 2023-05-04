@@ -26,6 +26,8 @@ import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 object TagScanForRuntimeFiltering {
   def tagScanForRuntimeFiltering[T <: Scan](meta: ScanMeta[T], scan: T): Unit = {
     val scanClass = scan.getClass
+    // SupportsRuntimeV2Filtering is actually the parent of SupportsRuntimeFiltering in Spark 3.4.0,
+    // which means this check will cover both cases.
     if (scan.isInstanceOf[SupportsRuntimeV2Filtering]) {
       meta.willNotWorkOnGpu(s"$scanClass does not support Runtime filtering (DPP)" +
         " on datasource V2 yet.")
