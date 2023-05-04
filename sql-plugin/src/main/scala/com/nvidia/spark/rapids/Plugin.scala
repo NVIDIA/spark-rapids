@@ -25,6 +25,7 @@ import scala.sys.process._
 import scala.util.Try
 
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -225,14 +226,21 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
 
   override def receive(msg: Any): AnyRef = {
-    if (rapidsShuffleHeartbeatManager == null) {
-      throw new IllegalStateException(
-        s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
-    }
     msg match {
+      case m: FileCacheLocalityMsg =>
+        FileCacheLocalityManager.get.handleMsg(m)
+        null
       case RapidsExecutorStartupMsg(id) =>
+        if (rapidsShuffleHeartbeatManager == null) {
+          throw new IllegalStateException(
+            s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
+        }
         rapidsShuffleHeartbeatManager.registerExecutor(id)
       case RapidsExecutorHeartbeatMsg(id) =>
+        if (rapidsShuffleHeartbeatManager == null) {
+          throw new IllegalStateException(
+            s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
+        }
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
@@ -254,6 +262,9 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
     }
+
+    FileCacheLocalityManager.init(pluginContext.conf())
+
     logDebug("Loading extra driver plugins: " +
       s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")
     extraDriverPlugins.foreach(_.init(sc, pluginContext))
@@ -266,6 +277,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
   override def shutdown(): Unit = {
     extraDriverPlugins.foreach(_.shutdown())
+    FileCacheLocalityManager.shutdown()
   }
 }
 
@@ -329,6 +341,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize()
+      FileCache.init(pluginContext)
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
       // sticks around without any useful info until it hearbeat times out. Print what happened
@@ -431,6 +444,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuDeviceManager.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
+    FileCache.shutdown()
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
@@ -497,7 +511,3 @@ object RapidsExecutorPlugin {
     }
   }
 }
-
-
-
-

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{InputStream, IOException, OutputStream}
+import java.io.{EOFException, InputStream, IOException, OutputStream}
+import java.nio.channels.ReadableByteChannel
 
 import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.Arm.withResource
 
 /**
  * An implementation of OutputStream that writes to a HostMemoryBuffer.
@@ -27,7 +29,7 @@ import ai.rapids.cudf.HostMemoryBuffer
  *
  * @param buffer the buffer to receive written data
  */
-class HostMemoryOutputStream(buffer: HostMemoryBuffer) extends OutputStream {
+class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream {
   private var pos: Long = 0
 
   override def write(i: Int): Unit = {
@@ -46,6 +48,27 @@ class HostMemoryOutputStream(buffer: HostMemoryBuffer) extends OutputStream {
   }
 
   def getPos: Long = pos
+
+  def seek(newPos: Long): Unit = {
+    pos = newPos
+  }
+
+  def copyFromChannel(channel: ReadableByteChannel, length: Long): Unit = {
+    val endPos = pos + length
+    while (pos != endPos) {
+      val bytesToCopy = (endPos - pos).min(Integer.MAX_VALUE)
+      withResource(buffer.slice(pos, bytesToCopy)) { sliced =>
+        val bytebuf = sliced.asByteBuffer()
+        while (bytebuf.hasRemaining) {
+          val channelReadBytes = channel.read(bytebuf)
+          if (channelReadBytes < 0) {
+            throw new EOFException("Unexpected EOF while reading from byte channel")
+          }
+        }
+      }
+      pos += bytesToCopy
+    }
+  }
 }
 
 trait HostMemoryInputStreamMixIn extends InputStream {
