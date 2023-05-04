@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuCast
+import com.nvidia.spark.rapids.{GpuCast, GpuEvalMode}
 
 import org.apache.spark.sql.catalyst.expressions.{Cast, EvalMode, Expression}
 
@@ -28,5 +28,13 @@ object AnsiCastShim {
     case c: GpuCast => c.ansiMode
     case c: Cast => c.evalMode == EvalMode.ANSI
     case _ => false
+  }
+
+  def getEvalMode(c: Cast): GpuEvalMode.Value = {
+    c.evalMode match {
+      case EvalMode.LEGACY => GpuEvalMode.LEGACY
+      case EvalMode.ANSI => GpuEvalMode.ANSI
+      case EvalMode.TRY => GpuEvalMode.TRY
+    }
   }
 }
