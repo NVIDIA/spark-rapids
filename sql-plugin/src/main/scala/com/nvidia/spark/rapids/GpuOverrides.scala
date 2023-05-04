@@ -3730,8 +3730,8 @@ object GpuOverrides extends Logging {
       (p, conf, parent, r) => new ExecutedCommandExecMeta(p, conf, parent, r)),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed",
-      // The SortOrder TypeSig will govern what types can actually be used as sorting key data
-      // type. The types below are allowed as inputs and outputs.
+      // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
+      // The types below are allowed as inputs and outputs.
       ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (takeExec, conf, p, r) =>
