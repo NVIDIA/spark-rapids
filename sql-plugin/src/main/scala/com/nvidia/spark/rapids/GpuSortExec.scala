@@ -424,6 +424,7 @@ case class GpuOutOfCoreSortIterator(
       val sortedIt =
         withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, opTime)){ _ =>
           withRetry(spillBatch, splitSpillableInHalfByRows) { attemptScb =>
+            onFirstPassSort()
             withResource(attemptScb.getColumnarBatch()) { attemptCb =>
               sorter.appendProjectedAndSort(attemptCb, sortTime)
             }
@@ -446,6 +447,7 @@ case class GpuOutOfCoreSortIterator(
               }
             }
             val ret = withRetryNoSplit(sp) { attempt =>
+              onFirstPassSplit()
               splitAfterSort(attempt)
             }
             saveSplitResult(ret)
@@ -527,6 +529,7 @@ case class GpuOutOfCoreSortIterator(
           SpillableColumnarBatch(mergedBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         }
         val splitResult = withRetryNoSplit(mergedSp) { attempt =>
+          onMergeSortSplit()
           splitAfterSort(attempt, sortedOffset)
         }
         saveSplitResult(splitResult)
@@ -556,6 +559,7 @@ case class GpuOutOfCoreSortIterator(
     val ret = if (spillCbs.length == 1) {
       // We cannot concat a single table
       withRetryNoSplit(spillCbs.head) { attemptSp =>
+        onConcatOutput()
         withResource(attemptSp.getColumnarBatch()) { attemptCb =>
           withResource(GpuColumnVector.from(attemptCb)) { attemptTbl =>
             sorter.removeProjectedColumns(attemptTbl)
@@ -565,6 +569,7 @@ case class GpuOutOfCoreSortIterator(
     } else {
       // withRetryNoSplit will take over the batches.
       withRetryNoSplit(spillCbs) { attempt =>
+        onConcatOutput()
         val tables = attempt.safeMap { sp =>
           withResource(sp.getColumnarBatch())(GpuColumnVector.from)
         }
@@ -610,4 +615,10 @@ case class GpuOutOfCoreSortIterator(
     sorted.forEach(_.close())
     pending.close()
   }
+
+  /** Callbacks designed for unit tests only. Don't do any heavy things inside. */
+  protected def onFirstPassSort(): Unit = {}
+  protected def onFirstPassSplit(): Unit = {}
+  protected def onMergeSortSplit(): Unit = {}
+  protected def onConcatOutput(): Unit = {}
 }
