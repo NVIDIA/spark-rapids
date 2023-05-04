@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.shims.{LimitShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GlobalLimitShims, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
@@ -440,7 +440,7 @@ object RowCountPlanVisitor {
     case p: QueryStageExec =>
       p.getRuntimeStatistics.rowCount
     case p: GlobalLimitExec =>
-      LimitShims.GlobalLimitShims.visit(plan.asInstanceOf[SparkPlanMeta[GlobalLimitExec]])
+      GlobalLimitShims.visit(plan.asInstanceOf[SparkPlanMeta[GlobalLimitExec]])
     case LocalLimitExec(limit, _) =>
       // LocalLimit applies the same limit for each partition
       val n = limit * plan.wrapped.asInstanceOf[SparkPlan]

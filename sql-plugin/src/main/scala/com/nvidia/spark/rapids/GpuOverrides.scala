@@ -24,10 +24,11 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, LimitShims, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -52,7 +53,7 @@ import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -3747,6 +3748,46 @@ object GpuOverrides extends Logging {
           override def convertToGpu(): GpuExec =
             GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
         }),
+    exec[TakeOrderedAndProjectExec](
+      "Take the first limit elements as defined by the sortOrder, and do projection if needed",
+      // The SortOrder TypeSig will govern what types can actually be used as sorting key data
+      // type. The types below are allowed as inputs and outputs.
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+      (takeExec, conf, p, r) =>
+        new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
+          val sortOrder: Seq[BaseExprMeta[SortOrder]] =
+            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val projectList: Seq[BaseExprMeta[NamedExpression]] =
+            takeExec.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
+
+          override def convertToGpu(): GpuExec = {
+            // To avoid metrics confusion we split a single stage up into multiple parts but only
+            // if there are multiple partitions to make it worth doing.
+            val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
+            if (takeExec.child.outputPartitioning.numPartitions == 1) {
+              GpuTopN(takeExec.limit, so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
+            } else {
+              GpuTopN(
+                takeExec.limit,
+                so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                GpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
+                    so,
+                    takeExec.child.output,
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  ENSURE_REQUIREMENTS
+                )(SinglePartition)
+              )(takeExec.sortOrder)
+            }
+          }
+        }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
@@ -4001,7 +4042,7 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ GpuHiveOverrides.execs ++ ExternalSource.execRules ++ LimitShims.execs ++
+    commonExecs ++ GpuHiveOverrides.execs ++ ExternalSource.execRules ++
       SparkShimImpl.getExecs // Shim execs at the end; shims get the last word in substitutions.
 
   def getTimeParserPolicy: TimeParserPolicy = {

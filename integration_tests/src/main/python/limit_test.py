@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import is_before_spark_340
-from marks import allow_non_gpu
+from marks import allow_non_gpu, approximate_float
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + array_gens_sample + map_gens_sample + struct_gens_sample, ids=idfn)
 def test_simple_limit(data_gen):
@@ -55,10 +55,9 @@ def test_non_zero_offset(offset):
 
 
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
-@pytest.mark.parametrize('orderby', [True, False])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 @allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
-def test_non_zero_offset_with_limit(limit, offset, orderby):
+def test_non_zero_offset_with_limit(limit, offset):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:
     # (0, 0): Corner case: both limit and offset are 0
@@ -69,5 +68,28 @@ def test_non_zero_offset_with_limit(limit, offset, orderby):
     # (500, 500): offset = limit
     # (100, 600): offset > limit
 
-    sql = "select * from tmp_table {order} limit {lim} offset {off}".format(order="" if not orderby else "order by a", lim=limit, off=offset)
+    sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
     offset_test_wrapper(sql)
+
+@pytest.mark.parametrize('data_gen', all_gen)
+@pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
+@pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
+@allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
+@approximate_float
+def test_order_by_offset_with_limit(limit, offset, data_gen):
+    # In CPU version of spark, (limit, offset) can not be negative number.
+    # Test case description:
+    # (0, 0): Corner case: both limit and offset are 0
+    # (0, 10): Corner case: limit = 0, offset > 0
+    # (1024, 500): offset < limit && limit < df.numRows
+    # (2048, 456): offset < limit && limit = df.numRows
+    # (3000, 111): offset < limit && limit > df.numRows
+    # (500, 500): offset = limit
+    # (100, 600): offset > limit
+
+    def spark_df(spark):
+        binary_op_df(spark, data_gen, length=1024, num_slices=1).createOrReplaceTempView("tmp_table")
+        sql = "select * from tmp_table order by a limit {} offset {}".format(limit, offset)
+        return spark.sql(sql).repartition(1)
+    conf = {'spark.rapids.sql.exec.CollectLimitExec': 'true'}
+    assert_gpu_and_cpu_are_equal_collect(spark_df, conf)
