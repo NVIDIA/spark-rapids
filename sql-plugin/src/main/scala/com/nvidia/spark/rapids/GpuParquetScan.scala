@@ -830,8 +830,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) {
   // scalastyle:off
   // Implement Parquet LIST backwards-compatibility rules.
   // See: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#backward-compatibility-rules
+  // Inspired by Apache Spark's ParquetSchemaConverter.isElementType():
+  // https://github.com/apache/spark/blob/3a0e6bde2aaa11e1165f4fde040ff02e1743795e/sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetSchemaConverter.scala#L413
   // scalastyle:on
-  // Inspired by Apache Spark's ParquetSchemaConverter.isElementType().
   private def isElementType(repeatedType: Type, parentName: String): Boolean = {
     {
       // For legacy 2-level list types with primitive element type, e.g.:
