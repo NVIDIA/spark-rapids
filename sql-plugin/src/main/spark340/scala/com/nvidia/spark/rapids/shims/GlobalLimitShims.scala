@@ -39,10 +39,10 @@ object GlobalLimitShims {
       None
     }
     RowCountPlanVisitor.visit(plan.childPlans.head)
-        .map { rowNum =>
-          val remaining = (rowNum - offset).max(0)
-          sliced.map(_.min(remaining)).getOrElse(remaining)
-        }
-        .orElse(sliced)
+      .map { rowNum =>
+        val remaining = (rowNum - offset).max(0)
+        sliced.map(_.min(remaining)).getOrElse(remaining)
+      }
+      .orElse(sliced)
   }
 }

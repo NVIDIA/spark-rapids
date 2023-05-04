@@ -3728,26 +3728,6 @@ object GpuOverrides extends Logging {
       "Eagerly executed commands",
       ExecChecks(TypeSig.all, TypeSig.all),
       (p, conf, parent, r) => new ExecutedCommandExecMeta(p, conf, parent, r)),
-    exec[LocalLimitExec](
-      "Per-partition limiting of results",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-        TypeSig.all),
-      (localLimitExec, conf, p, r) =>
-        new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
-          override def convertToGpu(): GpuExec =
-            GpuLocalLimitExec(localLimitExec.limit, childPlans.head.convertIfNeeded())
-        }),
-    exec[GlobalLimitExec](
-      "Limiting of results across partitions",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-        TypeSig.all),
-      (globalLimitExec, conf, p, r) =>
-        new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
-          override def convertToGpu(): GpuExec =
-            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
-        }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data
@@ -3787,6 +3767,26 @@ object GpuOverrides extends Logging {
               )(takeExec.sortOrder)
             }
           }
+        }),
+    exec[LocalLimitExec](
+      "Per-partition limiting of results",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (localLimitExec, conf, p, r) =>
+        new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
+          override def convertToGpu(): GpuExec =
+            GpuLocalLimitExec(localLimitExec.limit, childPlans.head.convertIfNeeded())
+        }),
+    exec[GlobalLimitExec](
+      "Limiting of results across partitions",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (globalLimitExec, conf, p, r) =>
+        new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
+          override def convertToGpu(): GpuExec =
+            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
