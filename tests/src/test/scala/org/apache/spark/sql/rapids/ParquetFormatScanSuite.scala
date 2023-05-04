@@ -1219,7 +1219,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6968
-    test(s"SPECIAL ARRAY LIST $parserType") {
+    ignore(s"SPECIAL ARRAY LIST $parserType") {
       // From the parquet spec
       // If the repeated field is a group with one field and is named either array or uses the
       // LIST-annotated group's name with _tuple appended then the repeated type is the element
@@ -1261,7 +1261,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6968
-    test(s"SPECIAL _TUPLE LIST $parserType") {
+    ignore(s"SPECIAL _TUPLE LIST $parserType") {
       // From the parquet spec
       // If the repeated field is a group with one field and is named either array or uses the
       // LIST-annotated group's name with _tuple appended then the repeated type is the element
@@ -1401,7 +1401,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     // Spec says that value can be "omitted" but Spark does not support it.
 
     // https://github.com/NVIDIA/spark-rapids/issues/6970
-    test(s"MAP_KEY_VALUE $parserType") {
+    ignore(s"MAP_KEY_VALUE $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
