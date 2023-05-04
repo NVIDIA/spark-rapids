@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,9 +55,10 @@ def test_non_zero_offset(offset):
 
 
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
+@pytest.mark.parametrize('orderby', [True, False])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 @allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
-def test_non_zero_offset_with_limit(limit, offset):
+def test_non_zero_offset_with_limit(limit, offset, orderby):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:
     # (0, 0): Corner case: both limit and offset are 0
@@ -68,5 +69,5 @@ def test_non_zero_offset_with_limit(limit, offset):
     # (500, 500): offset = limit
     # (100, 600): offset > limit
 
-    sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
+    sql = "select * from tmp_table {order} limit {lim} offset {off}".format(order="" if not orderby else "order by a", lim=limit, off=offset)
     offset_test_wrapper(sql)
