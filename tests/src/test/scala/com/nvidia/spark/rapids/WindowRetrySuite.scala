@@ -72,6 +72,7 @@ class WindowRetrySuite
     val batch = it.next()
     assertResult(4)(batch.numRows())
     withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+      assertResult(4)(hostCol.getRowCount)
       (0 until hostCol.getRowCount.toInt).foreach { row =>
         assertResult(4)(hostCol.getLong(row))
       }
@@ -91,6 +92,7 @@ class WindowRetrySuite
     val batch = it.next()
     assertResult(4)(batch.numRows())
     withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+      assertResult(4)(hostCol.getRowCount)
       (0 until hostCol.getRowCount.toInt).foreach { row =>
         assertResult(row + 1)(hostCol.getLong(row))
       }
@@ -112,6 +114,7 @@ class WindowRetrySuite
     val batch = it.next()
     assertResult(4)(batch.numRows())
     withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+      assertResult(4)(hostCol.getRowCount)
       (0 until hostCol.getRowCount.toInt).foreach { row =>
         assertResult(4)(hostCol.getLong(row))
       }
@@ -146,9 +149,10 @@ class WindowRetrySuite
     val batch = it.next()
     assertResult(4)(batch.numRows())
     withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+      assertResult(4)(hostCol.getRowCount)
       (0 until hostCol.getRowCount.toInt).foreach { row =>
         val expected = row match {
-          case 3 => 3
+          case 3 => 2
           case _ => 1
         }
         assertResult(expected)(hostCol.getLong(row))
