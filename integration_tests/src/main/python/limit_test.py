@@ -88,8 +88,7 @@ def test_order_by_offset_with_limit(limit, offset, data_gen):
     # (100, 600): offset > limit
 
     def spark_df(spark):
-        binary_op_df(spark, data_gen, length=1024, num_slices=1).createOrReplaceTempView("tmp_table")
+        unary_op_df(spark, data_gen).createOrReplaceTempView("tmp_table")
         sql = "select * from tmp_table order by a limit {} offset {}".format(limit, offset)
-        return spark.sql(sql).repartition(1)
-    conf = {'spark.rapids.sql.exec.CollectLimitExec': 'true'}
-    assert_gpu_and_cpu_are_equal_collect(spark_df, conf)
+        return spark.sql(sql)
+    assert_gpu_and_cpu_are_equal_collect(spark_df)
