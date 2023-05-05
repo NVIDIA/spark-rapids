@@ -977,22 +977,22 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
   private var previousResult: Option[Scalar] = None
 
   // checkpoint
-  private var checkpointResult: Option[Scalar] = None
+  private var checkpointPreviousResult: Option[Scalar] = None
 
   override def checkpoint(): Unit = {
-    checkpointResult = previousResult
+    checkpointPreviousResult = previousResult
   }
 
   override def restore(): Unit = {
-    if (checkpointResult.isDefined) {
+    if (checkpointPreviousResult.isDefined) {
       // close previous result
       previousResult match {
-        case Some(r) if r != checkpointResult.get =>
+        case Some(r) if r != checkpointPreviousResult.get =>
           r.close()
         case _ =>
       }
-      previousResult = checkpointResult
-      checkpointResult = None
+      previousResult = checkpointPreviousResult
+      checkpointPreviousResult = None
     }
   }
 

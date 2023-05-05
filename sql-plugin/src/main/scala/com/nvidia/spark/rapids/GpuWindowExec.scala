@@ -1278,7 +1278,7 @@ class GpuWindowIterator(
   override def hasNext: Boolean = input.hasNext
 
   override def next(): ColumnarBatch = {
-    val cbSpillable = SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val cbSpillable = SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     withRetryNoSplit(cbSpillable) { _ =>
       withResource(cbSpillable.getColumnarBatch()) { cb =>
         withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
@@ -1476,7 +1476,7 @@ class GpuRunningWindowIterator(
   def computeRunning(input: ColumnarBatch): ColumnarBatch = {
     val fixers = fixerIndexMap
     val numRows = input.numRows()
-    val cbSpillable = SpillableColumnarBatch(input, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val cbSpillable = SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     withRetryNoSplit(cbSpillable) { _ =>
       withResource(cbSpillable.getColumnarBatch()) { cb =>
         withResource(computeBasicWindow(cb)) { basic =>
@@ -1522,12 +1522,10 @@ class GpuRunningWindowIterator(
           }
           // this section is outside of the retry logic because the calls to saveLastParts
           // and saveLastOrders can potentially close GPU resources
-          withResource(fixedUp) { fixed =>
-            closeOnExcept(fixedUp) { _ =>
-              newOrder.foreach(saveLastOrder)
-              newParts.foreach(saveLastParts)
-            }
-            convertToBatch(outputTypes, fixed)
+          withResource(fixedUp) { _ =>
+            newOrder.foreach(saveLastOrder)
+            newParts.foreach(saveLastParts)
+            convertToBatch(outputTypes, fixedUp)
           }
         }
       }
