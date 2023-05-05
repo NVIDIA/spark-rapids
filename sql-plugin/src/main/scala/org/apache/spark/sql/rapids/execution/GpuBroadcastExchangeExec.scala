@@ -576,7 +576,12 @@ case class GpuBroadcastExchangeExec(
 /** Caches the mappings from canonical CPU exchanges to the GPU exchanges that replaced them */
 object ExchangeMappingCache extends Logging {
   import scala.collection.JavaConverters._
-  private val cache = new MapMaker().weakValues().makeMap[Exchange, Exchange]().asScala
+  // Cache is a mapping from CPU broadcast plan to GPU broadcast plan. The cache should not
+  // artificially hold onto unused plans, so we make both the keys and values weak. The values
+  // point to their corresponding keys, so the keys will not be collected unless the value
+  // can be collected. The values will be held during normal Catalyst planning until those
+  // plans are no longer referenced, allowing both the key and value to be reaped at that point.
+  private val cache = new MapMaker().weakKeys().weakValues().makeMap[Exchange, Exchange]().asScala
 
   /** Try to find a recent GPU exchange that has replaced the specified CPU canonical plan. */
   def findGpuExchangeReplacement(cpuCanonical: Exchange): Option[Exchange] = {
