@@ -1275,10 +1275,18 @@ class GpuWindowIterator(
 
   override def isRunningBatched: Boolean = false
 
-  override def hasNext: Boolean = input.hasNext
+  override def hasNext: Boolean = onDeck.isDefined || input.hasNext
+
+  var onDeck: Option[SpillableColumnarBatch] = None
 
   override def next(): ColumnarBatch = {
-    val cbSpillable = SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    val cbSpillable = onDeck match {
+      case Some(x) =>
+        onDeck = None
+        x
+      case _ =>
+        getNext()
+    }
     withRetryNoSplit(cbSpillable) { _ =>
       withResource(cbSpillable.getColumnarBatch()) { cb =>
         withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
@@ -1292,6 +1300,11 @@ class GpuWindowIterator(
       }
     }
   }
+
+  def getNext(): SpillableColumnarBatch = {
+    SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+  }
+
 }
 
 object GpuBatchedWindowIterator {

@@ -18,12 +18,13 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
 import org.scalatest.mockito.MockitoSugar
 
-import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.catalyst.expressions.{RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.rapids.GpuCount
-import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
+import org.apache.spark.sql.types.{DataType, DataTypes, IntegerType, LongType}
 
 class WindowRetrySuite
     extends RmmSparkRetrySuiteBase
@@ -34,53 +35,49 @@ class WindowRetrySuite
       .column(5L, null.asInstanceOf[java.lang.Long], 3L, 3L)
       .build()
     withResource(windowTable) { tbl =>
-      val cb = GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1))
+      GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
     }
   }
 
-  def setupCountAgg(
+  def setupWindowIterator(
       frame: GpuSpecifiedWindowFrame,
-      orderSpec: Seq[SortOrder] = Seq.empty):
-  (GroupedAggregations, Array[ai.rapids.cudf.ColumnVector]) = {
-    val groupAggs = new GroupedAggregations()
+      orderSpec: Seq[SortOrder] = Seq.empty): GpuWindowIterator = {
     val spec = GpuWindowSpecDefinition(Seq.empty, orderSpec, frame)
     val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral.create(1, IntegerType))), spec)
-    groupAggs.addAggregation(count, Array(0), 2)
-    val windowOptsLength = 3
-    (groupAggs, new Array[ai.rapids.cudf.ColumnVector](windowOptsLength))
+    new GpuWindowIterator(
+      input = Seq(buildInputBatch()).iterator,
+      boundWindowOps = Seq(GpuAlias(count, "count")()),
+      boundPartitionSpec = Seq.empty,
+      boundOrderSpec = orderSpec,
+      outputTypes = Array(DataTypes.LongType),
+      numOutputBatches = NoopMetric,
+      numOutputRows = NoopMetric,
+      opTime = NoopMetric
+    )
   }
 
-  /*
   test("row based window handles RetryOOM") {
-    val inputBatch = buildInputBatch()
     val frame = GpuSpecifiedWindowFrame(
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
       GpuSpecialFrameBoundary(UnboundedFollowing))
-    val (groupAggs, outputColumns) = setupCountAgg(frame)
+    val it = setupWindowIterator(frame)
+    // pre-load a spillable batch before injecting the OOM
+    val spillableBatch = spy(it.getNext())
+    it.onDeck = Some(spillableBatch)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    groupAggs.doAggsAndClose(
-      false,
-      Seq.empty[SortOrder],
-      Array.empty,
-      Array.empty,
-      inputBatch.getColumnarBatch(),
-      outputColumns)
-    withResource(outputColumns) { _ =>
-      var rowsLeftToCheck = 4
-      withResource(outputColumns(2).copyToHost()) { hostCol =>
-        (0 until hostCol.getRowCount.toInt).foreach { row =>
-          assertResult(4)(hostCol.getLong(row))
-          rowsLeftToCheck -= 1
-        }
+    val batch = it.next()
+    assertResult(4)(batch.numRows())
+    withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { col =>
+      (0 until batch.numRows().toInt).foreach { row =>
+        assertResult(4)(col.getLong(row))
       }
-      assertResult(0)(rowsLeftToCheck)
     }
-    verify(inputBatch, times(2)).getColumnarBatch()
-    verify(inputBatch, times(1)).close()
+    verify(spillableBatch, times(2)).getColumnarBatch()
+    verify(spillableBatch, times(1)).close()
   }
 
+  /*
   test("optimized-row based window handles RetryOOM") {
     val inputBatch = buildInputBatch()
     val frame = GpuSpecifiedWindowFrame(
