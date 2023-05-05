@@ -22,11 +22,11 @@ import java.util.concurrent._
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
+import scala.ref.WeakReference
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
-import com.google.common.collect.MapMaker
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -574,19 +574,23 @@ case class GpuBroadcastExchangeExec(
 
 /** Caches the mappings from canonical CPU exchanges to the GPU exchanges that replaced them */
 object ExchangeMappingCache extends Logging {
-  import scala.collection.JavaConverters._
-  private val cache = new MapMaker().weakValues().makeMap[Exchange, Exchange]().asScala
+  // Cache is a mapping from CPU broadcast plan to GPU broadcast plan. The cache should not
+  // artificially hold onto unused plans, so we make both the keys and values weak. The values
+  // point to their corresponding keys, so the keys will not be collected unless the value
+  // can be collected. The values will be held during normal Catalyst planning until those
+  // plans are no longer referenced, allowing both the key and value to be reaped at that point.
+  private val cache = new mutable.WeakHashMap[Exchange, WeakReference[Exchange]]
 
   /** Try to find a recent GPU exchange that has replaced the specified CPU canonical plan. */
   def findGpuExchangeReplacement(cpuCanonical: Exchange): Option[Exchange] = {
-    cache.get(cpuCanonical)
+    cache.get(cpuCanonical).flatMap(_.get)
   }
 
   /** Add a GPU exchange to the exchange cache */
   def trackExchangeMapping(cpuCanonical: Exchange, gpuExchange: Exchange): Unit = {
     val old = findGpuExchangeReplacement(cpuCanonical)
     if (!old.exists(_.asInstanceOf[GpuBroadcastExchangeExec].isGpuPlanningComplete)) {
-      cache.put(cpuCanonical, gpuExchange)
+      cache.put(cpuCanonical, WeakReference(gpuExchange))
     }
   }
 }
