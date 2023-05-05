@@ -33,7 +33,6 @@ if [[ "$(printf '%s\n' "3.9" "${PYTHON_VERSION}" | sort -V | head -n1)" = "3.9" 
     # To fix "'lsb_release -a' returned non-zero". ref: https://github.com/pypa/pip/issues/4924
     [[ -n "$(which lsb_release)" ]] && mv $(which lsb_release) $(which lsb_release)"-bak"
 else
-    # Set python versiomn to make it the same for both shell mode and batch mode
     echo "Rapids 23.06+ drops python 3.8 or below versions of conda packages"
     exit -1
 fi
