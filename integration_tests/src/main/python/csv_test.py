@@ -553,7 +553,7 @@ def test_csv_read_count(spark_tmp_path):
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
-def test_csv_infer_schema(spark_tmp_path):
+def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
     # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
     data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
