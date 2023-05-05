@@ -94,6 +94,14 @@
             </properties>
         </profile>
         <profile>
+            <id>jdk17</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk17.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>databricks</id>
             <properties>
                 <included_buildvers>

@@ -116,9 +116,9 @@ You can build against different versions of the CUDA Toolkit by using qone of th
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
 ### Building and Testing with JDK9+
-We support JDK8 as our main JDK version, and test JDK8 and JDK11. It is possible to build and run
+We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
-the environment to your JDK root directory.
+the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
 
 At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
 a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
@@ -128,10 +128,10 @@ Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or
 flag if cross-compilation is required.
 
 ```bash
-mvn clean verify -Dbuildver=321 \
-  -Dmaven.compiler.release=11 \
-  -Dmaven.compiler.source=11 \
-  -Dmaven.compiler.target=11 \
+mvn clean verify -Dbuildver=330 \
+  -Dmaven.compiler.release=<11 or 17> \
+  -Dmaven.compiler.source=<11 or 17> \
+  -Dmaven.compiler.target=<11 or 17> \
   -Dscala.plugin.version=4.6.1 \
   -DallowConventionalDistJar=true
 ```
