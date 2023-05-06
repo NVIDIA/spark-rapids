@@ -41,13 +41,14 @@ class WindowRetrySuite
 
   def setupWindowIterator(
       frame: GpuSpecifiedWindowFrame,
-      orderSpec: Seq[SortOrder] = Seq.empty): GpuWindowIterator = {
+      orderSpec: Seq[SortOrder] = Seq.empty,
+      boundPartitionSpec: Seq[GpuExpression] = Seq.empty): GpuWindowIterator = {
     val spec = GpuWindowSpecDefinition(Seq.empty, orderSpec, frame)
     val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral.create(1, IntegerType))), spec)
     val it = new GpuWindowIterator(
       input = Seq(buildInputBatch()).iterator,
       boundWindowOps = Seq(GpuAlias(count, "count")()),
-      boundPartitionSpec = Seq.empty,
+      boundPartitionSpec,
       boundOrderSpec = orderSpec,
       outputTypes = Array(DataTypes.LongType),
       numOutputBatches = NoopMetric,
@@ -69,16 +70,17 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame)
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    val batch = it.next()
-    assertResult(4)(batch.numRows())
-    withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
-      assertResult(4)(hostCol.getRowCount)
-      (0 until hostCol.getRowCount.toInt).foreach { row =>
-        assertResult(4)(hostCol.getLong(row))
+    withResource(it.next()) { batch =>
+      assertResult(4)(batch.numRows())
+      withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+        assertResult(4)(hostCol.getRowCount)
+        (0 until hostCol.getRowCount.toInt).foreach { row =>
+          assertResult(4)(hostCol.getLong(row))
+        }
       }
+      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(1)).close()
     }
-    verify(inputBatch, times(2)).getColumnarBatch()
-    verify(inputBatch, times(1)).close()
   }
 
   test("optimized-row based window handles RetryOOM") {
@@ -89,16 +91,17 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame)
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    val batch = it.next()
-    assertResult(4)(batch.numRows())
-    withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
-      assertResult(4)(hostCol.getRowCount)
-      (0 until hostCol.getRowCount.toInt).foreach { row =>
-        assertResult(row + 1)(hostCol.getLong(row))
+    withResource(it.next()) { batch =>
+      assertResult(4)(batch.numRows())
+      withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+        assertResult(4)(hostCol.getRowCount)
+        (0 until hostCol.getRowCount.toInt).foreach { row =>
+          assertResult(row + 1)(hostCol.getLong(row))
+        }
       }
+      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(1)).close()
     }
-    verify(inputBatch, times(2)).getColumnarBatch()
-    verify(inputBatch, times(1)).close()
   }
 
   test("ranged based window handles RetryOOM") {
@@ -111,16 +114,17 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame, orderSpec = orderSpec)
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    val batch = it.next()
-    assertResult(4)(batch.numRows())
-    withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
-      assertResult(4)(hostCol.getRowCount)
-      (0 until hostCol.getRowCount.toInt).foreach { row =>
-        assertResult(4)(hostCol.getLong(row))
+    withResource(it.next()) { batch =>
+      assertResult(4)(batch.numRows())
+      withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+        assertResult(4)(hostCol.getRowCount)
+        (0 until hostCol.getRowCount.toInt).foreach { row =>
+          assertResult(4)(hostCol.getLong(row))
+        }
       }
+      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(1)).close()
     }
-    verify(inputBatch, times(2)).getColumnarBatch()
-    verify(inputBatch, times(1)).close()
   }
 
   test("SplitAndRetryOOM is not handled in doAggs") {
@@ -143,22 +147,23 @@ class WindowRetrySuite
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
       GpuSpecialFrameBoundary(CurrentRow))
-    val it = setupWindowIterator(frame)
+    val it = setupWindowIterator(frame, boundPartitionSpec = Seq(GpuLiteral.create(1, IntegerType)))
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    val batch = it.next()
-    assertResult(4)(batch.numRows())
-    withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
-      assertResult(4)(hostCol.getRowCount)
-      (0 until hostCol.getRowCount.toInt).foreach { row =>
-        val expected = row match {
-          case 3 => 2
-          case _ => 1
+    withResource(it.next()) { batch =>
+      assertResult(4)(batch.numRows())
+      withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+        assertResult(4)(hostCol.getRowCount)
+        (0 until hostCol.getRowCount.toInt).foreach { row =>
+          val expected = row match {
+            case 3 => 2
+            case _ => 1
+          }
+          assertResult(expected)(hostCol.getLong(row))
         }
-        assertResult(expected)(hostCol.getLong(row))
       }
+      verify(inputBatch, times(2)).getColumnarBatch()
+      verify(inputBatch, times(1)).close()
     }
-    verify(inputBatch, times(2)).getColumnarBatch()
-    verify(inputBatch, times(1)).close()
   }
 }
