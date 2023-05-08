@@ -137,13 +137,8 @@ jobs:
       - name: Build JDK11
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P 'individual,pre-merge'
+          -P 'individual,pre-merge,jdk11-build'
           -Dbuildver=${{ matrix.spark-version }}
-          -Dmaven.compiler.release=11
-          -Dmaven.compiler.source=11
-          -Dmaven.compiler.target=11
-          -Dscala.plugin.version=4.6.1
-          -DallowConventionalDistJar=true
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
@@ -165,13 +160,8 @@ jobs:
       - name: Build JDK17
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P 'individual,pre-merge'
+          -P 'individual,pre-merge,jdk17-build'
           -Dbuildver=${{ matrix.spark-version }}
-          -Dmaven.compiler.release=17
-          -Dmaven.compiler.source=17
-          -Dmaven.compiler.target=17
-          -Dscala.plugin.version=4.6.1
-          -DallowConventionalDistJar=true
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip

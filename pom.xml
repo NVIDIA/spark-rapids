@@ -572,11 +572,30 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <id>jdk11-build</id>
+            <properties>
+                <maven.compiler.release>11</maven.compiler.release>
+                <maven.compiler.source>11</maven.compiler.source>
+                <maven.compiler.target>11</maven.compiler.target>
+                <allowConventionalDistJar>true</allowConventionalDistJar>
+            </properties>
+        </profile>
+        <profile>
+            <id>jdk17-build</id>
+            <properties>
+                <maven.compiler.release>17</maven.compiler.release>
+                <maven.compiler.source>17</maven.compiler.source>
+                <maven.compiler.target>17</maven.compiler.target>
+                <allowConventionalDistJar>true</allowConventionalDistJar>
+            </properties>
+        </profile>
     </profiles>
 
     <properties>
         <allowConventionalDistJar>false</allowConventionalDistJar>
         <buildver>311</buildver>
+        <maven.compiler.release>1.8</maven.compiler.release>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
@@ -633,7 +652,7 @@
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <mockito.version>3.12.4</mockito.version>
-        <scala.plugin.version>4.3.0</scala.plugin.version>
+        <scala.plugin.version>4.6.1</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
