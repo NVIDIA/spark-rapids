@@ -31,11 +31,11 @@ class WindowRetrySuite
         with MockitoSugar {
   private def buildInputBatch() = {
     val windowTable = new Table.TestBuilder()
-      .column(5L, null.asInstanceOf[java.lang.Long], 3L, 3L)
       .column(1.asInstanceOf[java.lang.Integer], 1, 1, 1)
+      .column(5L, null.asInstanceOf[java.lang.Long], 3L, 3L)
       .build()
     withResource(windowTable) { tbl =>
-      GpuColumnVector.from(tbl, Seq(LongType, IntegerType).toArray[DataType])
+      GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
     }
   }
 
@@ -109,7 +109,7 @@ class WindowRetrySuite
       RangeFrame,
       GpuLiteral.create(-1, IntegerType),
       GpuSpecialFrameBoundary(CurrentRow))
-    val child = GpuBoundReference(1, IntegerType, nullable = false)(ExprId(0), "test")
+    val child = GpuBoundReference(0, IntegerType, nullable = false)(ExprId(0), "test")
     val orderSpec = SortOrder(child, Ascending) :: Nil
     val it = setupWindowIterator(frame, orderSpec = orderSpec)
     val inputBatch = it.onDeck.get
@@ -148,7 +148,7 @@ class WindowRetrySuite
       GpuSpecialFrameBoundary(UnboundedPreceding),
       GpuSpecialFrameBoundary(CurrentRow))
     val it = setupWindowIterator(frame, boundPartitionSpec =
-      Seq(GpuBoundReference(0, DataTypes.LongType, false)(ExprId.apply(0), "tbd")))
+      Seq(GpuBoundReference(1, DataTypes.LongType, false)(ExprId.apply(0), "tbd")))
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
     withResource(it.next()) { batch =>
