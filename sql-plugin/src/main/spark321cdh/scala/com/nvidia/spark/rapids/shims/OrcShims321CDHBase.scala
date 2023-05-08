@@ -15,22 +15,32 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "321cdh"}
+{"spark": "330cdh"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
+
+import java.nio.ByteBuffer
 
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.OrcOutputStripe
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
-import org.apache.orc.impl.{DataReaderProperties, OutStream, SchemaEvolution}
+import org.apache.hadoop.hive.common.io.{DiskRange, DiskRangeList}
+import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation}
+import org.apache.orc.impl.{BufferChunk, DataReaderProperties, InStream, OrcCodecPool, OutStream, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 
-import org.apache.spark.sql.execution.datasources.orc.OrcUtils
-import org.apache.spark.sql.types.DataType
-
 trait OrcShims321CDHBase {
+  // ORC Reader of the 321cdh Spark has no close method.
+  // The resource is closed internally.
+  def withReader[V](r: Reader)(block: Reader => V): V = {
+    block(r)
+  }
+
+  // ORC Reader of the 321cdh Spark has no close method.
+  // The resource is closed internally.
+  def closeReader(reader: Reader): Unit = {
+  }
 
   // read data to buffer
   def readFileData(dataReader: DataReader, inputDataRanges: DiskRangeList): DiskRangeList = {
@@ -90,21 +100,33 @@ trait OrcShims321CDHBase {
     result
   }
 
-  /**
-   * Compare if the two TypeDescriptions are equal by ignoring attribute
-   */
-  def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
-    lhs.equals(rhs)
-  }
-
   // forcePositionalEvolution is available from Spark-3.2.
   def forcePositionalEvolution(conf:Configuration): Boolean = {
     OrcConf.FORCE_POSITIONAL_EVOLUTION.getBoolean(conf)
   }
 
-  // orcTypeDescriptionString is renamed to getOrcSchemaString from 3.3+
-  def getOrcSchemaString(dt: DataType): String = {
-    OrcUtils.orcTypeDescriptionString(dt)
+  def parseFooterFromBuffer(
+      bb: ByteBuffer,
+      ps: OrcProto.PostScript,
+      psLen: Int): OrcProto.Footer = {
+    val footerSize = ps.getFooterLength.toInt
+    val footerOffset = bb.limit - 1 - psLen - footerSize
+    val footerBuffer = bb.duplicate()
+    footerBuffer.position(footerOffset)
+    footerBuffer.limit(footerOffset + footerSize)
+    val diskRanges = new java.util.ArrayList[DiskRange]()
+    diskRanges.add(new BufferChunk(footerBuffer, 0))
+    val compressionKind = CompressionKind.valueOf(ps.getCompression.name())
+    val codec = OrcCodecPool.getCodec(compressionKind)
+    try {
+      val in = InStream.createCodedInputStream("footer", diskRanges, footerSize, codec,
+        ps.getCompressionBlockSize.toInt)
+      OrcProto.Footer.parseFrom(in)
+    } finally {
+      OrcCodecPool.returnCodec(compressionKind, codec)
+    }
   }
 
+  // ORC version 1.5.x doesn't have separate stripe statistics length
+  def getStripeStatisticsLength(ps: OrcProto.PostScript): Long = 0L
 }

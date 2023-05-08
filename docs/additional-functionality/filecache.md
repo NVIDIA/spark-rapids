@@ -14,9 +14,8 @@ if that data is accessed again in the same application.
 
 ## Limitations of the File Cache
 
-The file cache is only used by Parquet table scans that have been GPU-accelerated by the RAPIDS
-Accelerator. CPU table scans or scans of data formats other than Parquet will not use the
-file cache.
+The file cache is only used by Parquet and ORC table scans that have been GPU-accelerated by the
+RAPIDS Accelerator. CPU table scans or scans of other data formats will not use the file cache.
 
 The file cache does not detect when the local copy of data is stale with respect to the remote
 filesystem. This is only a problem when individual input files will be overwritten during the

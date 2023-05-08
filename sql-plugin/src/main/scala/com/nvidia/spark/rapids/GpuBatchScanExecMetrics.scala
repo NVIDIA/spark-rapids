@@ -37,7 +37,7 @@ trait GpuBatchScanExecMetrics extends GpuExec {
   lazy val fileCacheMetrics: Map[String, GpuMetric] = {
     // File cache only supported on Parquet files for now.
     scan match {
-      case _: GpuParquetScan => createFileCacheMetrics()
+      case _: GpuParquetScan | _: GpuOrcScan => createFileCacheMetrics()
       case _ => Map.empty
     }
   }
