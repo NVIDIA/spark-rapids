@@ -1572,7 +1572,6 @@ class GpuRunningWindowIterator(
   }
 
   override def next(): ColumnarBatch = {
-    // TODO maybe should create spillable batch here before calling computeRunning
     val cb = readNextInputBatch()
     withResource(new NvtxWithMetrics("RunningWindow", NvtxColor.CYAN, opTime)) { _ =>
       val ret = computeRunning(cb) // takes ownership of cb
