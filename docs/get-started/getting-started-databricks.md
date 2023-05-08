@@ -60,7 +60,16 @@ The number of GPUs per node dictates the number of Spark executors that can run 
    correct result will be returned.
    
 ## Start a Databricks Cluster
-Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
+Before creating the cluster, we will need to create an [initialization script](https://docs.databricks.com/clusters/init-scripts.html) for the 
+cluster to install the RAPIDS jars. Databricks recommends storing all cluster-scoped init scripts using workspace files. 
+Each user has a Home directory configured under the /Users directory in the workspace. 
+Navigate to your home directory in the UI and select **Create** > **File** from the menu, 
+create an `init.sh` scripts with contents:   
+   ```bash
+   #!/bin/bash
+   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.04.0.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar
+   ```
+Then create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
 1. Select the Databricks Runtime Version from one of the supported runtimes specified in the
    Prerequisites section.
@@ -68,15 +77,9 @@ cluster meets the prerequisites above by configuring it as follows:
 3. Select a worker type. On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
    For Azure, choose GPU nodes such as Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
 4. Select the driver type. Generally this can be set to be the same as the worker.
-5. We will need to create an [initialization script](https://docs.databricks.com/clusters/init-scripts.html) for the cluster that installs the RAPIDS jars to the
-   cluster. Databricks recommends storing all cluster-scoped init scripts using workspace files. 
-   Each user has a Home directory configured under the /Users directory in the workspace. 
-   Navigate to your home directory in the UI and select **Create** > **File** from the menu, 
-   create an `init.sh` scripts with contents:   
-   ```bash
-   #!/bin/bash
-   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.04.0.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar
-   ```
+5. Click the “Edit” button, then navigate down to the “Advanced Options” section. Select the “Init Scripts” tab in 
+   the advanced options section, and paste the initialization script:`dbfs:/databricks/init_scripts/init.sh`, then click “Add”.
+   ![Init Script](../img/Databricks/initscript.png)
 6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.
    Change the config values based on the workers you choose. See Apache Spark
    [configuration](https://spark.apache.org/docs/latest/configuration.html) and RAPIDS Accelerator
