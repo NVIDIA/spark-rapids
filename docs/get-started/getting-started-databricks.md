@@ -68,7 +68,7 @@ cluster meets the prerequisites above by configuring it as follows:
 3. Select a worker type. On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
    For Azure, choose GPU nodes such as Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
 4. Select the driver type. Generally this can be set to be the same as the worker.
-5. We will need to create an initialization script for the cluster that installs the RAPIDS jars to the
+5. We will need to create an [initialization script](https://docs.databricks.com/clusters/init-scripts.html) for the cluster that installs the RAPIDS jars to the
    cluster. Databricks recommends storing all cluster-scoped init scripts using workspace files. 
    Each user has a Home directory configured under the /Users directory in the workspace. 
    Navigate to your home directory in the UI and select **Create** > **File** from the menu, 
