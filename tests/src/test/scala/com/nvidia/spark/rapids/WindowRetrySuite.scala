@@ -31,11 +31,11 @@ class WindowRetrySuite
         with MockitoSugar {
   private def buildInputBatch() = {
     val windowTable = new Table.TestBuilder()
-      .column(1.asInstanceOf[java.lang.Integer], 1, 1, 1)
       .column(5L, null.asInstanceOf[java.lang.Long], 3L, 3L)
+      .column(1.asInstanceOf[java.lang.Integer], 1, 1, 1)
       .build()
     withResource(windowTable) { tbl =>
-      GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
+      GpuColumnVector.from(tbl, Seq(LongType, IntegerType).toArray[DataType])
     }
   }
 
@@ -109,7 +109,7 @@ class WindowRetrySuite
       RangeFrame,
       GpuLiteral.create(-1, IntegerType),
       GpuSpecialFrameBoundary(CurrentRow))
-    val child = GpuBoundReference(0, IntegerType, nullable = false)(ExprId(0), "test")
+    val child = GpuBoundReference(1, IntegerType, nullable = false)(ExprId(0), "test")
     val orderSpec = SortOrder(child, Ascending) :: Nil
     val it = setupWindowIterator(frame, orderSpec = orderSpec)
     val inputBatch = it.onDeck.get
@@ -147,7 +147,8 @@ class WindowRetrySuite
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
       GpuSpecialFrameBoundary(CurrentRow))
-    val it = setupWindowIterator(frame, boundPartitionSpec = Seq(GpuLiteral.create(1, IntegerType)))
+    val it = setupWindowIterator(frame, boundPartitionSpec =
+      Seq(GpuBoundReference(0, DataTypes.LongType, false)(ExprId.apply(0), "tbd")))
     val inputBatch = it.onDeck.get
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
     withResource(it.next()) { batch =>
@@ -155,11 +156,15 @@ class WindowRetrySuite
       withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
         assertResult(4)(hostCol.getRowCount)
         (0 until hostCol.getRowCount.toInt).foreach { row =>
-          val expected = row match {
-            case 3 => 2
-            case _ => 1
+          if (row == 0) { // 5
+            assertResult(1)(hostCol.getLong(row))
+          } else if (row == 1) { // null
+            assertResult(1)(hostCol.getLong(row))
+          } else if (row == 2) { // 3
+            assertResult(1)(hostCol.getLong(row))
+          } else if (row == 3) { // 3
+            assertResult(2)(hostCol.getLong(row))
           }
-          assertResult(expected)(hostCol.getLong(row))
         }
       }
       verify(inputBatch, times(2)).getColumnarBatch()
