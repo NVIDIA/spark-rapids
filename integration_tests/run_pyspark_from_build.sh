@@ -257,7 +257,7 @@ else
         DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
     fi
     # if we did not error out on reads we should have at least four characters "x.y."
-    if [[ ${#DB_VER} < 4 ]]; then
+    if (( ${#DB_VER} < 4 )); then
         echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
         exit 1
     fi
