@@ -20,12 +20,12 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuOverrides.{exec, pluginSupportedOrderableSig}
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.expressions.{Expression, KnownNullable}
-import org.apache.spark.sql.catalyst.expressions.Empty2Null
+import org.apache.spark.sql.catalyst.expressions.{Empty2Null, Expression, KnownNullable, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
-import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
+import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFilesMeta, WriteFilesExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
@@ -45,6 +45,53 @@ trait Spark340PlusShims extends Spark331PlusShims {
           override def convertToGpu(): GpuExec =
             GpuGlobalLimitExec(
               globalLimit.limit, childPlans.head.convertIfNeeded(), globalLimit.offset)
+        }),
+    exec[TakeOrderedAndProjectExec](
+      "Take the first limit elements after offset as defined by the sortOrder, and do " +
+          "projection if needed",
+      // The SortOrder TypeSig will govern what types can actually be used as sorting key data
+      // type. The types below are allowed as inputs and outputs.
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+      (takeExec, conf, p, r) =>
+        new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
+          val sortOrder: Seq[BaseExprMeta[SortOrder]] =
+            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val projectList: Seq[BaseExprMeta[NamedExpression]] =
+            takeExec.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
+
+          override def convertToGpu(): GpuExec = {
+            // To avoid metrics confusion we split a single stage up into multiple parts but only
+            // if there are multiple partitions to make it worth doing.
+            val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
+            if (takeExec.child.outputPartitioning.numPartitions == 1) {
+              GpuTopN(takeExec.limit, so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                childPlans.head.convertIfNeeded(), takeExec.offset)(takeExec.sortOrder)
+            } else {
+              // We are applying the offset only after the batch has been sorted into a single
+              // partition. To further clarify we are doing the following
+              // GpuTopN(0, end) -> Shuffle(single partition) -> GpuTopN(offset, end)
+              // So the leaf GpuTopN (left most) doesn't take offset into account so all the
+              // results can perculate above, where we shuffle into a single partition then
+              // we drop the offset number of rows before projecting.
+              GpuTopN(
+                takeExec.limit,
+                so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                GpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
+                    so,
+                    takeExec.child.output,
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  ENSURE_REQUIREMENTS
+                )(SinglePartition),
+                takeExec.offset)(takeExec.sortOrder)
+            }
+          }
         }),
     GpuOverrides.exec[CollectLimitExec](
       "Reduce to single partition and apply limit",

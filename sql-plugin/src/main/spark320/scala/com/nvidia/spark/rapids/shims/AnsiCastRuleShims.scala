@@ -92,7 +92,7 @@ trait AnsiCastRuleShims extends SparkShims {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, GpuEvalMode.ANSI, conf = conf,
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = true))
   }
 }

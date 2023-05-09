@@ -26,7 +26,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuParquetScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 
 class RapidsParquetScanMeta(
@@ -39,10 +39,7 @@ class RapidsParquetScanMeta(
   override def tagSelfForGpu(): Unit = {
     GpuParquetScan.tagSupport(this)
     // we are being overly cautious and that Parquet does not support this yet
-    if (pScan.isInstanceOf[SupportsRuntimeFiltering]) {
-      willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
-        " on datasource V2 yet.")
-    }
+    TagScanForRuntimeFiltering.tagScanForRuntimeFiltering(this, pScan)
   }
 
   override def convertToGpu(): Scan = {

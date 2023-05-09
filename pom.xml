@@ -658,9 +658,6 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
-        <!-- TODO: Add 340 to noSnapshot.buildvers when 3.4.0 shim is complete
-             See https://github.com/NVIDIA/spark-rapids/issues/5824
-        -->
         <noSnapshot.buildvers>
             311,
             312,
@@ -673,7 +670,8 @@
             330,
             331,
             332,
-            330cdh
+            330cdh,
+            340
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             333
@@ -692,7 +690,8 @@
             320
         </premergeUT1.buildvers>
         <premergeUT2.buildvers>
-            330
+            330,
+            340
         </premergeUT2.buildvers>
         <premergeUTF8.buildvers>
             320
@@ -700,16 +699,34 @@
         <jdk11.buildvers>
             312,
             321,
-            331
+            331,
+            340
         </jdk11.buildvers>
         <all.buildvers>
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
             ${databricks.buildvers},
-            340
         </all.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
         <cpd.sourceType>main</cpd.sourceType>
+        <!-- SPARK-36796 for JDK-17 test-->
+        <extraJavaTestArgs>
+            -XX:+IgnoreUnrecognizedVMOptions
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+            --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+            --add-opens=java.base/java.io=ALL-UNNAMED
+            --add-opens=java.base/java.net=ALL-UNNAMED
+            --add-opens=java.base/java.nio=ALL-UNNAMED
+            --add-opens=java.base/java.util=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+            --add-opens=java.base/sun.security.action=ALL-UNNAMED
+            --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+            -Djdk.reflect.useDirectMethodHandle=false
+        </extraJavaTestArgs>
     </properties>
 
     <dependencyManagement>
@@ -1016,7 +1033,7 @@
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls</argLine>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
@@ -1058,7 +1075,7 @@
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
-                    <version>0.8.5</version>
+                    <version>0.8.8</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

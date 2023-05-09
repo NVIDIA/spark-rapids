@@ -15,25 +15,31 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "333"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.paths.SparkPath
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import com.nvidia.spark.rapids.ScanMeta
 
-object PartitionedFileUtilsShim {
-  // Wrapper for case class constructor so Java code can access
-  // the default values across Spark versions.
-  def newPartitionedFile(
-      partitionValues: InternalRow,
-      filePath: String,
-      start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues,
-    SparkPath.fromPathString(filePath), start, length)
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 
-  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
-    pf.copy(locations = locations.toArray)
+object TagScanForRuntimeFiltering {
+  def tagScanForRuntimeFiltering[T <: Scan](meta: ScanMeta[T], scan: T): Unit = {
+    val scanClass = scan.getClass
+    if (scan.isInstanceOf[SupportsRuntimeFiltering]) {
+      meta.willNotWorkOnGpu(s"$scanClass does not support Runtime filtering (DPP)" +
+        " on datasource V2 yet.")
+    }
   }
 }

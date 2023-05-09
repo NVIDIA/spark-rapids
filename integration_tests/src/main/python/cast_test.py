@@ -14,9 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, is_databricks113_or_later, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -114,6 +114,29 @@ def test_cast_string_date_invalid_ansi(invalid):
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'},
         error_message="DateTimeException")
+
+
+# test try_cast in Spark versions >= 320 and < 340
+@pytest.mark.skipif(is_before_spark_320() or is_spark_340_or_later() or is_databricks113_or_later(), reason="try_cast only in Spark 3.2+")
+@allow_non_gpu('ProjectExec', 'TryCast')
+@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
+def test_try_cast_fallback(invalid):
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
+        'TryCast',
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True})
+
+# test try_cast in Spark versions >= 340
+@pytest.mark.skipif(not (is_spark_340_or_later() or is_databricks113_or_later()), reason="Cast with EvalMode only in Spark 3.4+")
+@allow_non_gpu('ProjectExec','Cast')
+@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
+def test_try_cast_fallback_340(invalid):
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame([(invalid,)], "a string").selectExpr("try_cast(a as date)"),
+        'Cast',
+        conf={'spark.rapids.sql.hasExtendedYearValues': False,
+              'spark.sql.ansi.enabled': True})
 
 # test all Spark versions, non ANSI mode, invalid value will be converted to NULL
 def test_cast_string_date_non_ansi():

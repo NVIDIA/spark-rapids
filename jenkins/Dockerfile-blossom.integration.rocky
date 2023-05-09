@@ -48,7 +48,7 @@ ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     conda install -c conda-forge mamba && \
-    mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.8 cudatoolkit=${CUDA_VER} && \
+    mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.9 cudatoolkit=${CUDA_VER} && \
     mamba install -y spacy && python -m spacy download en_core_web_sm && \
     mamba install -y -c anaconda pytest requests && \
     mamba install -y -c conda-forge sre_yield && \

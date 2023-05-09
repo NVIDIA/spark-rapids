@@ -444,7 +444,7 @@ def test_delta_write_append_only(spark_tmp_path):
                      .save(data_path),
                      conf=delta_writes_enabled_conf)
     # verify overwrite fails
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: unary_op_df(spark, gen).write.format("delta").mode("overwrite").save(data_path),
             conf=delta_writes_enabled_conf),
@@ -469,7 +469,7 @@ def test_delta_write_constraint_not_null(spark_tmp_path):
                      conf=delta_writes_enabled_conf)
 
     # verify write of null value throws
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: unary_op_df(spark, null_gen).write.format("delta").mode("append").save(data_path),
             conf=delta_writes_enabled_conf),
@@ -499,7 +499,7 @@ def test_delta_write_constraint_check(spark_tmp_path):
     def gen_bad_data(spark):
         return gen_good_data(spark).union(spark.range(1).withColumn("x", f.col("id")))
 
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: gen_bad_data(spark).write.format("delta").mode("append").save(data_path),
             conf=delta_writes_enabled_conf),
@@ -526,7 +526,7 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
     # verify write of values that violate the constraint throws
     def gen_bad_data(spark):
         return spark.range(1000).withColumn("x", f.col("id") + 1)
-    assert_py4j_exception(
+    assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: gen_bad_data(spark).write.format("delta").mode("append").save(data_path),
             conf=add_disable_conf),

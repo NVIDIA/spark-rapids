@@ -114,13 +114,28 @@ object GpuProjectExec {
 
   /**
    * Similar to project, but it will try and retry the operations if it can. It also will close
-   * the input SpillableColumnarBatch if it succeeds.
+   * the input SpillableColumnarBatch.
    * @param sb the input batch
    * @param boundExprs the expressions to run
    * @return the resulting batch
    */
   def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
+    withResource(sb) { _ =>
+      projectWithRetrySingleBatch(sb, boundExprs)
+    }
+  }
+
+  /**
+   * Similar to project, but it will try and retry the operations if it can.  The caller is
+   * responsible for closing the input batch.
+   * @param sb the input batch
+   * @param boundExprs the expressions to run
+   * @return the resulting batch
+   */
+  def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
+      boundExprs: Seq[Expression]): ColumnarBatch = {
+
     // First off we want to find/run all of the expressions that are non-deterministic
     // These cannot be retried.
     val (deterministicExprs, nonDeterministicExprs) = boundExprs.partition(_.deterministic)
@@ -135,7 +150,7 @@ object GpuProjectExec {
     }
 
     withResource(snd) { snd =>
-      RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+      RmmRapidsRetryIterator.withRetryNoSplit {
         val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
           // For now we are just going to run all of these and deal with losing work...
           project(cb, deterministicExprs)

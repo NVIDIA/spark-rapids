@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.filecache.FileCacheConf
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
@@ -71,6 +72,16 @@ object GpuMetric extends Logging {
   val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
   val READ_FS_TIME = "readFsTime"
   val WRITE_BUFFER_TIME = "writeBufferTime"
+  val FILECACHE_FOOTER_HITS = "filecacheFooterHits"
+  val FILECACHE_FOOTER_HITS_SIZE = "filecacheFooterHitsSize"
+  val FILECACHE_FOOTER_MISSES = "filecacheFooterMisses"
+  val FILECACHE_FOOTER_MISSES_SIZE = "filecacheFooterMissesSize"
+  val FILECACHE_DATA_RANGE_HITS = "filecacheDataRangeHits"
+  val FILECACHE_DATA_RANGE_HITS_SIZE = "filecacheDataRangeHitsSize"
+  val FILECACHE_DATA_RANGE_MISSES = "filecacheDataRangeMisses"
+  val FILECACHE_DATA_RANGE_MISSES_SIZE = "filecacheDataRangeMissesSize"
+  val FILECACHE_FOOTER_READ_TIME = "filecacheFooterReadTime"
+  val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -97,6 +108,16 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
   val DESCRIPTION_READ_FS_TIME = "time to read fs data"
   val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
+  val DESCRIPTION_FILECACHE_FOOTER_HITS = "cached footer hits"
+  val DESCRIPTION_FILECACHE_FOOTER_HITS_SIZE = "cached footer hits size"
+  val DESCRIPTION_FILECACHE_FOOTER_MISSES = "cached footer misses"
+  val DESCRIPTION_FILECACHE_FOOTER_MISSES_SIZE = "cached footer misses size"
+  val DESCRIPTION_FILECACHE_DATA_RANGE_HITS = "cached data hits"
+  val DESCRIPTION_FILECACHE_DATA_RANGE_HITS_SIZE = "cached data hits size"
+  val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES = "cached data misses"
+  val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES_SIZE = "cached data misses size"
+  val DESCRIPTION_FILECACHE_FOOTER_READ_TIME = "cached footer read time"
+  val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -234,6 +255,33 @@ trait GpuExec extends SparkPlan {
 
   protected def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
     createMetricInternal(level, SQLMetrics.createTimingMetric(sparkContext, name))
+
+  protected def createFileCacheMetrics(): Map[String, GpuMetric] = {
+    if (FileCacheConf.FILECACHE_ENABLED.get(conf)) {
+      Map(
+        FILECACHE_FOOTER_HITS -> createMetric(MODERATE_LEVEL, DESCRIPTION_FILECACHE_FOOTER_HITS),
+        FILECACHE_FOOTER_HITS_SIZE -> createSizeMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_FOOTER_HITS_SIZE),
+        FILECACHE_FOOTER_MISSES -> createMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_FOOTER_MISSES),
+        FILECACHE_FOOTER_MISSES_SIZE -> createSizeMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_FOOTER_MISSES_SIZE),
+        FILECACHE_DATA_RANGE_HITS -> createMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_DATA_RANGE_HITS),
+        FILECACHE_DATA_RANGE_HITS_SIZE -> createSizeMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_DATA_RANGE_HITS_SIZE),
+        FILECACHE_DATA_RANGE_MISSES -> createMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_DATA_RANGE_MISSES),
+        FILECACHE_DATA_RANGE_MISSES_SIZE -> createSizeMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_DATA_RANGE_MISSES_SIZE),
+        FILECACHE_FOOTER_READ_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_FOOTER_READ_TIME),
+        FILECACHE_DATA_RANGE_READ_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
+          DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME))
+    } else {
+      Map.empty
+    }
+  }
 
   override def supportsColumnar = true
 

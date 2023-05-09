@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "331"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark331;
+package com.nvidia.spark.rapids.shims.spark331
 
 import com.nvidia.spark.rapids._
 import org.scalatest.FunSuite
