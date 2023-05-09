@@ -170,6 +170,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       }
       val startTimestamp = System.nanoTime
       withResource(sb.getColumnarBatch()) { cb =>
+        //TODO: we should really apply the transformations to cast timestamps
+        // to the expected types before spilling but we need a SpillableTable
+        // rather than a SpillableColumnBatch to be able to do that
+        // See https://github.com/NVIDIA/spark-rapids/issues/8262
         withResource(transform(cb)) { transformed =>
           RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
             withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
