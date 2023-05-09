@@ -238,14 +238,10 @@ else
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.
-    DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
-    if [[ -f $DB_DEPLOY_CONF ]]; then
-      DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
-      if [[ -z $DB_VER ]]; then
-        echo >&2 "Unable to determine Databricks version"
-        exit 1
-      fi
-      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
+    if [[ -n "${DATABRICKS_RUNTIME_VERSION}" ]]; then
+      # DATABRICKS_RUNTIME_VERSION = major.minor
+      # version matching checks the prefix ending with a dot: "major.minor." such as "11.3."
+      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion="${DATABRICKS_RUNTIME_VERSION}."
     fi
 
     # Set spark.task.maxFailures for most schedulers.
