@@ -241,11 +241,12 @@ else
     # notebooks but not when running Spark manually.
     #
     # At the OS level the DBR version can be obtailed via
-    # 1. DATABRICKS_RUNTIME_VERSION environment, e.g., 11.3
-    # 2. File at /databricks/DBR_VERSION, e.g., 11.3
-    # 3. The value for Spark conf in /databricks/common/conf/deploy.conf, e.g. 11.3.x-gpu-ml-scala2.12
+    # 1. DATABRICKS_RUNTIME_VERSION environment set by Databricks, e.g., 11.3
+    # 2. File at /databricks/DBR_VERSION created by Databricks, e.g., 11.3
+    # 3. The value for Spark conf in file /databricks/common/conf/deploy.conf created by Databricks,
+    #    e.g. 11.3.x-gpu-ml-scala2.12
     #
-    # For cases 1 and 2 append '.'
+    # For cases 1 and 2 append '.' for version matching in 3XYdb SparkShimServiceProvider
     #
     DBR_VERSION=/databricks/DBR_VERSION
     DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
