@@ -28,8 +28,8 @@ IFS=$PRE_IFS
 
 CUDF_VER=${CUDF_VER:-"23.04.0"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"23.04.0"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.04.0"}
+PROJECT_VER=${PROJECT_VER:-"23.04.1"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.04.1"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
