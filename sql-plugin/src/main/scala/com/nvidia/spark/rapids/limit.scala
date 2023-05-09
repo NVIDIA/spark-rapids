@@ -206,13 +206,14 @@ object GpuTopN {
     }
   }
 
-  private[this] def takeN(batch: ColumnarBatch, count: Int): ColumnarBatch = {
+  private[this] def takeN(batch: ColumnarBatch, count: Int, offset: Int): ColumnarBatch = {
     val end = Math.min(count, batch.numRows())
     val numColumns = batch.numCols()
     closeOnExcept(new Array[ColumnVector](numColumns)) { columns =>
       val bases = GpuColumnVector.extractBases(batch)
       (0 until numColumns).foreach { i =>
-        columns(i) = GpuColumnVector.from(bases(i).subVector(0, end), batch.column(i).dataType())
+        columns(i) =
+          GpuColumnVector.from(bases(i).subVector(offset, end), batch.column(i).dataType())
       }
       new ColumnarBatch(columns, end)
     }
@@ -221,9 +222,10 @@ object GpuTopN {
   def apply(limit: Int,
       sorter: GpuSorter,
       batch: ColumnarBatch,
-      sortTime: GpuMetric): ColumnarBatch = {
+      sortTime: GpuMetric,
+      offset: Int): ColumnarBatch = {
     withResource(sorter.fullySortBatch(batch, sortTime, NoopMetric)) { sorted =>
-      takeN(sorted, limit)
+      takeN(sorted, limit, offset)
     }
   }
 
@@ -236,7 +238,8 @@ object GpuTopN {
       inputBatches: GpuMetric,
       inputRows: GpuMetric,
       outputBatches: GpuMetric,
-      outputRows: GpuMetric): Iterator[ColumnarBatch] =
+      outputRows: GpuMetric,
+      offset: Int): Iterator[ColumnarBatch] =
     new Iterator[ColumnarBatch]() {
       override def hasNext: Boolean = iter.hasNext
 
@@ -253,22 +256,22 @@ object GpuTopN {
 
             val runningResult = if (pending.isEmpty) {
               withResource(input) { input =>
-                apply(limit, sorter, input, sortTime)
+                apply(limit, sorter, input, sortTime, offset)
               }
             } else if (totalSize > Integer.MAX_VALUE) {
               // The intermediate size is likely big enough we don't want to risk an overflow,
               // so sort/slice before we concat and sort/slice again.
               val tmp = withResource(input) { input =>
-                apply(limit, sorter, input, sortTime)
+                apply(limit, sorter, input, sortTime, offset)
               }
               withResource(concatAndClose(pending.get, tmp, concatTime)) { concat =>
-                apply(limit, sorter, concat, sortTime)
+                apply(limit, sorter, concat, sortTime, offset)
               }
             } else {
               // The intermediate size looks like we could never overflow the indexes so
               // do it the more efficient way and concat first followed by the sort/slice
               withResource(concatAndClose(pending.get, input, concatTime)) { concat =>
-                apply(limit, sorter, concat, sortTime)
+                apply(limit, sorter, concat, sortTime, offset)
               }
             }
             pending =
@@ -296,8 +299,9 @@ case class GpuTopN(
     limit: Int,
     gpuSortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan)(
-    cpuSortOrder: Seq[SortOrder]) extends GpuExec with ShimUnaryExecNode {
+    child: SparkPlan,
+    offset: Int = 0)(
+    cpuSortOrder: Seq[SortOrder]) extends GpuBaseLimitExec {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
@@ -331,7 +335,7 @@ case class GpuTopN(
 
     child.executeColumnar().mapPartitions { iter =>
       val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
-        inputBatches, inputRows, outputBatches, outputRows)
+        inputBatches, inputRows, outputBatches, outputRows, offset)
       if (localProjectList != childOutput) {
         topN.map { batch =>
           GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
@@ -353,6 +357,6 @@ case class GpuTopN(
     val orderByString = truncatedString(gpuSortOrder, "[", ",", "]", maxFields)
     val outputString = truncatedString(output, "[", ",", "]", maxFields)
 
-    s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString)"
+    s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString, offset=$offset)"
   }
 }

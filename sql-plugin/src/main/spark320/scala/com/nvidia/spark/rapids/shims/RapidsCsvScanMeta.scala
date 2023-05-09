@@ -34,7 +34,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuCSVScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 
 class RapidsCsvScanMeta(
@@ -47,10 +47,7 @@ class RapidsCsvScanMeta(
   override def tagSelfForGpu(): Unit = {
     GpuCSVScan.tagSupport(this)
     // we are being overly cautious and that Csv does not support this yet
-    if (cScan.isInstanceOf[SupportsRuntimeFiltering]) {
-      willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
-        " on datasource V2 yet.")
-    }
+    TagScanForRuntimeFiltering.tagScanForRuntimeFiltering(this, cScan)
   }
 
   override def convertToGpu(): Scan =

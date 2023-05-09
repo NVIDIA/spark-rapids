@@ -15,20 +15,22 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "312"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark312
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
-import org.scalatest.FunSuite
+import com.nvidia.spark.rapids.ScanMeta
 
-class SparkShimsSuite extends FunSuite with FQSuiteName {
-  test("spark shims version") {
-    assert(ShimLoader.getShimVersion === SparkShimVersion(3, 1, 2))
-  }
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 
-  test("shuffle manager class") {
-    assert(ShimLoader.getRapidsShuffleManagerClass ===
-      classOf[com.nvidia.spark.rapids.spark312.RapidsShuffleManager].getCanonicalName)
+object TagScanForRuntimeFiltering {
+  def tagScanForRuntimeFiltering[T <: Scan](meta: ScanMeta[T], scan: T): Unit = {
+    val scanClass = scan.getClass
+    // SupportsRuntimeV2Filtering is actually the parent of SupportsRuntimeFiltering in Spark 3.4.0,
+    // which means this check will cover both cases.
+    if (scan.isInstanceOf[SupportsRuntimeV2Filtering]) {
+      meta.willNotWorkOnGpu(s"$scanClass does not support Runtime filtering (DPP)" +
+        " on datasource V2 yet.")
+    }
   }
 }

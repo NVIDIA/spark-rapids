@@ -1106,7 +1106,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6967
-    ignore(s"NO GROUP LIST $parserType") {
+    test(s"NO GROUP LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
@@ -1140,7 +1140,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6967
-    ignore(s"SINGLE GROUP LIST $parserType") {
+    test(s"SINGLE GROUP LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message avro_style {
@@ -1176,7 +1176,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6967
-    ignore(s"SINGLE GROUP TUPLE LIST $parserType") {
+    test(s"SINGLE GROUP TUPLE LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message test {
