@@ -559,7 +559,7 @@ private case class GpuParquetFileFilterHandler(
         // footer was not cached, so try to cache it
         // If we get a filecache token then we can complete the caching by providing the data.
         // If we do not get a token then we should not cache this data.
-        val cacheToken = FileCache.get.startFooterCache(filePathString)
+        val cacheToken = FileCache.get.startFooterCache(filePathString, conf)
         cacheToken.foreach { t =>
           t.complete(hmb.slice(0, hmb.getLength))
         }
@@ -669,7 +669,7 @@ private case class GpuParquetFileFilterHandler(
         // If we get a filecache token then we can complete the caching by providing the data.
         // If something goes wrong before completing the caching then the token must be canceled.
         // If we do not get a token then we should not cache this data.
-        val cacheToken = FileCache.get.startFooterCache(filePathString)
+        val cacheToken = FileCache.get.startFooterCache(filePathString, conf)
         cacheToken.map { token =>
           var needTokenCancel = true
           try {
@@ -1509,7 +1509,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES, NoopMetric) += 1
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES_SIZE, NoopMetric) += range.length
       val cacheToken = FileCache.get.startDataRangeCache(
-        filePathString, range.offset, range.length)
+        filePathString, range.offset, range.length, conf)
       // If we get a filecache token then we can complete the caching by providing the data.
       // If we do not get a token then we should not cache this data.
       cacheToken.foreach { token =>
