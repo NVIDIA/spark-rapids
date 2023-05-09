@@ -236,13 +236,31 @@ else
 
     export PYSP_TEST_spark_hadoop_hive_exec_scratchdir="$RUN_DIR/hive"
 
-    # Extract Databricks version from deployed configs. This is set automatically on Databricks
+    # Extract Databricks version from deployed configs.
+    # spark.databricks.clusterUsageTags.sparkVersion is set automatically on Databricks
     # notebooks but not when running Spark manually.
+    #
+    # At the OS level the DBR version can be obtailed via
+    # 1. DATABRICKS_RUNTIME_VERSION environment, e.g., 11.3
+    # 2. File at /databricks/DBR_VERSION, e.g., 11.3
+    # 3. The value for Spark conf in /databricks/common/conf/deploy.conf, e.g. 11.3.x-gpu-ml-scala2.12
+    #
+    # For cases 1 and 2 append '.'
+    #
+    DBR_VERSION=/databricks/DBR_VERSION
+    DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
     if [[ -n "${DATABRICKS_RUNTIME_VERSION}" ]]; then
-      # DATABRICKS_RUNTIME_VERSION = major.minor
-      # version matching checks the prefix ending with a dot: "major.minor." such as "11.3."
-      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion="${DATABRICKS_RUNTIME_VERSION}."
+      DB_VER="${DATABRICKS_RUNTIME_VERSION}."
+    else
+      DB_VER="$(< ${DBR_VERSION})." || \
+        DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
     fi
+    # if we did not error out on reads we should have at least four characters "x.y."
+    if [[ ${#DB_VER} < 4 ]]; then
+        echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
+        exit 1
+    fi
+    export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
 
     # Set spark.task.maxFailures for most schedulers.
     #
