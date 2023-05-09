@@ -156,6 +156,11 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
+  /** Apply any necessary casts before writing batch out */
+  def transform(cb: ColumnarBatch): ColumnarBatch = {
+    cb
+  }
+
   private[this] def writeBatchWithRetry(batch: ColumnarBatch): Long = {
     val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     RmmRapidsRetryIterator.withRetry(sb, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { sb =>
@@ -165,12 +170,14 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       }
       val startTimestamp = System.nanoTime
       withResource(sb.getColumnarBatch()) { cb =>
-        RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
-          withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-            withResource(GpuColumnVector.from(cb)) { table =>
-              scanTableBeforeWrite(table)
-              anythingWritten = true
-              tableWriter.write(table)
+        withResource(transform(cb)) { transformed =>
+          RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
+            withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+              withResource(GpuColumnVector.from(transformed)) { table =>
+                scanTableBeforeWrite(table)
+                anythingWritten = true
+                tableWriter.write(table)
+              }
             }
           }
         }
@@ -187,10 +194,12 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     try {
       val startTimestamp = System.nanoTime
       withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-        withResource(GpuColumnVector.from(batch)) { table =>
-          scanTableBeforeWrite(table)
-          anythingWritten = true
-          tableWriter.write(table)
+        withResource(transform(batch)) { transformed =>
+          withResource(GpuColumnVector.from(transformed)) { table =>
+            scanTableBeforeWrite(table)
+            anythingWritten = true
+            tableWriter.write(table)
+          }
         }
       }
 
