@@ -29,7 +29,7 @@
 #   MVN_SETTINGS:   Maven configuration file
 #   POM_FILE:       Project pom file to be deployed
 #   OUT_PATH:       The path where jar files are
-#   CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11"
+#   CUDA_CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12"
 ###
 
 set -ex
@@ -40,10 +40,14 @@ DIST_PL=${DIST_PL:-"dist"}
 ###### Build the path of jar(s) to be deployed ######
 MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
 MVN="mvn -B -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 -s $MVN_SETTINGS"
-ART_ID=`$MVN help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
-ART_GROUP_ID=`$MVN help:evaluate -q -pl $DIST_PL -Dexpression=project.groupId -DforceStdout`
-ART_VER=`$MVN help:evaluate -q -f $DIST_PL -Dexpression=project.version -DforceStdout`
-CUDA_CLASSIFIER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=cuda.version -DforceStdout`
+function mvnEval {
+    $MVN help:evaluate -q -DforceStdout -pl $1 -Dexpression=$2
+}
+ART_ID=$(mvnEval $DIST_PL project.artifactId)
+ART_GROUP_ID=$(mvnEval $DIST_PL project.groupId)
+ART_VER=$(mvnEval $DIST_PL project.version)
+DEFAULT_CUDA_CLASSIFIER=$(mvnEval $DIST_PL cuda.version)
+CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"}
 
 SQL_PL=${SQL_PL:-"sql-plugin"}
 POM_FILE=${POM_FILE:-"$DIST_PL/target/parallel-world/META-INF/maven/${ART_GROUP_ID}/${ART_ID}/pom.xml"}
@@ -51,13 +55,22 @@ OUT_PATH=${OUT_PATH:-"$DIST_PL/target"}
 SIGN_TOOL=${SIGN_TOOL:-"gpg"}
 
 FPATH="$OUT_PATH/$ART_ID-$ART_VER"
-cp $FPATH-$CUDA_CLASSIFIER.jar $FPATH.jar
+DEPLOY_TYPES=''
+DEPLOY_FILES=''
+IFS=',' read -a CUDA_CLASSIFIERS_ARR <<< "$CUDA_CLASSIFIERS"
+for classifier in "${CUDA_CLASSIFIERS_ARR[@]}"; do
+    DEPLOY_TYPES="${DEPLOY_TYPES},jar"
+    DEPLOY_FILES="${DEPLOY_FILES},${FPATH}-${classifier}.jar"
+done
+# Remove the first char ','
+DEPLOY_TYPES=${DEPLOY_TYPES#*,}
+DEPLOY_FILES=${DEPLOY_FILES#*,}
 
 # dist does not have javadoc and sources jars, use 'sql-plugin' instead
 source jenkins/version-def.sh >/dev/null 2&>1
 echo $SPARK_BASE_SHIM_VERSION
-SQL_ART_ID=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.artifactId -DforceStdout`
-SQL_ART_VER=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.version -DforceStdout`
+SQL_ART_ID=$(mvnEval $SQL_PL project.artifactId)
+SQL_ART_VER=$(mvnEval $SQL_PL project.version)
 JS_FPATH="${SQL_PL}/target/spark${SPARK_BASE_SHIM_VERSION}/${SQL_ART_ID}-${SQL_ART_VER}"
 cp $JS_FPATH-sources.jar $FPATH-sources.jar
 cp $JS_FPATH-javadoc.jar $FPATH-javadoc.jar
@@ -90,9 +103,9 @@ $DEPLOY_CMD -Dfile=./pom.xml -DpomFile=./pom.xml
 
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
-            -Dfile=$FPATH.jar \
+            -Dfile=$FPATH-$DEFAULT_CUDA_CLASSIFIER.jar \
             -Dsources=$FPATH-sources.jar \
             -Djavadoc=$FPATH-javadoc.jar \
-            -Dfiles=$FPATH-$CUDA_CLASSIFIER.jar \
-            -Dtypes=jar \
-            -Dclassifiers=$CUDA_CLASSIFIER
+            -Dfiles=$DEPLOY_FILES \
+            -Dtypes=$DEPLOY_TYPES \
+            -Dclassifiers=$CUDA_CLASSIFIERS
