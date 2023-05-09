@@ -58,13 +58,8 @@ FPATH="$OUT_PATH/$ART_ID-$ART_VER"
 DEPLOY_TYPES=''
 DEPLOY_FILES=''
 IFS=',' read -a CUDA_CLASSIFIERS_ARR <<< "$CUDA_CLASSIFIERS"
-for classifier in "${CUDA_CLASSIFIERS_ARR[@]}"; do
-    DEPLOY_TYPES="${DEPLOY_TYPES},jar"
-    DEPLOY_FILES="${DEPLOY_FILES},${FPATH}-${classifier}.jar"
-done
-# Remove the first char ','
-DEPLOY_TYPES=${DEPLOY_TYPES#*,}
-DEPLOY_FILES=${DEPLOY_FILES#*,}
+DEPLOY_TYPES=$(echo $CUDA_CLASSIFIERS | sed -e 's;[^,]*;jar;g')
+DEPLOY_FILES=$(echo $CUDA_CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
 
 # dist does not have javadoc and sources jars, use 'sql-plugin' instead
 source jenkins/version-def.sh >/dev/null 2&>1
