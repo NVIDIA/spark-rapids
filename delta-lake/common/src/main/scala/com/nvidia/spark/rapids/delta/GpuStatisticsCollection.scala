@@ -33,7 +33,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.functions.{count, lit, max, min, struct, substring, sum, when}
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.UTF8String
 
 /** GPU version of Delta Lake's StatisticsCollection. */
 trait GpuStatisticsCollection extends ShimUsesMetadataFields {
@@ -86,7 +85,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
           max(c)
       },
       collectStats(NULL_COUNT, statCollectionSchema) {
-        case (c, f) => sum(when(c.isNull, 1).otherwise(0))
+        case (c, _) => sum(when(c.isNull, 1).otherwise(0))
       }
     ) as 'stats
   }
@@ -100,7 +99,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
   private def truncateSchema(schema: StructType, indexedCols: Int): (StructType, Int) = {
     var accCnt = 0
     var i = 0
-    var fields = ArrayBuffer[StructField]()
+    val fields = ArrayBuffer[StructField]()
     while (i < schema.length && accCnt < indexedCols) {
       val field = schema.fields(i)
       val newField = field match {
@@ -189,15 +188,6 @@ object GpuStatisticsCollection {
       val tieBreaker = '\ufffd'
       x.take(prefixLen) + x.substring(prefixLen).takeWhile(_ >= tieBreaker) + tieBreaker
       // scalastyle:off nonascii
-    }
-  }
-
-  /** UTF8String equivalent to truncateMaxStringAgg(Int)(String) */
-  private def truncateMaxStringAgg(prefixLen: Int, x: UTF8String): UTF8String = {
-    if (x == null || x.numChars() <= prefixLen) {
-      x
-    } else {
-      UTF8String.fromString(truncateMaxStringAgg(prefixLen)(x.toString))
     }
   }
 

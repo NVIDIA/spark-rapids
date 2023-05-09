@@ -82,7 +82,6 @@ object ShimLoader extends Logging {
   private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
   @volatile private var shimProviderClass: String = _
   @volatile private var shimProvider: SparkShimServiceProvider = _
-  @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
   @volatile private var conventionalSingleShimJarDetected: Boolean = _
@@ -403,7 +402,7 @@ object ShimLoader extends Logging {
   def newPlanShims(): PlanShims = ShimReflectionUtils.newInstanceOf[PlanShims](
     "com.nvidia.spark.rapids.shims.PlanShimsImpl"
   )
-  
+
   def loadGpuColumnVector(): Class[_] = {
     ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }

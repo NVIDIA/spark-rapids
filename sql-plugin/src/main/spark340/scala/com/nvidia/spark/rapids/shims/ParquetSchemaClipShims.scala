@@ -89,9 +89,6 @@ object ParquetSchemaClipShims {
     val typeAnnotation = parquetType.getLogicalTypeAnnotation
     val typeName = parquetType.getPrimitiveTypeName
 
-    def typeString =
-      if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
-
     def typeNotImplemented() =
       TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $parquetType")
 

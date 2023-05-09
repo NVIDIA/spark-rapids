@@ -582,7 +582,7 @@ class AdaptiveQueryExecSuite
       df.createOrReplaceTempView("df1")
       df.createOrReplaceTempView("df2")
 
-      val (plan, adaptivePlan) = runAdaptiveAndVerifyResult(spark,
+      runAdaptiveAndVerifyResult(spark,
         "SELECT df1.properties from df1, df2 where df1.name=df2.name")
     }, conf)
   }
@@ -615,7 +615,7 @@ class AdaptiveQueryExecSuite
 
   private def checkNumLocalShuffleReaders(
     plan: SparkPlan,
-    numShufflesWithoutLocalReader: Int = 0): Int = {
+    numShufflesWithoutLocalReader: Int): Int = {
     val numShuffles = collect(plan) {
       case s: ShuffleQueryStageExec => s
     }.length

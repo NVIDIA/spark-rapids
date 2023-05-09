@@ -46,10 +46,10 @@ class DynamicPruningSuite
     with FunSuiteWithTempDir
     with Logging {
 
-  // Replace the GpuSubqueryBroadcastExec with a (CPU) SubqueryBroadcastExec in the plan used 
+  // Replace the GpuSubqueryBroadcastExec with a (CPU) SubqueryBroadcastExec in the plan used
   // by InSubqueryExec. This requires us replacing the underlying DynamicPruningExpression
   // in the partitionFilters with one that has the plan update and then replacing the
-  // (Gpu)FileSourceScanExec as well. We also replace any of these underlying QueryStageExecs 
+  // (Gpu)FileSourceScanExec as well. We also replace any of these underlying QueryStageExecs
   // from AQE
 
   private def replaceSubquery(p: SparkPlan): SparkPlan = {
@@ -61,9 +61,9 @@ class DynamicPruningSuite
               // NOTE: We remove the AdaptiveSparkPlanExec since we can't re-run the new plan
               // under AQE because that fundamentally requires some rewrite and stage
               // ordering which we can't do for this test.
-              case g @ GpuSubqueryBroadcastExec(name, index, buildKeys, child) =>
+              case GpuSubqueryBroadcastExec(name, index, buildKeys, child) =>
                 val newChild = child match {
-                  case a @ AdaptiveSparkPlanExec(_, context, _, subquery, columnar) =>
+                  case a @ AdaptiveSparkPlanExec(_, _, _, _, _) =>
                     (new GpuTransitionOverrides()).apply(ColumnarToRowExec(a.executedPlan))
                   case _ =>
                     (new GpuTransitionOverrides()).apply(ColumnarToRowExec(child))
@@ -78,10 +78,10 @@ class DynamicPruningSuite
     }
 
     p.transformDown {
-      case sqse @ ShuffleQueryStageExec(id, plan, _canonicalized) =>
+      case ShuffleQueryStageExec(id, plan, _canonicalized) =>
         val newPlan = replaceSubquery(plan)
         ShuffleQueryStageExec(id, newPlan, _canonicalized)
-      case bqse @ BroadcastQueryStageExec(id, plan, _canonicalized) => 
+      case BroadcastQueryStageExec(id, plan, _canonicalized) =>
         val newPlan = replaceSubquery(plan)
         BroadcastQueryStageExec(id, newPlan, _canonicalized)
       case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, apm, rps) =>
@@ -89,7 +89,7 @@ class DynamicPruningSuite
         val rc = g.rapidsConf
         GpuFileSourceScanExec(r, o, rs, newPartitionFilters,
           obs, oncb, df, ti, dbs, quif, apm, rps)(rc)
-      case f @ FileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs) =>
+      case FileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         FileSourceScanExec(r, o, rs, newPartitionFilters, obs, oncb, df, ti, dbs)
     }
@@ -97,8 +97,8 @@ class DynamicPruningSuite
 
   test("AQE+DPP issue from EMR - https://github.com/NVIDIA/spark-rapids/issues/6978") {
     // We need to construct an artificially created plan that re-uses a GPU exchange when
-    // doing a SubqueryBroadcast. This particular situation happens with AQE + DPP, so we use 
-    // combination to generate a plan that we can manipulate. Because of the nature of how 
+    // doing a SubqueryBroadcast. This particular situation happens with AQE + DPP, so we use
+    // combination to generate a plan that we can manipulate. Because of the nature of how
     // AQE+DPP cooperate, the SubqueryBroadcastExec actually ends up with a ReusedExchangeExec
     // child instead of the GpuBroadcastExchangeExec
     assumeSpark320orLater
@@ -140,7 +140,7 @@ class DynamicPruningSuite
     // Compute the GPU version of the query result using AQE+DPP. This will result
     // in a ReusedExchangeExec child of a GpuSubqueryBroadcastExec node used in DPP.
     // We then need to convert this to (CPU) SubqueryBroadcastExec, and then re-execute
-    // a rewritten plan without the AdaptiveSparkPlanExec nodes so that we don't use AQE 
+    // a rewritten plan without the AdaptiveSparkPlanExec nodes so that we don't use AQE
     // to rewrite our artificial plan.
     withGpuSparkSession(spark => {
       setupTestData(spark)
