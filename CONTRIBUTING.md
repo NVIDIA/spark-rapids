@@ -128,7 +128,7 @@ Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or
 flag if cross-compilation is required.
 
 ```bash
-mvn clean verify -Dbuildver=330 -P<jdk11-build|jdk17-build>
+mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
 ```
 
 ### Iterative development during local testing
