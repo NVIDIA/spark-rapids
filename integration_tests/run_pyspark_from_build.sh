@@ -251,17 +251,26 @@ else
     DBR_VERSION=/databricks/DBR_VERSION
     DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
     if [[ -n "${DATABRICKS_RUNTIME_VERSION}" ]]; then
-      DB_VER="${DATABRICKS_RUNTIME_VERSION}."
-    else
+      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion="${DATABRICKS_RUNTIME_VERSION}."
+    elif [[ -f $DBR_VERSION || -f $DB_DEPLOY_CONF ]]; then
       DB_VER="$(< ${DBR_VERSION})." || \
         DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
+      # if we did not error out on reads we should have at least four characters "x.y."
+      if (( ${#DB_VER} < 4 )); then
+          echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
+          exit 1
+      fi
+      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
+    else
+      cat << EOF
+This node does not define
+- DATABRICKS_RUNTIME_VERSION environment,
+- Files containing version information: $DBR_VERSION, $DB_DEPLOY_CONF
+
+Proceeding assuming a non-Databricks environment.
+EOF
+
     fi
-    # if we did not error out on reads we should have at least four characters "x.y."
-    if (( ${#DB_VER} < 4 )); then
-        echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
-        exit 1
-    fi
-    export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
 
     # Set spark.task.maxFailures for most schedulers.
     #
