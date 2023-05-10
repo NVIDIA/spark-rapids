@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{ColumnVector, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
@@ -131,13 +133,14 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 1L*1024*1024)
       table: Table,
       initialSpillPriority: Long,
       needsSync: Boolean): RapidsBuffer = {
-    val rapidsBuffer = new RapidsTable(
+    val rapidsTable = new RapidsTable(
       id,
       table,
       initialSpillPriority)
-    freeOnExcept(rapidsBuffer) { _ =>
-      addBuffer(rapidsBuffer, needsSync)
-      rapidsBuffer
+    freeOnExcept(rapidsTable) { _ =>
+      addBuffer(rapidsTable, needsSync)
+      rapidsTable.updateSpillability()
+      rapidsTable
     }
   }
 
@@ -170,22 +173,27 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 1L*1024*1024)
    * inside of the `ColumnVector` lock.
    * @param rapidsTable the `RapidsTable` this handler was associated with
    * @param columnIx the index of the column that this handler belongs to
+   * @param repetitionCount the number of times that this column appeared in `RapidsTable`
    * @param wrapped an optional RapidsDeviceColumnEventHandler that could be
    *                not None if this column has been added multiple times to the
    *                spill store.
    */
   class RapidsDeviceColumnEventHandler(
       val rapidsTable: RapidsTable,
-      columnIx: Int,
+      column: ColumnVector,
+      repetitionCount: Int,
       var wrapped: Option[RapidsDeviceColumnEventHandler] = None)
       extends ColumnVector.EventHandler {
 
     override def onClosed(refCount: Int): Unit = {
-      // We trigger callbacks iff we reach `refCount` of 1 for this column.
+      // We trigger callbacks iff we reach `refCount` of repetitionCount for this column.
+      // repetitionCount == 1 for a column that is not repeated in a table, so this means
+      // we are looking for a refCount of 1, but if the column is aliased several times in the
+      // table, refCount will be equal to the number of aliases (aka repetitionCount).
       // This signals the `RapidsTable` that a column at index `columnIx` has become
       // spillable again.
-      if (refCount == 1) {
-        rapidsTable.onColumnSpillable(columnIx)
+      if (refCount == repetitionCount) {
+        rapidsTable.onColumnSpillable(column)
         wrapped.foreach(_.onClosed(refCount))
       }
     }
@@ -213,21 +221,6 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 1L*1024*1024)
         null,
         spillPriority) {
 
-    // we register our event callbacks as the very first action to deal with
-    // spillability
-    registerOnCloseEventHandler()
-
-    // By default all columns are NOT spillable since we are not the only owners of
-    // the columns (the caller is holding onto a ColumnarBatch that will be closed
-    // after instantiation, triggering onClosed callbacks)
-    // This hash set contains the columns that are currently spillable
-    private val columnSpillability = new ConcurrentHashMap[Int, Boolean]()
-
-    /** Release the underlying resources for this buffer. */
-    override protected def releaseResources(): Unit = {
-      table.close()
-    }
-
     /** The storage tier for this buffer */
     override val storageTier: StorageTier = StorageTier.DEVICE
 
@@ -240,13 +233,31 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 1L*1024*1024)
       new ChunkedPacker(id, table, chunkedPackBounceBuffer)
     }
 
-    override def getMeta(): TableMeta = {
-      chunkedPacker.getMeta
-    }
-
     // This is the current size in batch form. It is to be used while this
     // table hasn't migrated to another store.
     private val unpackedSizeInBytes: Long = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+
+    // By default all columns are NOT spillable since we are not the only owners of
+    // the columns (the caller is holding onto a ColumnarBatch that will be closed
+    // after instantiation, triggering onClosed callbacks)
+    // This hash set contains the columns that are currently spillable
+    private val columnSpillability = new ConcurrentHashMap[ColumnVector, Boolean]()
+
+    private val distinctColumns =
+      (0 until table.getNumberOfColumns).map(table.getColumn).distinct.toArray
+
+    // we register our event callbacks as the very first action to deal with
+    // spillability
+    registerOnCloseEventHandler()
+
+    /** Release the underlying resources for this buffer. */
+    override protected def releaseResources(): Unit = {
+      table.close()
+    }
+
+    override def getMeta(): TableMeta = {
+      chunkedPacker.getMeta
+    }
 
     override def getMemoryUsedBytes: Long = unpackedSizeInBytes
 
@@ -262,9 +273,17 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 1L*1024*1024)
      *
      * @param columnIx - index of column to mark spillable
      */
-    def onColumnSpillable(columnIx: Int): Unit = {
-      columnSpillability.put(columnIx, true)
-      doSetSpillable(this, columnSpillability.size == table.getNumberOfColumns)
+    def onColumnSpillable(column: ColumnVector): Unit = {
+      columnSpillability.put(column, true)
+      updateSpillability()
+    }
+
+    /**
+     * This is called after adding this RapidsTable to the spillable store
+     * in order to update its spillability status.
+     */
+    def updateSpillability(): Unit = {
+      doSetSpillable(this, columnSpillability.size == distinctColumns.size)
     }
 
     /**
@@ -304,22 +323,33 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 1L*1024*1024)
 
     private def registerOnCloseEventHandler(): Unit = {
       val cudfColumns = (0 until table.getNumberOfColumns).map(table.getColumn)
-      cudfColumns.zipWithIndex.foreach { case (cv, columnIx) =>
+      // cudfColumns could contain duplicates. We need to take this into account when we are
+      // deciding the floor refCount for a duplicated column
+      val repetitionPerColumn = new mutable.HashMap[ColumnVector, Int]()
+      cudfColumns.foreach { col =>
+        val repetitionCount = repetitionPerColumn.getOrElse(col, 0)
+        repetitionPerColumn(col) = repetitionCount + 1
+      }
+
+      distinctColumns.foreach { cv =>
         cv.synchronized {
           val priorEventHandler = cv.getEventHandler.asInstanceOf[RapidsDeviceColumnEventHandler]
           val columnEventHandler =
             new RapidsDeviceColumnEventHandler(
               this,
-              columnIx,
+              cv,
+              repetitionPerColumn(cv),
               Option(priorEventHandler))
           cv.setEventHandler(columnEventHandler)
+          if (cv.getRefCount == repetitionPerColumn(cv)) {
+            onColumnSpillable(cv)
+          }
         }
       }
     }
 
     private def removeOnCloseEventHandler(): Unit = {
-      val cudfColumns = (0 until table.getNumberOfColumns).map(table.getColumn)
-      cudfColumns.foreach { cv =>
+      distinctColumns.foreach { cv =>
         cv.synchronized {
           cv.getEventHandler match {
             case handler: RapidsDeviceColumnEventHandler =>
