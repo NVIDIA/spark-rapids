@@ -17,10 +17,10 @@ typically incompatibilities that we have not yet addressed.
 
 ## Non-empty nulls
 
-The SQL plugin doesn't support nested types to have non-empty nulls and if data being processed 
+The SQL plugin doesn't support nested types to have non-empty nulls and if the data being processed 
 contains non-empty nulls, it will throw an AssertionError. If you still want to continue using this 
-data, disable assertions by setting `-da:ai.rapids.cudf.AssertEmptyNulls` in extra Java parameters 
-for the Driver and the Executor but know that this will result in undefined behavior as 
+disable assertions by setting `-da:ai.rapids.cudf.AssertEmptyNulls` in extra Java parameters for the 
+Driver and the Executor but know that this will result in undefined behavior as 
 [cudf](https://github.com/rapidsai/cudf) doesn't support non-empty nulls.
 
 ## Ordering of Output
