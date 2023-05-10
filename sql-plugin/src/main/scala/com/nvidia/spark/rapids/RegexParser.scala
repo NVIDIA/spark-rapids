@@ -187,7 +187,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
-    val supportedMetaCharacters = "\\^-[]+"
+    val supportedMetaCharacters = "\\^-[]+."
 
     def getEscapedComponent(): RegexCharacterClassComponent = {
       peek() match {
@@ -206,7 +206,7 @@ class RegexParser(pattern: String) {
           }
         case Some(ch) =>
           consumeExpected(ch) match {
-            // NOTE: Should switch to ASCII mode to simplify and expland this fix
+            // NOTE: Should switch to ASCII mode to simplify and expand this fix
             case 'd' => RegexCharacterRange(RegexChar('0'), RegexChar('9'))
             // List of character literals with an escape from here, under "Characters"
             // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
