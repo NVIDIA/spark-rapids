@@ -16,12 +16,15 @@
 
 package org.apache.spark.sql.rapids
 
-// import org.apache.spark.sql.types.{DataType, DataTypes, Decimal, DecimalType, StructType}
 import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.scalatest.FunSuite
 
 class CanonicalizeSuite extends FunSuite {
+  /* In the future, if we decide to implement the Spark 3.3 algorithm to perform canonicalization
+   * this unit test should still pass. We should use the implementation made in
+   * https://github.com/apache/spark/pull/37851 (SPARK-40362) as a base.
+   */
   test("SPARK-40362: Commutative operator under BinaryComparison") {
     Seq(GpuEqualTo, GpuEqualNullSafe, GpuGreaterThan,
         GpuLessThan, GpuGreaterThanOrEqual, GpuLessThanOrEqual)
