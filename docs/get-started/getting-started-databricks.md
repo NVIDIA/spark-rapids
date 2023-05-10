@@ -78,7 +78,7 @@ cluster meets the prerequisites above by configuring it as follows:
    For Azure, choose GPU nodes such as Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
 4. Select the driver type. Generally this can be set to be the same as the worker.
 5. Click the “Edit” button, then navigate down to the “Advanced Options” section. Select the “Init Scripts” tab in 
-   the advanced options section, and paste the initialization script:`dbfs:/databricks/init_scripts/init.sh`, then click “Add”.
+   the advanced options section, and paste the workspace path to the initialization script:`/Users/user@domain/init.sh`, then click “Add”.
    ![Init Script](../img/Databricks/initscript.png)
 6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.
    Change the config values based on the workers you choose. See Apache Spark
