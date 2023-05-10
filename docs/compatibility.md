@@ -15,6 +15,14 @@ problem. Please also look at the current list of
 [bugs](https://github.com/NVIDIA/spark-rapids/issues?q=is%3Aopen+is%3Aissue+label%3Abug) which are
 typically incompatibilities that we have not yet addressed.
 
+## Non-empty nulls
+
+The SQL plugin doesn't support nested types to have non-empty nulls and if data being processed 
+contains non-empty nulls, it will throw an AssertionError. If you still want to continue using this 
+data, disable assertions by setting `-da:ai.rapids.cudf.AssertEmptyNulls` in extra Java parameters 
+for the Driver and the Executor but know that this will result in undefined behavior as 
+[cudf](https://github.com/rapidsai/cudf) doesn't support non-empty nulls.
+
 ## Ordering of Output
 
 There are some operators where Spark does not guarantee the order of the output.
