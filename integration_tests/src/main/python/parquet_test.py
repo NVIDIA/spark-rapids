@@ -70,8 +70,8 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 # non-cloud
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
 multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '0',
-        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
+        'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '0',
+        'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
@@ -83,19 +83,19 @@ native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type'
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
-        'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '0',
-        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
+        'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '0',
+        'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
 native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True}
 combining_multithreaded_parquet_file_reader_conf_ordered = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-         'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '64m',
-         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
+         'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+         'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
 combining_multithreaded_parquet_file_reader_conf_unordered = pytest.param({'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-         'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '64m',
-         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': False}, marks=pytest.mark.ignore_order(local=True))
+         'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+         'spark.rapids.sql.reader.multithreaded.read.keepOrder': False}, marks=pytest.mark.ignore_order(local=True))
 
 
 # For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files

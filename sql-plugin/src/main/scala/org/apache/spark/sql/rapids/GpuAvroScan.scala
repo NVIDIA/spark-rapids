@@ -825,7 +825,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty, null)))
+                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }

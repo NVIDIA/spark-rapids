@@ -36,7 +36,7 @@ class GpuMultiFileReaderSuite extends FunSuite {
     val conf = new Configuration(false)
     val membuffers =
       Array(SingleHMBAndMeta(
-        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty, null))
+        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty))
     val metrics = Map(GpuMetric.PEAK_DEVICE_MEMORY -> NoopMetric)
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,

@@ -33,8 +33,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.parquet.hadoop.metadata.BlockMetaData
-import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -56,13 +54,12 @@ import org.apache.spark.util.SerializableConfiguration
  * for combining the buffers before sending to GPU.
  */
 case class SingleHMBAndMeta(hmb: HostMemoryBuffer, bytes: Long, numRows: Long,
-    blockMeta: Seq[BlockMetaData], schema: MessageType)
+    blockMeta: Seq[DataBlockBase])
 
 object SingleHMBAndMeta {
   // Contains no data but could have number of rows for things like count().
   def empty(numRows: Long = 0): SingleHMBAndMeta = {
-    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], 0, numRows,
-      Seq.empty, null)
+    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], 0, numRows, Seq.empty)
   }
 }
 
@@ -424,6 +421,12 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
 // for input_file_name.
 case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Option[PartitionedFile])
 
+case class CombineConf(
+    combineThresholdSize: Long,
+    combineWaitTime: Int,
+    queryUsesInputFile: Boolean,
+    keepReadsInOrder: Boolean)
+
 /**
  * The Abstract multi-file cloud reading framework
  *
@@ -460,10 +463,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     ignoreCorruptFiles: Boolean = false,
     alluxioPathReplacementMap: Map[String, String] = Map.empty,
     alluxioReplacementTaskTime: Boolean = false,
-    combineThresholdSize: Long = -1,
-    combineWaitTime: Int = -1,
-    queryUsesInputFile: Boolean = false,
-    keepReadsInOrder: Boolean = true)
+    combineConf: CombineConf = CombineConf(-1, -1, false, true))
   extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
@@ -497,7 +497,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, files.length)
     val tc = TaskContext.get
-    if (!keepReadsInOrder) {
+    if (!combineConf.keepReadsInOrder) {
       logDebug("Not keeping reads in order")
       synchronized {
         if (fcs == null) {
@@ -516,7 +516,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     for (i <- 0 until limit) {
       val file = files(i)
       logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
-      if (!keepReadsInOrder) {
+      if (!combineConf.keepReadsInOrder) {
         val futureRunner = fcs.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters))
         tasks.add(futureRunner)
       } else {
@@ -604,7 +604,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   // we have to check both the combine threshold and the batch size limits
   private def hasMetCombineThreshold(sizeInBytes: Long, numRows: Long): Boolean = {
-    sizeInBytes >= combineThresholdSize || sizeInBytes >= maxReadBatchSizeBytes ||
+    sizeInBytes >= combineConf.combineThresholdSize || sizeInBytes >= maxReadBatchSizeBytes ||
       numRows >= maxReadBatchSizeRows
   }
 
@@ -620,7 +620,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     var currSize = initSize
     var currNumRows = initNumRows
     while (takeMore && !hasMetCombineThreshold(currSize, currNumRows) && filesToRead > 0) {
-      val hmbFuture = if (keepReadsInOrder) {
+      val hmbFuture = if (combineConf.keepReadsInOrder) {
         tasks.poll()
       } else {
         val fut = fcs.poll()
@@ -630,12 +630,12 @@ abstract class MultiFileCloudPartitionReaderBase(
         fut
       }
       if (hmbFuture == null) {
-        if (combineWaitTime > 0) {
+        if (combineConf.combineWaitTime > 0) {
           // no more are ready, wait to see if any finish within wait time
-          val hmbAndMeta = if (keepReadsInOrder) {
-            tasks.poll().get(combineWaitTime, TimeUnit.MILLISECONDS)
+          val hmbAndMeta = if (combineConf.keepReadsInOrder) {
+            tasks.poll().get(combineConf.combineWaitTime, TimeUnit.MILLISECONDS)
           } else {
-            val fut = fcs.poll(combineWaitTime, TimeUnit.MILLISECONDS)
+            val fut = fcs.poll(combineConf.combineWaitTime, TimeUnit.MILLISECONDS)
             if (fut == null) {
               null
             } else {
@@ -671,7 +671,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     readReadyFiles(0, 0, results)
     if (results.isEmpty) {
       // none were ready yet so wait as long as need for first one
-      val hostBuffersWithMeta = if (keepReadsInOrder) {
+      val hostBuffersWithMeta = if (combineConf.keepReadsInOrder) {
         tasks.poll().get()
       } else {
         val bufMetaFut = fcs.take()
@@ -691,7 +691,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   private def getNextBuffersAndMetaSingleFile(): HostMemoryBuffersWithMetaDataBase = {
-    val hmbAndMetaInfo = if (keepReadsInOrder) {
+    val hmbAndMetaInfo = if (combineConf.keepReadsInOrder) {
       tasks.poll().get()
     } else {
       val bufMetaFut = fcs.take()
@@ -813,7 +813,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def addNextTaskIfNeeded(): Unit = {
     if (tasksToRun.nonEmpty && !isDone) {
       val runner = tasksToRun.dequeue()
-      if (!keepReadsInOrder) {
+      if (!combineConf.keepReadsInOrder) {
         val futureRunner = fcs.submit(runner)
         tasks.add(futureRunner)
       } else {
