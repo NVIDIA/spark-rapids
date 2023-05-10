@@ -54,7 +54,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
     }
   }
 
-
   private def buildContiguousTable(): ContiguousTable = {
     withResource(buildTable()) { table =>
       table.contiguousSplit()(0)
@@ -112,7 +111,38 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
     }
   }
 
-    test("an aliased non-contiguous table is not spillable (until closing the alias) ") {
+  test("a non-contiguous table is non-spillable until all columns are returned") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTable()
+      val handle = catalog.addTable(table, spillPriority)
+      val types: Array[DataType] =
+        Seq(IntegerType, StringType, FloatType, DecimalType(10, 5)).toArray
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+      // incRefCount all the columns via `batch`
+      val batch = withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+        rapidsBuffer.getColumnarBatch(types)
+      }
+      val columns = GpuColumnVector.extractBases(batch)
+      withResource(columns.head) { _ =>
+        columns.head.incRefCount()
+        withResource(batch) { _ =>
+          assertResult(buffSize)(store.currentSize)
+          assertResult(0)(store.currentSpillableSize)
+        }
+        // still 0 after the batch is closed, because of the extra incRefCount
+        // for columns.head
+        assertResult(0)(store.currentSpillableSize)
+      }
+      // columns.head is closed, so now our RapidsTable is spillable again
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("an aliased non-contiguous table is not spillable (until closing the alias) ") {
     withResource(new RapidsDeviceMemoryStore) { store =>
       val catalog = spy(new RapidsBufferCatalog(store))
       val spillPriority = 3
