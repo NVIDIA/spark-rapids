@@ -281,6 +281,31 @@
             </modules>
         </profile>
         <profile>
+            <id>release324</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>324</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>324</buildver>
+                <spark.version>${spark324.version}</spark.version>
+                <spark.test.version>${spark324.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-20x</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=321db -->
             <id>release321db</id>
             <activation>
@@ -625,6 +650,7 @@
         <spark321db.version>3.2.1-databricks</spark321db.version>
         <spark322.version>3.2.2</spark322.version>
         <spark323.version>3.2.3</spark323.version>
+        <spark324.version>3.2.4</spark324.version>
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
@@ -667,6 +693,7 @@
             321cdh,
             322,
             323,
+            324,
             330,
             331,
             332,
