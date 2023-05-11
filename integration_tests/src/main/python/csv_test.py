@@ -563,3 +563,19 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.option("inferSchema", "true").csv(data_path))
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path))
+
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema,fallback',[("date.csv", _date_schema, True), ("date.csv", _ts_schema, True),
+                                                     ("ts.csv", _ts_schema, True), ("str.csv", _good_str_schema, False)])
+def test_csv_datetime_parsing_fallback_cpu_fallback(std_input_path, filename, schema, fallback):
+    data_path = std_input_path + '/' + filename
+    if fallback:
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read.schema(schema).option("enableDateTimeParsingFallback", "true").csv(data_path),
+            'FileSourceScanExec',
+            conf=_enable_all_types_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(schema).option("enableDateTimeParsingFallback", "true").csv(data_path),
+            conf=_enable_all_types_conf)

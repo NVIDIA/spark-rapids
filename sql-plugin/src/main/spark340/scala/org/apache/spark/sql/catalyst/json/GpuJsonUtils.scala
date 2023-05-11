@@ -34,5 +34,5 @@ object GpuJsonUtils {
     })
 
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean =
-    options.enableDateTimeParsingFallback.getOrElse(false) 
+    options.enableDateTimeParsingFallback.getOrElse(false)
 }

@@ -33,6 +33,6 @@ object GpuCsvUtils {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"
     })
 
-  def enableDateTimeParsingFallback(options: CSVOptions): Boolean = true
-    // options.enableDateTimeParsingFallback.getOrElse(false) 
+  def enableDateTimeParsingFallback(options: CSVOptions): Boolean =
+    options.enableDateTimeParsingFallback.getOrElse(false)
 }
