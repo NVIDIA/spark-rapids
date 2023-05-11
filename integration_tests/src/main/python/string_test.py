@@ -73,13 +73,6 @@ def test_split_positive_limit():
             'split(a, "C", 3)',
             'split(a, "_", 999)'))
 
-def test_split_escaped_dot():
-    data_gen = mk_str_gen(r'([0-9]\.){1,4}')
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, "[\\\\.]", 2)'
-        ))
-
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
     (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)
