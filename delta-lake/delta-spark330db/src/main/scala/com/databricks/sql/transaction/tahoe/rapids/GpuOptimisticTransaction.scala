@@ -25,7 +25,6 @@ import java.net.URI
 
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.ColumnView
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.{AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, Constraints}
@@ -47,6 +46,7 @@ import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{Clock, SerializableConfiguration}
 
 /**
@@ -118,8 +118,9 @@ class GpuOptimisticTransaction(
       val statsColExpr = getGpuStatsColExpr(statsDataSchema, statsCollection)
 
       val statsSchema = statsCollection.statCollectionSchema
-      val batchStatsToRow = (columnViews: Array[ColumnView], row: InternalRow) => {
-        GpuStatisticsCollection.batchStatsToRow(statsSchema, columnViews, row)
+      val explodedDataSchema = statsCollection.explodedDataSchema
+      val batchStatsToRow = (batch: ColumnarBatch, row: InternalRow) => {
+        GpuStatisticsCollection.batchStatsToRow(statsSchema, explodedDataSchema, batch, row)
       }
       (Some(new GpuDeltaJobStatisticsTracker(statsDataSchema, statsColExpr, batchStatsToRow)),
           Some(statsCollection))
