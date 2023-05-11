@@ -16,9 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
+import org.scalatest.FunSuite
+
 import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.catalyst.expressions.Literal
-import org.scalatest.FunSuite
 
 class CanonicalizeSuite extends FunSuite {
   /* In the future, if we decide to implement the Spark 3.3 algorithm to perform canonicalization
