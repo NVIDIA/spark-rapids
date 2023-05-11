@@ -370,8 +370,7 @@ object ParquetSchemaUtils {
     // TODO: When we drop Spark 3.1.x, this should use Parquet's LogicalTypeAnnotation
     //       Note that the original type is not null for leaf nodes.
     //if (parquetList.getLogicalTypeAnnotation == null &&
-    val newSparkType = if (parquetList.getOriginalType == null &&
-        parquetList.isRepetition(Repetition.REPEATED)) {
+    val newSparkType = if (parquetList.isRepetition(Repetition.REPEATED)) {
       clipSparkType(elementType, parquetList, caseSensitive, useFieldId)
     } else {
       val parquetListGroup = parquetList.asGroupType()

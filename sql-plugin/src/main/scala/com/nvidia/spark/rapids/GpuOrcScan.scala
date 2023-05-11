@@ -1133,7 +1133,6 @@ private object OrcTools {
         OrcConf.USE_ZEROCOPY.getBoolean(conf)
       }
       val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
-      val file = filePath.getFileSystem(conf).open(filePath)
 
       val typeCount = org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size
       //noinspection ScalaDeprecation
