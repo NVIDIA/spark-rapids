@@ -29,4 +29,5 @@ package org.apache.spark.sql.catalyst.csv
 object GpuCsvUtils {
   def dateFormatInRead(options: CSVOptions): String = options.dateFormat
   def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat
+  def enableDateTimeParsingFallback(options: CSVOptions): Boolean = false
 }

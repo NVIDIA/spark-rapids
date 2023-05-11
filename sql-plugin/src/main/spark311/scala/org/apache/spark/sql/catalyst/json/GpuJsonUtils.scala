@@ -29,4 +29,5 @@ package org.apache.spark.sql.catalyst.json
 object GpuJsonUtils {
   def dateFormatInRead(options: JSONOptions): String = options.dateFormat
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat
+  def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
 }

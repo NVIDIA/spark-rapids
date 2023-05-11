@@ -21,7 +21,6 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
-{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.json
 
@@ -38,4 +37,6 @@ object GpuJsonUtils {
     } else {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"
     })
+
+  def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
 }
