@@ -131,7 +131,7 @@ set_jars_prefixes()
     PREFIX_MVN_TREE=${PREFIX_SPARK}--maven-trees
     PREFIX_WS_SP_MVN_HADOOP=${PREFIX_MVN_TREE}--${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}
 
-    if [[ $BASE_SPARK_VERSION == "3.3.0" ]]
+    if [[ $BASE_SPARK_VERSION == "3.3.0" ]] || [[ $BASE_SPARK_VERSION == "3.3.2" ]]
     then
         #something like hadoop3
         HADOOP_MAJOR_VERSION_NUM_STRING=$(echo "${sw_versions[HADOOP]}" | sed 's/\./\_/g' | cut -d _ -f 1)
@@ -149,12 +149,33 @@ set_jars_prefixes()
 set_sw_versions()
 {
     case "$BASE_SPARK_VERSION" in
+        "3.3.2")
+            sw_versions[ARROW]="7.0.0"
+            sw_versions[AVRO]="1.11.0"
+            sw_versions[COMMONS_IO]="2.11.0"
+            sw_versions[COMMONS_LANG3]="3.12.0"
+            sw_versions[DB]="-0002"
+            sw_versions[FASTERXML_JACKSON_DATABIND]="2.13.4.2"
+            sw_versions[FASTERXML_JACKSON]="2.13.4"
+            sw_versions[HADOOP]="3.2"
+            sw_versions[HIVE_FULL]="2.3.9"
+            sw_versions[HIVESTORAGE_API]="2.8.1"
+            sw_versions[JAVAASSIST]="3.25.0-GA"
+            sw_versions[JSON4S_AST]="3.7.0-M11"
+            sw_versions[JSON4S_CORE]="3.7.0-M11"
+            sw_versions[KRYO]="4.0.2"
+            sw_versions[ORC]="1.7.6"
+            sw_versions[PARQUET]="1.12.3"
+            sw_versions[PROTOBUF]="2.6.1"
+            sw_versions[LOG4JCORE]="2.18.0"
+            ;;
         "3.3.0")
             sw_versions[ARROW]="7.0.0"
             sw_versions[AVRO]="1.11.0"
             sw_versions[COMMONS_IO]="2.11.0"
             sw_versions[COMMONS_LANG3]="3.12.0"
             sw_versions[DB]="-0007"
+            sw_versions[FASTERXML_JACKSON_DATABIND]="2.13.4"
             sw_versions[FASTERXML_JACKSON]="2.13.4"
             sw_versions[HADOOP]="3.2"
             sw_versions[HIVE_FULL]="2.3.9"
@@ -174,6 +195,7 @@ set_sw_versions()
             sw_versions[COMMONS_IO]="2.8.0"
             sw_versions[COMMONS_LANG3]="3.12.0"
             sw_versions[DB]="-0007"
+            sw_versions[FASTERXML_JACKSON_DATABIND]="2.12.3"
             sw_versions[FASTERXML_JACKSON]="2.12.3"
             sw_versions[HADOOP]="3.2"
             sw_versions[HIVE_FULL]="2.3.9"
@@ -212,10 +234,23 @@ set_dep_jars()
     dep_jars[ANNOT]=${PREFIX_SPARK}--common--tags--tags-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy.jar
     artifacts[CORE]="-DgroupId=org.apache.spark -DartifactId=spark-core_${SCALA_VERSION}"
     dep_jars[CORE]=${PREFIX_SPARK}--core--core-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy.jar
+
     artifacts[HIVE]="-DgroupId=org.apache.spark -DartifactId=spark-hive_${SCALA_VERSION}"
-    dep_jars[HIVE]=${PREFIX_SPARK}--sql--hive--hive-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy_shaded.jar
+    if [[ "$BASE_SPARK_VERSION" == "3.3.2" ]]; then
+      # TODO what is significance of 819592503 and is this going to change over time?
+      dep_jars[HIVE]=${PREFIX_SPARK}--sql--hive--hive-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_shaded---819592503--hive-unshaded-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy.jar
+    else
+      dep_jars[HIVE]=${PREFIX_SPARK}--sql--hive--hive-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy_shaded.jar
+    fi
+
     artifacts[HIVEEXEC]="-DgroupId=org.apache.hive -DartifactId=hive-exec"
-    dep_jars[HIVEEXEC]=${PREFIX_SPARK}--patched-hive-with-glue--hive-exec-core_shaded.jar
+    if [[ "$BASE_SPARK_VERSION" == "3.3.2" ]]; then
+      # TODO what is significance of 593920692 and is this going to change over time?
+      dep_jars[HIVEEXEC]=${PREFIX_SPARK}--patched-hive-with-glue--hive-exec_filtered---593920692--org.apache.hive__hive-exec-core__${sw_versions[HIVE_FULL]}.jar
+    else
+      dep_jars[HIVEEXEC]=${PREFIX_SPARK}--patched-hive-with-glue--hive-exec-core_shaded.jar
+    fi
+
     artifacts[HIVESERDE]="-DgroupId=org.apache.hive -DartifactId=hive-serde"
     dep_jars[HIVESERDE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.hive--hive-serde--org.apache.hive__hive-serde__${sw_versions[HIVE_FULL]}.jar
     artifacts[HIVESTORAGE]="-DgroupId=org.apache.hive -DartifactId=hive-storage-api"
@@ -257,11 +292,18 @@ set_dep_jars()
     artifacts[JAVAASSIST]="-DgroupId=org.javaassist -DartifactId=javaassist"
     dep_jars[JAVAASSIST]=${PREFIX_WS_SP_MVN_HADOOP}--org.javassist--javassist--org.javassist__javassist__${sw_versions[JAVAASSIST]}.jar
     artifacts[JACKSONCORE]="-DgroupId=com.fasterxml.jackson.core -DartifactId=jackson-core"
-    dep_jars[JACKSONCORE]=${PREFIX_WS_SP_MVN_HADOOP}--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__${sw_versions[FASTERXML_JACKSON]}.jar
+    dep_jars[JACKSONCORE]=${PREFIX_WS_SP_MVN_HADOOP}--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__${sw_versions[FASTERXML_JACKSON_DATABIND]}.jar
     artifacts[JACKSONANNOTATION]="-DgroupId=com.fasterxml.jackson.core -DartifactId=jackson-annotations"
     dep_jars[JACKSONANNOTATION]=${PREFIX_WS_SP_MVN_HADOOP}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__${sw_versions[FASTERXML_JACKSON]}.jar
+
     artifacts[AVROSPARK]="-DgroupId=org.apache.spark -DartifactId=spark-avro_${SCALA_VERSION}"
-    dep_jars[AVROSPARK]=${PREFIX_SPARK}--vendor--avro--avro-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy_shaded.jar
+    if [[ "$BASE_SPARK_VERSION" == "3.3.2" ]]; then
+      # TODO what is significance of 1954496799 and is this going to change over time?
+      dep_jars[AVROSPARK]=${PREFIX_SPARK}--vendor--avro--avro-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_shaded---1954496799--avro-unshaded-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy.jar
+    else
+      dep_jars[AVROSPARK]=${PREFIX_SPARK}--vendor--avro--avro-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy_shaded.jar
+    fi
+
     artifacts[AVROMAPRED]="-DgroupId=org.apache.avro -DartifactId=avro-mapred"
     dep_jars[AVROMAPRED]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__${sw_versions[AVRO]}.jar
     artifacts[AVRO]="-DgroupId=org.apache.avro -DartifactId=avro"
