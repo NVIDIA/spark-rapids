@@ -366,8 +366,7 @@ class GpuParquetWriter(
 
       // Decimal types are checked and transformed only for the top level column because we don't
       // have access to Spark's data type of the nested column.
-      case (cv, dtOpt) if dtOpt.isDefined && dtOpt.get == DecimalType =>
-        val d = dtOpt.get.asInstanceOf[DecimalType]
+      case (cv, Some(d: DecimalType)) =>
         // There is a bug in Spark that causes a problem if we write Decimals with
         // precision < 10 as Decimal64.
         // https://issues.apache.org/jira/browse/SPARK-34167
