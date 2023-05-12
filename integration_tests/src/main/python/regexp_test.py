@@ -229,14 +229,16 @@ def test_split_regexp_disabled_fallback():
 def test_split_escaped_chars_in_character_class():
     data_gen = mk_str_gen(r'([0-9][\\\.\[\]\^\-\+]){1,4}')
     assert_gpu_and_cpu_are_equal_collect(
+        # note that regexp patterns are double-escaped to support
+        # passing from Python to Java
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
-            'split(a, "[\\\\.]", 2)',
-            'split(a, "[\\\\[]", 2)',
-            'split(a, "[\\\\]]", 2)',
-            'split(a, "[\\\\^]", 2)',
-            'split(a, "[\\\\-]", 2)',
-            'split(a, "[\\\\+]", 2)',
-            'split(a, "[\\\\\\\\]", 2)',
+            r'split(a, "[\\.]", 2)',
+            r'split(a, "[\\[]", 2)',
+            r'split(a, "[\\]]", 2)',
+            r'split(a, "[\\^]", 2)',
+            r'split(a, "[\\-]", 2)',
+            r'split(a, "[\\+]", 2)',
+            r'split(a, "[\\\\]", 2)',
         ))
 
 
