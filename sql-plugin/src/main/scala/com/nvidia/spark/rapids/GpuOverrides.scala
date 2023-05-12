@@ -3803,8 +3803,10 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
-        override def convertToGpu(): GpuExec =
-          GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
+        override def convertToGpu(): GpuExec = {
+          GpuFilterExec(childExprs.head.convertToGpu(),
+            childPlans.head.convertIfNeeded())(conf.isTieredProjectEnabled)
+        }
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
@@ -3869,7 +3871,8 @@ object GpuOverrides extends Logging {
             conf.gpuTargetBatchSizeBytes)
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
-          condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+          condition.map(c => GpuFilterExec(c.convertToGpu(),
+            joinExec)(conf.isTieredProjectEnabled)).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](

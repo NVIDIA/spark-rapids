@@ -24,6 +24,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -62,7 +63,7 @@ class GpuProjectExecMeta(
         }
       }
     }
-    GpuProjectExec(gpuExprs, gpuChild, conf.isTieredProjectEnabled)
+    GpuProjectExec(gpuExprs, gpuChild)(conf.isTieredProjectEnabled)
   }
 }
 
@@ -219,7 +220,7 @@ case class GpuProjectExec(
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
    projectList: List[NamedExpression],
-   child: SparkPlan,
+   child: SparkPlan)(
    useTieredProject : Boolean = false
  ) extends GpuProjectExecLike {
 
@@ -239,6 +240,8 @@ case class GpuProjectExec(
     rdd.map { cb =>
       val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
         val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        //Note if this ever changes to include splitting the output we need to have an option to not
+        // do this for window to work properly.
         boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
       }
       numOutputBatches += 1
@@ -420,6 +423,7 @@ case class GpuProjectAstExec(
  * Run a filter on a batch.  The batch will be consumed.
  */
 object GpuFilter {
+
   def apply(
       batch: ColumnarBatch,
       boundCondition: Expression,
@@ -445,6 +449,33 @@ object GpuFilter {
       numOutputBatches += 1
       numOutputRows += filteredBatch.numRows()
       filteredBatch
+    }
+  }
+
+  def filterAndCloseWithRetry(input: SpillableColumnarBatch,
+      boundCondition: GpuTieredProject,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      opTime: GpuMetric): Iterator[ColumnarBatch] = {
+    val ret = withRetry(input, splitSpillableInHalfByRows) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
+          val filter = withResource(boundCondition.project(cb)) { projectedBatch =>
+            val filterMask = projectedBatch.column(0).asInstanceOf[GpuColumnVector]
+            if (allEntriesAreTrue(filterMask)) {
+              None
+            } else {
+              Some(filterMask.getBase.incRefCount())
+            }
+          }
+          doFilter(filter, cb)
+        }
+      }
+    }
+    ret.map { cb =>
+      numOutputRows += cb.numRows()
+      numOutputBatches += 1
+      cb
     }
   }
 
@@ -515,7 +546,8 @@ object GpuFilter {
 
 case class GpuFilterExec(
     condition: Expression,
-    child: SparkPlan,
+    child: SparkPlan)(
+    useTieredProject : Boolean = false,
     override val coalesceAfter: Boolean = true)
     extends ShimUnaryExecNode with ShimPredicateHelper with GpuExec {
 
@@ -555,10 +587,13 @@ case class GpuFilterExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
-    val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
-    rdd.map { batch =>
-      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows, numOutputBatches, opTime)
+    val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
+      useTieredProject)
+    rdd.flatMap { batch =>
+      val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      GpuFilter.filterAndCloseWithRetry(sb, boundCondition, numOutputRows,
+        numOutputBatches, opTime)
     }
   }
 }

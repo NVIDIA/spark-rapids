@@ -155,7 +155,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     val input = if (isPreNeeded) {
-      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())
+      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())()
     } else {
       childPlans.head.convertIfNeeded()
     }
@@ -177,7 +177,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     if (isPostNeeded) {
-      GpuProjectExec(post.toList, windowExpr)
+      GpuProjectExec(post.toList, windowExpr)()
     } else {
       windowExpr
     }
