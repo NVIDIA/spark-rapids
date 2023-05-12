@@ -224,6 +224,8 @@ case class GpuProjectExec(
    useTieredProject : Boolean = false
  ) extends GpuProjectExecLike {
 
+  override def otherCopyArgs: Seq[AnyRef] =
+    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean])
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -353,11 +355,10 @@ case class GpuProjectAstExec(
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
  case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
-
   /**
    * Is everything deterministic. This can help with reliability in the common case.
    */
-  private lazy val areAllDeterministic = !exprTiers.exists { tier =>
+  lazy val areAllDeterministic = !exprTiers.exists { tier =>
     tier.exists { expr =>
       !expr.deterministic
     }
@@ -438,22 +439,36 @@ object GpuFilter {
     }
   }
 
-  def filterAndCloseNondeterministic(batch: ColumnarBatch,
-      boundCondition: Expression,
+  def filterAndClose(batch: ColumnarBatch,
+      boundCondition: GpuTieredProject,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      filterTime: GpuMetric): ColumnarBatch = {
+      filterTime: GpuMetric): Iterator[ColumnarBatch] = {
+    if (boundCondition.areAllDeterministic) {
+      val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      filterAndCloseWithRetry(sb, boundCondition, numOutputRows, numOutputBatches, filterTime)
+    } else {
+      filterAndCloseNondeterministic(batch, boundCondition, numOutputRows, numOutputBatches,
+        filterTime)
+    }
+  }
+
+  private def filterAndCloseNondeterministic(batch: ColumnarBatch,
+      boundCondition: GpuTieredProject,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      filterTime: GpuMetric): Iterator[ColumnarBatch] = {
     withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)) { _ =>
       val filteredBatch = withResource(batch) { batch =>
         GpuFilter(batch, boundCondition)
       }
       numOutputBatches += 1
       numOutputRows += filteredBatch.numRows()
-      filteredBatch
+      Seq(filteredBatch).toIterator
     }
   }
 
-  def filterAndCloseWithRetry(input: SpillableColumnarBatch,
+  private def filterAndCloseWithRetry(input: SpillableColumnarBatch,
       boundCondition: GpuTieredProject,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -461,15 +476,7 @@ object GpuFilter {
     val ret = withRetry(input, splitSpillableInHalfByRows) { sb =>
       withResource(sb.getColumnarBatch()) { cb =>
         withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
-          val filter = withResource(boundCondition.project(cb)) { projectedBatch =>
-            val filterMask = projectedBatch.column(0).asInstanceOf[GpuColumnVector]
-            if (allEntriesAreTrue(filterMask)) {
-              None
-            } else {
-              Some(filterMask.getBase.incRefCount())
-            }
-          }
-          doFilter(filter, cb)
+          GpuFilter(cb, boundCondition)
         }
       }
     }
@@ -520,8 +527,29 @@ object GpuFilter {
     }
   }
 
+  private def computeCheckedFilterMask(boundCondition: GpuTieredProject,
+      cb: ColumnarBatch): Option[cudf.ColumnVector] = {
+    withResource(boundCondition.project(cb)) { filterBatch =>
+      val filterMask = filterBatch.column(0).asInstanceOf[GpuColumnVector]
+      // If  filter is a noop then return a None for the mask
+      if (allEntriesAreTrue(filterMask)) {
+        None
+      } else {
+        Some(filterMask.getBase.incRefCount())
+      }
+    }
+  }
+
   def apply(batch: ColumnarBatch,
       boundCondition: Expression) : ColumnarBatch = {
+    val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
+    doFilter(checkedFilterMask, batch)
+  }
+
+
+  def apply(
+      batch: ColumnarBatch,
+      boundCondition: GpuTieredProject): ColumnarBatch = {
     val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
     doFilter(checkedFilterMask, batch)
   }
@@ -533,6 +561,10 @@ case class GpuFilterExec(
     useTieredProject : Boolean = false,
     override val coalesceAfter: Boolean = true)
     extends ShimUnaryExecNode with ShimPredicateHelper with GpuExec {
+
+  override def otherCopyArgs: Seq[AnyRef] =
+    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean],
+      coalesceAfter.asInstanceOf[java.lang.Boolean])
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -574,8 +606,7 @@ case class GpuFilterExec(
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       useTieredProject)
     rdd.flatMap { batch =>
-      val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-      GpuFilter.filterAndCloseWithRetry(sb, boundCondition, numOutputRows,
+      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
         numOutputBatches, opTime)
     }
   }
