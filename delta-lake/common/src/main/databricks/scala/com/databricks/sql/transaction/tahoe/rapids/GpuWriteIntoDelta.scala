@@ -36,7 +36,7 @@ case class GpuWriteIntoDelta(
   override def run(sparkSession: SparkSession): Seq[Row] = {
     gpuDeltaLog.withNewTransaction { txn =>
       // If this batch has already been executed within this query, then return.
-      var skipExecution = hasBeenExecuted(txn)
+      val skipExecution = hasBeenExecuted(txn)
       if (skipExecution) {
         return Seq.empty
       }

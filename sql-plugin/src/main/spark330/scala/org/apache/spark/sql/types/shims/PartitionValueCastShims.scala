@@ -36,7 +36,7 @@ import org.apache.spark.sql.types.{AnsiIntervalType, AnyTimestampType, DataType,
 object PartitionValueCastShims {
   def isSupportedType(dt: DataType): Boolean = dt match {
     case dt if AnyTimestampType.acceptsType(dt) => true
-    case it: AnsiIntervalType => true
+    case _: AnsiIntervalType => true
     case _ => false
   }
 

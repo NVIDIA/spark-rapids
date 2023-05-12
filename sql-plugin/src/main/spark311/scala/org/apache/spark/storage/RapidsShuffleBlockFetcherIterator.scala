@@ -48,7 +48,7 @@ import org.apache.spark.util.{CompletionIterator, TaskCompletionListener, Utils}
  * `BufferReleasingInputStream` is in charge of that. This allows for multiple threads
  *  to consume different `BufferReleasingInputStream`s produced from this single iterator.
  *
- *  Compare to https://github.com/apache/spark/blob/branch-3.1: 
+ *  Compare to https://github.com/apache/spark/blob/branch-3.1:
  *   ./core/src/main/scala/org/apache/spark/storage/ShuffleBlockFetcherIterator.scala
  */
 
@@ -596,7 +596,7 @@ final class RapidsShuffleBlockFetcherIterator(
       shuffleMetrics.incFetchWaitTime(fetchWaitTime)
 
       result match {
-        case r @ SuccessFetchResult(blockId, mapIndex, address, size, buf, isNetworkReqDone) =>
+        case SuccessFetchResult(blockId, mapIndex, address, size, buf, isNetworkReqDone) =>
           if (address != blockManager.blockManagerId) {
             if (hostLocalBlocks.contains(blockId -> mapIndex)) {
               shuffleMetrics.incLocalBlocksFetched(1)

@@ -86,7 +86,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
 
   test("a buffer is not spillable until the owner closes columns referencing it") {
     withResource(new RapidsDeviceMemoryStore) { store =>
-      val catalog = spy(new RapidsBufferCatalog(store))
       val spillPriority = 3
       val bufferId = MockRapidsBufferId(7)
       val ct = buildContiguousTable()
@@ -112,11 +111,9 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
 
   test("a buffer is not spillable when the underlying device buffer is obtained from it") {
     withResource(new RapidsDeviceMemoryStore) { store =>
-      val catalog = spy(new RapidsBufferCatalog(store))
       val spillPriority = 3
       val bufferId = MockRapidsBufferId(7)
       val ct = buildContiguousTable()
-      val underlyingBuff = ct.getBuffer
       val buffSize = ct.getBuffer.getLength
       val buffer = withResource(ct) { _ =>
         val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
