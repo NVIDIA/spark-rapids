@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 
-private object RapidsHiveErrors {
+object RapidsHiveErrors {
   // Lifted from org.apache.spark.sql.errors.QueryErrorsBase.
   // Converts an error class parameter to its SQL representation
   def toSQLValue(v: Any, t: DataType): String = Literal.create(v, t) match {

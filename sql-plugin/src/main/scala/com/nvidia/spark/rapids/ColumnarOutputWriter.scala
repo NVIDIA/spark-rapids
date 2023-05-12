@@ -246,7 +246,7 @@ object ColumnarOutputWriter {
         }
       }
     } finally {
-      toProcess.map { case (buffer, len) => buffer }.safeClose()
+      toProcess.map { case (buffer, _) => buffer }.safeClose()
     }
   }
 }

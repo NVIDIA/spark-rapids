@@ -1,14 +1,16 @@
 # Change log
-Generated on 2023-04-18
+Generated on 2023-05-09
 
 ## Release 23.04
 
 ### Features
 |||
 |:---|:---|
+|[#7992](https://github.com/NVIDIA/spark-rapids/issues/7992)|[Audit][SPARK-40819][SQL][3.3] Timestamp nanos behaviour regression (parquet reader)|
 |[#7985](https://github.com/NVIDIA/spark-rapids/issues/7985)|[FEA] Expose Alluxio master URL to support K8s Env|
 |[#7880](https://github.com/NVIDIA/spark-rapids/issues/7880)|[FEA] retry framework task level metrics|
 |[#7394](https://github.com/NVIDIA/spark-rapids/issues/7394)|[FEA] Support Delta Lake auto compaction|
+|[#7920](https://github.com/NVIDIA/spark-rapids/issues/7920)|[FEA] Remove SpillCallback and executor level spill metrics|
 |[#7463](https://github.com/NVIDIA/spark-rapids/issues/7463)|[FEA] Drop support for Databricks-9.1 ML LTS|
 |[#7253](https://github.com/NVIDIA/spark-rapids/issues/7253)|[FEA] Implement OOM retry framework|
 |[#7042](https://github.com/NVIDIA/spark-rapids/issues/7042)|[FEA] Add support in the tools event parsing for ML functions, libraries, and expressions|
@@ -83,6 +85,10 @@ Generated on 2023-04-18
 ### PRs
 |||
 |:---|:---|
+|[#8247](https://github.com/NVIDIA/spark-rapids/pull/8247)|Bump up plugin version to 23.04.1-SNAPSHOT|
+|[#8248](https://github.com/NVIDIA/spark-rapids/pull/8248)|[Doc] update versions for 2304 hot fix [skip ci]|
+|[#8246](https://github.com/NVIDIA/spark-rapids/pull/8246)|Cherry-pick hotfix: Use weak keys in executor broadcast plan cache|
+|[#8092](https://github.com/NVIDIA/spark-rapids/pull/8092)|Init changelog for 23.04 [skip ci]|
 |[#8109](https://github.com/NVIDIA/spark-rapids/pull/8109)|Bump up JNI and private version to released 23.04.0|
 |[#7939](https://github.com/NVIDIA/spark-rapids/pull/7939)|[Doc]update download docs for 2304 version[skip ci]|
 |[#8127](https://github.com/NVIDIA/spark-rapids/pull/8127)|Avoid SQL result check of Delta Lake full delete on Databricks|
@@ -228,7 +234,6 @@ Generated on 2023-04-18
 |[#6698](https://github.com/NVIDIA/spark-rapids/issues/6698)|[FEA] Support json_tuple|
 |[#6885](https://github.com/NVIDIA/spark-rapids/issues/6885)|[FEA] Support reverse|
 |[#6879](https://github.com/NVIDIA/spark-rapids/issues/6879)|[FEA] Support Databricks 11.3 ML LTS|
-|[#5618](https://github.com/NVIDIA/spark-rapids/issues/5618)|Qualification tool use expressions parsed in duration and speedup factors|
 
 ### Performance
 |||

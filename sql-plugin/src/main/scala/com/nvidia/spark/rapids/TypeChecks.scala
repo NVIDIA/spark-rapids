@@ -776,8 +776,8 @@ abstract class TypeChecks[RET] {
     }.mkString(", ")
   }
 
-  /** 
-   * Original log does not print enough info when timezone is not UTC, 
+  /**
+   * Original log does not print enough info when timezone is not UTC,
    * here check again to add UTC info.
    */
   private def tagTimezoneInfoIfHasTimestampType(
@@ -2324,7 +2324,6 @@ object SupportedOpsForTools {
   private def outputSupportedExecs(): Unit = {
     // TODO Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
-    val conf = new RapidsConf(Map.empty[String, String])
     val types = allSupportedTypes.toSeq
     val header = Seq("Exec", "Supported", "Notes", "Params") ++ types
     println(header.mkString(","))
@@ -2361,7 +2360,6 @@ object SupportedOpsForTools {
   private def outputSupportedExpressions(): Unit = {
     // TODO Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
-    val conf = new RapidsConf(Map.empty[String, String])
     val types = allSupportedTypes.toSeq
     val header = Seq("Expression", "Supported", "SQL Func", "Notes", "Context", "Params") ++ types
     println(header.mkString(","))

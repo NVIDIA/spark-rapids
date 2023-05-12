@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -127,7 +127,7 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
 
   private def getBlocksForWindow(
       window: BlockWindow,
-      startingBlock: Int = 0): BlocksForWindow = {
+      startingBlock: Int): BlocksForWindow = {
     val blockRangesInWindow = new ArrayBuffer[BlockRange[T]]()
     var continue = true
     var thisBlock = startingBlock

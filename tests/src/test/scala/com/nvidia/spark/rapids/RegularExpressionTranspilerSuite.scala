@@ -147,7 +147,7 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   test("cuDF does not support possessive quantifier") {
     val patterns = Seq("a*+", "a|(a?|a*+)")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "Possessive quantifier *+ not supported")
     )
   }
@@ -189,12 +189,12 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   }
 
   test("cuDF does not support single repetition both inside and outside of capture groups") {
-    var patterns = Seq("(3?)+", "(3?)*", "((3?))+")
-    patterns.foreach(pattern => 
-      assertUnsupported(pattern, RegexFindMode, 
+    val patterns = Seq("(3?)+", "(3?)*", "((3?))+")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition of group containing: 3?"))
-    Seq("(3*)+").foreach(pattern => 
-      assertUnsupported(pattern, RegexFindMode, 
+    Seq("(3*)+").foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition of group containing: 3*"))
   }
 
@@ -209,14 +209,14 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   test("cuDF does not support class intersection &&") {
     val patterns = Seq("[a&&b]", "[&&1]")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support class intersection operator &&"))
 
     assertCpuGpuMatchesRegexpReplace(Seq("a&&b", "[a&b&c]"), Seq("a&&b", "b&c"))
   }
 
   test("octal digits - find") {
-    val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772", raw"\0200", 
+    val patterns = Seq(raw"\07", raw"\077", raw"\0177", raw"\01772", raw"\0200",
       raw"\0376", raw"\0377", raw"\02002")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", "a\u007fb",
         "\u0007\u003f\u007f", "\u007f", "\u0080", "a\u00fe\u00ffb", "\u007f2"))
@@ -231,23 +231,23 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   test("hex digits - find") {
     val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}",
       raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
-    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b", 
+    assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b",
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
   }
 
   test("hex digit character classes") {
     val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]", raw"[\x80]", raw"[\x01-\xff]",
       raw"[a-\xff]", raw"[\x20-z]")
-    val inputs = Seq("", "\u007f", "a\u007fb", "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb", 
+    val inputs = Seq("", "\u007f", "a\u007fb", "\u007f\u003f\u007f", "\u0080", "a\u00fe\u00ffb",
       "\u007f2", "abcd", "\u0000\u007f\u00ff\u0123\u0abc")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
   test("compare CPU and GPU: character range with escaped characters") {
     val inputs = Seq("", "abc", "\r\n", "12\u001b3", "a[b\t\n \rc]d", "[\r+\n-\t[]")
-    assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]", raw"[\a-\e]"), 
+    assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]", raw"[\a-\e]"),
       inputs)
-    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"), 
+    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"),
       inputs)
   }
 
@@ -270,16 +270,16 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   }
 
   test("string anchor on either side of choice - regexp_replace") {
-    val patterns = Seq("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$", 
+    val patterns = Seq("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$",
         "^a|b$", "\\Aa|a\\Z", "\\Aa|b\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "testb", "atest", "testa",
       "\ntesta", "btesta\n", "\ntestab\n", "testa\r", "btesta\r\n"))
   }
 
   test("string anchor on either side of choice - fallback to CPU - regexp_split") {
-    val patterns = Set("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$", 
+    val patterns = Set("a$|b", "^a|b", "\\Aa|b", "a\\Z|\\Ab", "[abcd]$|^abc", "a$|b$", "^a|a$",
         "^a|b$", "\\Aa|a\\Z", "\\Aa|b\\Z")
-    patterns.foreach { pattern => 
+    patterns.foreach { pattern =>
       assertUnsupported(pattern, RegexSplitMode,
         "cuDF does not support either side of a choice containing a line anchor in split mode")
     }
@@ -288,7 +288,7 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   test("string anchor \\A will fall back to CPU in some repetitions") {
     val patterns = Seq(raw"(\A)*a", raw"(\A){0,}a", raw"(\A){0}a")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition of group containing: \\A")
     )
   }
@@ -296,7 +296,7 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   test("string anchor \\Z fall back to CPU in groups") {
     val patterns = Seq(raw"(\Z)a", raw"a(\Z)")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "Line and string anchors are not supported in capture groups")
     )
   }
@@ -304,14 +304,14 @@ class RegularExpressionTranspilerSuite extends FunSuite {
   test("string anchor \\Z fall back to CPU in some repetitions") {
     val patterns = Seq(raw"a(\Z)+", raw"a(\Z)*", raw"a(\Z){2,}")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition of group containing: \\Z")
     )
   }
 
   test("string anchor \\Z fall back to CPU - split") {
     for (mode <- Seq(RegexSplitMode)) {
-      assertUnsupported("\\Z", mode, 
+      assertUnsupported("\\Z", mode,
         "Sequences that only contain '^' or '$' are not supported")
     }
   }
@@ -454,7 +454,7 @@ class RegularExpressionTranspilerSuite extends FunSuite {
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
       "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\Z"
 
-    // input and output should be identical except for `.` being replaced 
+    // input and output should be identical except for `.` being replaced
     // with `[^\n\r\u0085\u2028\u2029]` and `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
@@ -1003,7 +1003,7 @@ class RegularExpressionTranspilerSuite extends FunSuite {
           cv.replaceRegex(prog, replace)
         }
       }
-      withResource(c) { c => 
+      withResource(c) { c =>
         withResource(c.copyToHost()) { hv =>
           result.indices.foreach(i => result(i) = new String(hv.getUTF8(i)))
         }

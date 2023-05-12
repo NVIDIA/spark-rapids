@@ -71,7 +71,7 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 
     if (outputType.isInstanceOf[DecimalType]) {
       (leftInputType, rightInputType) match {
-        case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
+        case (DecimalType.Fixed(_, _), DecimalType.Fixed(_, _)) =>
           val resultType = outputType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
             // SPARK-39316 https://github.com/apache/spark/commit/301a139638

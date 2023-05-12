@@ -87,9 +87,9 @@ object SparkShimImpl extends Spark321PlusDBShims {
   override def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike,
       parent: SparkPlan): Boolean = {
     parent match {
-      case bhj: GpuBroadcastHashJoinExec =>
+      case _: GpuBroadcastHashJoinExec =>
         shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-      case bnlj: GpuBroadcastNestedLoopJoinExec =>
+      case _: GpuBroadcastNestedLoopJoinExec =>
         shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
       case _ => false
     }
