@@ -104,7 +104,10 @@ abstract class GpuFileFormatDataWriter(
     }
     val summary = ExecutedWriteSummary(
       updatedPartitions = updatedPartitions.toSet,
-      stats = statsTrackers.map(_.getFinalStats(taskCommitTime)))
+      stats = statsTrackers.map(_.getFinalStats(taskCommitTime)),
+      // TODO shim this new arg for 332db
+      executionTimeMs = System.currentTimeMillis
+    )
     WriteTaskResult(taskCommitMessage, summary)
   }
 
