@@ -438,14 +438,15 @@ object GpuFilter {
     }
   }
 
-  def filterAndClose(
-      batch: ColumnarBatch,
+  def filterAndCloseNondeterministic(batch: ColumnarBatch,
       boundCondition: Expression,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       filterTime: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)) { _ =>
-      val filteredBatch = GpuFilter.filterAndClose(batch, boundCondition)
+      val filteredBatch = withResource(batch) { batch =>
+        GpuFilter(batch, boundCondition)
+      }
       numOutputBatches += 1
       numOutputRows += filteredBatch.numRows()
       filteredBatch
@@ -515,24 +516,6 @@ object GpuFilter {
         None
       } else {
         Some(filterMask.getBase.incRefCount())
-      }
-    }
-  }
-
-  def filterAndClose(batch: ColumnarBatch,
-      boundCondition: Expression): ColumnarBatch = {
-    if (!boundCondition.deterministic) {
-      // If the condition is non-deterministic we cannot retry it, we could retry the filter, but
-      // this should be super rare. So we are not going to spend time trying to make it happen.
-      withResource(batch) { batch =>
-        GpuFilter(batch, boundCondition)
-      }
-    } else {
-      val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-      RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
-        withResource(sb.getColumnarBatch()) { cb =>
-          GpuFilter(cb, boundCondition)
-        }
       }
     }
   }
