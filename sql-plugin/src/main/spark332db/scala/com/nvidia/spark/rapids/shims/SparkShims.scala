@@ -15,7 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
+{"spark": "332db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -65,16 +65,17 @@ object SparkShimImpl extends Spark321PlusDBShims {
     super.getExecs ++ PythonMapInArrowExecShims.execs
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-      DataWritingCommandRule[_ <: DataWritingCommand]] = {
-    Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](
-    "Create table with select command",
-    (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+    DataWritingCommandRule[_ <: DataWritingCommand]] = {
+    Map.empty
   }
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
-      RunnableCommandRule[_ <: RunnableCommand]] = {
-      Map.empty
+    RunnableCommandRule[_ <: RunnableCommand]] = {
+    Seq(
+      GpuOverrides.runnableCmd[CreateDataSourceTableAsSelectCommand](
+        "Write to a data source",
+        (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
   override def reproduceEmptyStringBug: Boolean = false
