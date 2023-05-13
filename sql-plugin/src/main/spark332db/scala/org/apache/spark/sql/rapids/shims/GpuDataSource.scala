@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
+{"spark": "332db"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 
