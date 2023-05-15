@@ -189,15 +189,19 @@ class GpuOptimisticTransaction
 
       val statsTrackers: ListBuffer[ColumnarWriteJobStatsTracker] = ListBuffer()
 
+      val hadoopConf = spark.sessionState.newHadoopConfWithOptions(
+        metadata.configuration ++ deltaLog.options)
+
       if (spark.conf.get(DeltaSQLConf.DELTA_HISTORY_METRICS_ENABLED)) {
+        val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
         val basicWriteJobStatsTracker = new BasicColumnarWriteJobStatsTracker(
-          new SerializableConfiguration(deltaLog.newDeltaHadoopConf()),
+          serializableHadoopConf,
           BasicWriteJobStatsTracker.metrics)
         registerSQLMetrics(spark, basicWriteJobStatsTracker.driverSideMetrics)
         statsTrackers.append(basicWriteJobStatsTracker)
         gpuRapidsWrite.foreach { grw =>
-          val hadoopConf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
-          val tracker = new GpuWriteJobStatsTracker(hadoopConf, grw.basicMetrics, grw.taskMetrics)
+          val tracker = new GpuWriteJobStatsTracker(serializableHadoopConf,
+            grw.basicMetrics, grw.taskMetrics)
           statsTrackers.append(tracker)
         }
       }
@@ -225,10 +229,7 @@ class GpuOptimisticTransaction
           fileFormat = gpuFileFormat,
           committer = committer,
           outputSpec = outputSpec,
-          // scalastyle:off deltahadoopconfiguration
-          hadoopConf =
-            spark.sessionState.newHadoopConfWithOptions(metadata.configuration ++ deltaLog.options),
-          // scalastyle:on deltahadoopconfiguration
+          hadoopConf = hadoopConf,
           partitionColumns = partitioningColumns,
           bucketSpec = None,
           statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers,

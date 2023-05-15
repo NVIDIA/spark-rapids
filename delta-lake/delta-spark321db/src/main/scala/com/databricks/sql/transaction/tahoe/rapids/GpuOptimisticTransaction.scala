@@ -226,9 +226,7 @@ class GpuOptimisticTransaction(
           fileFormat = gpuFileFormat,
           committer = committer,
           outputSpec = outputSpec,
-          // scalastyle:off deltahadoopconfiguration
           hadoopConf = hadoopConf,
-          // scalastyle:on deltahadoopconfiguration
           partitionColumns = partitioningColumns,
           bucketSpec = None,
           statsTrackers = optionalStatsTracker.toSeq ++ identityTracker.toSeq ++ statsTrackers,
