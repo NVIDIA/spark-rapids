@@ -21,9 +21,11 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.spark.SparkEnv
 
-object ReaderUtils {
+import org.apache.spark.SparkEnv
+import org.apache.spark.internal.Logging
+
+object ReaderUtils extends Logging {
   /*
    * Databricks has the Unity Catalog that allows accessing files across multiple metastores and
    * catalogs. When our readers run in different threads, the credentials don't get setup
