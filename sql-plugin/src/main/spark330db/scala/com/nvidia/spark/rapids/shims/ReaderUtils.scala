@@ -24,10 +24,24 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkEnv
 
 object ReaderUtils {
+  /*
+   * Databricks has the Unity Catalog that allows accessing files across multiple metastores and
+   * catalogs. When our readers run in different threads, the credentials don't get setup
+   * properly. Here we get the Hadoop configuration associated specifically with that file which
+   * seems to contain the necessary credentials. This conf will be used when creating the
+   * Hadoop Filesystem, which with Unity ends up being a special Credentials file system.
+   */
   def getHadoopConfForReaderThread(filePath: Path, conf: Configuration): Configuration = {
     val unityEnabled = SparkEnv.get.conf.get("spark.databricks.unityCatalog.enabled", "false").toBoolean
     if (unityEnabled) {
-      com.databricks.unity.ClusterDefaultSAM.createDelegateHadoopConf(filePath, conf)
+      try {
+        com.databricks.unity.ClusterDefaultSAM.createDelegateHadoopConf(filePath, conf)
+      } catch {
+        case a: AssertionError =>
+          // ignore this and just return the regular conf, it might be a filesystem not supported
+          // and I don't have a good way to check this
+          conf
+      }
     } else {
       conf
     }
