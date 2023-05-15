@@ -24,8 +24,8 @@ package com.nvidia.spark.rapids.delta
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuScalar
 import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF, ShimUsesMetadataFields}
 
 import org.apache.spark.sql.Column
@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.functions.{count, lit, max, min, struct, substring, sum, when}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** GPU version of Delta Lake's StatisticsCollection. */
 trait GpuStatisticsCollection extends ShimUsesMetadataFields {
@@ -40,6 +41,10 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
   def dataSchema: StructType
   val numIndexedCols: Int
   val stringPrefixLength: Int
+
+  // Build a mapping of a field path to a field index within the parent struct
+  lazy val explodedDataSchema: Map[Seq[String], Int] =
+    GpuStatisticsCollection.explode(dataSchema).toMap
 
   /**
    * statCollectionSchema is the schema that is composed of all the columns that have the stats
@@ -57,6 +62,9 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
    * Returns a struct column that can be used to collect statistics for the current
    * schema of the table.
    * The types we keep stats on must be consistent with DataSkippingReader.SkippingEligibleLiteral.
+   * If a column is missing from dataSchema (which will be filled with nulls), we will only
+   * collect the NULL_COUNT stats for it as the number of rows.
+   *
    * @note The stats collected here must be kept in sync with how stats are gathered by the GPU
    *       in batchStatsToRow.
    */
@@ -66,26 +74,27 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
       count(new Column("*")) as NUM_RECORDS,
       collectStats(MIN, statCollectionSchema) {
         // Truncate string min values as necessary
-        case (c, GpuSkippingEligibleDataType(StringType)) =>
+        case (c, GpuSkippingEligibleDataType(StringType), true) =>
           substring(min(c), 0, stringPrefixLength)
 
         // Collect all numeric min values
-        case (c, GpuSkippingEligibleDataType(_)) =>
+        case (c, GpuSkippingEligibleDataType(_), true) =>
           min(c)
       },
       collectStats(MAX, statCollectionSchema) {
         // Truncate and pad string max values as necessary
-        case (c, GpuSkippingEligibleDataType(StringType)) =>
+        case (c, GpuSkippingEligibleDataType(StringType), true) =>
           val udfTruncateMax = ShimDeltaUDF.stringStringUdf(
             GpuStatisticsCollection.truncateMaxStringAgg(prefixLength)_)
           udfTruncateMax(max(c))
 
         // Collect all numeric max values
-        case (c, GpuSkippingEligibleDataType(_)) =>
+        case (c, GpuSkippingEligibleDataType(_), true) =>
           max(c)
       },
       collectStats(NULL_COUNT, statCollectionSchema) {
-        case (c, _) => sum(when(c.isNull, 1).otherwise(0))
+        case (c, _, true) => sum(when(c.isNull, 1).otherwise(0))
+        case (_, _, false) => count(new Column("*"))
       }
     ) as 'stats
   }
@@ -124,39 +133,48 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
    * When `function` is not defined, that column is skipped.
    *
    * @param name     The name of the top level column for this statistic (i.e. minValues).
-   * @param schema   The schema of the data to collect statistics from.
-   * @param function A partial function that is passed both a column and metadata about that
-   *                 column. Based on the metadata, it can decide if the given statistic
-   *                 should be collected by returning the correct aggregate expression.
+   * @param schema The schema of the data to collect statistics from.
+   * @param function A partial function that is passed a tuple of (column, metadata about that
+   *                 column, a flag that indicates whether the column is in the data schema). Based
+   *                 on the metadata and flag, the function can decide if the given statistic should
+   *                 be collected on the column by returning the correct aggregate expression.
    */
   private def collectStats(
       name: String,
       schema: StructType)(
-      function: PartialFunction[(Column, StructField), Column]): Column = {
+      function: PartialFunction[(Column, StructField, Boolean), Column]): Column = {
 
     def collectStats(
         schema: StructType,
         parent: Option[Column],
-        function: PartialFunction[(Column, StructField), Column]): Seq[Column] = {
+        parentFields: Seq[String],
+        function: PartialFunction[(Column, StructField, Boolean), Column]): Seq[Column] = {
       schema.flatMap {
         case f @ StructField(name, s: StructType, _, _) =>
           val column = parent.map(_.getItem(name))
               .getOrElse(new Column(UnresolvedAttribute.quoted(name)))
-          val stats = collectStats(s, Some(column), function)
+          val stats = collectStats(s, Some(column), parentFields :+ name, function)
           if (stats.nonEmpty) {
             Some(struct(stats: _*) as ShimDeltaColumnMapping.getPhysicalName(f))
           } else {
             None
           }
         case f @ StructField(name, _, _, _) =>
+          val fieldPath = parentFields :+ name
           val column = parent.map(_.getItem(name))
               .getOrElse(new Column(UnresolvedAttribute.quoted(name)))
-          // alias the column with its physical name
-          function.lift((column, f)).map(_.as(ShimDeltaColumnMapping.getPhysicalName(f)))
+          // Note: explodedDataSchema comes from dataSchema. In the read path, dataSchema comes
+          // from the table's metadata.dataSchema, which is the same as tableDataSchema. In the
+          // write path, dataSchema comes from the DataFrame schema. We then assume
+          // TransactionWrite.writeFiles has normalized dataSchema, and
+          // TransactionWrite.getStatsSchema has done the column mapping for tableDataSchema and
+          // dropped the partition columns for both dataSchema and tableDataSchema.
+          function.lift((column, f, explodedDataSchema.contains(fieldPath))).
+              map(_.as(ShimDeltaColumnMapping.getPhysicalName(f)))
       }
     }
 
-    val allStats = collectStats(schema, None, function)
+    val allStats = collectStats(schema, None, Nil, function)
     val stats = if (numIndexedCols > 0) {
       allStats.take(numIndexedCols)
     } else {
@@ -193,61 +211,82 @@ object GpuStatisticsCollection {
 
   def batchStatsToRow(
       schema: StructType,
-      batch: Array[ColumnView],
+      explodedDataSchema: Map[Seq[String], Int],
+      batch: ColumnarBatch,
       row: InternalRow): Unit = {
     var nextSlot = 0
     // NUM_RECORDS
-    val numRows = if (batch.nonEmpty) batch(0).getRowCount.toInt else 0
-    row.setLong(nextSlot, numRows)
+    row.setLong(nextSlot, batch.numRows)
     nextSlot += 1
 
+    val views = GpuColumnVector.extractBases(batch).asInstanceOf[Array[ColumnView]]
+
     // MIN
-    nextSlot = batchStatsToRow(schema, batch, row, nextSlot, GpuStatisticsCollection.computeMin,
-      isForAllTypes = false)
+    nextSlot = batchStatsToRow(schema, explodedDataSchema, batch.numRows, views, row,
+      Nil, nextSlot, GpuStatisticsCollection.computeMin, isForAllTypes = false)
 
     // MAX
-    nextSlot = batchStatsToRow(schema, batch, row, nextSlot, GpuStatisticsCollection.computeMax,
-      isForAllTypes = false)
+    nextSlot = batchStatsToRow(schema, explodedDataSchema, batch.numRows, views, row,
+      Nil, nextSlot, GpuStatisticsCollection.computeMax, isForAllTypes = false)
 
     // NULL_COUNT
-    nextSlot = batchStatsToRow(schema, batch, row, nextSlot,
-      GpuStatisticsCollection.computeNullCount, isForAllTypes = true)
+    nextSlot = batchStatsToRow(schema, explodedDataSchema, batch.numRows, views, row,
+      Nil, nextSlot, GpuStatisticsCollection.computeNullCount, isForAllTypes = true)
 
     require(nextSlot == row.numFields, s"Expected ${row.numFields} stats, only wrote $nextSlot")
   }
 
   private def batchStatsToRow(
       schema: StructType,
-      batch: Array[ColumnView],
+      explodedDataSchema: Map[Seq[String], Int],
+      batchNumRows: Int,
+      views: Array[ColumnView],
       row: InternalRow,
+      parentFields: Seq[String],
       slot: Int,
       statFunc: (ColumnView, DataType, InternalRow, Int) => Unit,
       isForAllTypes: Boolean): Int = {
-    withResource(ColumnView.makeStructView(batch: _*)) { structView =>
-      structStatsToRow(structView, schema, row, slot, statFunc, isForAllTypes)
+    withResource(ColumnView.makeStructView(views: _*)) { structView =>
+      structStatsToRow(explodedDataSchema, structView, schema, batchNumRows, row,
+        parentFields, slot, statFunc, isForAllTypes)
     }
   }
 
   private def structStatsToRow(
+      explodedDataSchema: Map[Seq[String], Int],
       struct: ColumnView,
       structSchema: StructType,
+      batchNumRows: Int,
       row: InternalRow,
+      parentFields: Seq[String],
       slot: Int,
       statFunc: (ColumnView, DataType, InternalRow, Int) => Unit,
       isForAllTypes: Boolean): Int = {
     require(struct.getType.equals(DType.STRUCT), s"Expected struct column, found ${struct.getType}")
     var nextSlot = slot
-    (0 until structSchema.length).foreach { i =>
-      structSchema.fields(i).dataType match {
+    structSchema.foreach { field =>
+      val fieldPath = parentFields :+ field.name
+      val dataFieldIndex = explodedDataSchema.get(fieldPath)
+      field.dataType match {
         case s: StructType =>
-          withResource(struct.getChildColumnView(i)) { c =>
-            nextSlot = structStatsToRow(c, s, row, nextSlot, statFunc, isForAllTypes)
+          // If the struct is not in the field index then there's no struct column view
+          // to use. Send down null as a stand-in, since we may need to generate null count
+          // metrics for struct field members that are missing.
+          withResource(dataFieldIndex.map(struct.getChildColumnView).orNull) { c =>
+            nextSlot = structStatsToRow(explodedDataSchema, c, s, batchNumRows, row,
+              parentFields :+ field.name, nextSlot, statFunc, isForAllTypes)
           }
         case dt if isForAllTypes || GpuSkippingEligibleDataType(dt) =>
-          withResource(struct.getChildColumnView(i)) { c =>
-            statFunc(c, dt, row, nextSlot)
+          if (dataFieldIndex.isDefined) {
+            withResource(struct.getChildColumnView(dataFieldIndex.get)) { c =>
+              statFunc(c, dt, row, nextSlot)
+            }
+            nextSlot += 1
+          } else if (isForAllTypes) {
+            // doing a top-level null count for a field not in the data schema
+            row.setLong(nextSlot, batchNumRows)
+            nextSlot += 1
           }
-          nextSlot += 1
         case _ =>
       }
     }
@@ -334,6 +373,53 @@ object GpuStatisticsCollection {
       row: InternalRow,
       slot: Int): Unit = {
     row.setLong(slot, c.getNullCount)
+  }
+
+  /**
+   * Similar to Delta Lake's SchemaMergingUtils.explode except instead of mapping a field
+   * path to a field it maps a field paths to a field ordinal.
+   *
+   * Returns pairs of (full column name path, field index) in this schema as a list.
+   * For example, a schema like:
+   * <field a>          | - a
+   * <field 1>          | | - 1
+   * <field 2>          | | - 2
+   * <field b>          | - b
+   * <field c>          | - c
+   * <field `foo.bar`>  | | - `foo.bar`
+   * <field 3>          |   | - 3
+   * will return [
+   * ([a], 0), ([a, 1], 0), ([a, 2], 1), ([b], 1),
+   * ([c], 2), ([c, foo.bar], 0), ([c, foo.bar, 3], 0)
+   * ]
+   */
+  def explode(schema: StructType): Seq[(Seq[String], Int)] = {
+    def recurseIntoComplexTypes(complexType: DataType): Seq[(Seq[String], Int)] = {
+      complexType match {
+        case s: StructType => explode(s)
+        case a: ArrayType => recurseIntoComplexTypes(a.elementType)
+            .map { case (path, i) => (Seq("element") ++ path, i) }
+        case m: MapType =>
+          recurseIntoComplexTypes(m.keyType)
+              .map { case (path, i) => (Seq("key") ++ path, i) } ++
+              recurseIntoComplexTypes(m.valueType)
+                  .map { case (path, i) => (Seq("value") ++ path, i) }
+        case _ => Nil
+      }
+    }
+
+    schema.zipWithIndex.flatMap {
+      case (StructField(name, s: StructType, _, _), i) =>
+        Seq((Seq(name), i)) ++
+            explode(s).map { case (path, i) => (Seq(name) ++ path, i) }
+      case (StructField(name, a: ArrayType, _, _), i) =>
+        Seq((Seq(name), i)) ++
+            recurseIntoComplexTypes(a).map { case (path, i) => (Seq(name) ++ path, i) }
+      case (StructField(name, m: MapType, _, _), i) =>
+        Seq((Seq(name), i)) ++
+            recurseIntoComplexTypes(m).map { case (path, i) => (Seq(name) ++ path, i) }
+      case (f, i) => (Seq(f.name), i) :: Nil
+    }
   }
 }
 
