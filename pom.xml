@@ -583,7 +583,7 @@
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-spark330db</module>
+                <module>delta-lake/delta-spark332db</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
