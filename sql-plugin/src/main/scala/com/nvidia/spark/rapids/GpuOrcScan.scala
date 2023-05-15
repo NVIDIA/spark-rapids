@@ -412,7 +412,7 @@ object GpuOrcScan {
           // TIMESTAMP_INSTANT is not supported by cuDF.
           case _ => false
         }
-      case VARCHAR =>
+      case VARCHAR | CHAR =>
         toType == STRING
 
       case FLOAT | DOUBLE =>
