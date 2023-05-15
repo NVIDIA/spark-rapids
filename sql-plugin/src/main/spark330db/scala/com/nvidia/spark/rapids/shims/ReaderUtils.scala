@@ -40,6 +40,7 @@ object ReaderUtils {
         case a: AssertionError =>
           // ignore this and just return the regular conf, it might be a filesystem not supported
           // and I don't have a good way to check this
+          logWarning("Assertion error calling createDelegeHadoopConf, skipping.", a)
           conf
       }
     } else {
