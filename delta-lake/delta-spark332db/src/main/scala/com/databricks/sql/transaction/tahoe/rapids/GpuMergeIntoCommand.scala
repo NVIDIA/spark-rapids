@@ -44,7 +44,7 @@ import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BasePredicate, Expression, Literal, NamedExpression, PredicateHelper, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
-import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeIntoClause, DeltaMergeIntoMatchedDeleteClause, DeltaMergeIntoNotMatchedInsertClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoNotMatchedClause, DeltaMergeIntoMatchedUpdateClause, LogicalPlan, Project}
+import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeIntoClause, DeltaMergeIntoMatchedDeleteClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoNotMatchedClause, DeltaMergeIntoMatchedUpdateClause, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
@@ -133,7 +133,7 @@ object GpuMergeStats {
       metrics: Map[String, SQLMetric],
       condition: Expression,
       matchedClauses: Seq[DeltaMergeIntoMatchedClause],
-      notMatchedClauses: Seq[DeltaMergeIntoNotMatchedInsertClause],
+      notMatchedClauses: Seq[DeltaMergeIntoNotMatchedClause],
       isPartitioned: Boolean): GpuMergeStats = {
 
     def metricValueIfPartitioned(metricName: String): Option[Long] = {
