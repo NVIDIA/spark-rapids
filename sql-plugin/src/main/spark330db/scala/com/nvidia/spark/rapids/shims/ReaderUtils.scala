@@ -26,6 +26,11 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 
 object ReaderUtils extends Logging {
+
+  // this looks like a config that is enabled at cluster startup time and not changed dynamically
+  private lazy val isUnityCatalogEnabled =
+    SparkEnv.get.conf.get("spark.databricks.unityCatalog.enabled", "false").toBoolean
+
   /*
    * Databricks has the Unity Catalog that allows accessing files across multiple metastores and
    * catalogs. When our readers run in different threads, the credentials don't get setup
@@ -34,8 +39,7 @@ object ReaderUtils extends Logging {
    * Hadoop Filesystem, which with Unity ends up being a special Credentials file system.
    */
   def getHadoopConfForReaderThread(filePath: Path, conf: Configuration): Configuration = {
-    val unityEnabled = SparkEnv.get.conf.get("spark.databricks.unityCatalog.enabled", "false").toBoolean
-    if (unityEnabled) {
+    if (isUnityCatalogEnabled) {
       try {
         com.databricks.unity.ClusterDefaultSAM.createDelegateHadoopConf(filePath, conf)
       } catch {
