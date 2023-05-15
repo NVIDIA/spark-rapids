@@ -925,7 +925,7 @@ case class GpuMergeIntoCommand(
       val original =
       deltaTxn.deltaLog.createDataFrame(deltaTxn.snapshot, files).queryExecution.analyzed
       val transformed = original.transform {
-        case LogicalRelation(base, output, catalogTbl, isStreaming) =>
+        case LogicalRelation(base, _, catalogTbl, isStreaming) =>
           LogicalRelation(
             base,
             // We can ignore the new columns which aren't yet AttributeReferences.
@@ -979,8 +979,6 @@ case class GpuMergeIntoCommand(
     u.apply().expr
   }
 
-  private def seqToString(exprs: Seq[Expression]): String = exprs.map(_.sql).mkString("\n\t")
-
   private def getTargetOutputCols(txn: OptimisticTransaction): Seq[NamedExpression] = {
     txn.metadata.schema.map { col =>
       targetOutputAttributesMap
@@ -1014,7 +1012,7 @@ case class GpuMergeIntoCommand(
    * @param sqlMetricName name of SQL metric to update with the time taken by the thunk
    * @param thunk the code to execute
    */
-  private def recordMergeOperation[A](sqlMetricName: String = null)(thunk: => A): A = {
+  private def recordMergeOperation[A](sqlMetricName: String)(thunk: => A): A = {
     val startTimeNs = System.nanoTime()
     val r = thunk
     val timeTakenMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTimeNs)

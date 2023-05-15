@@ -422,7 +422,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case p @ GpuProjectExecLike(
         projectList,
-        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
+        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec)) =>
       // A FilterExec is between the ProjectExec and FileSourceScanExec, for cases like
       //   df.select("a").filter("a != 1")
       p.withNewChildren(Seq(
@@ -438,7 +438,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case p @ ProjectExec(
         projectList,
-        cr @ ColumnarToRowExec(f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _))) =>
+        cr @ ColumnarToRowExec(f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec))) =>
       // cpu project + gpu filter + gpu file scan
       p.withNewChildren(Seq(
         cr.withNewChildren(Seq(

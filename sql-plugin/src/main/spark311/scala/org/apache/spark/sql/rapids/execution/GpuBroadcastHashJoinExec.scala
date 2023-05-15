@@ -24,6 +24,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "331"}
@@ -68,7 +69,7 @@ class GpuBroadcastHashJoinMeta(
       left, right)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
+    filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
   }
 }
 

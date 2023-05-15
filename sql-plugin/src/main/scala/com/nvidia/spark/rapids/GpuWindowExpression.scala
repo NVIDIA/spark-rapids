@@ -786,7 +786,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  * </code>
  * which can be output.
  */
-trait BatchedRunningWindowFixer extends AutoCloseable {
+trait BatchedRunningWindowFixer extends AutoCloseable with CheckpointRestore {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -976,6 +976,26 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
     extends BatchedRunningWindowFixer with Logging {
   private var previousResult: Option[Scalar] = None
 
+  // checkpoint
+  private var checkpointPreviousResult: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    checkpointPreviousResult = previousResult
+  }
+
+  override def restore(): Unit = {
+    if (checkpointPreviousResult.isDefined) {
+      // close previous result
+      previousResult match {
+        case Some(r) if r != checkpointPreviousResult.get =>
+          r.close()
+        case _ =>
+      }
+      previousResult = checkpointPreviousResult
+      checkpointPreviousResult = None
+    }
+  }
+
   def getPreviousResult: Option[Scalar] = previousResult
 
   def updateState(finalOutputColumn: cudf.ColumnVector): Unit = {
@@ -1024,6 +1044,38 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
   private val name = "sum"
   private var previousResult: Option[Scalar] = None
   private var previousOverflow: Option[Scalar] = None
+
+  // checkpoint
+  private var checkpointResult: Option[Scalar] = None
+  private var checkpointOverflow: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    checkpointOverflow = previousOverflow
+    checkpointResult = previousResult
+  }
+
+  override def restore(): Unit = {
+    if (checkpointOverflow.isDefined) {
+      // close previous result
+      previousOverflow match {
+        case Some(r) if r != checkpointOverflow.get =>
+          r.close()
+        case _ =>
+      }
+      previousOverflow = checkpointOverflow
+      checkpointOverflow = None
+    }
+    if (checkpointResult.isDefined) {
+      // close previous result
+      previousResult match {
+        case Some(r) if r != checkpointResult.get =>
+          r.close()
+        case _ =>
+      }
+      previousResult = checkpointResult
+      checkpointResult = None
+    }
+  }
 
   def updateState(finalOutputColumn: cudf.ColumnVector,
       wasOverflow: Option[cudf.ColumnVector]): Unit = {
@@ -1255,6 +1307,28 @@ class RankFixer extends BatchedRunningWindowFixer with Logging {
   // The previous rank value
   private[this] var previousRank: Option[Scalar] = None
 
+  // checkpoint
+  private[this] var checkpointRank: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    rowNumFixer.checkpoint()
+    checkpointRank = previousRank
+  }
+
+  override def restore(): Unit = {
+    rowNumFixer.restore()
+    if (checkpointRank.isDefined) {
+      // close previous result
+      previousRank match {
+        case Some(r) if r != checkpointRank.get =>
+          r.close()
+        case _ =>
+      }
+      previousRank = checkpointRank
+      checkpointRank = None
+    }
+  }
+
   override def needsOrderMask: Boolean = true
 
   override def fixUp(
@@ -1352,6 +1426,26 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
   import DenseRankFixer._
 
   private var previousRank: Option[Scalar] = None
+
+  // checkpoint
+  private var checkpointRank: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    checkpointRank = previousRank
+  }
+
+  override def restore(): Unit = {
+    if (checkpointRank.isDefined) {
+      // close previous result
+      previousRank match {
+        case Some(r) if r != checkpointRank.get =>
+          r.close()
+        case _ =>
+      }
+      previousRank = checkpointRank
+      checkpointRank = None
+    }
+  }
 
   override def needsOrderMask: Boolean = true
 

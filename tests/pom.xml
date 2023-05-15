@@ -370,6 +370,15 @@
             </activation>
         </profile>
         <profile>
+            <id>release324</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>324</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
             <id>release330</id>
             <activation>
                 <property>

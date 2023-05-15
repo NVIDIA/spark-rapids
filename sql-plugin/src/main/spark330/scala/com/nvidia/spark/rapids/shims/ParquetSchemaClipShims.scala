@@ -21,6 +21,7 @@
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -98,7 +99,7 @@ object ParquetSchemaClipShims {
       if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
 
     def typeNotImplemented() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $parquetType")
+      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: ${typeString}")
 
     def illegalType() =
       TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $parquetType")
@@ -169,7 +170,7 @@ object ParquetSchemaClipShims {
             }
           case timestamp: TimestampLogicalTypeAnnotation
             if timestamp.getUnit == TimeUnit.MICROS || timestamp.getUnit == TimeUnit.MILLIS =>
-              TimestampType
+              ParquetTimestampAnnotationShims.timestampTypeForMillisOrMicros(timestamp)
           case timestamp: TimestampLogicalTypeAnnotation if timestamp.getUnit == TimeUnit.NANOS &&
               ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong =>
             TrampolineUtil.throwAnalysisException(

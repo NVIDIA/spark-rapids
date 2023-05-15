@@ -24,6 +24,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "331"}
@@ -86,7 +87,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         // ultimately this should be solved with the resolution of one or more of the following:
         // https://github.com/NVIDIA/spark-rapids/issues/3749
         // https://github.com/NVIDIA/spark-rapids/issues/3750
-        c => GpuFilterExec(c, joinExec, coalesceAfter = false)
+        c => GpuFilterExec(c, joinExec)(coalesceAfter = false)
       }.getOrElse(joinExec)
     }
   }
