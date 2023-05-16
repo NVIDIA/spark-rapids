@@ -224,6 +224,23 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release332db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-core</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <!--
                  Note that we are using the Spark version for all of the Databricks dependencies as well.
                  The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.

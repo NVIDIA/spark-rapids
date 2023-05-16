@@ -82,6 +82,10 @@ case "$BASE_SPARK_VERSION" in
         # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.14.1'}
         ;;
+    "3.3.2")
+        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
+        sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.14.1'}
+        ;;
     "3.2.1")
         # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.2_2.12/
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.13.2'}

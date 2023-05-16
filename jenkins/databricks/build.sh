@@ -310,7 +310,7 @@ set_dep_jars()
     dep_jars[AVRO]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro--org.apache.avro__avro__${sw_versions[AVRO]}.jar
 
     # log4j-core
-    if [[ "$BASE_SPARK_VERSION" == "3.3.0" ]]; then
+    if [[ "$BASE_SPARK_VERSION" == "3.3.0" ]] || [[ "$BASE_SPARK_VERSION" == "3.3.2" ]]; then
         artifacts[LOG4JCORE]="-DgroupId=org.apache.logging.log4j -DartifactId=log4j-core"
         dep_jars[LOG4JCORE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__${sw_versions[LOG4JCORE]}.jar
     fi
