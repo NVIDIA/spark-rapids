@@ -17,15 +17,12 @@
 package com.nvidia.spark.rapids
 
 import java.io.OutputStream
-
 import scala.collection.mutable
-
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
-
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
@@ -174,9 +171,9 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
         // to the expected types before spilling but we need a SpillableTable
         // rather than a SpillableColumnBatch to be able to do that
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
-        withResource(transform(cb)) { transformed =>
-          RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
-            withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+        RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
+          withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+            closeOnExcept(transform(cb)) { transformed =>
               withResource(GpuColumnVector.from(transformed)) { table =>
                 scanTableBeforeWrite(table)
                 anythingWritten = true
@@ -198,8 +195,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     try {
       val startTimestamp = System.nanoTime
       withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-        withResource(transform(batch)) { transformed =>
-          withResource(GpuColumnVector.from(transformed)) { table =>
+        closeOnExcept(transform(batch)) { b =>
+          withResource(GpuColumnVector.from(b)) { table =>
             scanTableBeforeWrite(table)
             anythingWritten = true
             tableWriter.write(table)
