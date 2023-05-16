@@ -111,8 +111,6 @@ case class GpuParquetScan(
     queryUsesInputFile: Boolean = false)
   extends ScanWithMetrics with FileScan with Logging {
 
-  val unitEnabled = sparkSession.sessionState.catalogManager.isUnityCatalogEnv
-
   override def isSplitable(path: Path): Boolean = true
 
   override def createReaderFactory(): PartitionReaderFactory = {
