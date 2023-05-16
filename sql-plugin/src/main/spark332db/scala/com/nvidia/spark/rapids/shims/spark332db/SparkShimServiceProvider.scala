@@ -17,7 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "332db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark330db
+package com.nvidia.spark.rapids.shims.spark332db
 
 import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
 
