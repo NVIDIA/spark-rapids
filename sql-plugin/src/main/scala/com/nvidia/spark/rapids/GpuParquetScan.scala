@@ -40,7 +40,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, PartitionedFileUtilsShim, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -710,7 +710,9 @@ private case class GpuParquetFileFilterHandler(
           conf.unset(encryptConf)
         }
       }
-      val fileHadoopConf = ReaderUtils.getHadoopConfForReaderThread(new Path(file.filePath), conf)
+      val fileHadoopConf =
+        ReaderUtils.getHadoopConfForReaderThread(
+          PartitionedFileUtilsShim.getPartitionedFilePath(file), conf)
       val footer = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
