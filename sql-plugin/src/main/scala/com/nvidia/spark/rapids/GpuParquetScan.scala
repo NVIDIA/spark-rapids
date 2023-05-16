@@ -40,7 +40,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -710,10 +710,12 @@ private case class GpuParquetFileFilterHandler(
           conf.unset(encryptConf)
         }
       }
+      val fileHadoopConf =
+        ReaderUtils.getHadoopConfForReaderThread(new Path(file.filePath.toString), conf)
       val footer = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
-            val serialized = withResource(readAndFilterFooter(file, conf,
+            val serialized = withResource(readAndFilterFooter(file, fileHadoopConf,
               readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
@@ -736,7 +738,7 @@ private case class GpuParquetFileFilterHandler(
               }
             }
           case _ =>
-            readAndSimpleFilterFooter(file, conf, filePath)
+            readAndSimpleFilterFooter(file, fileHadoopConf, filePath)
         }
       } catch {
         case e if GpuParquetCrypto.isColumnarCryptoException(e) =>
@@ -773,9 +775,9 @@ private case class GpuParquetFileFilterHandler(
       val blocks = if (pushedFilters.isDefined) {
         withResource(new NvtxRange("getBlocksWithFilter", NvtxColor.CYAN)) { _ =>
           // Use the ParquetFileReader to perform dictionary-level filtering
-          ParquetInputFormat.setFilterPredicate(conf, pushedFilters.get)
+          ParquetInputFormat.setFilterPredicate(fileHadoopConf, pushedFilters.get)
           //noinspection ScalaDeprecation
-          withResource(new ParquetFileReader(conf, footer.getFileMetaData, filePath,
+          withResource(new ParquetFileReader(fileHadoopConf, footer.getFileMetaData, filePath,
             footer.getBlocks, Collections.emptyList[ColumnDescriptor])) { parquetReader =>
             parquetReader.getRowGroups
           }
@@ -1532,13 +1534,14 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     val filePathString: String = filePath.toString
     val remoteItems = new ArrayBuffer[CopyRange](blocks.length)
     var totalBytesToCopy = 0L
+    val fileHadoopConf = ReaderUtils.getHadoopConfForReaderThread(filePath, conf)
     withResource(new ArrayBuffer[LocalCopy](blocks.length)) { localItems =>
       blocks.foreach { block =>
         block.getColumns.asScala.foreach { column =>
           val columnSize = column.getTotalSize
           val outputOffset = totalBytesToCopy + startPos
           val channel = FileCache.get.getDataRangeChannel(filePathString,
-            column.getStartingPos, columnSize, conf)
+            column.getStartingPos, columnSize, fileHadoopConf)
           if (channel.isDefined) {
             localItems += LocalCopy(channel.get, columnSize, outputOffset)
           } else {
@@ -1569,9 +1572,10 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     if (remoteCopies.isEmpty) {
       return totalBytesCopied
     }
+    val fileHadoopConf = ReaderUtils.getHadoopConfForReaderThread(filePath, conf)
     val coalescedRanges = coalesceReads(remoteCopies)
     val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
-    withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
+    withResource(filePath.getFileSystem(fileHadoopConf).open(filePath)) { in =>
       coalescedRanges.foreach { blockCopy =>
         totalBytesCopied += copyDataRange(blockCopy, in, out, copyBuffer)
       }
@@ -1581,7 +1585,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES, NoopMetric) += 1
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES_SIZE, NoopMetric) += range.length
       val cacheToken = FileCache.get.startDataRangeCache(
-        filePathString, range.offset, range.length, conf)
+        filePathString, range.offset, range.length, fileHadoopConf)
       // If we get a filecache token then we can complete the caching by providing the data.
       // If we do not get a token then we should not cache this data.
       cacheToken.foreach { token =>
@@ -2355,7 +2359,6 @@ class MultiFileCloudParquetPartitionReader(
         val filterStartTime = System.nanoTime()
         val fileBlockMeta = filterFunc(file)
         filterTime = System.nanoTime() - filterStartTime
-
         bufferStartTime = System.nanoTime()
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead

@@ -83,7 +83,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         // ultimately this should be solved with the resolution of one or more of the following:
         // https://github.com/NVIDIA/spark-rapids/issues/3749
         // https://github.com/NVIDIA/spark-rapids/issues/3750
-        c => GpuFilterExec(c, joinExec, coalesceAfter = false)
+        c => GpuFilterExec(c, joinExec)(coalesceAfter = false)
       }.getOrElse(joinExec)
     }
   }

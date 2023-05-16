@@ -57,7 +57,6 @@ class GpuBroadcastHashJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
-
     val joinExec = GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -69,10 +68,8 @@ class GpuBroadcastHashJoinMeta(
       join.isExecutorBroadcast)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
+    filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
   }
-  
-
 }
 
 case class GpuBroadcastHashJoinExec(

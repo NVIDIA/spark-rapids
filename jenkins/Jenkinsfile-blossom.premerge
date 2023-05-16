@@ -156,7 +156,7 @@ pipeline {
                             PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
                             IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
                             def CUDA_VER = "$CUDA_NAME" - "cuda"
-                            docker.build(IMAGE_PREMERGE, "-f ${PREMERGE_DOCKERFILE} --build-arg CUDA_VER=$CUDA_VER -t $IMAGE_PREMERGE .")
+                            docker.build(IMAGE_PREMERGE, "--network=host -f ${PREMERGE_DOCKERFILE} --build-arg CUDA_VER=$CUDA_VER -t $IMAGE_PREMERGE .")
                             uploadDocker(IMAGE_PREMERGE)
                         } else {
                             // if no pre-merge dockerfile change, use nightly image
