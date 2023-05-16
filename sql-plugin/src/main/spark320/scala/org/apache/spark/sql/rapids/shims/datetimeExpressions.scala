@@ -119,7 +119,8 @@ case class GpuTimeAdd(start: Expression,
             }
           case _ =>
             throw new UnsupportedOperationException(
-              "GpuTimeAdd takes column and interval as an argument only")
+              "GpuTimeAdd takes column and interval as an argument only, types " +
+                "are, left: ${lhs.getClass} right: ${rhs.getClass}")
         }
       }
     }
