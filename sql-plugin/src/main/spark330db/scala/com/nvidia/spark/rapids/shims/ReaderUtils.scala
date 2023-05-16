@@ -27,9 +27,7 @@ import org.apache.spark.internal.Logging
 
 object ReaderUtils extends Logging {
 
-  // this looks like a config that is enabled at cluster startup time and not changed dynamically
-  private lazy val isUnityCatalogEnabled =
-    SparkEnv.get.conf.get("spark.databricks.unityCatalog.enabled", "false").toBoolean
+  private lazy val isUnityCatalogEnabled = com.databricks.unity.UnityConf.isEnabled
 
   /*
    * Databricks has the Unity Catalog that allows accessing files across multiple metastores and

@@ -19,8 +19,6 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.hadoop.fs.Path
-
 import org.apache.spark.paths.SparkPath
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
@@ -37,9 +35,5 @@ object PartitionedFileUtilsShim {
 
   def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
     pf.copy(locations = locations.toArray)
-  }
-
-  def getPartitionedFilePath(partedFile: PartitionedFile): Path = {
-    partedFile.filePath.toPath
   }
 }

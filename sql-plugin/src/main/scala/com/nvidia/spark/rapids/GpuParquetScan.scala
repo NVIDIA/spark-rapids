@@ -40,7 +40,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, PartitionedFileUtilsShim, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -110,6 +110,8 @@ case class GpuParquetScan(
     rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false)
   extends ScanWithMetrics with FileScan with Logging {
+
+  val unitEnabled = sparkSession.sessionState.catalogManager.isUnityCatalogEnv
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -711,8 +713,7 @@ private case class GpuParquetFileFilterHandler(
         }
       }
       val fileHadoopConf =
-        ReaderUtils.getHadoopConfForReaderThread(
-          PartitionedFileUtilsShim.getPartitionedFilePath(file), conf)
+        ReaderUtils.getHadoopConfForReaderThread(new Path(file.filePath.toString), conf)
       val footer = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
