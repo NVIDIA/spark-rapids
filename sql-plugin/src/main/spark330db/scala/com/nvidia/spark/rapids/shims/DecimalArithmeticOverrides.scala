@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.GpuOverrides.expr
 
 import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, IntegralDivide, Multiply, Remainder}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDecimalRemainder, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
 import org.apache.spark.sql.types.DecimalType
 
 object DecimalArithmeticOverrides {
@@ -109,11 +109,16 @@ object DecimalArithmeticOverrides {
         "Remainder or modulo",
         ExprChecks.binaryProject(
           TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-          ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-          ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+          ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+          ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuRemainder(lhs, rhs)
+            if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
+              GpuDecimalRemainder(lhs, rhs)
+            }
+            else {
+              GpuRemainder(lhs, rhs)
+            }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
