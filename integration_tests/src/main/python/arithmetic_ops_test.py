@@ -398,7 +398,7 @@ mod_mixed_rhs = [byte_gen, short_gen, int_gen, long_gen] + mod_mixed_decimals_rh
 @pytest.mark.parametrize('rhs', mod_mixed_rhs, ids=idfn)
 def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : two_col_df(spark, lhs, rhs).selectExpr('a', 'b', f"a % b"))
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
 # Split into 4 tests to permute https://github.com/NVIDIA/spark-rapids/issues/7553 failures
 # @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
