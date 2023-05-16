@@ -887,3 +887,38 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
     do_write(confs)
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 2
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
+    gen_list = [("a", int_gen),
+                ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
+                ("c", string_gen),
+                ("d", SetValuesGen(IntegerType(), [1, 2, 3])),
+                ("e", long_gen)]
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
+            .partitionBy("b", "d")\
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # overwrite with a subset of the original schema
+    gen_list = [("b", SetValuesGen(StringType(), ["y"])),
+                ("e", long_gen),
+                ("c", string_gen),
+                ("d", SetValuesGen(IntegerType(), [1, 2, 3]))]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")\
+            .mode("overwrite")\
+            .partitionBy("b", "d")\
+            .option("replaceWhere", "b = 'y'")\
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))

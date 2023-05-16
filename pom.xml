@@ -581,7 +581,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.0.0</version>
+                        <version>3.3.2</version>
                         <executions>
                             <execution>
                                 <id>attach-javadoc</id>
@@ -596,6 +596,26 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+        <profile>
+            <id>jdk11</id>
+            <properties>
+                <scala.plugin.version>4.6.1</scala.plugin.version>
+                <maven.compiler.release>11</maven.compiler.release>
+                <maven.compiler.source>11</maven.compiler.source>
+                <maven.compiler.target>11</maven.compiler.target>
+                <allowConventionalDistJar>true</allowConventionalDistJar>
+            </properties>
+        </profile>
+        <profile>
+            <id>jdk17</id>
+            <properties>
+                <scala.plugin.version>4.6.1</scala.plugin.version>
+                <maven.compiler.release>17</maven.compiler.release>
+                <maven.compiler.source>17</maven.compiler.source>
+                <maven.compiler.target>17</maven.compiler.target>
+                <allowConventionalDistJar>true</allowConventionalDistJar>
+            </properties>
         </profile>
     </profiles>
 
@@ -729,6 +749,9 @@
             331,
             340
         </jdk11.buildvers>
+        <jdk17.buildvers>
+            330
+        </jdk17.buildvers>
         <all.buildvers>
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
@@ -1040,7 +1063,7 @@
                             <arg>-feature</arg>
                             <arg>-explaintypes</arg>
                             <arg>-Yno-adapted-args</arg>
-                            <arg>-Ywarn-unused:imports</arg>
+                            <arg>-Ywarn-unused:imports,locals,patvars,privates</arg>
                             <arg>-Xlint:missing-interpolator</arg>
                             <arg>-Xfatal-warnings</arg>
                         </args>

@@ -272,6 +272,10 @@ def test_filter_with_project(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, BooleanGen(), data_gen).filter(f.col('a')).selectExpr('*', 'a as a2'))
 
+def test_nondeterministic_filter():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, LongGen(), 1).filter(f.rand(0) > 0.5))
+
 @pytest.mark.parametrize('expr', [f.lit(True), f.lit(False), f.lit(None).cast('boolean')], ids=idfn)
 def test_filter_with_lit(expr):
     assert_gpu_and_cpu_are_equal_collect(

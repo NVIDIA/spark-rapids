@@ -312,7 +312,7 @@ case class GpuOutOfCoreSortIterator(
 
   private final def splitTableAfterSort(
       sortedTbl: Table,
-      sortedOffset: Int = -1): (Option[SpillableColumnarBatch], Seq[OutOfCoreBatch]) = {
+      sortedOffset: Int): (Option[SpillableColumnarBatch], Seq[OutOfCoreBatch]) = {
     var memUsed: Long = GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
     // We need to figure out how to split up the data into reasonable batches. We could try and do
     // something really complicated and figure out how much data get per batch, but in practice

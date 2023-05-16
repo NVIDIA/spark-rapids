@@ -86,10 +86,18 @@
             </properties>
         </profile>
         <profile>
-            <id>jdk11</id>
+            <id>jdk11-test</id>
             <properties>
                 <included_buildvers>
                     ${jdk11.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>jdk17-test</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk17.buildvers}
                 </included_buildvers>
             </properties>
         </profile>

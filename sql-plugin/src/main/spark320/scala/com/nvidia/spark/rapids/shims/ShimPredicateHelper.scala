@@ -43,7 +43,7 @@ trait ShimPredicateHelper extends PredicateHelper {
     condition match {
       case GpuAnd(cond1, cond2) =>
         splitConjunctivePredicates(cond1) ++ splitConjunctivePredicates(cond2)
-      case other => super.splitConjunctivePredicates(condition)
+      case _ => super.splitConjunctivePredicates(condition)
     }
   }
 }

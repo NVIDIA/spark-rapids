@@ -147,14 +147,25 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
     with MockitoSugar
-    with ShuffleChecksumTestHelper 
+    with ShuffleChecksumTestHelper
     with Logging {
+  @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS) private var blockManager: BlockManager = _
+
+  @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS) private var diskBlockManager: DiskBlockManager = _
+
+  @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS) private var taskContext: TaskContext = _
+
+  @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS) private var blockResolver: TestIndexShuffleBlockResolver = _
+
+  @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS)
     private var dependency: GpuShuffleDependency[Int, Int, Int] = _
+
+  @scala.annotation.nowarn("msg=consider using immutable val")
   @Mock(answer = RETURNS_SMART_NULLS)
     private var dependencyBad: GpuShuffleDependency[Int, BadSerializable, BadSerializable] = _
 

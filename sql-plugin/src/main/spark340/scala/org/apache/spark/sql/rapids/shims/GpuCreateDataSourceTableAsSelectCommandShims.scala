@@ -126,10 +126,4 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         throw ex
     }
   }
-
-  private val isPartitioned = table.partitionColumnNames.nonEmpty
-
-  private val isBucketed = table.bucketSpec.nonEmpty
-
-  private val needSort = isPartitioned || isBucketed
 }

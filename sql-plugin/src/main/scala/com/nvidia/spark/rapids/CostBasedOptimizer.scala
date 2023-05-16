@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -439,7 +439,7 @@ object RowCountPlanVisitor {
   def visit(plan: SparkPlanMeta[_]): Option[BigInt] = plan.wrapped match {
     case p: QueryStageExec =>
       p.getRuntimeStatistics.rowCount
-    case p: GlobalLimitExec =>
+    case _: GlobalLimitExec =>
       GlobalLimitShims.visit(plan.asInstanceOf[SparkPlanMeta[GlobalLimitExec]])
     case LocalLimitExec(limit, _) =>
       // LocalLimit applies the same limit for each partition

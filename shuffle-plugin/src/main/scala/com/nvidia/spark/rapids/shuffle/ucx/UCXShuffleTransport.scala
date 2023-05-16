@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -289,15 +289,6 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       () => RmmSpark.associateCurrentThreadWithShuffle(),
       () => RmmSpark.removeCurrentThreadAssociation()))
 
-  // This executor handles any task that would block (e.g. wait for spill synchronously due to OOM)
-  private[this] val serverCopyExecutor = Executors.newSingleThreadExecutor(
-    GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
-      .setNameFormat(s"shuffle-server-copy-thread-%d")
-      .setDaemon(true)
-      .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()))
-
   // This is used to queue up on the server all the [[BufferSendState]] as the server waits for
   // bounce buffers to become available (it is the equivalent of the transport's throttle, minus
   // the inflight limit)
@@ -436,7 +427,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         while (requestIx < requestsToHandle.size) {
           var hasBounceBuffers = true
           var fitsInFlight = true
-          var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
+          val perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
           var reqToHandle: PendingTransferRequest = null
           val putBack = new ArrayBuffer[PendingTransferRequest]()
           //NOTE: If the in-flight limit is high, we will run through every request
