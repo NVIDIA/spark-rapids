@@ -506,6 +506,23 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release332db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-spark332db_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release333</id>
             <activation>
                 <property>
