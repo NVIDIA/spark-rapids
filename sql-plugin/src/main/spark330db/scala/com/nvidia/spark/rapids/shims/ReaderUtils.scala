@@ -22,7 +22,6 @@ package com.nvidia.spark.rapids.shims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 
 object ReaderUtils extends Logging {
