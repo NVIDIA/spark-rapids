@@ -178,6 +178,11 @@ object GpuCSVScan {
     }
     // TODO parsedOptions.emptyValueInRead
 
+    if (GpuCsvUtils.enableDateTimeParsingFallback(parsedOptions) &&
+        (types.contains(DateType) || types.contains(TimestampType))) {
+      meta.willNotWorkOnGpu(s"GpuCSVScan does not support enableDateTimeParsingFallback")
+    }
+
     if (!meta.conf.isCsvFloatReadEnabled && types.contains(FloatType)) {
       meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
