@@ -166,7 +166,7 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
 
-@pytest.mark.skipif(is_spark_340_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
+@pytest.mark.skipif(is_spark_340_or_later() or is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 @pytest.mark.allow_non_gpu("DataWritingCommandExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):

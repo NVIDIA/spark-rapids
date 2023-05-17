@@ -20,7 +20,8 @@ from conftest import spark_jvm
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
-from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session
+from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session, \
+    is_databricks122_or_later
 
 # Using timestamps from 1970 to work around a cudf ORC bug
 # https://github.com/NVIDIA/spark-rapids/issues/140.
@@ -96,7 +97,7 @@ def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tm
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
     with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
     storage, confs = storage_with_confs
-    fallback_class = "DataWritingCommandExec" if is_before_spark_340() else "ExecutedCommandExec"
+    fallback_class = "ExecutedCommandExec" if is_spark_340_or_later() or is_databricks122_or_later() else "DataWritingCommandExec"
     assert_gpu_fallback_collect(
         lambda spark: spark.sql("CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
             spark_tmp_table_factory.get(), storage, data_table)),
@@ -115,14 +116,14 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
     with_cpu_session(lambda spark: gen_df(spark, gen_list).createOrReplaceTempView(data_table))
     storage, opts = storage_with_opts
     opts_string = ", ".join(["'{}'='{}'".format(k, v) for k, v in opts.items()])
-    fallback_class = "DataWritingCommandExec" if is_before_spark_340() else "ExecutedCommandExec"
+    fallback_class = "ExecutedCommandExec" if is_spark_340_or_later() or is_databricks122_or_later() else "DataWritingCommandExec"
     assert_gpu_fallback_collect(
         lambda spark: spark.sql("CREATE TABLE {} OPTIONS ({}) STORED AS {} AS SELECT * FROM {}".format(
             spark_tmp_table_factory.get(), opts_string, storage, data_table)),
         fallback_class)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-@pytest.mark.skipif(not (is_hive_available() and is_spark_33X()),
+@pytest.mark.skipif(not (is_hive_available() and is_spark_33X() and not is_databricks122_or_later()),
                     reason="Requires Hive and Spark 3.3.X to write bucketed Hive tables")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
