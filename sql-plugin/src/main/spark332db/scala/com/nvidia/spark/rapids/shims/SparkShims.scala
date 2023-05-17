@@ -55,10 +55,18 @@ object SparkShimImpl extends Spark321PlusDBShims {
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val elementAtExpr: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[KnownNullable](
+        "Tags the expression as being nullable",
+        ExprChecks.unaryProjectInputMatchesOutput(
+          TypeSig.all, TypeSig.all),
+        (a, conf, p, r) => new UnaryExprMeta[KnownNullable](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = GpuKnownNullable(child)
+        }
+      ),
       GpuElementAtMeta.elementAtRule(true)
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
+    super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
