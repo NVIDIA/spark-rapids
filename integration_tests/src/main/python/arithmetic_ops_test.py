@@ -388,29 +388,17 @@ def test_mod_pmod_by_zero_not_ansi(data_gen):
             'cast(-12 as {}) % cast(0 as {})'.format(string_type, string_type)),
         {'spark.sql.ansi.enabled': 'false'})
 
-mod_mixed_decimals_lhs = [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2),
-                           DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)]
-mod_mixed_decimals_rhs = [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12),
-                          DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)]
-mod_mixed_lhs = [byte_gen, short_gen, int_gen, long_gen] + mod_mixed_decimals_lhs
-mod_mixed_rhs = [byte_gen, short_gen, int_gen, long_gen] + mod_mixed_decimals_rhs
-@pytest.mark.parametrize('lhs', mod_mixed_lhs, ids=idfn)
-@pytest.mark.parametrize('rhs', mod_mixed_rhs, ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
+    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
+    DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
+    DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
+    DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
 def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
 # Split into 4 tests to permute https://github.com/NVIDIA/spark-rapids/issues/7553 failures
-# @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
-#     DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
-#     DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)], ids=idfn)
-# @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
-#     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
-#     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
-# def test_mod_mixed(lhs, rhs):
-#     assert_gpu_and_cpu_are_equal_collect(
-#         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
-
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 def test_pmod_mixed_numeric(lhs, rhs):

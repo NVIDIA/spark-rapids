@@ -201,7 +201,8 @@ case class GpuSubtract(
 
 case class GpuRemainder(left: Expression, right: Expression)
     extends GpuRemainderBase(left, right) {
-  assert(!left.dataType.isInstanceOf[DecimalType],
+  assert(!left.dataType.isInstanceOf[DecimalType] ||
+         !right.dataType.isInstanceOf[DecimalType],
     "DecimalType remainder need to be handled by GpuDecimalRemainder")
 }
 
@@ -398,7 +399,8 @@ case class GpuDecimalMultiply(
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression) extends GpuIntegralDivideParent(left, right) {
-  assert(!left.dataType.isInstanceOf[DecimalType],
+  assert(!left.dataType.isInstanceOf[DecimalType] ||
+         !right.dataType.isInstanceOf[DecimalType],
     "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")
 }
 
