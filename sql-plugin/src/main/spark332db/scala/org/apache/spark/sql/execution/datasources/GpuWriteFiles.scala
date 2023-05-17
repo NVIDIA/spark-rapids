@@ -15,6 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "332db"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources

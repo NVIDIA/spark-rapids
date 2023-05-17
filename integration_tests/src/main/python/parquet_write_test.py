@@ -20,7 +20,8 @@ from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, is_databricks_runtime, is_before_spark_340, is_spark_340_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, \
+    is_databricks_runtime, is_before_spark_340, is_spark_340_or_later, is_databricks122_or_later
 
 import pyspark.sql.functions as f
 import pyspark.sql.utils
@@ -479,7 +480,7 @@ def test_roundtrip_with_rebase_values(spark_tmp_path, ts_write_data_gen, date_ti
         conf=all_confs)
 
 
-test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]
+test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() or is_databricks122_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]
 
 @pytest.mark.allow_non_gpu(*test_non_empty_ctas_non_gpu_execs)
 @pytest.mark.parametrize('allow_non_empty', [True, False])

@@ -61,8 +61,20 @@ object SparkShimImpl extends Spark321PlusDBShims {
     super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
   }
 
+  private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+    GpuOverrides.exec[WriteFilesExec](
+      "v1 write files",
+      // WriteFilesExec always has patterns:
+      //   InsertIntoHadoopFsRelationCommand(WriteFilesExec) or InsertIntoHiveTable(WriteFilesExec)
+      // The parent node of `WriteFilesExec` will check the types, here just let type check pass
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (write, conf, p, r) => new GpuWriteFilesMeta(write, conf, p, r)
+    )
+  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
+
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ PythonMapInArrowExecShims.execs
+    super.getExecs ++ shimExecs ++ PythonMapInArrowExecShims.execs
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
     DataWritingCommandRule[_ <: DataWritingCommand]] = {
