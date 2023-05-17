@@ -93,8 +93,9 @@ byte_array_index_gen = ByteGen(min_val=-25, max_val=25, special_cases=[None])
 short_array_index_gen = ShortGen(min_val=-25, max_val=25, special_cases=[None])
 int_array_index_gen = IntegerGen(min_val=-25, max_val=25, special_cases=[None])
 long_array_index_gen = LongGen(min_val=-25, max_val=25, special_cases=[None])
+overflow_long_array_index_gen = LongGen(special_cases=[None])
 
-array_index_gens = [byte_array_index_gen, short_array_index_gen, int_array_index_gen, long_array_index_gen]
+array_index_gens = [byte_array_index_gen, short_array_index_gen, int_array_index_gen, long_array_index_gen, overflow_long_array_index_gen]
 
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
 @pytest.mark.parametrize('index_gen', array_index_gens, ids=idfn)
