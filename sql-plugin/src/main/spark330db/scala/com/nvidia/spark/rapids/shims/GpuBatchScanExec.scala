@@ -87,7 +87,7 @@ case class GpuBatchScanExec(
 
           val newRows = new InternalRowSet(p.expressions.map(_.dataType))
           newRows ++= newPartitions.map(_.asInstanceOf[HasPartitionKey].partitionKey())
-          val oldRows = p.partitionValues
+          val oldRows = p.partitionValuesOpt.get
 
           if (oldRows.size != newRows.size) {
             throw new SparkException("Data source must have preserved the original partitioning " +
