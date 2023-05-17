@@ -149,6 +149,11 @@ object GpuJsonScan {
         GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
 
+    if(GpuJsonUtils.enableDateTimeParsingFallback(parsedOptions) &&
+        (types.contains(DateType) || types.contains(TimestampType))) {
+      meta.willNotWorkOnGpu(s"GpuJsonScan does not support enableDateTimeParsingFallback")
+    }
+
     if (!meta.conf.isJsonFloatReadEnabled && types.contains(FloatType)) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")

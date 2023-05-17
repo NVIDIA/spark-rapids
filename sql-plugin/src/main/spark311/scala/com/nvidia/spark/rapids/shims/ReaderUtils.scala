@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,24 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
+{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "333"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.catalyst.json
+package com.nvidia.spark.rapids.shims
 
-object GpuJsonUtils {
-  def dateFormatInRead(options: JSONOptions): String = options.dateFormat
-  def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat
-  def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
+
+object ReaderUtils {
+  def getHadoopConfForReaderThread(filePath: Path, conf: Configuration): Configuration = {
+    conf
+  }
 }

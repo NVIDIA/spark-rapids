@@ -416,3 +416,22 @@ def test_from_json_struct_of_list(data_gen, schema):
         lambda spark : unary_op_df(spark, data_gen) \
             .select(f.from_json(f.col('a'), schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema', [("dates.json", _date_schema),("dates.json", _timestamp_schema),
+                                             ("timestamps.json", _timestamp_schema)])
+def test_json_datetime_parsing_fallback_cpu_fallback(std_input_path, filename, schema):
+    data_path = std_input_path + "/" + filename
+    assert_gpu_fallback_collect(
+        lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").json(data_path),
+        'FileSourceScanExec',
+        conf=_enable_all_types_conf)
+
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema', [("ints.json", _int_schema)])
+def test_json_datetime_parsing_fallback_no_datetime(std_input_path, filename, schema):
+    data_path = std_input_path + "/" + filename
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").json(data_path),
+        conf=_enable_all_types_conf)

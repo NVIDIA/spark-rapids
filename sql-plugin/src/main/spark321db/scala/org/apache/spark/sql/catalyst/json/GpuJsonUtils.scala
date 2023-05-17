@@ -32,4 +32,6 @@ object GpuJsonUtils {
     } else {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"
     })
+
+  def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
 }
