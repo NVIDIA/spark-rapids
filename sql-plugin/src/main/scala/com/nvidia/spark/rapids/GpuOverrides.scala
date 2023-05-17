@@ -2415,7 +2415,7 @@ object GpuOverrides extends Logging {
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
             TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ordinal", TypeSig.INT, TypeSig.INT)),
+        ("ordinal", TypeSig.integral, TypeSig.integral)),
       (in, conf, p, r) => new BinaryExprMeta[GetArrayItem](in, conf, p, r) {
         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
           GpuGetArrayItem(arr, ordinal, in.failOnError)
