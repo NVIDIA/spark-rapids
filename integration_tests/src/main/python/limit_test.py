@@ -27,8 +27,9 @@ def test_simple_limit(data_gen):
         conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
 
-def offset_test_wrapper(sql):
-    conf = {'spark.rapids.sql.exec.CollectLimitExec': 'true'}
+def offset_test_wrapper(sql, batch_size):
+    conf = {'spark.rapids.sql.exec.CollectLimitExec': 'true',
+            'spark.rapids.sql.batchSizeBytes': batch_size}
 
     # Create dataframe to test CollectLimit
     def spark_df(spark):
@@ -43,21 +44,23 @@ def offset_test_wrapper(sql):
 
 
 @pytest.mark.parametrize('offset', [1024, 2048, 4096])
+@pytest.mark.parametrize('batch_size', ['1000', '1g'])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
-def test_non_zero_offset(offset):
+def test_non_zero_offset(offset, batch_size):
     # offset is used in the test cases having no limit, that is limit = -1
     # 1024: offset < df.numRows
     # 2048: offset = df.numRows
     # 4096: offset > df.numRows
 
     sql = "select * from tmp_table offset {}".format(offset)
-    offset_test_wrapper(sql)
+    offset_test_wrapper(sql, batch_size)
 
 
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
+@pytest.mark.parametrize('batch_size', ['1000', '1g'])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 @allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
-def test_non_zero_offset_with_limit(limit, offset):
+def test_non_zero_offset_with_limit(limit, offset, batch_size):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:
     # (0, 0): Corner case: both limit and offset are 0
@@ -69,14 +72,15 @@ def test_non_zero_offset_with_limit(limit, offset):
     # (100, 600): offset > limit
 
     sql = "select * from tmp_table limit {} offset {}".format(limit, offset)
-    offset_test_wrapper(sql)
+    offset_test_wrapper(sql, batch_size)
 
-@pytest.mark.parametrize('data_gen', all_gen)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
+@pytest.mark.parametrize('batch_size', ['1000', '1g'])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 @allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
 @approximate_float
-def test_order_by_offset_with_limit(limit, offset, data_gen):
+def test_order_by_offset_with_limit(limit, offset, data_gen, batch_size):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:
     # (0, 0): Corner case: both limit and offset are 0
@@ -91,4 +95,4 @@ def test_order_by_offset_with_limit(limit, offset, data_gen):
         unary_op_df(spark, data_gen).createOrReplaceTempView("tmp_table")
         sql = "select * from tmp_table order by a limit {} offset {}".format(limit, offset)
         return spark.sql(sql)
-    assert_gpu_and_cpu_are_equal_collect(spark_df)
+    assert_gpu_and_cpu_are_equal_collect(spark_df, conf={'spark.rapids.sql.batchSizeBytes': batch_size})

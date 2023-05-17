@@ -206,26 +206,35 @@ object GpuTopN {
     }
   }
 
-  private[this] def takeN(batch: ColumnarBatch, count: Int, offset: Int): ColumnarBatch = {
-    val end = Math.min(count, batch.numRows())
+  private[this] def sliceBatch(batch: ColumnarBatch, begin: Int, limit: Int): ColumnarBatch = {
+    val end = Math.min(limit, batch.numRows())
+    val start = Math.max(0, Math.min(begin, end))
     val numColumns = batch.numCols()
     closeOnExcept(new Array[ColumnVector](numColumns)) { columns =>
       val bases = GpuColumnVector.extractBases(batch)
       (0 until numColumns).foreach { i =>
         columns(i) =
-          GpuColumnVector.from(bases(i).subVector(offset, end), batch.column(i).dataType())
+          GpuColumnVector.from(bases(i).subVector(start, end), batch.column(i).dataType())
       }
-      new ColumnarBatch(columns, end)
+      new ColumnarBatch(columns, end - start)
     }
+  }
+
+  private[this] def takeN(batch: ColumnarBatch, count: Int): ColumnarBatch = {
+    sliceBatch(batch, 0, count)
+  }
+
+
+  private[this] def applyOffset(batch: ColumnarBatch, offset: Int): ColumnarBatch = {
+    sliceBatch(batch, offset, batch.numRows())
   }
 
   def apply(limit: Int,
       sorter: GpuSorter,
       batch: ColumnarBatch,
-      sortTime: GpuMetric,
-      offset: Int): ColumnarBatch = {
+      sortTime: GpuMetric): ColumnarBatch = {
     withResource(sorter.fullySortBatch(batch, sortTime, NoopMetric)) { sorted =>
-      takeN(sorted, limit, offset)
+      takeN(sorted, limit)
     }
   }
 
@@ -256,31 +265,38 @@ object GpuTopN {
 
             val runningResult = if (pending.isEmpty) {
               withResource(input) { input =>
-                apply(limit, sorter, input, sortTime, offset)
+                apply(limit, sorter, input, sortTime)
               }
             } else if (totalSize > Integer.MAX_VALUE) {
               // The intermediate size is likely big enough we don't want to risk an overflow,
               // so sort/slice before we concat and sort/slice again.
               val tmp = withResource(input) { input =>
-                apply(limit, sorter, input, sortTime, offset)
+                apply(limit, sorter, input, sortTime)
               }
               withResource(concatAndClose(pending.get, tmp, concatTime)) { concat =>
-                apply(limit, sorter, concat, sortTime, offset)
+                apply(limit, sorter, concat, sortTime)
               }
             } else {
               // The intermediate size looks like we could never overflow the indexes so
               // do it the more efficient way and concat first followed by the sort/slice
               withResource(concatAndClose(pending.get, input, concatTime)) { concat =>
-                apply(limit, sorter, concat, sortTime, offset)
+                apply(limit, sorter, concat, sortTime)
               }
             }
             pending =
                 Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
-        val ret = pending.get.getColumnarBatch()
+        val tmp = pending.get.getColumnarBatch()
         pending.get.close()
         pending = None
+        val ret = if (offset > 0) {
+          withResource(tmp) { _ =>
+            applyOffset(tmp, offset)
+          }
+        } else {
+          tmp
+        }
         outputBatches += 1
         outputRows += ret.numRows()
         ret
