@@ -21,6 +21,10 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import java.net.URI
+
+import scala.collection.mutable.ListBuffer
+
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.{AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, Constraints}
