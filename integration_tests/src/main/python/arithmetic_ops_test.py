@@ -398,6 +398,15 @@ def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
+
+@allow_non_gpu("ProjectExec", "Remainder")
+@pytest.mark.skipif(not is_databricks113_or_later() and not is_spark_340_or_later(), reason="Handling decimal128 overflow is a Spark 3.4 feature")
+@pytest.mark.parametrize('lhs', [DecimalGen(38,0), DecimalGen(37,2), DecimalGen(38,5)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(27,7), DecimalGen(30,10), DecimalGen(38,1)], ids=idfn)
+def test_mod_mixed_overflow_fallback(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"), "Remainder")
+
 # Split into 4 tests to permute https://github.com/NVIDIA/spark-rapids/issues/7553 failures
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
