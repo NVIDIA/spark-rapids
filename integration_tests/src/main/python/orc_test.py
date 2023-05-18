@@ -718,3 +718,14 @@ def test_orc_read_count(spark_tmp_path):
 def test_orc_read_varchar_as_string(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))
+
+
+@pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
+@pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
+def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
+    """
+    Test that a file containing CHAR data is readable as STRING.
+    """
+    assert_gpu_and_cpu_are_equal_collect(
+        reader(std_input_path + '/' + data_file),
+        conf={})
