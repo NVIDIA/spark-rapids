@@ -103,7 +103,14 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    val (array, indices) = (lhs.getBase, rhs.getBase)
+    val (array, initialIndices) = (lhs.getBase, rhs.getBase)
+    // Spark does not check for overflow/underflow when casting
+    withResource(initialIndices.castTo(DType.INT32)) { indices =>
+      getItemInternal(array, indices)
+    }
+  }
+
+  private def getItemInternal(array: ColumnVector, indices: ColumnVector): ColumnVector = {
     val indicesCol = withResource(Scalar.fromInt(0)) { zeroS =>
       withResource(indices.lessThan(zeroS)) { hasNegativeIndicesCV =>
         if (failOnError) {
@@ -163,8 +170,9 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
       // the same with what Spark does.
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
     } else {
-      // The index is valid, and array column contains at least one non-null row.
-      val ordinal = ordinalS.getValue.asInstanceOf[Int]
+      // Spark does not worry about overflow/underflow on a long. This is almost
+      // exactly what they do to get the index
+      val ordinal = ordinalS.getValue.asInstanceOf[Number].intValue()
       if (failOnError) {
         // Check if index is out of bound only when ansi mode is enabled, since cuDF
         // returns nulls if index is out of bound, the same with what Spark does when
