@@ -402,7 +402,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     @Override
     public void copyColumnar(ColumnVector cv, int colNum, int rows) {
-      HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
+      if (builders.length > 0) {
+        HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
+      }
     }
 
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
