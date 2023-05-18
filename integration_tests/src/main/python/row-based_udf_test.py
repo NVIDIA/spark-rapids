@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from spark_session import with_spark_session
+from spark_session import with_spark_session, is_databricks122_or_later
 from conftest import skip_unless_precommit_tests
 
 def drop_udf(spark, udfname):
@@ -43,6 +43,7 @@ def test_hive_empty_simple_udf():
         "SELECT i, emptysimple(s, 'const_string') FROM hive_simple_udf_test_table",
         conf={'spark.rapids.sql.rowBasedUDF.enabled': 'true'})
 
+@pytest.mark.skipif(is_databricks122_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/8318')
 def test_hive_empty_generic_udf():
     with_spark_session(skip_if_no_hive)
     def evalfn(spark):
