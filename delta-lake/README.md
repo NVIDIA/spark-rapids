@@ -10,7 +10,7 @@ The following table shows the mapping of Delta Lake versions to their supported 
 and directory contains the corresponding support code.
 
 | Delta Lake Version | Spark Version   | Directory          |
-| ------------------ | --------------- | ------------------ |
+|--------------------|-----------------|--------------------|
 | 2.0.x              | Spark 3.2.x     | `delta-20x`        |
 | 2.1.x              | Spark 3.3.x     | `delta-21x`        |
 | 2.2.x              | Spark 3.3.x     | `delta-22x`        |
@@ -31,7 +31,7 @@ submodules via the Maven build helper plugin.
 The following table details how the common subdirectories map to Delta Lake versions.
 
 | Directory                    | Applicable to Delta Lake Versions          |
-| ---------------------------- | ------------------------------------------ |
+|------------------------------|--------------------------------------------|
 | `common/src/main/scala`      | All supported                              |
 | `common/src/main/databricks` | Delta Lake on all Databricks platforms     |
 | `common/src/main/delta-io`   | Delta Lake on all non-Databricks platforms |
