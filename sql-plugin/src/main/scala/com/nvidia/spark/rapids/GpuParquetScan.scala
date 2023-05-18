@@ -1953,7 +1953,7 @@ class MultiFileParquetPartitionReader(
       extraInfo.isCorrectedInt96RebaseMode, extraInfo.isCorrectedRebaseMode,
       extraInfo.hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
       clippedSchema, None,
-      _ => ()) // The max size is computed later on...
+      tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
   }
 
   override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
