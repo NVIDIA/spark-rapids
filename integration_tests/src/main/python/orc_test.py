@@ -774,3 +774,14 @@ def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, kee
                  'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.orc(data_path), conf=all_confs)
+
+
+@pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
+@pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
+def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
+    """
+    Test that a file containing CHAR data is readable as STRING.
+    """
+    assert_gpu_and_cpu_are_equal_collect(
+        reader(std_input_path + '/' + data_file),
+        conf={})
