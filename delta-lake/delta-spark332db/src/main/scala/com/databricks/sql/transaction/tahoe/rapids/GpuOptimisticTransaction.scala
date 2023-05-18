@@ -62,10 +62,10 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction(
-                                deltaLog: DeltaLog,
-                                snapshot: Snapshot,
-                                rapidsConf: RapidsConf)(implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
+    deltaLog: DeltaLog,
+    snapshot: Snapshot,
+    rapidsConf: RapidsConf)(implicit clock: Clock)
+    extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -77,19 +77,19 @@ class GpuOptimisticTransaction(
   }
 
   private def getGpuStatsColExpr(
-                                  statsDataSchema: Seq[Attribute],
-                                  statsCollection: GpuStatisticsCollection): Expression = {
+      statsDataSchema: Seq[Attribute],
+      statsCollection: GpuStatisticsCollection): Expression = {
     Dataset.ofRows(spark, LocalRelation(statsDataSchema))
-      .select(to_json(statsCollection.statsCollector))
-      .queryExecution.analyzed.expressions.head
+        .select(to_json(statsCollection.statsCollector))
+        .queryExecution.analyzed.expressions.head
   }
 
   /** Return the pair of optional stats tracker and stats collection class */
   private def getOptionalGpuStatsTrackerAndStatsCollection(
-                                                            output: Seq[Attribute],
-                                                            partitionSchema: StructType, data: DataFrame): (
-    Option[GpuDeltaJobStatisticsTracker],
-      Option[GpuStatisticsCollection]) = {
+      output: Seq[Attribute],
+      partitionSchema: StructType, data: DataFrame): (
+      Option[GpuDeltaJobStatisticsTracker],
+          Option[GpuStatisticsCollection]) = {
     if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
 
       val (statsDataSchema, statsCollectionSchema) = getStatsSchema(output, partitionSchema)
@@ -101,7 +101,7 @@ class GpuOptimisticTransaction(
         // If collecting stats using the table schema, then pass in statsCollectionSchema.
         // Otherwise pass in statsDataSchema to collect stats using the DataFrame schema.
         if (spark.sessionState.conf.getConf(DeltaSQLConf
-          .DELTA_COLLECT_STATS_USING_TABLE_SCHEMA)) {
+            .DELTA_COLLECT_STATS_USING_TABLE_SCHEMA)) {
           statsCollectionSchema.toStructType
         } else {
           statsDataSchema.toStructType
@@ -123,16 +123,16 @@ class GpuOptimisticTransaction(
         GpuStatisticsCollection.batchStatsToRow(statsSchema, explodedDataSchema, batch, row)
       }
       (Some(new GpuDeltaJobStatisticsTracker(statsDataSchema, statsColExpr, batchStatsToRow)),
-        Some(statsCollection))
+          Some(statsCollection))
     } else {
       (None, None)
     }
   }
 
   override def writeFiles(
-                           inputData: Dataset[_],
-                           writeOptions: Option[DeltaOptions],
-                           additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
+      inputData: Dataset[_],
+      writeOptions: Option[DeltaOptions],
+      additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
     hasWritten = true
 
     val spark = inputData.sparkSession
@@ -228,7 +228,7 @@ class GpuOptimisticTransaction(
         case Some(writeOptions) =>
           writeOptions.options.filterKeys { key =>
             key.equalsIgnoreCase(DeltaOptions.MAX_RECORDS_PER_FILE) ||
-              key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
+                key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
           }.toMap
       }
 
@@ -287,12 +287,12 @@ class GpuOptimisticTransaction(
     // (Auto compaction checks are derived from the work in
     //  https://github.com/delta-io/delta/pull/1156).
     lazy val autoCompactEnabled =
-    spark.sessionState.conf
-      .getConf[String](DeltaSQLConf.DELTA_AUTO_COMPACT_ENABLED)
-      .getOrElse {
-        DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
-          .getOrElse("false")
-      }.toBoolean
+      spark.sessionState.conf
+        .getConf[String](DeltaSQLConf.DELTA_AUTO_COMPACT_ENABLED)
+        .getOrElse {
+          DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
+            .getOrElse("false")
+        }.toBoolean
 
     if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
       registerPostCommitHook(GpuDoAutoCompaction)
