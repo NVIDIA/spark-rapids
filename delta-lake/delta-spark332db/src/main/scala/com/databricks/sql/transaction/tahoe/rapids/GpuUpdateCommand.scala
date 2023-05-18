@@ -75,11 +75,8 @@ case class GpuUpdateCommand(
   final override def run(sparkSession: SparkSession): Seq[Row] = {
     recordDeltaOperation(tahoeFileIndex.deltaLog, "delta.dml.update") {
       val deltaLog = tahoeFileIndex.deltaLog
-
-      //TODO this method no longer exists
-      //deltaLog.assertRemovable()
-
       gpuDeltaLog.withNewTransaction { txn =>
+        DeltaLog.assertRemovable(txn.snapshot)
         performUpdate(sparkSession, deltaLog, txn)
       }
       // Re-cache all cached plans(including this relation itself, if it's cached) that refer to
