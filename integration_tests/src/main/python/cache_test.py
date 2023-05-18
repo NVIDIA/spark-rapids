@@ -339,3 +339,8 @@ def test_aqe_cache_join(data_gen):
         df2 = df1.alias('df2')
         return df1.join(df2, df1.a == df2.a, 'Outer')
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+@ignore_order
+@allow_non_gpu("InMemoryTableScanExec", "ProjectExec")
+def test_cache_count():
+    conf={"spark.sql.session.timeZone": "America/Los_Angeles"}
+    function_to_test_on_cached_df(with_gpu_session, lambda df: df.selectExpr("cast(a as timestamp)").cache().count(), int_gen, test_conf=conf)
