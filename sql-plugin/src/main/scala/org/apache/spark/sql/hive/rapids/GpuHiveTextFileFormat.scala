@@ -18,7 +18,7 @@ package org.apache.spark.sql.hive.rapids
 
 import java.nio.charset.Charset
 
-import ai.rapids.cudf.{CSVWriterOptions, DType, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
+import ai.rapids.cudf.{CSVWriterOptions, DType, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
@@ -28,7 +28,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.GpuInsertIntoHiveTableMeta
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.{DataType, StringType, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuHiveTextFileFormat extends Logging {
 
@@ -129,23 +130,15 @@ class GpuHiveTextWriter(override val path: String,
   extends ColumnarOutputWriter(context, dataSchema, "HiveText", false) {
 
   /**
-   * This CSV writer reformats columns, to iron out inconsistencies between
+   * This reformats columns, to iron out inconsistencies between
    * CUDF serialization results and the values expected by Apache Spark
    * (and Apache Hive's) `LazySimpleSerDe`.
    *
    * This writer currently reformats timestamp and floating point
    * columns.
-   *
-   * @param writeOptions CSVWriterOptions for serializing in CSV with CUDF
-   * @param bufferConsumer In-memory buffer for storing the written results
    */
-  class ComplianceReformattingCSVWriter(writeOptions: CSVWriterOptions,
-                                        bufferConsumer: HostBufferConsumer)
-    extends CudfTableWriter {
-
-    val underlying: CudfTableWriter = Table.getCSVBufferWriter(writeOptions, bufferConsumer)
-
-    override def write(table: Table): Unit = {
+  override def transform(cb: ColumnarBatch): Option[ColumnarBatch] = {
+    withResource(GpuColumnVector.from(cb)) { table =>
       val columns = for (i <- 0 until table.getNumberOfColumns) yield {
         table.getColumn(i) match {
           case c if c.getType.hasTimeResolution =>
@@ -154,36 +147,30 @@ class GpuHiveTextWriter(override val path: String,
             // Hive's LazySimpleSerDe format expects timestamps to be formatted thus:
             //   "uuuu-MM-dd HH:mm:ss[.SSS...]"
             // (Specifically, no `T` between `dd` and `HH`, and no `Z` at the end.)
-            withResource(c.asStrings("%Y-%m-%d %H:%M:%S.%f")) { asStrings =>
+            val col = withResource(c.asStrings("%Y-%m-%d %H:%M:%S.%f")) { asStrings =>
               withResource(Scalar.fromString("\\N")) { nullString =>
                 asStrings.replaceNulls(nullString)
               }
             }
+            GpuColumnVector.from(col, StringType)
           case c if c.getType == DType.FLOAT32 || c.getType == DType.FLOAT64 =>
             // By default, the CUDF CSV writer writes floats with value `Infinity`
             // as `"Inf"`.
             // Hive's LazySimplSerDe expects such values to be written as `"Infinity"`.
             // All occurrences of `Inf` need to be replaced with `Infinity`.
-            withResource(c.castTo(DType.STRING)) { asStrings =>
+            val col = withResource(c.castTo(DType.STRING)) { asStrings =>
               withResource(Scalar.fromString("Inf")) { infString =>
                 withResource(Scalar.fromString("Infinity")) { infinityString =>
                   asStrings.stringReplace(infString, infinityString)
                 }
               }
             }
-          case c => c.incRefCount()
+            GpuColumnVector.from(col, StringType)
+          case c =>
+            GpuColumnVector.from(c.incRefCount(), cb.column(i).dataType())
         }
       }
-
-      withResource(new Table(columns: _*)) { t =>
-        underlying.write(t)
-      }
-
-      columns.foreach(_.close)
-    }
-
-    override def close(): Unit = {
-      underlying.close()
+      Some(new ColumnarBatch(columns.toArray, cb.numRows()))
     }
   }
 
@@ -196,9 +183,9 @@ class GpuHiveTextWriter(override val path: String,
       .withFalseValue("false")
       .withNullValue("\\N")
       .withQuoteStyle(QuoteStyle.NONE)
+      .build
 
-    new ComplianceReformattingCSVWriter(writeOptions = writeOptions.build,
-                                        bufferConsumer = this)
+    Table.getCSVBufferWriter(writeOptions, this)
   }
 }
 
