@@ -398,9 +398,12 @@ def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
-
+# See https://github.com/NVIDIA/spark-rapids/issues/8330
+# Basically if we overflow on Decimal128 values when up-casting the operands, we need
+# to fall back to CPU since we don't currently have enough precision to support that 
+# on the GPU. 
 @allow_non_gpu("ProjectExec", "Remainder")
-@pytest.mark.skipif(not is_databricks113_or_later() and not is_spark_340_or_later(), reason="Handling decimal128 overflow is a Spark 3.4 feature")
+@pytest.mark.skipif(not is_databricks113_or_later() and not is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8330")
 @pytest.mark.parametrize('lhs', [DecimalGen(38,0), DecimalGen(37,2), DecimalGen(38,5)], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(27,7), DecimalGen(30,10), DecimalGen(38,1)], ids=idfn)
 def test_mod_mixed_overflow_fallback(lhs, rhs):

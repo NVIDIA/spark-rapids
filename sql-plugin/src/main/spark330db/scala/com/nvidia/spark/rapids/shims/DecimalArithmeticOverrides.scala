@@ -106,8 +106,13 @@ object DecimalArithmeticOverrides {
           ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+          // See https://github.com/NVIDIA/spark-rapids/issues/8330
+          // Basically if we overflow on Decimal128 values when up-casting the operands, we need
+          // to fall back to CPU since we don't currently have enough precision to support that 
+          // on the GPU. 
           override def tagExprForGpu(): Unit = {
-            if (a.left.dataType.isInstanceOf[DecimalType] && a.right.dataType.isInstanceOf[DecimalType]) {
+            if (a.left.dataType.isInstanceOf[DecimalType] &&
+                a.right.dataType.isInstanceOf[DecimalType]) {
               val lhsType = a.left.dataType.asInstanceOf[DecimalType]
               val rhsType = a.right.dataType.asInstanceOf[DecimalType]
               val needed = DecimalRemainderChecks.neededPrecision(lhsType, rhsType)
