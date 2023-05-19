@@ -742,6 +742,7 @@ def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, da
     Note: This test can be removed when
     https://github.com/NVIDIA/spark-rapids/issues/8324 is resolved.
     """
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
         reader(std_input_path + '/' + data_file),
+        cpu_fallback_class_name="ProjectExec",
         conf={})
