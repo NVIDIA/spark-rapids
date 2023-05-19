@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,6 +50,17 @@ def test_timeadd_daytime_column():
         ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
+
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+def test_timeadd_from_subquery(data_gen):
+
+    def fun(spark):
+        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        df.createOrReplaceTempView("testTime")
+        spark.sql("select a, ((select last(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
+        return spark.sql("select * from testTime2 where datePlus > current_timestamp")
+
+    assert_gpu_and_cpu_are_equal_collect(fun)
 
 # Should specify `spark.sql.legacy.interval.enabled` to test `DateAddInterval` after Spark 3.2.0,
 # refer to https://issues.apache.org/jira/browse/SPARK-34896
