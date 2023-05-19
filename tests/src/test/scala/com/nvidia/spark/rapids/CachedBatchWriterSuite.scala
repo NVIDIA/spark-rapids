@@ -133,33 +133,33 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
   val APPROX_PAR_META_DATA = 10 * 1024 * 1024 // we are estimating 10MB
   val BYTES_ALLOWED_PER_BATCH = _2GB - APPROX_PAR_META_DATA
 
-  private def whenSplitCalled(cb: ColumnarBatch, testResources: TestResources,
-      splitPoints: Int*): Unit = {
-    val rows = cb.numRows()
-    val eachRowSize = cb.numCols() * 1024
-    val rowsAllowedInABatch = BYTES_ALLOWED_PER_BATCH / eachRowSize
-    val spillOver = cb.numRows() % rowsAllowedInABatch
-    val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
-    scala.Range(0, cb.numCols()).indices.foreach { i =>
-      val spyCol = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-      val splitCols0 = splitRange.indices.map { _ =>
-        val spySplitCol = spy(testResources.byteCv456)
-        when(spySplitCol.getRowCount()).thenReturn(rowsAllowedInABatch)
-        spySplitCol
-      }
-      val splitCols = if (spillOver > 0) {
-        val splitCol = spy(testResources.byteCv3)
-        when(splitCol.getRowCount()).thenReturn(spillOver)
-        splitCols0 :+ splitCol
-      } else {
-        splitCols0
-      }
-
-      // copy splitCols because ParquetCachedBatchSerializer.compressColumnarBatchWithParquet is
-      // responsible to close the copied splits
-      doAnswer(_ => copyOf(splitCols)).when(spyCol).split(splitPoints: _*)
-    }
-  }
+//  private def whenSplitCalled(cb: ColumnarBatch, testResources: TestResources,
+//      splitPoints: Int*): Unit = {
+//    val rows = cb.numRows()
+//    val eachRowSize = cb.numCols() * 1024
+//    val rowsAllowedInABatch = BYTES_ALLOWED_PER_BATCH / eachRowSize
+//    val spillOver = cb.numRows() % rowsAllowedInABatch
+//    val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
+//    scala.Range(0, cb.numCols()).indices.foreach { i =>
+//      val spyCol = cb.column(i).asInstanceOf[GpuColumnVector].getBase
+//      val splitCols0 = splitRange.indices.map { _ =>
+//        val spySplitCol = spy(testResources.byteCv456)
+//        when(spySplitCol.getRowCount()).thenReturn(rowsAllowedInABatch)
+//        spySplitCol
+//      }
+//      val splitCols = if (spillOver > 0) {
+//        val splitCol = spy(testResources.byteCv3)
+//        when(splitCol.getRowCount()).thenReturn(spillOver)
+//        splitCols0 :+ splitCol
+//      } else {
+//        splitCols0
+//      }
+//
+//      // copy splitCols because ParquetCachedBatchSerializer.compressColumnarBatchWithParquet is
+//      // responsible to close the copied splits
+//      doAnswer(_ => copyOf(splitCols)).when(spyCol).split(splitPoints: _*)
+//    }
+//  }
 
   def copyOf(in: Seq[ColumnVector]): Array[ColumnVector] = {
     val buffers = ArrayBuffer[ColumnVector]()
