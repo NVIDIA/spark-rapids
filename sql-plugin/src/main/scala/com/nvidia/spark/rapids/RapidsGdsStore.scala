@@ -136,7 +136,7 @@ class RapidsGdsStore(
       path,
       fileOffset,
       deviceBuffer.getLength,
-      other.getMeta,
+      other.meta,
       other.getSpillPriority)
   }
 
@@ -178,7 +178,7 @@ class RapidsGdsStore(
           currentFile,
           currentOffset,
           deviceBuffer.getLength,
-          other.getMeta,
+          other.meta,
           other.getSpillPriority)
         currentOffset += alignUp(deviceBuffer.getLength)
         pendingBuffers += gdsBuffer

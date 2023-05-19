@@ -145,7 +145,9 @@ object GpuDeviceManager extends Logging {
 
   def shutdown(): Unit = synchronized {
     // assume error during shutdown until we complete it
-    chunkedPackMemoryResource.close()
+    if (chunkedPackMemoryResource != null) {
+      chunkedPackMemoryResource.close()
+    }
     singletonMemoryInitialized = Errored
     RapidsBufferCatalog.close()
     GpuShuffleEnv.shutdown()
@@ -256,7 +258,7 @@ object GpuDeviceManager extends Logging {
       val poolSize = conf.chunkedPackPoolSize
       chunkedPackMemoryResource =
         new RmmPoolMemoryResource(new RmmCudaMemoryResource(), poolSize, poolSize)
-      logInfo(
+      logDebug(
         s"Initialized pool resource for spill operations " +
             s"of ${chunkedPackMemoryResource.getMaxSize} Bytes")
 

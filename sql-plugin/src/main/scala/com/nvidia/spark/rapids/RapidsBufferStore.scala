@@ -246,7 +246,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
   /** Base class for all buffers in this store. */
   abstract class RapidsBufferBase(
       override val id: RapidsBufferId,
-      val meta: TableMeta,
+      _meta: TableMeta,
       initialSpillPriority: Long,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
       extends RapidsBuffer {
@@ -258,10 +258,10 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
     private[this] var spillPriority: Long = initialSpillPriority
 
+    def meta: TableMeta = _meta
+
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
-
-    override def getMeta(): TableMeta = meta
 
     /**
      * Materialize the memory buffer from the underlying storage.
@@ -295,12 +295,11 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
     protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer,
         sparkTypes: Array[DataType]): ColumnarBatch = {
-      val tableMeta = getMeta()
-      val bufferMeta = tableMeta.bufferMeta()
+      val bufferMeta = meta.bufferMeta()
       if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
-        MetaUtils.getBatchFromMeta(devBuffer, tableMeta, sparkTypes)
+        MetaUtils.getBatchFromMeta(devBuffer, meta, sparkTypes)
       } else {
-        GpuCompressedColumnVector.from(devBuffer, tableMeta)
+        GpuCompressedColumnVector.from(devBuffer, meta)
       }
     }
 

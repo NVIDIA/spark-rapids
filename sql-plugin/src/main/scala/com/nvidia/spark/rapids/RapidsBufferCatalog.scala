@@ -323,7 +323,7 @@ class RapidsBufferCatalog(
    * Adds a batch to the device storage. This does NOT take ownership of the
    * batch, so it is the responsibility of the caller to close it.
    *
-   * @param batch                batch that will be owned by the store
+   * @param batch                batch that will be added to the store
    * @param initialSpillPriority starting spill priority value for the batch
    * @param needsSync            whether the spill framework should stream synchronize while adding
    *                             this batch (defaults to true)
@@ -341,7 +341,9 @@ class RapidsBufferCatalog(
   /**
    * Adds a table to the device storage.
    *
-   * This takes ownership of the table.
+   * This takes ownership of the table. The reason for this is that tables
+   * don't have a reference count, so we cannot cleanly capture ownership by increasing
+   * ref count and decreasing from the caller.
    *
    * @param table                table that will be owned by the store
    * @param initialSpillPriority starting spill priority value
@@ -451,7 +453,7 @@ class RapidsBufferCatalog(
     if (buffers == null || buffers.isEmpty) {
       throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
     }
-    buffers.head.getMeta
+    buffers.head.meta
   }
 
   /**

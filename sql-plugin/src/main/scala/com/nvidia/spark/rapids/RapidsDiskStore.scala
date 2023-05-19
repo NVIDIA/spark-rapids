@@ -64,7 +64,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         id,
         fileOffset,
         incomingBuffer.getLength,
-        incoming.getMeta,
+        incoming.meta,
         incoming.getSpillPriority)
     }
   }

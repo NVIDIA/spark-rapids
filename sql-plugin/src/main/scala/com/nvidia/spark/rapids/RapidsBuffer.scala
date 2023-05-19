@@ -222,7 +222,7 @@ trait RapidsBuffer extends AutoCloseable {
     new RapidsBufferCopyIterator(this)
 
   /** Descriptor for how the memory buffer is formatted */
-  def getMeta: TableMeta
+  def meta: TableMeta
 
   /** The storage tier for this buffer */
   val storageTier: StorageTier
@@ -322,7 +322,7 @@ trait RapidsBuffer extends AutoCloseable {
  */
 sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
-    val meta: TableMeta) extends RapidsBuffer {
+    override val meta: TableMeta) extends RapidsBuffer {
 
   override def getMemoryUsedBytes: Long = 0L
 
@@ -362,7 +362,4 @@ sealed class DegenerateRapidsBuffer(
   override def setSpillPriority(priority: Long): Unit = {}
 
   override def close(): Unit = {}
-
-  /** Descriptor for how the memory buffer is formatted */
-  override def getMeta: TableMeta = meta
 }

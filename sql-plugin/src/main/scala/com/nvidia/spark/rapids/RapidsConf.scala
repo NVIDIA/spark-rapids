@@ -1859,12 +1859,14 @@ object RapidsConf {
   val CHUNKED_PACK_POOL_SIZE = conf("spark.rapids.sql.chunkedPack.poolSize")
       .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
            "scratch space, needed during spill from GPU to host memory.")
+      .internal()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(10L*1024*1024)
 
   val CHUNKED_PACK_BOUNCE_BUFFER_SIZE = conf("spark.rapids.sql.chunkedPack.bounceBufferSize")
       .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
           "bounce buffer, needed during spill from GPU to host memory. ")
+      .internal()
       .bytesConf(ByteUnit.BYTE)
       .checkValue(v => v >= 1L*1024*1024,
         "The chunked pack bounce buffer must be at least 1MB in size")

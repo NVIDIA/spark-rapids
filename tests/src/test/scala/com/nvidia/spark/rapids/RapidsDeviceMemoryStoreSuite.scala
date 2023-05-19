@@ -329,7 +329,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
       val resultBuffer = captor.getValue
       assertResult(bufferId)(resultBuffer.id)
       assertResult(spillPriority)(resultBuffer.getSpillPriority)
-      assertResult(meta)(resultBuffer.getMeta)
+      assertResult(meta)(resultBuffer.meta)
     }
   }
 
@@ -471,7 +471,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
         b: RapidsBuffer,
         s: Cuda.Stream): RapidsBufferBase = {
       spilledBuffers += b.id
-      new MockRapidsBuffer(b.id, b.getPackedSizeBytes, b.getMeta, b.getSpillPriority)
+      new MockRapidsBuffer(b.id, b.getPackedSizeBytes, b.meta, b.getSpillPriority)
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
