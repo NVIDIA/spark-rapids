@@ -730,3 +730,18 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
     assert_gpu_and_cpu_are_equal_collect(
         reader(std_input_path + '/' + data_file),
         conf={})
+
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.skipif(is_before_spark_340(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
+@pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
+def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):
+    """
+    Test that a file containing CHAR data is readable as STRING.
+    Note: This test can be removed when
+    https://github.com/NVIDIA/spark-rapids/issues/8324 is resolved.
+    """
+    assert_gpu_and_cpu_are_equal_collect(
+        reader(std_input_path + '/' + data_file),
+        conf={})
