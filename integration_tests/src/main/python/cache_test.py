@@ -340,6 +340,7 @@ def test_aqe_cache_join(data_gen):
         return df1.join(df2, df1.a == df2.a, 'Outer')
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
+# TODO: remove this test after timezone support is added.
 # This test is testing cache when InMemoryTableScanExec fallsback to the CPU which causes the HostColumnarToGPU
 # to be pushed to the query plan which can cause ArrayIndexOutOfBoundsException
 @ignore_order
