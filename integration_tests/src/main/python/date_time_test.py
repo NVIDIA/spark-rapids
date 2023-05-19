@@ -62,6 +62,17 @@ def test_timeadd_from_subquery(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(fun)
 
+@pytest.mark.parametrize('data_gen', vals, ids=idfn)
+def test_timesub_from_subquery(data_gen):
+
+    def fun(spark):
+        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        df.createOrReplaceTempView("testTime")
+        spark.sql("select a, ((select last(a) from testTime) - interval 1 day) as dateMinus from testTime").createOrReplaceTempView("testTime2")
+        return spark.sql("select * from testTime2 where dateMinus < current_timestamp")
+
+    assert_gpu_and_cpu_are_equal_collect(fun)
+
 # Should specify `spark.sql.legacy.interval.enabled` to test `DateAddInterval` after Spark 3.2.0,
 # refer to https://issues.apache.org/jira/browse/SPARK-34896
 # [SPARK-34896][SQL] Return day-time interval from dates subtraction
