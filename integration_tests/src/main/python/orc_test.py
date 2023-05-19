@@ -19,7 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_an
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh, is_spark_340_or_later
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -720,6 +720,7 @@ def test_orc_read_varchar_as_string(std_input_path):
         lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))
 
 
+@pytest.mark.skipif(is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
@@ -728,4 +729,20 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
     """
     assert_gpu_and_cpu_are_equal_collect(
         reader(std_input_path + '/' + data_file),
+        conf={})
+
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.skipif(is_before_spark_340(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
+@pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
+def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):
+    """
+    Test that a file containing CHAR data is readable as STRING.
+    Note: This test can be removed when
+    https://github.com/NVIDIA/spark-rapids/issues/8324 is resolved.
+    """
+    assert_gpu_fallback_collect(
+        reader(std_input_path + '/' + data_file),
+        cpu_fallback_class_name="ProjectExec",
         conf={})
