@@ -45,7 +45,7 @@ object GpuDeviceManager extends Logging {
   // Memory resource used only for cudf::chunked_pack to allocate scratch space
   // during spill to host. This is done to set aside some memory for this operation
   // from the beginning of the job.
-  var chunkedPackMemoryResource: RmmPoolMemoryResource[RmmCudaMemoryResource] = null
+  var chunkedPackMemoryResource: Option[RmmPoolMemoryResource[RmmCudaMemoryResource]] = None
 
   // for testing only
   def setRmmTaskInitEnabled(enabled: Boolean): Unit = {
@@ -145,10 +145,11 @@ object GpuDeviceManager extends Logging {
 
   def shutdown(): Unit = synchronized {
     // assume error during shutdown until we complete it
-    if (chunkedPackMemoryResource != null) {
-      chunkedPackMemoryResource.close()
-    }
     singletonMemoryInitialized = Errored
+
+    chunkedPackMemoryResource.foreach(_.close)
+    chunkedPackMemoryResource = None
+
     RapidsBufferCatalog.close()
     GpuShuffleEnv.shutdown()
     // try to avoid segfault on RMM shutdown
@@ -257,10 +258,16 @@ object GpuDeviceManager extends Logging {
 
       val poolSize = conf.chunkedPackPoolSize
       chunkedPackMemoryResource =
-        new RmmPoolMemoryResource(new RmmCudaMemoryResource(), poolSize, poolSize)
-      logDebug(
-        s"Initialized pool resource for spill operations " +
-            s"of ${chunkedPackMemoryResource.getMaxSize} Bytes")
+        if (poolSize > 0) {
+          val chunkedPackPool =
+            new RmmPoolMemoryResource(new RmmCudaMemoryResource(), poolSize, poolSize)
+          logDebug(
+            s"Initialized pool resource for spill operations " +
+                s"of ${chunkedPackMemoryResource.map(_.getMaxSize)} Bytes")
+          Some(chunkedPackPool)
+        } else {
+          None
+        }
 
       val info = Cuda.memGetInfo()
       val poolAllocation = computeRmmPoolSize(conf, info)

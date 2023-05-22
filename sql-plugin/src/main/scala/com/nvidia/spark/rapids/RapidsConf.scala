@@ -1858,7 +1858,11 @@ object RapidsConf {
 
   val CHUNKED_PACK_POOL_SIZE = conf("spark.rapids.sql.chunkedPack.poolSize")
       .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
-           "scratch space, needed during spill from GPU to host memory.")
+           "scratch space, needed during spill from GPU to host memory. As a rule of thumb, each " +
+           "column should see around 200B that will be allocated from this pool. " +
+           "With the default of 10MB, a table of ~60,000 columns can be spilled using only this " +
+           "pool. If this config is 0B, or if allocations fail, the plugin will retry with " +
+           "the regular GPU memory resource.")
       .internal()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(10L*1024*1024)

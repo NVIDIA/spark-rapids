@@ -88,10 +88,30 @@ class ChunkedPacker(
 
   private var closed: Boolean = false
 
-  private val chunkedPack =
-    table.makeChunkedPack(
-      bounceBuffer.getLength,
-      GpuDeviceManager.chunkedPackMemoryResource)
+  // When creating cudf::chunked_pack use a pool if available, otherwise default to the
+  // per-device memory resource
+  private val chunkedPack = {
+    val pool = GpuDeviceManager.chunkedPackMemoryResource
+    val cudfChunkedPack = try {
+      pool.flatMap { chunkedPool =>
+        Some(table.makeChunkedPack(bounceBuffer.getLength, chunkedPool))
+      }
+    } catch {
+      case _: OutOfMemoryError =>
+        if (!ChunkedPacker.warnedAboutPoolFallback) {
+          ChunkedPacker.warnedAboutPoolFallback = true
+          logWarning(
+            s"OOM while creating chunked_pack using pool sized ${pool.map(_.getMaxSize)}B. " +
+                "Falling back to the per-device memory resource.")
+        }
+        None
+    }
+
+    // if the pool is not configured, or we got an OOM, try again with the per-device pool
+    cudfChunkedPack.getOrElse {
+      table.makeChunkedPack(bounceBuffer.getLength)
+    }
+  }
 
   private val tableMeta = withResource(chunkedPack.buildMetadata()) { packedMeta =>
     MetaUtils.buildTableMeta(
@@ -129,6 +149,10 @@ class ChunkedPacker(
       toClose.safeClose()
     }
   }
+}
+
+object ChunkedPacker {
+  private var warnedAboutPoolFallback: Boolean = false
 }
 
 /**

@@ -47,7 +47,7 @@ class RapidsHostMemoryStore(
       preferPinned: Boolean = true): (HostMemoryBuffer, AllocationMode) = {
     var buffer: HostMemoryBuffer = null
     if (preferPinned) {
-      PinnedMemoryPool.tryAllocate(size)
+      buffer = PinnedMemoryPool.tryAllocate(size)
       if (buffer != null) {
         return (buffer, Pinned)
       }
@@ -98,14 +98,14 @@ class RapidsHostMemoryStore(
           logDebug(s"Spill to host (mode=$allocationMode, chunked=$isChunked) " +
               s"size=$szMB MiB bandwidth=$bw MiB/sec")
         }
+        new RapidsHostMemoryBuffer(
+          other.id,
+          totalCopySize,
+          other.meta,
+          applyPriorityOffset(other.getSpillPriority, allocationMode.spillPriorityOffset),
+          hostBuffer,
+          allocationMode)
       }
-      new RapidsHostMemoryBuffer(
-        other.id,
-        totalCopySize,
-        other.meta,
-        applyPriorityOffset(other.getSpillPriority, allocationMode.spillPriorityOffset),
-        hostBuffer,
-        allocationMode)
     }
   }
 
