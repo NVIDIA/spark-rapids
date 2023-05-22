@@ -203,7 +203,7 @@ case class GpuDateAddInterval(start: Expression,
         case intvlS: GpuScalar if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
           // Scalar does not support 'CalendarInterval' now, so use
           // the Scala value instead.
-          // Skip the null check because it wll be detected by the following calls.
+          // Skip the null check because it will be detected by the following calls.
           val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
 
           // ANSI mode checking
