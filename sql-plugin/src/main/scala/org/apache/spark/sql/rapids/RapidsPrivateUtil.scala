@@ -23,9 +23,14 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.internal.config.ConfigEntry
 
 object RapidsPrivateUtil {
+
+  private lazy val extraConfigs = 
+    getPrivateConfigs("spark-rapids-extra-configs-classes", isStartup = false)
+  private lazy val extraStartupConfigs = 
+    getPrivateConfigs("spark-rapids-extra-startup-configs-classes", isStartup = true)
+
   def getPrivateConfigs(): Seq[ConfEntry[_]] = {
-    getPrivateConfigs("spark-rapids-extra-configs-classes", isStartup=false) ++
-        getPrivateConfigs("spark-rapids-extra-startup-configs-classes", isStartup=true)
+    extraConfigs ++ extraStartupConfigs
   }
 
   private def getPrivateConfigs(resourceName: String, isStartup: Boolean): Seq[ConfEntry[_]] = {
@@ -65,7 +70,7 @@ object RapidsPrivateUtil {
       value: T,
       isStartup: Boolean) = {
     new ConfEntryWithDefault[T](key, converter, doc, isInternal = false,
-      isStartupOnly = isStartup, value)
+      isStartupOnly = isStartup, defaultValue = value)
   }
 
   private def createEntry[T](

@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Archive
-nav_order: 15
+nav_order: 16
 ---
 Below are archived releases for RAPIDS Accelerator for Apache Spark.
 
