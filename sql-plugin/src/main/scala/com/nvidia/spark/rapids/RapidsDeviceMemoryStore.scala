@@ -250,8 +250,9 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
     private var initializedChunkedPacker: Boolean = false
 
     lazy val chunkedPacker: ChunkedPacker = {
+      val packer = new ChunkedPacker(id, table, chunkedPackBounceBuffer)
       initializedChunkedPacker = true
-      new ChunkedPacker(id, table, chunkedPackBounceBuffer)
+      packer
     }
 
     // This is the current size in batch form. It is to be used while this
