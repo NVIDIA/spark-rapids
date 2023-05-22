@@ -1785,7 +1785,14 @@ class GpuCachedDoublePassWindowIterator(
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
-    withResource(computeBasicWindow(cb)) { basic =>
+
+    val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val basic = withRetryNoSplit(sb) { _ =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        computeBasicWindow(cb)
+      }
+    }
+    withResource(basic) { _ =>
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
 
@@ -1800,8 +1807,8 @@ class GpuCachedDoublePassWindowIterator(
           cacheInFixers(basic, fixers, 0)
         }
 
-        // If the last part entry in this batch does not match the last entry in the previous batch
-        // then we need to start post-processing the batches.
+        // If the last part entry in this batch does not match the last entry in the previous
+        // batch then we need to start post-processing the batches.
         if (!lastEqual) {
           // We swap the fixers and queues so we are ready to start on the next partition by group
           swapFirstPassIsReadyForPost()
@@ -1871,17 +1878,18 @@ class GpuCachedDoublePassWindowIterator(
         }
       }
     }
-    val cb = withResource(readyForPostProcessing.dequeue()) { sb =>
-      sb.getColumnarBatch()
-    }
-    withResource(cb) { cb =>
-      val ret = withResource(
-        new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-        postProcess(cb)
+    withResource(readyForPostProcessing.dequeue()) { sb =>
+      withRetryNoSplit(sb) { _ =>
+        withResource(sb.getColumnarBatch()) { cb =>
+          val ret = withResource(
+            new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+            postProcess(cb)
+          }
+          numOutputBatches += 1
+          numOutputRows += ret.numRows()
+          ret
+        }
       }
-      numOutputBatches += 1
-      numOutputRows += ret.numRows()
-      ret
     }
   }
 }
