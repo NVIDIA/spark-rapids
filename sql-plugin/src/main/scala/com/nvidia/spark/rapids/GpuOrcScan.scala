@@ -899,7 +899,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     }
   }
 
-
   protected final def isNeedToSplitDataBlock(
       curMeta: OrcBlockMetaForSplitCheck,
       nextMeta: OrcBlockMetaForSplitCheck): Boolean = {
@@ -1922,11 +1921,11 @@ class MultiFileCloudOrcPartitionReader(
   override def combineHMBs(
       buffers: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
     if (buffers.length == 1) {
-      logDebug("No need to combine because there is only one buffer.")
+      println("No need to combine because there is only one buffer.")
       buffers.head
     } else {
       assert(buffers.length > 1)
-      logDebug(s"Got ${buffers.length} buffers, combine them")
+      println(s"Got ${buffers.length} buffers, combine them")
       doCombineHmbs(buffers)
     }
   }
