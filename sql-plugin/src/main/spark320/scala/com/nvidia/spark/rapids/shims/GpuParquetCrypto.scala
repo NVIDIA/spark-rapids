@@ -19,6 +19,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330db"}
 {"spark": "331"}
@@ -32,11 +33,11 @@ import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 
 object GpuParquetCrypto {
   /**
-   * Columnar encryption was added in Spark 3.2.0 
+   * Columnar encryption was added in Spark 3.2.0
    */
   def isColumnarCryptoException(e: Throwable): Boolean = {
     e match {
-      case crypto: ParquetCryptoRuntimeException => true
+      case _: ParquetCryptoRuntimeException => true
       case _ => false
     }
   }

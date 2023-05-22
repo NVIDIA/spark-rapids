@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -368,7 +368,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
         "Alias,Cast,LessThan,ShuffleExchangeExec,RoundRobinPartitioning")
 
-    var optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
       (_: SparkPlanMeta[SparkPlan],
        _: SparkPlan,
@@ -480,7 +480,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
             "HashPartitioning")
 
-    var plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
+    val plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
       new ListBuffer[SparkPlanMeta[SparkPlan]]()
     GpuOverrides.addListener(
       (plan: SparkPlanMeta[SparkPlan],
@@ -527,7 +527,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
             "RoundRobinPartitioning")
 
-    var plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
+    val plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
       new ListBuffer[SparkPlanMeta[SparkPlan]]()
     GpuOverrides.addListener(
       (plan: SparkPlanMeta[SparkPlan],

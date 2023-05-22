@@ -21,6 +21,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
@@ -66,8 +67,8 @@ import org.apache.spark.util.{CompletionIterator, TaskCompletionListener, Utils}
  *  Reverts usage of `SparkCoreErrors` to just use the original exception here,
  *  as this was done in Spark 3.3.0 and is rather minor.
  *
- *  Compare to https://github.com/apache/spark/blob/branch-3.2, and 
- *  https://github.com/apache/spark/blob/branch-3.3: 
+ *  Compare to https://github.com/apache/spark/blob/branch-3.2, and
+ *  https://github.com/apache/spark/blob/branch-3.3:
  *   ./core/src/main/scala/org/apache/spark/storage/ShuffleBlockFetcherIterator.scala
  */
 
@@ -769,7 +770,7 @@ final class RapidsShuffleBlockFetcherIterator(
       shuffleMetrics.incFetchWaitTime(fetchWaitTime)
 
       result match {
-        case r @ SuccessFetchResult(blockId, mapIndex, address, size, buf, isNetworkReqDone) =>
+        case SuccessFetchResult(blockId, mapIndex, address, size, buf, isNetworkReqDone) =>
           if (address != blockManager.blockManagerId) {
             if (hostLocalBlocks.contains(blockId -> mapIndex) ||
               pushBasedFetchHelper.isLocalPushMergedBlockAddress(address)) {

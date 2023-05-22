@@ -1665,6 +1665,19 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("doubles", "more_doubles")
   }
 
+  def decimals(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String, BigDecimal)](
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("11.9999999988")),
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("11.9999999988")),
+      ("a", BigDecimal("11.9999999988"))
+    ).toDF("text", "number")
+  }
+
   def doubleWithDifferentKindsOfNansAndZeros(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(Double, Int)](

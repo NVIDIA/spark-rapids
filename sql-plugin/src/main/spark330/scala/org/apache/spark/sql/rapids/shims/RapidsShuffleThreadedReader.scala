@@ -60,7 +60,6 @@ class RapidsShuffleThreadedReader[K, C] (
       numReaderThreads = numReaderThreads) {
 
   override protected def getMapSizes: GetMapSizesResult = {
-    val shuffleId = handle.shuffleId
     withResource(new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)) { _ =>
       if (handle.dependency.isShuffleMergeFinalizedMarked) {
         val res = mapOutputTracker.getPushBasedShuffleMapSizesByExecutorId(

@@ -26,10 +26,9 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator 
+case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
   with ShimExpression {
   override def nullable: Boolean = false // a row is always returned
-  @transient private lazy val jsonExpr: Expression = children.head
   @transient private lazy val fieldExpressions: Seq[Expression] = children.tail
 
   override def elementSchema: StructType = StructType(fieldExpressions.zipWithIndex.map {
@@ -53,7 +52,7 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
   override def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
-    
+
     val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
@@ -96,10 +95,10 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
 
     // we know we are going to output at most this much
     val estimatedOutputSizeBytes = (json.getDeviceMemorySize * fieldExpressions.length).toDouble
-    
-    val numSplitsForTargetSize = 
+
+    val numSplitsForTargetSize =
       math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
-    val splitIndices = 
+    val splitIndices =
       GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
 
     // how many splits will we need to keep the output rows under max value

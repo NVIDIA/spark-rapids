@@ -24,6 +24,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
@@ -130,7 +131,7 @@ object GpuFileFormatWriter extends Logging {
       plan
     } else {
       val projectList = GpuV1WriteUtils.convertGpuEmptyToNull(plan.output, partitionSet)
-      if (projectList.nonEmpty) GpuProjectExec(projectList, plan) else plan
+      if (projectList.nonEmpty) GpuProjectExec(projectList, plan)() else plan
     }
 
     val writerBucketSpec: Option[GpuWriterBucketSpec] = bucketSpec.map { spec =>

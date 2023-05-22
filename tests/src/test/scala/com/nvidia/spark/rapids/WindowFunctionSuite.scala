@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     }
 
   private def rowNumberAggregationTesterForDecimal(
-    windowSpec: WindowSpec, scale: Int = 0): DataFrame => DataFrame =
+    windowSpec: WindowSpec, scale: Int): DataFrame => DataFrame =
     (df: DataFrame) => {
       val decimalType = DecimalType(precision = 18, scale = scale)
       val sumDecimalType = DecimalType(precision = 8, scale = 0)

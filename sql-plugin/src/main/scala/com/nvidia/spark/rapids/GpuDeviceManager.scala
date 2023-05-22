@@ -251,7 +251,7 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
+  private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     if (!Rmm.isInitialized) {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
 
@@ -355,7 +355,7 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def allocatePinnedMemory(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
+  private def allocatePinnedMemory(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
     if (!PinnedMemoryPool.isInitialized && conf.pinnedPoolSize > 0) {
       logInfo(s"Initializing pinned memory pool (${conf.pinnedPoolSize / 1024 / 1024.0} MB)")

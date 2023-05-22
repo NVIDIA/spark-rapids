@@ -141,8 +141,6 @@ class RapidsShuffleIterator(
 
   private val localHost = localBlockManagerId.host
 
-  private val localExecutorId = localBlockManagerId.executorId.toLong
-
   private var started: Boolean = false
 
   // NOTE: `mapIndex` is utilized by the `FetchFailedException` to reference

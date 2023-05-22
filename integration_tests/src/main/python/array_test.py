@@ -25,7 +25,6 @@ from pyspark.sql.functions import array_contains, col, element_at, lit
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
-array_index_gen = IntegerGen(min_val=-25, max_val=25, special_cases=[None])
 array_neg_index_gen = IntegerGen(min_val=-25, max_val=-1, special_cases=[None])
 array_out_index_gen = IntegerGen(min_val=25, max_val=100, special_cases=[None])
 array_zero_index_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
@@ -89,19 +88,36 @@ no_neg_zero_all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         DoubleGen(special_cases=[], no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
-# Merged "test_nested_array_item" with this one since arrays as literals is supported
+
+byte_array_index_gen = ByteGen(min_val=-25, max_val=25, special_cases=[None])
+short_array_index_gen = ShortGen(min_val=-25, max_val=25, special_cases=[None])
+int_array_index_gen = IntegerGen(min_val=-25, max_val=25, special_cases=[None])
+# include special case indexes that should be valid indexes after the long is truncated.
+# this is becaue Spark will truncarte the long to an int, and we want to catch if it ever changes
+# -4294967286 is 0xFFFFFFFF0000000A, but python does not translate it the same way as scala does
+# so I had to write it out manually
+long_array_index_gen = LongGen(min_val=-25, max_val=25, special_cases=[0x1111111100000000, -4294967286])
+
+array_index_gens = [byte_array_index_gen, short_array_index_gen, int_array_index_gen, long_array_index_gen]
+
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
-def test_array_item(data_gen):
+@pytest.mark.parametrize('index_gen', array_index_gens, ids=idfn)
+def test_array_item(data_gen, index_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, data_gen, array_index_gen).selectExpr(
-            'a[b]',
-            'a[0]',
-            'a[1]',
+        lambda spark: two_col_df(spark, data_gen, index_gen).selectExpr('a[b]'))
+
+@pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+def test_array_item_lit_ordinal(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'a[CAST(0 as BYTE)]',
+            'a[CAST(1 as SHORT)]',
             'a[null]',
             'a[3]',
-            'a[50]',
-            'a[-1]'))
-
+            'a[CAST(50 as LONG)]',
+            'a[-1]',
+            'a[2147483648]',
+            'a[-2147483648]'))
 
 # No need to test this for multiple data types for array. Only one is enough
 @pytest.mark.skipif(not is_spark_33X() or is_databricks_runtime(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0 and DB11.3")

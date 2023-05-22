@@ -2415,7 +2415,7 @@ object GpuOverrides extends Logging {
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
             TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ordinal", TypeSig.INT, TypeSig.INT)),
+        ("ordinal", TypeSig.integral, TypeSig.integral)),
       (in, conf, p, r) => new BinaryExprMeta[GetArrayItem](in, conf, p, r) {
         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
           GpuGetArrayItem(arr, ordinal, in.failOnError)
@@ -3803,8 +3803,10 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
-        override def convertToGpu(): GpuExec =
-          GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
+        override def convertToGpu(): GpuExec = {
+          GpuFilterExec(childExprs.head.convertToGpu(),
+            childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
+        }
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
@@ -3869,7 +3871,8 @@ object GpuOverrides extends Logging {
             conf.gpuTargetBatchSizeBytes)
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
-          condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+          condition.map(c => GpuFilterExec(c.convertToGpu(),
+            joinExec)(useTieredProject = conf.isTieredProjectEnabled)).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](

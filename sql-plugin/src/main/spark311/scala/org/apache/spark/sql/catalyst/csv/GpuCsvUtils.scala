@@ -23,10 +23,12 @@
 {"spark": "321cdh"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.csv
 
 object GpuCsvUtils {
   def dateFormatInRead(options: CSVOptions): String = options.dateFormat
   def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat
+  def enableDateTimeParsingFallback(options: CSVOptions): Boolean = false
 }

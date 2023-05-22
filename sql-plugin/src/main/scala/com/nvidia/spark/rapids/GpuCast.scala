@@ -612,8 +612,8 @@ object GpuCast {
       minValue: => Scalar,
       maxValue: => Scalar,
       replaceValue: => Scalar,
-      inclusiveMin: Boolean = true,
-      inclusiveMax: Boolean = true): ColumnVector = {
+      inclusiveMin: Boolean,
+      inclusiveMax: Boolean): ColumnVector = {
 
     withResource(minValue) { minValue =>
       withResource(maxValue) { maxValue =>
@@ -1007,7 +1007,7 @@ object GpuCast {
       regex: String,
       cudfFormat: String,
       orElse: ColumnVector): ColumnVector = {
-    
+
     val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
     val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>

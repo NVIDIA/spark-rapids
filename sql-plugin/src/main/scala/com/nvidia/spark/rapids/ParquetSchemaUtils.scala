@@ -370,8 +370,7 @@ object ParquetSchemaUtils {
     // TODO: When we drop Spark 3.1.x, this should use Parquet's LogicalTypeAnnotation
     //       Note that the original type is not null for leaf nodes.
     //if (parquetList.getLogicalTypeAnnotation == null &&
-    val newSparkType = if (parquetList.getOriginalType == null &&
-        parquetList.isRepetition(Repetition.REPEATED)) {
+    val newSparkType = if (parquetList.isRepetition(Repetition.REPEATED)) {
       clipSparkType(elementType, parquetList, caseSensitive, useFieldId)
     } else {
       val parquetListGroup = parquetList.asGroupType()
@@ -574,7 +573,8 @@ object ParquetSchemaUtils {
   // this means the parameter dt is from Spark meta module.
   // This implements the requested type behavior accordingly for GPU.
   // This is suitable for all Spark versions, no need to add to shim layer.
-  private def evolveSchemaCasts(cv: ColumnView, dt: DataType): ColumnView = {
+  private def evolveSchemaCasts(cv: ColumnView, dt: DataType, originalFromDt: DataType)
+  : ColumnView = {
     if (needDecimalCast(cv, dt)) {
       cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
     } else if (needUnsignedToSignedCast(cv, dt) || needInt32Downcast(cv, dt) ||

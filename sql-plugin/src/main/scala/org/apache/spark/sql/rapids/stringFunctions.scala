@@ -362,12 +362,12 @@ case class GpuConcatWs(children: Seq[Expression])
     withResourceIfAllowed(expr.columnarEval(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
-          case ArrayType(st: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
+          case ArrayType(_: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
           case _ => vector.incRefCount()
         }
       case s: GpuScalar =>
         s.dataType match {
-          case ArrayType(st: StringType, _) =>
+          case ArrayType(_: StringType, _) =>
             // we have to first concatenate any array types
             withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
               concatArrayCol(colOrScalarSep, cv)
@@ -1126,7 +1126,7 @@ object GpuRegExpUtils {
         getChoicesFromRegex(t)
       case RegexChoice(a, b) =>
         getChoicesFromRegex(a) match {
-          case Some(la) => 
+          case Some(la) =>
             getChoicesFromRegex(b) match {
               case Some(lb) => Some(la ++ lb)
               case _ => None
@@ -1137,7 +1137,7 @@ object GpuRegExpUtils {
         if (GpuOverrides.isSupportedStringReplacePattern(regex.toRegexString)) {
           Some(Seq(regex.toRegexString))
         } else {
-          parts.foldLeft(Some(Seq[String]()): Option[Seq[String]]) { (m: Option[Seq[String]], r) => 
+          parts.foldLeft(Some(Seq[String]()): Option[Seq[String]]) { (m: Option[Seq[String]], r) =>
             getChoicesFromRegex(r) match {
               case Some(l) => m.map(_ ++ l)
               case _ => None
@@ -1455,7 +1455,7 @@ case class GpuRegExpExtract(
     val (extractPattern, groupIndex) = idx.getValue match {
       case i: Int if i == 0 =>
         ("(" + cudfRegexPattern + ")", 0)
-      case i =>
+      case _ =>
         // Since we have transpiled all but one of the capture groups to non-capturing, the index
         // here moves to 0 to single out the one capture group left
         (cudfRegexPattern, 0)
@@ -1576,7 +1576,7 @@ case class GpuRegExpExtractAll(
       case 0 =>
         val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
         str.getBase.extractAllRecord(prog, 0)
-      case intIdx =>
+      case _ =>
         // Extract matches corresponding to idx. cuDF's extract_all_record does not support
         // group idx, so we must manually extract the relevant matches. Example:
         // Given the pattern (\d+)-(\d+) and idx=1
@@ -1947,7 +1947,7 @@ class GpuStringSplitMeta(
     }
 
     extractLit(expr.limit) match {
-      case Some(Literal(n: Int, _)) =>
+      case Some(Literal(_: Int, _)) =>
       case _ =>
         willNotWorkOnGpu("only literal limit is supported")
     }

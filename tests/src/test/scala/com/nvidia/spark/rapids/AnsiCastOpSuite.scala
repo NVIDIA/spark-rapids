@@ -479,7 +479,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
-      comparisonFunc: Option[(String, String) => Boolean] = None): Unit = {
+      comparisonFunc: Option[(String, String) => Boolean] ): Unit = {
     // AnsiCast is merged into Cast from Spark 3.4.0.
     // Use reflection to avoid shims.
     val key = Class.forName {
@@ -898,7 +898,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private val HIVE_INT_SQL_TYPE = "INT"
   private val HIVE_SHORT_SQL_TYPE = "SMALLINT"
   private val HIVE_BYTE_SQL_TYPE = "TINYINT"
-  private val HIVE_FLOAT_SQL_TYPE = "FLOAT"
   private val HIVE_STRING_SQL_TYPE = "STRING"
 
   private def testData(dt: DataType)(spark: SparkSession) = {
