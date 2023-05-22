@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.GpuOverrides.expr
 
 import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, IntegralDivide, Multiply, Remainder}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, DecimalRemainderChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDecimalRemainder, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
 import org.apache.spark.sql.types.DecimalType
 
 object DecimalArithmeticOverrides {
@@ -99,21 +99,36 @@ object DecimalArithmeticOverrides {
             }
         }),
 
-      /**
-       * Because of https://github.com/NVIDIA/spark-rapids/issues/7595 we are not supporting
-       * Decimals for spark 3.4 and db 11.3. Once we do we should revert the changes made to the
-       * following tests test_mod, test_mod_mixed and test_mod_pmod_by_zero_not_ansi or we should
-       * just revert this commit
-       */
       expr[Remainder](
         "Remainder or modulo",
         ExprChecks.binaryProject(
           TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-          ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
-          ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+          ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+          ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+          // See https://github.com/NVIDIA/spark-rapids/issues/8330
+          // Basically if we overflow on Decimal128 values when up-casting the operands, we need
+          // to fall back to CPU since we don't currently have enough precision to support that 
+          // on the GPU. 
+          override def tagExprForGpu(): Unit = {
+            if (a.left.dataType.isInstanceOf[DecimalType] &&
+                a.right.dataType.isInstanceOf[DecimalType]) {
+              val lhsType = a.left.dataType.asInstanceOf[DecimalType]
+              val rhsType = a.right.dataType.asInstanceOf[DecimalType]
+              val needed = DecimalRemainderChecks.neededPrecision(lhsType, rhsType)
+              if (needed > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu(s"needed intermediate precision ($needed) will overflow " +
+                  s"outside of the maximum available decimal128 precision")
+              }
+            }
+          }
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuRemainder(lhs, rhs)
+            if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
+              GpuDecimalRemainder(lhs, rhs)
+            } else {
+              GpuRemainder(lhs, rhs)
+            }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
