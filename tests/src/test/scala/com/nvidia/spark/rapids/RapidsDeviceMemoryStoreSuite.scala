@@ -31,14 +31,14 @@ import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, FloatType, IntegerType, StringType}
+import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
 class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
   private def buildTable(): Table = {
     new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
-        .column(5.0, 2.0, 3.0, 1.0)
+        .column(5.0D, 2.0D, 3.0D, 1.0D)
         .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
         .build()
   }
@@ -96,7 +96,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
       val table = buildTable()
       val handle = catalog.addTable(table, spillPriority)
       val types: Array[DataType] =
-          Seq(IntegerType, StringType, FloatType, DecimalType(10, 5)).toArray
+          Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
       val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
       assertResult(buffSize)(store.currentSize)
       assertResult(buffSize)(store.currentSpillableSize)
@@ -118,7 +118,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
       val table = buildTable()
       val handle = catalog.addTable(table, spillPriority)
       val types: Array[DataType] =
-        Seq(IntegerType, StringType, FloatType, DecimalType(10, 5)).toArray
+        Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
       val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
       assertResult(buffSize)(store.currentSize)
       assertResult(buffSize)(store.currentSpillableSize)
@@ -149,7 +149,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
       val table = buildTable()
       val handle = catalog.addTable(table, spillPriority)
       val types: Array[DataType] =
-        Seq(IntegerType, StringType, FloatType, DecimalType(10, 5)).toArray
+        Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
       val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
       assertResult(buffSize)(store.currentSize)
       assertResult(buffSize)(store.currentSpillableSize)
@@ -176,7 +176,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
       val table = buildTable()
       val handle = catalog.addTable(table, spillPriority)
       val types: Array[DataType] =
-        Seq(IntegerType, StringType, FloatType, DecimalType(10, 5)).toArray
+        Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
       val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
       assertResult(buffSize)(store.currentSize)
       assertResult(buffSize)(store.currentSpillableSize)
