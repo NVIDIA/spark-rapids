@@ -638,7 +638,7 @@
         <scala.version>2.12.15</scala.version>
         <!--
         -processing
-        to suppress unactionalble "No processor claimed any of these annotations"
+        to suppress unactionable "No processor claimed any of these annotations"
         from various dependencies. Example @UDFType
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
