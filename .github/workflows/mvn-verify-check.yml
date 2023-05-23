@@ -58,10 +58,10 @@ jobs:
           echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
           # jdk11
-          jdkVersionArrBody=$(printf ",{\"spark-version\":\"%s\", \"java-version\": 11}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
+          jdkVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
           jdk11VersionArrBody=${jdkVersionArrBody:1}
           # jdk17
-          jdkVersionArrBody=$(printf ",{\"spark-version\":\"%s\",  \"java-version\": 17}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+          jdkVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
           jdk17VersionArrBody=${jdkVersionArrBody:1}
           # jdk
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdk11VersionArrBody + $jdk17VersionArrBody)
