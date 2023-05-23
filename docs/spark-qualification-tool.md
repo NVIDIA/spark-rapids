@@ -16,7 +16,9 @@ that could not run on GPU because they are unsupported operators or not SQL/Data
 
 This tool is intended to give the users a starting point and does not guarantee the
 queries or applications with the highest _recommendation_ will actually be accelerated the most. Currently,
-it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
+it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.  Note that the qualification
+tool estimates assume that the application is run on a dedicated cluster where it can use all of the available
+Spark resources.
 
 The estimations for GPU duration are available for different environments and are based on benchmarks run in the
 applicable environments.  Here are the cluster information for the ETL benchmarks used for the estimates:
