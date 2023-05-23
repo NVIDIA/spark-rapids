@@ -120,11 +120,16 @@ jobs:
           -Dskip
           -Dmaven.javadoc.skip
 
-  verify-modules-with-jdk11:
+  verify-modules-with-jdk:
     needs: get-shim-versions-from-dist
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK11Versions) }}
+      matrix:
+        include:
+          - java-version: 11
+            spark-version: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK11Versions) }}
+          - jave-version: 17
+            spark-version: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK17Versions) }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -132,36 +137,12 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: adopt
-          java-version: 11
+          java-version: matrix.java-version
       
-      - name: Build JDK11
+      - name: Build JDK
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P 'individual,pre-merge,jdk11'
-          -Dbuildver=${{ matrix.spark-version }}
-          -DskipTests
-          -Dskip
-          -Dmaven.javadoc.skip
-
-  # TODO: use matrix to combine all jdk* jobs
-  verify-modules-with-jdk17:
-    needs: get-shim-versions-from-dist
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK17Versions) }}
-    steps:
-      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
-
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
-        with:
-          distribution: adopt
-          java-version: 17
-
-      - name: Build JDK17
-        run: >
-          mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P 'individual,pre-merge,jdk17'
+          -P "individual,pre-merge,jdk${{ matrix.java-version }}"
           -Dbuildver=${{ matrix.spark-version }}
           -DskipTests
           -Dskip
