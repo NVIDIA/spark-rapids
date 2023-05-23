@@ -137,7 +137,10 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: adopt
-          java-version: ${{ matrix.java-ver }}
+          java-version: 11
+        run: >
+          echo ${{ matrix.java-ver }}
+          echo ${{ matrix.spark-ver }}
       
       - name: Build JDK
         run: >
