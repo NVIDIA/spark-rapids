@@ -23,6 +23,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  COMMON_MVN_FLAGS: >
+    -Ddist.jar.compress=false
+    -DskipTests
+    -Dskip
+    -Dmaven.javadoc.skip
+
 jobs:
   get-shim-versions-from-dist:
     runs-on: ubuntu-latest
@@ -91,11 +98,9 @@ jobs:
           -pl integration_tests,tests -am
           -P 'individual,pre-merge'
           -Dbuildver=${{ matrix.spark-version }}
-          -DskipTests
-          -Dskip
-          -Dmaven.javadoc.skip
           -Dmaven.scalastyle.skip=true
           -Drat.skip=true
+          "$COMMON_MVN_FLAGS"
 
 
   verify-all-modules-with-headSparkVersion:
@@ -116,9 +121,7 @@ jobs:
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
           -P 'individual,pre-merge'
           -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.sparkHeadVersion }}
-          -DskipTests
-          -Dskip
-          -Dmaven.javadoc.skip
+          "$COMMON_MVN_FLAGS"
 
   verify-modules-with-jdk11:
     needs: get-shim-versions-from-dist
@@ -133,15 +136,13 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
-      
+
       - name: Build JDK11
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
           -P 'individual,pre-merge,jdk11'
           -Dbuildver=${{ matrix.spark-version }}
-          -DskipTests
-          -Dskip
-          -Dmaven.javadoc.skip
+          "$COMMON_MVN_FLAGS"
 
   # TODO: use matrix to combine all jdk* jobs
   verify-modules-with-jdk17:
@@ -163,6 +164,4 @@ jobs:
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
           -P 'individual,pre-merge,jdk17'
           -Dbuildver=${{ matrix.spark-version }}
-          -DskipTests
-          -Dskip
-          -Dmaven.javadoc.skip
+          "$COMMON_MVN_FLAGS"
