@@ -658,7 +658,7 @@ Rapids accelerator.
 Currently, the _Auto-Tuner_ calculates a set of configurations that impact the performance of Apache
 Spark apps executing on GPU. Those calculations can leverage cluster information
 (e.g. memory, cores, Spark default configurations) as well as information processed in the
-application event logs.  Note that the tool also will recommend setting for the application assuming
+application event logs.  Note that the tool also will recommend settings for the application assuming
 that the job will be able to use all the cluster resources (CPU and GPU) when it is running.
 
 The values loaded from the app logs have higher precedence than the default configs.  
