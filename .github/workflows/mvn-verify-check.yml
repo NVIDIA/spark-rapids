@@ -24,7 +24,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  COMMON_MVN_FLAGS: -Ddist.jar.compress=false -DskipTests -Dskip -Dmaven.javadoc.skip
+  COMMON_MVN_FLAGS: >
+    -Ddist.jar.compress=false
+    -DskipTests
+    -Dskip
+    -Dmaven.javadoc.skip
 
 jobs:
   get-shim-versions-from-dist:
