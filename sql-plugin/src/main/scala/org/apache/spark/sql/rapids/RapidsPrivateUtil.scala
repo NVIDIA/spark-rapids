@@ -34,6 +34,7 @@ object RapidsPrivateUtil {
   }
 
   private def getPrivateConfigs(resourceName: String, isStartup: Boolean): Seq[ConfEntry[_]] = {
+    // Will register configs, call this at most once for each resource
     withResource(Source.fromResource(resourceName).bufferedReader()) { r =>
       val className = r.readLine().trim
       Class.forName(className)
@@ -70,7 +71,7 @@ object RapidsPrivateUtil {
       value: T,
       isStartup: Boolean) = {
     new ConfEntryWithDefault[T](key, converter, doc, isInternal = false,
-      isStartupOnly = isStartup, defaultValue = value)
+      isStartupOnly = isStartup, isCommonlyUsed = false, defaultValue = value)
   }
 
   private def createEntry[T](
@@ -78,6 +79,7 @@ object RapidsPrivateUtil {
       doc: String,
       converter: String => T,
       isStartup: Boolean) = {
-    new OptionalConfEntry[T](key, converter, doc, isInternal = false, isStartupOnly = isStartup)
+    new OptionalConfEntry[T](key, converter, doc, isInternal = false, isStartupOnly = isStartup,
+      isCommonlyUsed = false)
   }
 }

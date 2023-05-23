@@ -472,7 +472,7 @@ self.log("... OK")
                                     <ac:then>
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>
-                                            <arg value="${project.basedir}/../docs/advanced_configs.md"/>
+                                            <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
                                             <arg value="${project.basedir}/../docs/supported_ops.md"/>
