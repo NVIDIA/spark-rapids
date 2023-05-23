@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -143,10 +143,10 @@ abstract class GpuTimeMath(
   val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
       withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
         (lhs, rhs) match {
-          case (l: GpuColumnVector, intvlS: GpuScalar)
+          case (l, intvlS: GpuScalar)
               if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
             // Scalar does not support 'CalendarInterval' now, so use
             // the Scala value instead.
@@ -169,7 +169,7 @@ abstract class GpuTimeMath(
             }
           case _ =>
             throw new UnsupportedOperationException("only column and interval arguments " +
-              "are supported")
+              s"are supported, got left: ${lhs.getClass} right: ${rhs.getClass}")
         }
       }
     }
