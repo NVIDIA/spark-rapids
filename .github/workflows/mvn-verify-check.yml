@@ -138,12 +138,11 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
-        run: >
-          echo ${{ matrix.java-ver }}
-          echo ${{ matrix.spark-ver }}
       
       - name: Build JDK
         run: >
+          echo ${{ matrix.java-ver }}
+          echo ${{ matrix.spark-ver }}
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
           -P "individual,pre-merge,jdk${{ matrix.java-ver }}"
           -Dbuildver=${{ matrix.spark-ver }}
