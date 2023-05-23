@@ -1871,17 +1871,16 @@ class GpuCachedDoublePassWindowIterator(
         }
       }
     }
-    val cb = withResource(readyForPostProcessing.dequeue()) { sb =>
-      sb.getColumnarBatch()
-    }
-    withResource(cb) { cb =>
-      val ret = withResource(
-        new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-        postProcess(cb)
+    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val ret = withResource(
+          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+          postProcess(cb)
+        }
+        numOutputBatches += 1
+        numOutputRows += ret.numRows()
+        ret
       }
-      numOutputBatches += 1
-      numOutputRows += ret.numRows()
-      ret
     }
   }
 }
