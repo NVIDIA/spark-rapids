@@ -1856,6 +1856,26 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val CHUNKED_PACK_POOL_SIZE = conf("spark.rapids.sql.chunkedPack.poolSize")
+      .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
+           "scratch space, needed during spill from GPU to host memory. As a rule of thumb, each " +
+           "column should see around 200B that will be allocated from this pool. " +
+           "With the default of 10MB, a table of ~60,000 columns can be spilled using only this " +
+           "pool. If this config is 0B, or if allocations fail, the plugin will retry with " +
+           "the regular GPU memory resource.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(10L*1024*1024)
+
+  val CHUNKED_PACK_BOUNCE_BUFFER_SIZE = conf("spark.rapids.sql.chunkedPack.bounceBufferSize")
+      .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
+          "bounce buffer, needed during spill from GPU to host memory. ")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v >= 1L*1024*1024,
+        "The chunked pack bounce buffer must be at least 1MB in size")
+      .createWithDefault(128L * 1024 * 1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2461,6 +2481,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
+
+  lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
+
+  lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

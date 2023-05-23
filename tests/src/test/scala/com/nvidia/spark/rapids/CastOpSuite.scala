@@ -25,15 +25,22 @@ import java.util.TimeZone
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
+import org.scalatest.BeforeAndAfterAll
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-class CastOpSuite extends GpuExpressionTestSuite {
+class CastOpSuite extends GpuExpressionTestSuite with BeforeAndAfterAll {
   import CastOpSuite._
+
+  override def afterAll(): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+  }
 
   private val sparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
