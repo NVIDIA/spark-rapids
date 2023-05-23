@@ -125,11 +125,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - java-ver: 11
-            spark-ver: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK11Versions) }}
-          - jave-ver: 17
-            spark-ver: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK17Versions) }}
+        java-version: [11, 17]
+        # include:
+        #     spark-ver: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK11Versions) }}
+        #     spark-ver: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDK17Versions) }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -137,14 +136,12 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: adopt
-          java-version: 11
+          java-version: ${{ matrix.java-version }}
       
       - name: Build JDK
         run: >
-          echo ${{ matrix.java-ver }}
-          echo ${{ matrix.spark-ver }}
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P "individual,pre-merge,jdk${{ matrix.java-ver }}"
+          -P "individual,pre-merge,jdk${{ matrix.java-version }}"
           -Dbuildver=${{ matrix.spark-ver }}
           -DskipTests
           -Dskip
