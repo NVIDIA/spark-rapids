@@ -48,7 +48,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.reader.batchSizeRows"></a>spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647|Runtime
 <a name="sql.shuffle.spillThreads"></a>spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6|Runtime
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false|Runtime
-For more advanced configs, please refer to the [RAPIDS Accelerator for Apache 
-Spark Advanced Configuration page](https://nvidia.github.io/spark-rapids/docs/
-additional-functionality/advanced_configs.html).
+
+For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced 
+Configuration](https://nvidia.github.io/spark-rapids/docs/additional-functionality/advanced_configs.html) page.
 
