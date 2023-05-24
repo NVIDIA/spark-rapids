@@ -25,7 +25,7 @@ from conftest import is_databricks_runtime
 from marks import *
 from parquet_write_test import limited_timestamp, parquet_part_write_gens, parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_330, with_cpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_databricks122_or_later, with_cpu_session
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -38,7 +38,7 @@ delta_meta_allow = [
     "ProjectExec",
     "SerializeFromObjectExec",
     "SortExec"
-]
+] + ["DataWritingCommandExec", "DeltaOptimizedWriterExec"] if is_databricks122_or_later() else []
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
