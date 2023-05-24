@@ -1789,9 +1789,9 @@ class GpuCachedDoublePassWindowIterator(
 
     val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     val (basic, parts) = withRetryNoSplit(sp) { _ =>
-      withResource(sp.getColumnarBatch()) { x =>
-        closeOnExcept(computeBasicWindow(x)) { basic =>
-          (basic, GpuProjectExec.project(x, boundPartitionSpec))
+      withResource(sp.getColumnarBatch()) { batch =>
+        closeOnExcept(computeBasicWindow(batch)) { basic =>
+          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
         }
       }
     }
@@ -1873,12 +1873,12 @@ class GpuCachedDoublePassWindowIterator(
       if (waitingForFirstPass.isEmpty) {
         lastBatch()
       } else {
-        val x = waitingForFirstPass.get
+        val cb = waitingForFirstPass.get
         waitingForFirstPass = None
         withResource(
             new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
           // firstPassComputeAndCache takes ownership of the batch passed to it
-          firstPassComputeAndCache(x)
+          firstPassComputeAndCache(cb)
         }
       }
     }
