@@ -50,6 +50,23 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  test("convert columnar batch to cached batch on single col table with 0 rows in a batch") {
+    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
+      withResource(new TestResources()) { resources =>
+        val (_, spyGpuCol0) = getCudfAndGpuVectors(resources)
+        val cb = new ColumnarBatch(Array(spyGpuCol0), 0)
+        val ser = new ParquetCachedBatchSerializer
+        val dummySchema = new StructType(
+          Array(StructField("empty", ByteType, false),
+            StructField("empty", ByteType, false),
+            StructField("empty", ByteType, false)))
+        val listOfPCB = ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
+          BYTES_ALLOWED_PER_BATCH, false)
+        assert(listOfPCB.isEmpty)
+      }
+    }
+  }
+
   test("convert large columnar batch to cached batch on single col table") {
     if (!withCpuSparkSession(s => s.version < "3.1.0")) {
       withResource(new TestResources()) { resources =>

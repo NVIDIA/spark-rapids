@@ -319,7 +319,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       }
 
       input.flatMap(batch => {
-        if (batch.numCols() == 0) {
+        if (batch.numCols() == 0 || batch.numRows() == 0) {
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
@@ -344,9 +344,13 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       origSchema: StructType,
       bytesAllowedPerBatch: Long,
       useCompression: Boolean): List[ParquetCachedBatch] = {
+    if (oldGpuCB.numRows() == 0) {
+      // return empty List of ParquetCachedBatch
+      return List.empty[ParquetCachedBatch]
+    }
     val estimatedRowSize = scala.Range(0, oldGpuCB.numCols()).map { idx =>
       oldGpuCB.column(idx).asInstanceOf[GpuColumnVector]
-          .getBase.getDeviceMemorySize / oldGpuCB.numRows()
+        .getBase.getDeviceMemorySize / oldGpuCB.numRows()
     }.sum
 
     val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
