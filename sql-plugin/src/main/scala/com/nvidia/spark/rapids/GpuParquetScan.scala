@@ -1114,9 +1114,15 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
-  private val combineThresholdSize = rapidsConf.getMultithreadedCombineThreshold
-  private val combineWaitTime = rapidsConf.getMultithreadedCombineWaitTime
-  private val keepReadsInOrderFromConf = rapidsConf.getMultithreadedReaderKeepOrder
+  private val combineThresholdSize =
+    RapidsConf.PARQUET_MULTITHREADED_COMBINE_THRESHOLD.get(sqlConf)
+      .getOrElse(rapidsConf.getMultithreadedCombineThreshold)
+  private val combineWaitTime =
+    RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME.get(sqlConf)
+      .map(_.intValue()).getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
+  private val keepReadsInOrderFromConf =
+    RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER.get(sqlConf)
+      .getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
 
@@ -1144,13 +1150,13 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       filterHandler.filterBlocks(footerReadType, file, conf,
         filters, readDataSchema)
     }
-    val combineConf = CombineConf(combineThresholdSize, combineWaitTime, queryUsesInputFile,
-      keepReadsInOrderFromConf)
+    val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes,
       useChunkedReader, metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
-      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime, combineConf)
+      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
+      queryUsesInputFile, keepReadsInOrderFromConf, combineConf)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -2016,12 +2022,10 @@ class MultiFileParquetPartitionReader(
  * @param useFieldId Whether to use field id for column matching
  * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
- * @param combineThresholdSize The size to combine to when combining small files
- * @param combineWaitTime The amount of time to wait for other files to be ready to see if we
- *                        can combine them before sending them to the GPU
  * @param queryUsesInputFile Whether the query requires the input file name functionality
  * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
  *                         Defaults to true for formats that don't explicitly handle this.
+ * @param combineConf configs relevant to combination
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -2042,10 +2046,12 @@ class MultiFileCloudParquetPartitionReader(
     useFieldId: Boolean,
     alluxioPathReplacementMap: Map[String, String],
     alluxioReplacementTaskTime: Boolean,
+    queryUsesInputFile: Boolean,
+    keepReadsInOrder: Boolean,
     combineConf: CombineConf)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
-    alluxioPathReplacementMap, alluxioReplacementTaskTime, combineConf)
+    alluxioPathReplacementMap, alluxioReplacementTaskTime, keepReadsInOrder, combineConf)
   with ParquetPartitionReaderBase {
 
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
@@ -2063,7 +2069,7 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   override def canUseCombine: Boolean = {
-    if (combineConf.queryUsesInputFile) {
+    if (queryUsesInputFile) {
       logDebug("Query uses input file name, can't use combine mode")
       false
     } else {

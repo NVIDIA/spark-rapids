@@ -905,9 +905,42 @@ object RapidsConf {
   val READER_MULTITHREADED_READ_KEEP_ORDER =
     conf("spark.rapids.sql.reader.multithreaded.read.keepOrder")
       .doc("When using the MULTITHREADED reader, if this is set to true we read " +
-        "the files in the same order Spark does, otherwise the order may not be the same.")
+        "the files in the same order Spark does, otherwise the order may not be the same. " +
+        "Now it is supported only for parquet and orc.")
       .booleanConf
       .createWithDefault(true)
+
+  val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
+    conf("spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes")
+      .doc("The target size in bytes to combine multiple small files together when using the " +
+        "MULTITHREADED parquet reader. With combine disabled, the MULTITHREADED reader reads the " +
+        "files in parallel and sends individual files down to the GPU, but that can be " +
+        "inefficient for small files. When combine is enabled, files that are ready within " +
+        "spark.rapids.sql.format.parquet.multithreaded.combine.waitTime together, up to this " +
+        "threshold size, are combined before sending down to GPU. This can be disabled by " +
+        "setting it to 0. Note that combine also will not go over the " +
+        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes " +
+        s"limits. DEPRECATED: use $READER_MULTITHREADED_COMBINE_THRESHOLD instead.")
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional
+
+  val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
+    conf("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
+      .doc("When using the multithreaded parquet reader with combine mode, how long " +
+        "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
+        "Note that this will wait this amount of time from when the last file was available, " +
+        "so total wait time could be larger then this. " +
+        s"DEPRECATED: use $READER_MULTITHREADED_COMBINE_WAIT_TIME instead.")
+      .integerConf
+      .createOptional
+
+  val PARQUET_MULTITHREADED_READ_KEEP_ORDER =
+    conf("spark.rapids.sql.format.parquet.multithreaded.read.keepOrder")
+      .doc("When using the MULTITHREADED reader, if this is set to true we read " +
+        "the files in the same order Spark does, otherwise the order may not be the same. " +
+        s"DEPRECATED: use $READER_MULTITHREADED_READ_KEEP_ORDER instead.")
+      .booleanConf
+      .createOptional
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =

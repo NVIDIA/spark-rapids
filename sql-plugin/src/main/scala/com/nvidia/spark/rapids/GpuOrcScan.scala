@@ -555,12 +555,11 @@ case class GpuOrcMultiFilePartitionReaderFactory(
    */
   override def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
       PartitionReader[ColumnarBatch] = {
-    val combineConf = CombineConf(combineThresholdSize, combineWaitTime, queryUsesInputFile,
-      keepReadsInOrder)
+    val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
       debugDumpPrefix, filters, filterHandler, metrics, ignoreMissingFiles, ignoreCorruptFiles,
-      combineConf)
+      queryUsesInputFile, keepReadsInOrder, combineConf)
   }
 
   /**
@@ -1752,10 +1751,13 @@ class MultiFileCloudOrcPartitionReader(
     execMetrics: Map[String, GpuMetric],
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
+    queryUsesInputFile: Boolean,
+    keepReadsInOrder: Boolean,
     combineConf: CombineConf)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
-    combineConf = combineConf) with MultiFileReaderFunctions with OrcPartitionReaderBase {
+    keepReadsInOrder = keepReadsInOrder, combineConf = combineConf)
+  with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(
       override val partitionedFile: PartitionedFile,
@@ -1905,8 +1907,7 @@ class MultiFileCloudOrcPartitionReader(
   override def getFileFormatShortName: String = "ORC"
 
   override def canUseCombine: Boolean = {
-    // FIXME whether should "ignoreCorruptFiles" be considered here? Since coalescing read does.
-    if (combineConf.queryUsesInputFile) {
+    if (queryUsesInputFile) {
       logDebug("Can't use combine mode because query uses 'input_file_xxx' function(s)")
       false
     } else {
@@ -1921,11 +1922,11 @@ class MultiFileCloudOrcPartitionReader(
   override def combineHMBs(
       buffers: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
     if (buffers.length == 1) {
-      println("No need to combine because there is only one buffer.")
+      logDebug("No need to combine because there is only one buffer.")
       buffers.head
     } else {
       assert(buffers.length > 1)
-      println(s"Got ${buffers.length} buffers, combine them")
+      logDebug(s"Got ${buffers.length} buffers, combine them")
       doCombineHmbs(buffers)
     }
   }
@@ -2109,7 +2110,7 @@ class MultiFileCloudOrcPartitionReader(
           if (firstNonEmpty != null && checkIfNeedToSplitDataBlock(firstNonEmpty, hmbData)) {
             // if we need to keep the same order as Spark we just stop here and put rest in
             // leftOverFiles, but if we don't then continue so we combine as much as possible
-            if (combineConf.keepReadsInOrder) {
+            if (keepReadsInOrder) {
               needsSplit = true
               combineLeftOverFiles = Some(input.drop(numCombined))
             } else {
@@ -2129,7 +2130,7 @@ class MultiFileCloudOrcPartitionReader(
       iterLoc += 1
     }
 
-    if (!combineConf.keepReadsInOrder && leftOversWhenNotKeepReadsInOrder.nonEmpty) {
+    if (!keepReadsInOrder && leftOversWhenNotKeepReadsInOrder.nonEmpty) {
       combineLeftOverFiles = Some(leftOversWhenNotKeepReadsInOrder.toArray)
     }
 
