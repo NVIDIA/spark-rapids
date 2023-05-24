@@ -320,6 +320,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
       input.flatMap(batch => {
         if (batch.numCols() == 0 || batch.numRows() == 0) {
+          if (batch.numCols() > 0 && batch.column(0).isInstanceOf[GpuColumnVector]) {
+            batch.close();
+          }
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
