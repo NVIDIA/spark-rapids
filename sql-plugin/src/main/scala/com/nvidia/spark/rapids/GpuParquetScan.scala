@@ -2230,7 +2230,7 @@ class MultiFileCloudParquetPartitionReader(
           if (firstNonEmpty != null && checkIfNeedToSplit(firstNonEmpty, hmWithData)) {
             // if we need to keep the same order as Spark we just stop here and put rest in
             // leftOverFiles, but if we don't then continue so we combine as much as possible
-            if (combineConf.keepReadsInOrder) {
+            if (keepReadsInOrder) {
               needsSplit = true
               combineLeftOverFiles = Some(input.drop(numCombined))
             } else {
@@ -2250,7 +2250,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       iterLoc += 1
     }
-    if (!combineConf.keepReadsInOrder && leftOversWhenNotKeepReadsInOrder.nonEmpty) {
+    if (!keepReadsInOrder && leftOversWhenNotKeepReadsInOrder.nonEmpty) {
       combineLeftOverFiles = Some(leftOversWhenNotKeepReadsInOrder.toArray)
     }
     val combinedMeta = CombinedMeta(allPartValues.toArray, toCombine.toArray, firstNonEmpty)

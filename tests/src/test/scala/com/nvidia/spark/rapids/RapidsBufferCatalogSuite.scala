@@ -212,40 +212,48 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
   }
 
   test("multiple calls to unspill return existing DEVICE buffer") {
-    val deviceStore = spy(new RapidsDeviceMemoryStore)
-    val mockStore = mock[RapidsBufferStore]
-    withResource(
-      new RapidsHostMemoryStore(10000, 1000)) { hostStore =>
-      deviceStore.setSpillStore(hostStore)
-      hostStore.setSpillStore(mockStore)
-      val catalog = new RapidsBufferCatalog(deviceStore)
-      val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
-        val meta = MetaUtils.getTableMetaNoTable(buff)
-        catalog.addBuffer(
-          buff, meta, -1)
-      }
-      withResource(handle) { _ =>
-        catalog.synchronousSpill(deviceStore, 0)
-        val acquiredHostBuffer = catalog.acquireBuffer(handle)
-        withResource(acquiredHostBuffer) { _ =>
-          assertResult(HOST)(acquiredHostBuffer.storageTier)
-          val unspilled =
-            catalog.unspillBufferToDeviceStore(
+    withResource(spy(new RapidsDeviceMemoryStore)) { deviceStore =>
+      val mockStore = mock[RapidsBufferStore]
+      withResource(
+        new RapidsHostMemoryStore(10000, 1000)) { hostStore =>
+        deviceStore.setSpillStore(hostStore)
+        hostStore.setSpillStore(mockStore)
+        val catalog = new RapidsBufferCatalog(deviceStore)
+        val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
+          val meta = MetaUtils.getTableMetaNoTable(buff)
+          catalog.addBuffer(
+            buff, meta, -1)
+        }
+        withResource(handle) { _ =>
+          catalog.synchronousSpill(deviceStore, 0)
+          val acquiredHostBuffer = catalog.acquireBuffer(handle)
+          val unspilled = withResource(acquiredHostBuffer) { _ =>
+            assertResult(HOST)(acquiredHostBuffer.storageTier)
+            val unspilled =
+              catalog.unspillBufferToDeviceStore(
+                acquiredHostBuffer,
+                Cuda.DEFAULT_STREAM)
+            withResource(unspilled) { _ =>
+              assertResult(DEVICE)(unspilled.storageTier)
+            }
+            val unspilledSame = catalog.unspillBufferToDeviceStore(
               acquiredHostBuffer,
-              acquiredHostBuffer.getMemoryBuffer,
               Cuda.DEFAULT_STREAM)
-          withResource(unspilled) { _ =>
-            assertResult(DEVICE)(unspilled.storageTier)
+            withResource(unspilledSame) { _ =>
+              assertResult(unspilled)(unspilledSame)
+            }
+            // verify that we invoked the copy function exactly once
+            verify(deviceStore, times(1)).copyBuffer(any(), any())
+            unspilled
           }
           val unspilledSame = catalog.unspillBufferToDeviceStore(
             acquiredHostBuffer,
-            acquiredHostBuffer.getMemoryBuffer,
             Cuda.DEFAULT_STREAM)
           withResource(unspilledSame) { _ =>
             assertResult(unspilled)(unspilledSame)
           }
           // verify that we invoked the copy function exactly once
-          verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
+          verify(deviceStore, times(1)).copyBuffer(any(), any())
         }
       }
     }
@@ -322,8 +330,8 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
       var _acquireAttempts: Int = acquireAttempts
       var currentPriority: Long =  initialPriority
       override val id: RapidsBufferId = bufferId
-      override val size: Long = 0
-      override val meta: TableMeta = tableMeta
+      override def getMemoryUsedBytes: Long = 0
+      override def meta: TableMeta = tableMeta
       override val storageTier: StorageTier = tier
       override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null
       override def getMemoryBuffer: MemoryBuffer = null
