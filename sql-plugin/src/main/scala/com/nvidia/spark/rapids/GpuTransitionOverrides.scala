@@ -410,10 +410,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // Prune the output of the Scan so it only includes things that the referenceList will
     // actually read
     val neededExprIds = referenceList.flatMap(extractAttrReferences).map(_.exprId).toSet
-    val partOutAttrs = fss.output.splitAt(fss.requiredSchema.length)._2
-    val neededPartIndexes = partOutAttrs.zipWithIndex.filter{
-      case (provided, _) => neededExprIds.contains(provided.exprId)
-    }.map(_._2)
+    val partOutAttrs = fss.output.drop(fss.requiredSchema.length)
+    val neededPartIndexes = partOutAttrs.zipWithIndex.collect{
+      case (provided, index) if neededExprIds.contains(provided.exprId) => index
+    }
 
     val prunedPartSchema = Some(StructType(neededPartIndexes.map(fss.relation.partitionSchema)))
     fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf)
