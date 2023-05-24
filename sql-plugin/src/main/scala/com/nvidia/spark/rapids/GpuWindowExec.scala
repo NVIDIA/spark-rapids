@@ -1782,6 +1782,7 @@ class GpuCachedDoublePassWindowIterator(
   }
 
   // Compute the window operation and cache/update caches as needed.
+  // The caller is responsible for closing cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
