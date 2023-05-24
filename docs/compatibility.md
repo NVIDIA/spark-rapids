@@ -435,8 +435,7 @@ These are the known edge cases where running on the GPU will produce different r
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
-- Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
-- Line anchor `$` is not supported in some rare contexts.
+- Line anchors `^` and `$` are not supported in some contexts, such as when combined with a choice (`^|a` or `$|a`).
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\z` is not supported
 - Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
