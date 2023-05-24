@@ -111,7 +111,7 @@ trait OrcShims311until320Base {
       ps: OrcProto.PostScript,
       psLen: Int): OrcProto.Footer = {
     val footerSize = ps.getFooterLength.toInt
-    val footerOffset = bb.limit - 1 - psLen - footerSize
+    val footerOffset = bb.limit() - 1 - psLen - footerSize
     val footerBuffer = bb.duplicate()
     footerBuffer.position(footerOffset)
     footerBuffer.limit(footerOffset + footerSize)

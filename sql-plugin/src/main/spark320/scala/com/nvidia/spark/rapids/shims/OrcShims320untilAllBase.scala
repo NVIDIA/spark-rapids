@@ -138,7 +138,7 @@ trait OrcShims320untilAllBase {
       ps: OrcProto.PostScript,
       psLen: Int): OrcProto.Footer = {
     val footerSize = ps.getFooterLength.toInt
-    val footerOffset = bb.limit - 1 - psLen - footerSize
+    val footerOffset = bb.limit() - 1 - psLen - footerSize
     val compressionKind = CompressionKind.valueOf(ps.getCompression.name())
     val streamOpts = new InStream.StreamOptions()
     withResource(OrcCodecPool.getCodec(compressionKind)) { codec =>

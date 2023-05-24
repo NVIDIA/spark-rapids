@@ -66,7 +66,7 @@ class GpuOrcDataReader(
         cacheToken.foreach { token =>
           val hmb = closeOnExcept(HostMemoryBuffer.allocate(current.getLength, false)) { hmb =>
             hmb.setBytes(0, buffer.array(),
-              buffer.arrayOffset() + buffer.position, current.getLength)
+              buffer.arrayOffset() + buffer.position(), current.getLength)
             hmb
           }
           token.complete(hmb)

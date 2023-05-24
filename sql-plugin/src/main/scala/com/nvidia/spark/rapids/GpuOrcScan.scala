@@ -1642,7 +1642,7 @@ private object GpuOrcFileFilterHandler {
       val serializedTail = bb.slice()
       bb.position(0)
       // last byte is the size of the postscript section
-      val psSize = bb.get(bb.limit - 1) & 0xff
+      val psSize = bb.get(bb.limit() - 1) & 0xff
       val ps = loadPostScript(bb, psSize)
       val footer = OrcShims.parseFooterFromBuffer(bb, ps, psSize)
       val fileTail = OrcProto.FileTail.newBuilder()
@@ -1656,7 +1656,7 @@ private object GpuOrcFileFilterHandler {
   }
 
   private def loadPostScript(bb: ByteBuffer, psSize: Int): OrcProto.PostScript = {
-    val psOffset = bb.limit - 1 - psSize
+    val psOffset = bb.limit() - 1 - psSize
     val in = new ByteArrayInputStream(bb.array(), bb.arrayOffset() + psOffset, psSize)
     OrcProto.PostScript.parseFrom(in)
   }
@@ -1710,7 +1710,7 @@ private object GpuOrcFileFilterHandler {
       psAbsOffset: Int): OrcProto.PostScript = {
     // TODO: when PB is upgraded to 2.6, newInstance(ByteBuffer) method should be used here.
     assert(bb.hasArray)
-    val in = new ByteArrayInputStream(bb.array(), bb.arrayOffset + psAbsOffset, psLen)
+    val in = new ByteArrayInputStream(bb.array(), bb.arrayOffset() + psAbsOffset, psLen)
     val ps = OrcProto.PostScript.parseFrom(in)
     checkOrcVersion(filePath, ps)
     ps
@@ -1736,7 +1736,7 @@ private object GpuOrcFileFilterHandler {
       throw new FileFormatException("Malformed ORC file " + path +
           ". Invalid postscript length " + psLen)
     }
-    val offset = buffer.arrayOffset + buffer.position + buffer.limit - fullLength
+    val offset = buffer.arrayOffset() + buffer.position() + buffer.limit() - fullLength
     val array = buffer.array
     // now look for the magic string at the end of the postscript.
     if (!Text.decode(array, offset, magicLength).equals(OrcFile.MAGIC)) {
