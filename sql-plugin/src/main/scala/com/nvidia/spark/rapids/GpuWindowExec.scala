@@ -1782,12 +1782,22 @@ class GpuCachedDoublePassWindowIterator(
   }
 
   // Compute the window operation and cache/update caches as needed.
-  // The caller is responsible for closing cb
+  // This method takes ownership of cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
-    withResource(computeBasicWindow(cb)) { basic =>
-      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
+
+    val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val (basic, parts) = withRetryNoSplit(sp) { _ =>
+      withResource(sp.getColumnarBatch()) { x =>
+        val basic = computeBasicWindow(x)
+        val parts = GpuProjectExec.project(x, boundPartitionSpec)
+        (basic, parts)
+      }
+    }
+
+    withResource(basic) { _ =>
+      withResource(parts) { _ =>
         val partColumns = GpuColumnVector.extractBases(parts)
 
         val firstLastEqual = areRowPartsEqual(lastPartsCaching, partColumns, Seq(0, numRows - 1))
@@ -1863,12 +1873,11 @@ class GpuCachedDoublePassWindowIterator(
       if (waitingForFirstPass.isEmpty) {
         lastBatch()
       } else {
-        withResource(waitingForFirstPass.get) { cb =>
-          waitingForFirstPass = None
-          withResource(
+        val x = waitingForFirstPass.get
+        waitingForFirstPass = None
+        withResource(
             new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
-            firstPassComputeAndCache(cb)
-          }
+          firstPassComputeAndCache(x)
         }
       }
     }
