@@ -1877,6 +1877,7 @@ class GpuCachedDoublePassWindowIterator(
         waitingForFirstPass = None
         withResource(
             new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
+          // firstPassComputeAndCache takes ownership of the batch passed to it
           firstPassComputeAndCache(x)
         }
       }
