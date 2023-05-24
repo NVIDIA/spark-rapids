@@ -393,22 +393,30 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  def extractAttrReferences[A <: Expression](expression: A): Seq[AttributeReference] = {
+    expression match {
+      case a: AttributeReference =>
+        Seq(a)
+      case other: Expression =>
+        other.children.flatMap(extractAttrReferences)
+    }
+  }
+
   private def withPrunedPartSchema(
       fss: GpuFileSourceScanExec,
       referenceList: Seq[Expression]): GpuFileSourceScanExec = {
     // Luckily partition columns do not support nested types. So only need to prune the
     // top level columns.
-    val prunedPartSchema = StructType(fss.relation.partitionSchema.filter { f =>
-      // The partition columns used in the referenceList will be kept.
-      referenceList.exists { expr =>
-        expr.find {
-          // It is safe to use the column name for comparison for the two cases listed in
-          // `prunePartitionForFileSourceScan`
-          case attr: AttributeReference => attr.name == f.name
-          case _ => false
-        }.isDefined
-      }})
-    fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)
+    // Prune the output of the Scan so it only includes things that the referenceList will
+    // actually read
+    val neededExprIds = referenceList.flatMap(extractAttrReferences).map(_.exprId).toSet
+    val partOutAttrs = fss.output.drop(fss.requiredSchema.length)
+    val neededPartIndexes = partOutAttrs.zipWithIndex.collect{
+      case (provided, index) if neededExprIds.contains(provided.exprId) => index
+    }
+
+    val prunedPartSchema = Some(StructType(neededPartIndexes.map(fss.relation.partitionSchema)))
+    fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf)
   }
 
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging

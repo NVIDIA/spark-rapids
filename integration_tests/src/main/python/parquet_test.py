@@ -1475,3 +1475,30 @@ def test_parquet_read_count(spark_tmp_path):
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: spark.read.parquet(data_path), "SELECT COUNT(*) FROM tab", "tab",
         exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>')
+
+@pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_confs, col_name):
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/PAR_DATA'
+    reader = read_func(data_path)
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').parquet(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).selectExpr(col_name),
+            conf=all_confs)

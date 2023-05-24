@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -160,3 +160,24 @@ def test_read_count(spark_tmp_path, v1_enabled_list, reader_type, batch_size_row
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: spark.read.format("avro").load(data_path),
         conf=all_confs)
+
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, col_name):
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/AVRO_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').format('avro').save(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.format('avro').load(data_path).selectExpr(col_name),
+            conf=_enable_all_types_conf)
