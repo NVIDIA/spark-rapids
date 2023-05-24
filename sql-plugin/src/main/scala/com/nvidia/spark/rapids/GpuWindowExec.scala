@@ -1790,9 +1790,9 @@ class GpuCachedDoublePassWindowIterator(
     val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     val (basic, parts) = withRetryNoSplit(sp) { _ =>
       withResource(sp.getColumnarBatch()) { x =>
-        val basic = computeBasicWindow(x)
-        val parts = GpuProjectExec.project(x, boundPartitionSpec)
-        (basic, parts)
+        closeOnExcept(computeBasicWindow(x)) { basic =>
+          (basic, GpuProjectExec.project(x, boundPartitionSpec))
+        }
       }
     }
 
