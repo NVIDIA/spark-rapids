@@ -62,7 +62,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, CharType, DataType, DecimalType, MapType, StringType, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
@@ -260,10 +260,12 @@ object GpuOrcScan {
    * The returned column may be either the input or a new one, users should check and
    * close it when needed.
    */
-  def castColumnTo(col: ColumnView, targetType: DataType): ColumnView = {
+  def castColumnTo(col: ColumnView, targetType: DataType, originalFromDt: DataType)
+  : ColumnView = {
     val fromDt = col.getType
     val toDt = GpuColumnVector.getNonNestedRapidsType(targetType)
-    if (fromDt == toDt) {
+    if (fromDt == toDt &&
+       !(targetType == StringType && originalFromDt.isInstanceOf[CharType])) {
       return col
     }
     (fromDt, toDt) match {
@@ -378,6 +380,10 @@ object GpuOrcScan {
         GpuCast.doCast(col, fromDataType, toDataType, ansiMode=false, legacyCastToString = false,
           stringToDateAnsiModeEnabled = false)
 
+      case (DType.STRING, DType.STRING) if originalFromDt.isInstanceOf[CharType] =>
+        // Trim trailing whitespace off of output strings, to match CPU output.
+        col.rstrip()
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -412,7 +418,7 @@ object GpuOrcScan {
           // TIMESTAMP_INSTANT is not supported by cuDF.
           case _ => false
         }
-      case VARCHAR =>
+      case VARCHAR | CHAR =>
         toType == STRING
 
       case FLOAT | DOUBLE =>
@@ -1636,7 +1642,6 @@ class MultiFileCloudOrcPartitionReader(
     override val partitionedFile: PartitionedFile,
     bufferSize: Long,
     override val bytesRead: Long,
-    updatedReadSchema: TypeDescription,
     readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
 
     override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
@@ -1666,13 +1671,13 @@ class MultiFileCloudOrcPartitionReader(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${partFile.filePath}", e)
-          HostMemoryEmptyMetaData(partFile, 0, 0, null, null)
+          HostMemoryEmptyMetaData(partFile, 0, 0, null)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
-          HostMemoryEmptyMetaData(partFile, 0, 0, null, null)
+          HostMemoryEmptyMetaData(partFile, 0, 0, null)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
@@ -1691,22 +1696,19 @@ class MultiFileCloudOrcPartitionReader(
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          HostMemoryEmptyMetaData(partFile, 0, bytesRead,
-            ctx.updatedReadSchema, readDataSchema)
+          HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
         } else {
           blockChunkIter = ctx.blockIterator
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
-            HostMemoryEmptyMetaData(
-              partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
+            HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
           } else {
             if (ctx.updatedReadSchema.isEmpty) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
               // overload size to be number of rows with null buffer
-              HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
-                ctx.updatedReadSchema, readDataSchema)
+              HostMemoryEmptyMetaData(partFile, numRows, bytesRead, readDataSchema)
             } else {
               while (blockChunkIter.hasNext) {
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
@@ -1719,8 +1721,7 @@ class MultiFileCloudOrcPartitionReader(
               if (isDone) {
                 // got close before finishing
                 hostBuffers.foreach(_.hmb.safeClose())
-                HostMemoryEmptyMetaData(
-                  partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
+                HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
               } else {
                 HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
                   ctx.updatedReadSchema, ctx.requestedMapping)

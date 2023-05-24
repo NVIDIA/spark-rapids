@@ -36,7 +36,7 @@ package org.apache.spark.sql.rapids.shims
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
@@ -75,11 +75,11 @@ case class GpuTimeAdd(start: Expression,
   override def dataType: DataType = start.dataType
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
       withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
         // lhs is start, rhs is interval
         (lhs, rhs) match {
-          case (l: GpuColumnVector, intervalS: GpuScalar) =>
+          case (l, intervalS: GpuScalar) =>
             // get long type interval
             val interval = intervalS.dataType match {
               case CalendarIntervalType =>
@@ -106,7 +106,7 @@ case class GpuTimeAdd(start: Expression,
             } else {
               l.incRefCount()
             }
-          case (l: GpuColumnVector, r: GpuColumnVector) =>
+          case (l, r: GpuColumnVector) =>
             (l.dataType(), r.dataType) match {
               case (_: TimestampType, _: DayTimeIntervalType) =>
                 // DayTimeIntervalType is stored as long
@@ -120,7 +120,8 @@ case class GpuTimeAdd(start: Expression,
             }
           case _ =>
             throw new UnsupportedOperationException(
-              "GpuTimeAdd takes column and interval as an argument only")
+              "GpuTimeAdd takes column and interval as an argument only, the types " +
+                s"passed are, left: ${lhs.getClass} right: ${rhs.getClass}")
         }
       }
     }

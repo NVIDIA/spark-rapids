@@ -168,24 +168,26 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     buffers.toArray
   }
 
+  def checkSize(table: Table): Unit = {
+    val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
+    if (tableSize > Int.MaxValue) {
+      fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
+    }
+  }
+
   private def testCompressColBatch(
      testResources: TestResources,
      cudfCols: Array[ColumnVector],
      gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector], splitAt: Int*): Unit = {
     // mock static method for Table
-    val theTableMock = mockStatic(classOf[Table], (_: InvocationOnMock) =>
-      new TableWriter {
-        override def write(table: Table): Unit = {
-          val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
-          if (tableSize > Int.MaxValue) {
-            fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
-          }
-        }
-
-        override def close(): Unit = {
-          // noop
-        }
-      })
+    val theTableMock = mockStatic(classOf[Table], (iom: InvocationOnMock) => {
+      val ret = iom.callRealMethod().asInstanceOf[TableWriter]
+      val spyRet = spy(ret)
+      doAnswer( invocation =>
+        checkSize(invocation.getArgument(0, classOf[Table]))
+      ).when(spyRet).write(isA(classOf[Table]))
+      spyRet
+    })
     val cb = new ColumnarBatch(gpuCols, ROWS)
     whenSplitCalled(cb, testResources, splitAt: _*)
     val ser = new ParquetCachedBatchSerializer

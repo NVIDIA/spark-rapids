@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
@@ -31,6 +31,7 @@ import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  *  Exception thrown when inserting a buffer into the catalog with a duplicate buffer ID
@@ -308,11 +309,56 @@ class RapidsBufferCatalog(
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       needsSync: Boolean): RapidsBufferHandle = synchronized {
-    logDebug(s"Adding buffer ${id} to ${deviceStorage}")
     val rapidsBuffer = deviceStorage.addBuffer(
       id,
       buffer,
       tableMeta,
+      initialSpillPriority,
+      needsSync)
+    registerNewBuffer(rapidsBuffer)
+    makeNewHandle(id, initialSpillPriority)
+  }
+
+  /**
+   * Adds a batch to the device storage. This does NOT take ownership of the
+   * batch, so it is the responsibility of the caller to close it.
+   *
+   * @param batch                batch that will be added to the store
+   * @param initialSpillPriority starting spill priority value for the batch
+   * @param needsSync            whether the spill framework should stream synchronize while adding
+   *                             this batch (defaults to true)
+   * @return RapidsBufferHandle handle for this RapidsBuffer
+   */
+  def addBatch(
+      batch: ColumnarBatch,
+      initialSpillPriority: Long,
+      needsSync: Boolean = true): RapidsBufferHandle = {
+    closeOnExcept(GpuColumnVector.from(batch)) { table =>
+      addTable(table, initialSpillPriority, needsSync)
+    }
+  }
+
+  /**
+   * Adds a table to the device storage.
+   *
+   * This takes ownership of the table. The reason for this is that tables
+   * don't have a reference count, so we cannot cleanly capture ownership by increasing
+   * ref count and decreasing from the caller.
+   *
+   * @param table                table that will be owned by the store
+   * @param initialSpillPriority starting spill priority value
+   * @param needsSync            whether the spill framework should stream synchronize while adding
+   *                             this table (defaults to true)
+   * @return RapidsBufferHandle handle for this RapidsBuffer
+   */
+  def addTable(
+      table: Table,
+      initialSpillPriority: Long,
+      needsSync: Boolean = true): RapidsBufferHandle = {
+    val id = TempSpillBufferId()
+    val rapidsBuffer = deviceStorage.addTable(
+      id,
+      table,
       initialSpillPriority,
       needsSync)
     registerNewBuffer(rapidsBuffer)
@@ -482,7 +528,7 @@ class RapidsBufferCatalog(
               if (nextSpillable != null) {
                 // we have a buffer (nextSpillable) to spill
                 spillAndFreeBuffer(nextSpillable, spillStore, stream)
-                totalSpilled += nextSpillable.size
+                totalSpilled += nextSpillable.getMemoryUsedBytes
               }
             } else {
               rmmShouldRetryAlloc = true
@@ -527,7 +573,7 @@ class RapidsBufferCatalog(
           trySpillToMaximumSize(buffer, spillStore, stream)
 
           // copy the buffer to spillStore
-          val newBuffer = spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
+          val newBuffer = spillStore.copyBuffer(buffer, stream)
 
           // once spilled, we get back a new RapidsBuffer instance in this new tier
           registerNewBuffer(newBuffer)
@@ -555,7 +601,7 @@ class RapidsBufferCatalog(
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
       val targetTotalSize =
-        math.max(spillStoreMaxSize.get - buffer.size, 0)
+        math.max(spillStoreMaxSize.get - buffer.getMemoryUsedBytes, 0)
       val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize, stream)
       maybeAmountSpilled.foreach { amountSpilled =>
         if (amountSpilled != 0) {
@@ -570,29 +616,21 @@ class RapidsBufferCatalog(
    * Copies `buffer` to the `deviceStorage` store, registering a new `RapidsBuffer` in
    * the process
    * @param buffer - buffer to copy
-   * @param memoryBuffer - cuDF MemoryBuffer to copy from
    * @param stream - Cuda.Stream to synchronize on
    * @return - The `RapidsBuffer` instance that was added to the device store.
    */
   def unspillBufferToDeviceStore(
     buffer: RapidsBuffer,
-    memoryBuffer: MemoryBuffer,
     stream: Cuda.Stream): RapidsBuffer = synchronized {
     // try to acquire the buffer, if it's already in the store
     // do not create a new one, else add a reference
     acquireBuffer(buffer.id, StorageTier.DEVICE) match {
       case None =>
-        val newBuffer = deviceStorage.copyBuffer(
-          buffer,
-          memoryBuffer,
-          stream)
+        val newBuffer = deviceStorage.copyBuffer(buffer, stream)
         newBuffer.addReference() // add a reference since we are about to use it
         registerNewBuffer(newBuffer)
         newBuffer
-      case Some(existingBuffer) =>
-        withResource(memoryBuffer) { _ =>
-          existingBuffer
-        }
+      case Some(existingBuffer) => existingBuffer
     }
   }
 
@@ -702,7 +740,7 @@ object RapidsBufferCatalog extends Logging {
     // We are going to re-initialize so make sure all of the old things were closed...
     closeImpl()
     assert(memoryEventHandler == null)
-    deviceStorage = new RapidsDeviceMemoryStore()
+    deviceStorage = new RapidsDeviceMemoryStore(rapidsConf.chunkedPackBounceBufferSize)
     diskBlockManager = new RapidsDiskBlockManager(conf)
     if (rapidsConf.isGdsSpillEnabled) {
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
@@ -811,6 +849,12 @@ object RapidsBufferCatalog extends Logging {
       tableMeta: TableMeta,
       initialSpillPriority: Long): RapidsBufferHandle = {
     singleton.addBuffer(buffer, tableMeta, initialSpillPriority)
+  }
+
+  def addBatch(
+      batch: ColumnarBatch,
+      initialSpillPriority: Long): RapidsBufferHandle = {
+    singleton.addBatch(batch, initialSpillPriority)
   }
 
   /**

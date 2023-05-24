@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 
@@ -42,7 +41,11 @@ public class ParquetTypeVisitor<T> {
     } else {
       // if not a primitive, the typeId must be a group
       GroupType group = type.asGroupType();
-      OriginalType annotation = group.getOriginalType();
+
+      // TODO undo suppress warnings after dropping Spark 3.1.x/Parquet 1.10
+      @SuppressWarnings("deprecation")
+      org.apache.parquet.schema.OriginalType annotation = group.getOriginalType();
+
       if (annotation != null) {
         switch (annotation) {
           case LIST:

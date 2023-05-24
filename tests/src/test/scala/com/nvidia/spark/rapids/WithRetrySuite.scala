@@ -53,6 +53,7 @@ class WithRetrySuite
     }
     val deviceStorage = new RapidsDeviceMemoryStore()
     val catalog = new RapidsBufferCatalog(deviceStorage)
+    RapidsBufferCatalog.setDeviceStorage(deviceStorage)
     RapidsBufferCatalog.setCatalog(catalog)
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)

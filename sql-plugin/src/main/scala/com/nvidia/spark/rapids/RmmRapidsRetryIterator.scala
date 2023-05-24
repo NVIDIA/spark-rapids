@@ -509,7 +509,11 @@ object RmmRapidsRetryIterator extends Logging {
       while (result.isEmpty && attemptIter.hasNext) {
         if (!firstAttempt) {
           // call thread block API
-          RmmSpark.blockThreadUntilReady()
+          try {
+            RmmSpark.blockThreadUntilReady()
+          } catch {
+            case _: SplitAndRetryOOM => doSplit = true
+          }
         }
         firstAttempt = false
         if (doSplit) {
@@ -553,7 +557,7 @@ object RmmRapidsRetryIterator extends Logging {
               // we want to throw early here, since we got an exception
               // we were not prepared to handle
               throw lastException
-            } 
+            }
             // else another exception wrapped a retry. So we are going to try again
         }
       }

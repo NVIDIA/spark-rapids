@@ -356,12 +356,11 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         // get per row byte count of every column, except the exploding one
         // NOTE: in the future, we may want to factor in the exploding column size
         // into this math, if there is skew in the column to explode.
-        val repeatingByteCount =
+        val repeatingByteCount = withResource(perRowRepetition) { _ =>
           withResource(getRowByteCount(repeatingColumns)) { byteCountBeforeRepetition =>
-            withResource(perRowRepetition) { _ =>
-              byteCountBeforeRepetition.mul(perRowRepetition)
-            }
+            byteCountBeforeRepetition.mul(perRowRepetition)
           }
+        }
 
         // compute prefix sum of byte sizes, this can be used to find input row
         // split points at which point the output batch is estimated to be roughly

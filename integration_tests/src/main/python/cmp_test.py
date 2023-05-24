@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -271,6 +271,27 @@ def test_filter(data_gen):
 def test_filter_with_project(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, BooleanGen(), data_gen).filter(f.col('a')).selectExpr('*', 'a as a2'))
+
+# It takes quite a bit to get filter to have a column it can filter on, but
+# no columns to actually filter. We are making it happen here with a sub-query
+# and some constants that then make it so all we need is the number of rows
+# of input.
+@pytest.mark.parametrize('op', ['>', '<'])
+def test_empty_filter(op, spark_tmp_path):
+
+    def do_it(spark):
+        df = spark.createDataFrame([(14, "Tom"), (23, "Alice"), (16, "Bob")], ["age", "name"])
+        # we repartition the data to 1 because for some reason Spark can write 4 files for 3 rows.
+        # In this case that causes a race condition with the last aggregation which can result
+        # in a null being returned. For some reason this happens a lot on the GPU in local mode
+        # and not on the CPU in local mode.
+        df.repartition(1).write.mode("overwrite").parquet(spark_tmp_path)
+        df = spark.read.parquet(spark_tmp_path)
+        curDate = df.withColumn("current_date", f.current_date())
+        curDate.createOrReplaceTempView("empty_filter_test_curDate")
+        spark.sql("select current_date, ((select last(current_date) from empty_filter_test_curDate) + interval 1 day) as test from empty_filter_test_curDate").createOrReplaceTempView("empty_filter_test2")
+        return spark.sql(f"select * from empty_filter_test2 where test {op} current_date")
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 def test_nondeterministic_filter():
     assert_gpu_and_cpu_are_equal_collect(

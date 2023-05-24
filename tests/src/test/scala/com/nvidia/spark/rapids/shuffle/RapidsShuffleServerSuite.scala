@@ -54,7 +54,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           val stream = invocation.getArgument[Cuda.Stream](4)
           dst.copyFromMemoryBuffer(dstOffset, deviceBuffer, srcOffset, length, stream)
         }
-        when(mockBuffer.size).thenReturn(deviceBuffer.getLength)
+        when(mockBuffer.getPackedSizeBytes).thenReturn(deviceBuffer.getLength)
         when(mockBuffer.meta).thenReturn(mockMeta)
         mockBuffer
       }
@@ -230,7 +230,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
         val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
         when(rapidsBuffer.meta).thenReturn(tableMeta)
-        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(rapidsBuffer.getPackedSizeBytes).thenReturn(tableMeta.bufferMeta().size())
         when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
           .thenReturn(rapidsBuffer)
 
@@ -287,7 +287,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
         val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
         when(rapidsBuffer.meta).thenReturn(tableMeta)
-        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(rapidsBuffer.getPackedSizeBytes).thenReturn(tableMeta.bufferMeta().size())
         when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
             .thenReturn(rapidsBuffer)
 
@@ -371,7 +371,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val rapidsBuffer = mock[RapidsBuffer]
         val tableMeta = MetaUtils.buildTableMeta(tableId, 456, bb, 100)
         when(rapidsBuffer.meta).thenReturn(tableMeta)
-        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(rapidsBuffer.getPackedSizeBytes).thenReturn(tableMeta.bufferMeta().size())
         when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(tableId)))
             .thenReturn(rapidsBuffer)
         rapidsBuffer
