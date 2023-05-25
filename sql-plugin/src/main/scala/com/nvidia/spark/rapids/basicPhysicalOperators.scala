@@ -501,10 +501,21 @@ object GpuFilter {
       cb: ColumnarBatch): ColumnarBatch = {
     checkedFilterMask.map { checkedFilterMask =>
       withResource(checkedFilterMask) { checkedFilterMask =>
-        val colTypes = GpuColumnVector.extractTypes(cb)
-        withResource(GpuColumnVector.from(cb)) { tbl =>
-          withResource(tbl.filter(checkedFilterMask)) { filteredData =>
-            GpuColumnVector.from(filteredData, colTypes)
+        if (cb.numCols() <= 0) {
+          val rowCount = withResource(checkedFilterMask.sum(DType.INT32)) { sum =>
+            if (sum.isValid) {
+              sum.getInt
+            } else {
+              0
+            }
+          }
+          new ColumnarBatch(Array(), rowCount)
+        } else {
+          val colTypes = GpuColumnVector.extractTypes(cb)
+          withResource(GpuColumnVector.from(cb)) { tbl =>
+            withResource(tbl.filter(checkedFilterMask)) { filteredData =>
+              GpuColumnVector.from(filteredData, colTypes)
+            }
           }
         }
       }

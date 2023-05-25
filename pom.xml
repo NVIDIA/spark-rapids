@@ -636,7 +636,13 @@
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
-        <scala.javac.args>-Xlint:all,-serial,-path,-try</scala.javac.args>
+        <!--
+        -processing
+        to suppress unactionable "No processor claimed any of these annotations"
+        from various dependencies. Example @UDFType
+        https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
+        -->
+        <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
         <ucx.version>1.12.1</ucx.version>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh

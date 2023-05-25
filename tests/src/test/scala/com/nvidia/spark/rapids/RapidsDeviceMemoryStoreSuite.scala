@@ -21,7 +21,7 @@ import java.math.RoundingMode
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -34,13 +34,28 @@ import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
 class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
-  private def buildContiguousTable(): ContiguousTable = {
-    withResource(new Table.TestBuilder()
+  private def buildTable(): Table = {
+    new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
-        .column(5.0, 2.0, 3.0, 1.0)
+        .column(5.0D, 2.0D, 3.0D, 1.0D)
         .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
-        .build()) { table =>
+        .build()
+  }
+
+  private def buildTableWithDuplicate(): Table = {
+    withResource(ColumnVector.fromInts(5, null.asInstanceOf[java.lang.Integer], 3, 1)) { intCol =>
+      withResource(ColumnVector.fromStrings("five", "two", null, null)) { stringCol =>
+        withResource(ColumnVector.fromDoubles(5.0, 2.0, 3.0, 1.0)) { doubleCol =>
+          // add intCol twice
+          new Table(intCol, intCol, stringCol, doubleCol)
+        }
+      }
+    }
+  }
+
+  private def buildContiguousTable(): ContiguousTable = {
+    withResource(buildTable()) { table =>
       table.contiguousSplit()(0)
     }
   }
@@ -62,7 +77,153 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
     }
   }
 
-  test("a table is not spillable until the owner closes it") {
+  test("a non-contiguous table is spillable and it is handed over to the store") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTable()
+      catalog.addTable(table, spillPriority)
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("a non-contiguous table becomes non-spillable when batch is obtained") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTable()
+      val handle = catalog.addTable(table, spillPriority)
+      val types: Array[DataType] =
+          Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+      val batch = withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+        rapidsBuffer.getColumnarBatch(types)
+      }
+      withResource(batch) { _ =>
+        assertResult(buffSize)(store.currentSize)
+        assertResult(0)(store.currentSpillableSize)
+      }
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("a non-contiguous table is non-spillable until all columns are returned") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTable()
+      val handle = catalog.addTable(table, spillPriority)
+      val types: Array[DataType] =
+        Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+      // incRefCount all the columns via `batch`
+      val batch = withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+        rapidsBuffer.getColumnarBatch(types)
+      }
+      val columns = GpuColumnVector.extractBases(batch)
+      withResource(columns.head) { _ =>
+        columns.head.incRefCount()
+        withResource(batch) { _ =>
+          assertResult(buffSize)(store.currentSize)
+          assertResult(0)(store.currentSpillableSize)
+        }
+        // still 0 after the batch is closed, because of the extra incRefCount
+        // for columns.head
+        assertResult(0)(store.currentSpillableSize)
+      }
+      // columns.head is closed, so now our RapidsTable is spillable again
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("an aliased non-contiguous table is not spillable (until closing the alias) ") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTable()
+      val handle = catalog.addTable(table, spillPriority)
+      val types: Array[DataType] =
+        Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+      val aliasHandle = withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+        // extract the batch from the table we added, and add it back as a batch
+        withResource(rapidsBuffer.getColumnarBatch(types)) { batch =>
+          catalog.addBatch(batch, spillPriority)
+        }
+      } // we now have two copies in the store
+      assertResult(buffSize*2)(store.currentSize)
+      assertResult(0)(store.currentSpillableSize)
+
+      aliasHandle.close() // remove the alias
+
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("an aliased non-contiguous table is not spillable (until closing the original) ") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTable()
+      val handle = catalog.addTable(table, spillPriority)
+      val types: Array[DataType] =
+        Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+      withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+        // extract the batch from the table we added, and add it back as a batch
+        withResource(rapidsBuffer.getColumnarBatch(types)) { batch =>
+          catalog.addBatch(batch, spillPriority)
+        }
+      } // we now have two copies in the store
+      assertResult(buffSize * 2)(store.currentSize)
+      assertResult(0)(store.currentSpillableSize)
+
+      handle.close() // remove the original
+
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("an non-contiguous table supports duplicated columns") {
+    withResource(new RapidsDeviceMemoryStore) { store =>
+      val catalog = spy(new RapidsBufferCatalog(store))
+      val spillPriority = 3
+      val table = buildTableWithDuplicate()
+      val handle = catalog.addTable(table, spillPriority)
+      val types: Array[DataType] =
+        Seq(IntegerType, IntegerType, StringType, DoubleType).toArray
+      val buffSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+      withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+        // extract the batch from the table we added, and add it back as a batch
+        withResource(rapidsBuffer.getColumnarBatch(types)) { batch =>
+          catalog.addBatch(batch, spillPriority)
+        }
+      } // we now have two copies in the store
+      assertResult(buffSize * 2)(store.currentSize)
+      assertResult(0)(store.currentSpillableSize)
+
+      handle.close() // remove the original
+
+      assertResult(buffSize)(store.currentSize)
+      assertResult(buffSize)(store.currentSpillableSize)
+    }
+  }
+
+  test("a contiguous table is not spillable until the owner closes it") {
     withResource(new RapidsDeviceMemoryStore) { store =>
       val catalog = spy(new RapidsBufferCatalog(store))
       val spillPriority = 3
@@ -226,13 +387,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
     }
   }
 
-  test("cannot receive spilled buffers") {
-    withResource(new RapidsDeviceMemoryStore) { store =>
-      assertThrows[IllegalStateException](store.copyBuffer(
-        mock[RapidsBuffer], mock[MemoryBuffer], Cuda.DEFAULT_STREAM))
-    }
-  }
-
   test("size statistics") {
 
     withResource(new RapidsDeviceMemoryStore) { store =>
@@ -312,22 +466,22 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
 
     override protected def createBuffer(
         b: RapidsBuffer,
-        m: MemoryBuffer,
         s: Cuda.Stream): RapidsBufferBase = {
-      withResource(m) { _ =>
-        spilledBuffers += b.id
-        new MockRapidsBuffer(b.id, b.size, b.meta, b.getSpillPriority)
-      }
+      spilledBuffers += b.id
+      new MockRapidsBuffer(b.id, b.getPackedSizeBytes, b.meta, b.getSpillPriority)
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
-        extends RapidsBufferBase(id, size, meta, spillPriority) {
+        extends RapidsBufferBase(id, meta, spillPriority) {
       override protected def releaseResources(): Unit = {}
 
       override val storageTier: StorageTier = StorageTier.HOST
 
       override def getMemoryBuffer: MemoryBuffer =
         throw new UnsupportedOperationException
+
+      /** The size of this buffer in bytes. */
+      override def getMemoryUsedBytes: Long = size
     }
   }
 }

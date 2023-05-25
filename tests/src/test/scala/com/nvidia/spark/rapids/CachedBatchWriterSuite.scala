@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, CompressionType, DType}
+import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
@@ -49,28 +50,28 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-//  test("convert large columnar batch to cached batch on single col table") {
-//    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
-//      withResource(new TestResources()) { resources =>
-//        val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
-//        val splitAt = 2086912
-//        testCompressColBatch(resources, Array(spyCol0), Array(spyGpuCol0), splitAt)
-//        verify(spyCol0).split(splitAt)
-//      }
-//    }
-//  }
-//
-//  test("convert large columnar batch to cached batch on multi-col table") {
-//    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
-//      withResource(new TestResources()) { resources =>
-//        val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
-//        val splitAt = Seq(695637, 1391274, 2086911, 2782548)
-//        testCompressColBatch(resources, Array(spyCol0, spyCol0, spyCol0),
-//        Array(spyGpuCol0, spyGpuCol0, spyGpuCol0), splitAt: _*)
-//        verify(spyCol0, times(3)).split(splitAt: _*)
-//      }
-//    }
-//  }
+  test("convert large columnar batch to cached batch on single col table") {
+    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
+      withResource(new TestResources()) { resources =>
+        val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
+        val splitAt = 2086912
+        testCompressColBatch(resources, Array(spyCol0), Array(spyGpuCol0), splitAt)
+        verify(spyCol0).split(splitAt)
+      }
+    }
+  }
+
+  test("convert large columnar batch to cached batch on multi-col table") {
+    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
+      withResource(new TestResources()) { resources =>
+        val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
+        val splitAt = Seq(695637, 1391274, 2086911, 2782548)
+        testCompressColBatch(resources, Array(spyCol0, spyCol0, spyCol0),
+        Array(spyGpuCol0, spyGpuCol0, spyGpuCol0), splitAt: _*)
+        verify(spyCol0, times(3)).split(splitAt: _*)
+      }
+    }
+  }
 
   test("convert large InternalRow iterator to cached batch single col") {
     withResource(new TestResources()) { resources =>
@@ -133,33 +134,33 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
   val APPROX_PAR_META_DATA = 10 * 1024 * 1024 // we are estimating 10MB
   val BYTES_ALLOWED_PER_BATCH = _2GB - APPROX_PAR_META_DATA
 
-//  private def whenSplitCalled(cb: ColumnarBatch, testResources: TestResources,
-//      splitPoints: Int*): Unit = {
-//    val rows = cb.numRows()
-//    val eachRowSize = cb.numCols() * 1024
-//    val rowsAllowedInABatch = BYTES_ALLOWED_PER_BATCH / eachRowSize
-//    val spillOver = cb.numRows() % rowsAllowedInABatch
-//    val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
-//    scala.Range(0, cb.numCols()).indices.foreach { i =>
-//      val spyCol = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-//      val splitCols0 = splitRange.indices.map { _ =>
-//        val spySplitCol = spy(testResources.byteCv456)
-//        when(spySplitCol.getRowCount()).thenReturn(rowsAllowedInABatch)
-//        spySplitCol
-//      }
-//      val splitCols = if (spillOver > 0) {
-//        val splitCol = spy(testResources.byteCv3)
-//        when(splitCol.getRowCount()).thenReturn(spillOver)
-//        splitCols0 :+ splitCol
-//      } else {
-//        splitCols0
-//      }
-//
-//      // copy splitCols because ParquetCachedBatchSerializer.compressColumnarBatchWithParquet is
-//      // responsible to close the copied splits
-//      doAnswer(_ => copyOf(splitCols)).when(spyCol).split(splitPoints: _*)
-//    }
-//  }
+  private def whenSplitCalled(cb: ColumnarBatch, testResources: TestResources,
+      splitPoints: Int*): Unit = {
+    val rows = cb.numRows()
+    val eachRowSize = cb.numCols() * 1024
+    val rowsAllowedInABatch = BYTES_ALLOWED_PER_BATCH / eachRowSize
+    val spillOver = cb.numRows() % rowsAllowedInABatch
+    val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
+    scala.Range(0, cb.numCols()).indices.foreach { i =>
+      val spyCol = cb.column(i).asInstanceOf[GpuColumnVector].getBase
+      val splitCols0 = splitRange.indices.map { _ =>
+        val spySplitCol = spy(testResources.byteCv456)
+        when(spySplitCol.getRowCount()).thenReturn(rowsAllowedInABatch)
+        spySplitCol
+      }
+      val splitCols = if (spillOver > 0) {
+        val splitCol = spy(testResources.byteCv3)
+        when(splitCol.getRowCount()).thenReturn(spillOver)
+        splitCols0 :+ splitCol
+      } else {
+        splitCols0
+      }
+
+      // copy splitCols because ParquetCachedBatchSerializer.compressColumnarBatchWithParquet is
+      // responsible to close the copied splits
+      doAnswer(_ => copyOf(splitCols)).when(spyCol).split(splitPoints: _*)
+    }
+  }
 
   def copyOf(in: Seq[ColumnVector]): Array[ColumnVector] = {
     val buffers = ArrayBuffer[ColumnVector]()
@@ -167,36 +168,37 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     buffers.toArray
   }
 
-  // TODO figure out how to make this test work https://github.com/NVIDIA/spark-rapids/pull/8328
-//  private def testCompressColBatch(
-//     testResources: TestResources,
-//     cudfCols: Array[ColumnVector],
-//     gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector], splitAt: Int*): Unit = {
-//    // mock static method for Table
-//    val theTableMock = mockStatic(classOf[Table], (_: InvocationOnMock) =>
-//      new TableWriter {
-//        override def write(table: Table): Unit = {
-//          val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
-//          if (tableSize > Int.MaxValue) {
-//            fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
-//          }
-//        }
-//
-//        override def close(): Unit = {
-//          // noop
-//        }
-//      })
-//    val cb = new ColumnarBatch(gpuCols, ROWS)
-//    whenSplitCalled(cb, testResources, splitAt: _*)
-//    val ser = new ParquetCachedBatchSerializer
-//    val dummySchema = new StructType(
-//      Array(StructField("empty", ByteType, false),
-//        StructField("empty", ByteType, false),
-//        StructField("empty", ByteType, false)))
-//    ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
-//      BYTES_ALLOWED_PER_BATCH, false)
-//    theTableMock.close()
-//  }
+  def checkSize(table: Table): Unit = {
+    val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
+    if (tableSize > Int.MaxValue) {
+      fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
+    }
+  }
+
+  private def testCompressColBatch(
+     testResources: TestResources,
+     cudfCols: Array[ColumnVector],
+     gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector], splitAt: Int*): Unit = {
+    // mock static method for Table
+    val theTableMock = mockStatic(classOf[Table], (iom: InvocationOnMock) => {
+      val ret = iom.callRealMethod().asInstanceOf[TableWriter]
+      val spyRet = spy(ret)
+      doAnswer( invocation =>
+        checkSize(invocation.getArgument(0, classOf[Table]))
+      ).when(spyRet).write(isA(classOf[Table]))
+      spyRet
+    })
+    val cb = new ColumnarBatch(gpuCols, ROWS)
+    whenSplitCalled(cb, testResources, splitAt: _*)
+    val ser = new ParquetCachedBatchSerializer
+    val dummySchema = new StructType(
+      Array(StructField("empty", ByteType, false),
+        StructField("empty", ByteType, false),
+        StructField("empty", ByteType, false)))
+    ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
+      BYTES_ALLOWED_PER_BATCH, false)
+    theTableMock.close()
+  }
 
   private def testColumnarBatchToCachedBatchIterator(
       cb: ColumnarBatch,
