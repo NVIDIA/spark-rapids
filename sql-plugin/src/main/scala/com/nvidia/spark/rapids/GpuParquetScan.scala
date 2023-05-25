@@ -1013,8 +1013,12 @@ private case class GpuParquetFileFilterHandler(
       case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
         return
 
-      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType ||
-        dt == DataTypes.BinaryType || canReadAsBinaryDecimal(pt, dt) =>
+      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType =>
+        // PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY for StringType is not supported by parquet
+        return
+
+      case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if dt == DataTypes.BinaryType =>
         return
 
       case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
