@@ -1588,7 +1588,7 @@ private case class GpuOrcFileFilterHandler(
     private val missingColumnNamePattern = Pattern.compile("_col\\d+")
 
     private def isMissingColumnNames(t: TypeDescription): Boolean = {
-      t.getFieldNames.asScala.exists(f => missingColumnNamePattern.matcher(f).matches())
+      t.getFieldNames.asScala.forall(f => missingColumnNamePattern.matcher(f).matches())
     }
   }
 }
