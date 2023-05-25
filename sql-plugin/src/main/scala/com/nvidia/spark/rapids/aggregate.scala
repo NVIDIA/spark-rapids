@@ -751,8 +751,7 @@ class GpuHashAggregateIterator(
       opTime = metrics.opTime,
       sortTime = metrics.sortTime,
       outputBatches = NoopMetric,
-      outputRows = NoopMetric,
-      peakDevMemory = NoopMetric))
+      outputRows = NoopMetric))
 
     // The out of core sort iterator does not guarantee that a batch contains all of the values
     // for a particular key, so add a key batching iterator to enforce this. That allows each batch
@@ -768,8 +767,7 @@ class GpuHashAggregateIterator(
       numOutputRows = NoopMetric,
       numOutputBatches = NoopMetric,
       concatTime = metrics.concatTime,
-      opTime = metrics.opTime,
-      peakDevMemory = NoopMetric)
+      opTime = metrics.opTime)
 
     // Finally wrap the key batching iterator with a merge aggregation on the output batches.
     new Iterator[ColumnarBatch] {

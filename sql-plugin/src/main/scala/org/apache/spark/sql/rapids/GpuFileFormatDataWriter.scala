@@ -789,7 +789,6 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     // use noop metrics below
     val sortTime = NoopMetric
-    val peakDevMemory = NoopMetric
     val opTime = NoopMetric
     val outputBatch = NoopMetric
     val outputRows = NoopMetric
@@ -797,8 +796,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     val targetSize = GpuSortExec.targetSize(spec.batchSize)
     // out of core sort the entire iterator
     GpuOutOfCoreSortIterator(iterator, sorter, cpuOrd, targetSize,
-      opTime, sortTime, outputBatch, outputRows,
-      peakDevMemory)
+      opTime, sortTime, outputBatch, outputRows)
   }
 
   /**
