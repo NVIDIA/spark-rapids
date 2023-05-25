@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.connector.write.DataWriter
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, ExecutedWriteSummary, PartitioningUtils, WriteTaskResult}
-import org.apache.spark.sql.rapids.GpuFileFormatDataWriter.{needSplitBatch, splitToFitMaxRecords}
+import org.apache.spark.sql.rapids.GpuFileFormatDataWriter.{shouldSplitToFitMaxRecordsPerFile, splitToFitMaxRecords}
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -48,7 +48,7 @@ object GpuFileFormatDataWriter {
     ((num + divisor - 1) / divisor).toInt
   }
 
-  def needSplitBatch(
+  def shouldSplitToFitMaxRecordsPerFile(
       maxRecordsPerFile: Long, recordsInFile: Long, numRowsInBatch: Long) = {
     maxRecordsPerFile > 0 && (recordsInFile + numRowsInBatch) > maxRecordsPerFile
   }
@@ -217,7 +217,7 @@ class GpuSingleDirectoryDataWriter(
   override def write(batch: ColumnarBatch): Unit = {
     val maxRecordsPerFile = description.maxRecordsPerFile
     val dataTypes = GpuColumnVector.extractTypes(batch)
-    if (!needSplitBatch(maxRecordsPerFile, recordsInFile, batch.numRows())) {
+    if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile, recordsInFile, batch.numRows())) {
       closeOnExcept(batch) { _ =>
         statsTrackers.foreach(_.newBatch(currentWriter.path(), batch))
         recordsInFile += batch.numRows()
@@ -263,7 +263,7 @@ class GpuDynamicPartitionDataSingleWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
-  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
+  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer)
   with WriterUtil{
 
   /** Wrapper class for status of a unique single output writer. */
@@ -518,8 +518,8 @@ class GpuDynamicPartitionDataSingleWriter(
               }
             }
             // write concat table
-            if (!needSplitBatch(
-              maxRecordsPerFile, currentWriterStatus.recordsInFile, concat.getRowCount)) {
+            if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile,
+                currentWriterStatus.recordsInFile, concat.getRowCount)) {
               withResource(concat) { _ =>
                 writeTableUsingCurrentWriter(concat, outDataTypes)
               }
@@ -529,8 +529,8 @@ class GpuDynamicPartitionDataSingleWriter(
               Some(partContigTable)
             }
           } else {
-            if (!needSplitBatch(
-              maxRecordsPerFile, currentWriterStatus.recordsInFile, partContigTable.getRowCount)) {
+            if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile,
+                currentWriterStatus.recordsInFile, partContigTable.getRowCount)) {
               splits(partIx) = null
               withResource(partContigTable) { _ =>
                 writeTableUsingCurrentWriter(partContigTable.getTable, outDataTypes)
@@ -972,7 +972,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
       GpuColumnVector.from(t, outDataTypes)
     }
 
-    if (!needSplitBatch(maxRecordsPerFile, status.writerStatus.recordsInFile, batch.numRows())) {
+    if (!shouldSplitToFitMaxRecordsPerFile(
+        maxRecordsPerFile, status.writerStatus.recordsInFile, batch.numRows())) {
       statsTrackers.foreach(_.newBatch(status.writerStatus.outputWriter.path(), batch))
       status.writerStatus.recordsInFile += batch.numRows()
       status.writerStatus.outputWriter.writeAndClose(batch, statsTrackers)
