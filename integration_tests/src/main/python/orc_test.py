@@ -729,7 +729,6 @@ def test_orc_read_count(spark_tmp_path):
         lambda spark: spark.read.orc(data_path), "SELECT COUNT(*) FROM tab", "tab",
         exist_classes=r'GpuFileGpuScan orc .* ReadSchema: struct<>')
 
-
 # The test_orc_varchar file was created with the Hive CLI like this:
 # CREATE TABLE test_orc_varchar(id int, name varchar(20)) STORED AS ORC LOCATION '...';
 # INSERT INTO test_orc_varchar values(1, 'abc');

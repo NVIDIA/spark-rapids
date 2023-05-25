@@ -1116,13 +1116,28 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
   private val combineThresholdSize =
     RapidsConf.PARQUET_MULTITHREADED_COMBINE_THRESHOLD.get(sqlConf)
-      .getOrElse(rapidsConf.getMultithreadedCombineThreshold)
+      .map { deprecatedVal =>
+        logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_COMBINE_THRESHOLD} is deprecated, " +
+          s"use ${RapidsConf.READER_MULTITHREADED_COMBINE_THRESHOLD} instead. But for now " +
+          "the deprecated one will be honored if both are set.")
+        deprecatedVal
+      }.getOrElse(rapidsConf.getMultithreadedCombineThreshold)
   private val combineWaitTime =
     RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME.get(sqlConf)
-      .map(_.intValue()).getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
+      .map {
+        logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME} is deprecated, " +
+          s"use ${RapidsConf.READER_MULTITHREADED_COMBINE_WAIT_TIME} instead. But for now " +
+          "the deprecated one will be honored if both are set.")
+        _.intValue()
+      }.getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
   private val keepReadsInOrderFromConf =
     RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER.get(sqlConf)
-      .getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
+      .map { deprecatedVal =>
+        logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER} is deprecated, " +
+          s"use ${RapidsConf.READER_MULTITHREADED_READ_KEEP_ORDER} instead. But for now " +
+          "the deprecated one will be honored if both are set.")
+        deprecatedVal
+      }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
 

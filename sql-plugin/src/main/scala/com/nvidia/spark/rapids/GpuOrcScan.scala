@@ -940,29 +940,28 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
 
   protected final def estimateOutputSizeFromBlocks(blocks: Seq[OrcStripeWithMeta]): Long = {
     // Start with header magic
-    var size: Long = OrcFile.MAGIC.length
-    blocks.foreach { block =>
-      // Account for the size of every stripe
-      size += block.stripeLength
+    val headerLen = OrcTools.ORC_MAGIC.length
+    val stripesLen = blocks.map { block =>
+      // Account for the size of every stripe, and
+      // the StripeInformation size in advance which should be calculated in Footer.
+      block.stripeLength + OrcTools.sizeOfStripeInformation
+    }.sum
 
-      // Add StripeInformation size in advance which should be calculated in Footer
-      size += OrcTools.sizeOfStripeInformation
-    }
-
-    if (blocks.nonEmpty) {
+    val footerLen = if (blocks.nonEmpty) {
       // Add the first orc file's footer length to cover ORC schema and other info.
       // Here uses the file footer size from the OrcPartitionReaderContext of the first
       // stripe as the worst-case.
-      size += blocks.head.ctx.fileTail.getPostscript.getFooterLength
+      blocks.head.ctx.fileTail.getPostscript.getFooterLength
+    } else {
+      0L
     }
 
-    // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
-    size += 256
-    // And the single-byte postscript length at the end of the file
-    size += 1
+    val fileLen = headerLen + stripesLen + footerLen +
+      256 + // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
+      1 // And the single-byte postscript length at the end of the file.
     // Add in a bit of fudging in case the whole file is being consumed and
     // our codec version isn't as efficient as the original writer's codec.
-    size + OrcTools.INEFFICIENT_CODEC_BUF_SIZE
+    fileLen + OrcTools.INEFFICIENT_CODEC_BUF_SIZE
   }
 
 }
