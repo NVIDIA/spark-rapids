@@ -2192,10 +2192,10 @@ case class OrcStripeWithMeta(stripe: OrcOutputStripe, ctx: OrcPartitionReaderCon
     // Calculate the real footer size.
     //  Use stripe footer uncompressed size as a reference.
     //  The size of compressed stripe footer can be < or = or > uncompressed size
-    var estimatedSize: Long = stripe.footer.getSerializedSize
-    //  Add in a bit of fudging in case our codec version isn't as efficient as
-    //  the original writer's codec.
-    estimatedSize += OrcTools.INEFFICIENT_CODEC_BUF_SIZE
+    val estimatedSize: Long = stripe.footer.getSerializedSize.toLong +
+      // Add in a bit of fudging in case our codec version isn't as efficient as
+      // the original writer's codec.
+      OrcTools.INEFFICIENT_CODEC_BUF_SIZE
 
     // calculate the true stripe footer size
     val footerLen = withResource(HostMemoryBuffer.allocate(estimatedSize)) { hmb =>
