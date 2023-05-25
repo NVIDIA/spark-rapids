@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
-import ai.rapids.cudf.{ColumnVector, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -37,11 +37,63 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.connector.write.DataWriter
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, ExecutedWriteSummary, PartitioningUtils, WriteTaskResult}
+import org.apache.spark.sql.rapids.GpuFileFormatDataWriter.{needSplitBatch, splitToFitMaxRecords}
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
+object GpuFileFormatDataWriter {
+  private def ceilingDiv(num: Long, divisor: Long) = {
+    ((num + divisor - 1) / divisor).toInt
+  }
+
+  def needSplitBatch(
+      maxRecordsPerFile: Long, recordsInFile: Long, numRowsInBatch: Long) = {
+    maxRecordsPerFile > 0 && (recordsInFile + numRowsInBatch) > maxRecordsPerFile
+  }
+
+  private def getSplitIndexes(maxRecordsPerFile: Long, recordsInFile: Long, numRows: Long) = {
+    (maxRecordsPerFile > 0, recordsInFile < maxRecordsPerFile) match {
+      case (false, _) => IndexedSeq.empty
+      case (true, false) =>
+        (1 until ceilingDiv(numRows, maxRecordsPerFile))
+            .map(i => (i * maxRecordsPerFile).toInt)
+      case (true, true) => {
+        val filledUp = maxRecordsPerFile - recordsInFile
+        val remain = numRows - filledUp
+        (0 until ceilingDiv(remain, maxRecordsPerFile))
+            .map(i => (filledUp + i * maxRecordsPerFile).toInt)
+      }
+    }
+  }
+
+  /**
+   * Split a table into parts if recordsInFile + table row count would go above
+   * maxRecordsPerFile.
+   *
+   * If the table fits, we still call contiguousSplit. Note that this is protected
+   * by a needsSplitBatch in all cases, so we should only be calling this function
+   * if we truly need to split it.
+   *
+   * The logic to find out what the splits should be is delegated to getSplitIndexes.
+   *
+   * @param table table to split
+   * @param maxRecordsPerFile max rowcount per file
+   * @param recordsInFile row count in the file so far
+   * @return
+   */
+  def splitToFitMaxRecords(
+      table: Table,
+      maxRecordsPerFile: Long,
+      recordsInFile: Long): Array[ContiguousTable] = {
+    val splitIndexes = getSplitIndexes(
+      maxRecordsPerFile,
+      recordsInFile,
+      table.getRowCount)
+    table.contiguousSplit(splitIndexes: _*)
+  }
+}
 /**
  * Abstract class for writing out data in a single Spark task using the GPU.
  * This is the GPU version of `org.apache.spark.sql.execution.datasources.FileFormatDataWriter`.
@@ -135,8 +187,7 @@ class GpuSingleDirectoryDataWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
-  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with WriterUtil {
+  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
   private var fileCounter: Int = _
   private var recordsInFile: Long = _
   // Initialize currentWriter and statsTrackers
@@ -175,11 +226,7 @@ class GpuSingleDirectoryDataWriter(
     } else {
       val partContigTables = withResource(batch) { batch =>
         withResource(GpuColumnVector.from(batch)) { table =>
-          val splitIndexes = getSplitIndexes(
-            maxRecordsPerFile,
-            recordsInFile,
-            table.getRowCount)
-          table.contiguousSplit(splitIndexes: _*)
+          splitToFitMaxRecords(table, maxRecordsPerFile, recordsInFile)
         }
       }
       var needNewWriter = recordsInFile >= maxRecordsPerFile
@@ -456,48 +503,55 @@ class GpuDynamicPartitionDataSingleWriter(
         // If fall back from for `GpuDynamicPartitionDataConcurrentWriter`, we should get the
         // saved status
         val savedStatus = updateCurrentWriterIfNeeded(partPath, cachesMap)
-
-        if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
-          // convert caches seq to tables and close caches seq
-          val subTables = convertSpillBatchesToTablesAndClose(savedStatus.get.tableCaches)
-          // concat the caches and this `table`
-          val concat = withResource(subTables) { _ =>
-            // clear the caches
-            savedStatus.get.tableCaches.clear()
-            splits(partIx) = null
-            withResource(partContigTable) { _ =>
-              subTables += partContigTable.getTable
-              Table.concatenate(subTables: _*)
+        val contigTableToWrite: Option[ContiguousTable] = {
+          if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
+            // convert caches seq to tables and close caches seq
+            val subTables = convertSpillBatchesToTablesAndClose(savedStatus.get.tableCaches)
+            // concat the caches and this `table`
+            val concat = withResource(subTables) { _ =>
+              // clear the caches
+              savedStatus.get.tableCaches.clear()
+              splits(partIx) = null
+              withResource(partContigTable) { _ =>
+                subTables += partContigTable.getTable
+                Table.concatenate(subTables: _*)
+              }
             }
-          }
-          // write concat table
-          if (!needSplitBatch(
-            maxRecordsPerFile, currentWriterStatus.recordsInFile, concat.getRowCount)) {
-            val concatBatch = withResource(concat) { _ =>
-              GpuColumnVector.from(concat, outDataTypes)
+            // write concat table
+            if (!needSplitBatch(
+              maxRecordsPerFile, currentWriterStatus.recordsInFile, concat.getRowCount)) {
+              withResource(concat) { _ =>
+                writeTableUsingCurrentWriter(concat, outDataTypes)
+              }
+              None
+            } else {
+              splits(partIx) = null
+              Some(partContigTable)
             }
-            statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), concatBatch))
-            currentWriterStatus.recordsInFile += concatBatch.numRows()
-            currentWriterStatus.outputWriter.writeAndClose(concatBatch, statsTrackers)
           } else {
-            writeTableAndClose(concat, outDataTypes, maxRecordsPerFile, partPath)
-          }
-        } else {
-          if (!needSplitBatch(
-            maxRecordsPerFile, currentWriterStatus.recordsInFile, partContigTable.getRowCount)) {
-            splits(partIx) = null
-            val partBatch = withResource(partContigTable) { _ =>
-              GpuColumnVector.from(partContigTable.getTable, outDataTypes)
+            if (!needSplitBatch(
+              maxRecordsPerFile, currentWriterStatus.recordsInFile, partContigTable.getRowCount)) {
+              splits(partIx) = null
+              withResource(partContigTable) { _ =>
+                writeTableUsingCurrentWriter(partContigTable.getTable, outDataTypes)
+              }
+              None
+            } else {
+              splits(partIx) = null
+              Some(partContigTable)
             }
-            statsTrackers.foreach(
-              _.newBatch(currentWriterStatus.outputWriter.path(), partBatch))
-            currentWriterStatus.recordsInFile += partBatch.numRows()
-            currentWriterStatus.outputWriter.writeAndClose(partBatch, statsTrackers)
-          } else {
-            // needs to be split
-            splits(partIx) = null
-            writeTableAndClose(partContigTable.getTable, outDataTypes, maxRecordsPerFile, partPath)
           }
+        }
+        contigTableToWrite.foreach { ct =>
+          // we need to split it according to needSplitBatch
+          val maxRecordsPerFileSplits = withResource(ct) { _ =>
+            splitToFitMaxRecords(
+              partContigTable.getTable,
+              maxRecordsPerFile,
+              currentWriterStatus.recordsInFile)
+          }
+          writeTableSplitsAndClose(
+            maxRecordsPerFileSplits, outDataTypes, maxRecordsPerFile, partPath)
         }
       }
     }
@@ -548,28 +602,19 @@ class GpuDynamicPartitionDataSingleWriter(
    *
    * Note: The `table` will be closed in this function.
    *
-   * @param table the table to be written
+   * @param splits the ContiguousTable splits to be written
    * @param outDataTypes the data types of the table
    * @param maxRecordsPerFile the max number of rows per file
    * @param partPath the partition directory
    */
-  private def writeTableAndClose(
-      table: Table,
+  private def writeTableSplitsAndClose(
+      splits: Array[ContiguousTable],
       outDataTypes: Array[DataType],
       maxRecordsPerFile: Long,
       partPath: String) = {
-    val splitIndexes = getSplitIndexes(
-      maxRecordsPerFile,
-      currentWriterStatus.recordsInFile,
-      table.getRowCount)
     var needNewWriter = currentWriterStatus.recordsInFile >= maxRecordsPerFile
-
-    val tabs = withResource(table) { _ =>
-      table.contiguousSplit(splitIndexes: _*)
-    }
-
-    withResource(tabs) { _ =>
-      tabs.foreach { part =>
+    withResource(splits) { _ =>
+      splits.zipWithIndex.foreach { case (part, partIx) =>
         if (needNewWriter) {
           currentWriterStatus.fileCounter += 1
           assert(currentWriterStatus.fileCounter <= MAX_FILE_COUNTER,
@@ -586,15 +631,21 @@ class GpuDynamicPartitionDataSingleWriter(
             newWriter(partPath, None, currentWriterStatus.fileCounter)
           currentWriterStatus.recordsInFile = 0
         }
-        val bc = GpuColumnVector.from(part.getTable, outDataTypes)
-        closeOnExcept(bc) { _ =>
-          statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), bc))
-          currentWriterStatus.recordsInFile += part.getRowCount
+        splits(partIx) = null
+        withResource(part) { _ =>
+          writeTableUsingCurrentWriter(part.getTable, outDataTypes)
         }
-        currentWriterStatus.outputWriter.writeAndClose(bc, statsTrackers)
         needNewWriter = true
       }
     }
+  }
+
+  private def writeTableUsingCurrentWriter(
+      table: Table, outDataTypes: Array[DataType]): Unit = {
+    val bc = GpuColumnVector.from(table, outDataTypes)
+    statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), bc))
+    currentWriterStatus.recordsInFile += bc.numRows()
+    currentWriterStatus.outputWriter.writeAndClose(bc, statsTrackers)
   }
 
   /** Release all resources. */
@@ -928,12 +979,12 @@ class GpuDynamicPartitionDataConcurrentWriter(
     } else {
       val (tabs, dataTypes) = withResource(batch) { batch =>
         withResource(GpuColumnVector.from(batch)) { table =>
-          val splitIndexes = getSplitIndexes(
-            maxRecordsPerFile,
-            status.writerStatus.recordsInFile,
-            table.getRowCount
-          )
-          (table.contiguousSplit(splitIndexes: _*), GpuColumnVector.extractTypes(batch))
+          val splits =
+            splitToFitMaxRecords(
+              table,
+              maxRecordsPerFile,
+              status.writerStatus.recordsInFile)
+          (splits, GpuColumnVector.extractTypes(batch))
         }
       }
       var needNewWriter = status.writerStatus.recordsInFile >= maxRecordsPerFile
@@ -1047,26 +1098,5 @@ class GpuWriteJobDescription(
 }
 
 trait WriterUtil {
-  def ceilingDiv(num: Long, divisor: Long) = {
-    ((num + divisor - 1) / divisor).toInt
-  }
 
-  def needSplitBatch(maxRecordsPerFile: Long, recordsInFile: Long, numRowsInBatch: Long) = {
-    maxRecordsPerFile > 0 && (recordsInFile + numRowsInBatch) > maxRecordsPerFile
-  }
-
-  def getSplitIndexes(maxRecordsPerFile: Long, recordsInFile: Long, numRows: Long) = {
-    (maxRecordsPerFile > 0, recordsInFile < maxRecordsPerFile) match {
-      case (false, _) => IndexedSeq.empty
-      case (true, false) =>
-        (1 until ceilingDiv(numRows, maxRecordsPerFile))
-          .map(i => (i * maxRecordsPerFile).toInt)
-      case (true, true) => {
-        val filledUp = maxRecordsPerFile - recordsInFile
-        val remain = numRows - filledUp
-        (0 until ceilingDiv(remain, maxRecordsPerFile))
-          .map(i => (filledUp + i * maxRecordsPerFile).toInt)
-      }
-    }
-  }
 }
