@@ -573,14 +573,13 @@ class GpuDynamicPartitionDataSingleWriter(
       }
 
       if (cachesMap.isDefined) {
-        savedStatus = cachesMap.get.get(currentPartPath)
+        // entire batch that is sorted, see a new partition, the old write status is useless
+        savedStatus = cachesMap.get.remove(currentPartPath)
         if (savedStatus.isDefined) {
           // first try to restore the saved writer status,
           // `GpuDynamicPartitionDataConcurrentWriter` may already opened the writer, and may
           // have pending caches
           currentWriterStatus = savedStatus.get.writerStatus
-          // entire batch that is sorted, see a new partition, the old write status is useless
-          cachesMap.get.remove(previousPartPath)
         } else {
           // create a new one
           val writer = newWriter(partPath, None, 0)
