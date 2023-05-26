@@ -21,7 +21,7 @@ from data_gen import *
 from marks import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later
 
 # Databricks changes the number of files being written, so we cannot compare logs
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
@@ -112,6 +112,7 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
                           delta_writes_enabled_conf  # Test disabled by default
                          ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, disable_conf):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path,

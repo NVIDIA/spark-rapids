@@ -19,7 +19,7 @@ from data_gen import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from delta_lake_merge_test import read_delta_path, read_delta_path_with_cdf, setup_dest_tables
 from marks import *
-from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, with_cpu_session, with_gpu_session
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
@@ -70,6 +70,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
                           delta_writes_enabled_conf  # Test disabled by default
                           ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
@@ -89,6 +90,7 @@ def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_update_entire_table(spark_tmp_path, use_cdf, partition_columns):
     def generate_dest_data(spark):
         return three_col_df(spark,
@@ -121,6 +123,7 @@ def test_delta_update_partitions(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_update_rows(spark_tmp_path, use_cdf, partition_columns):
     # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
     num_slices_to_test = 1 if is_databricks_runtime() else 10
@@ -139,6 +142,7 @@ def test_delta_update_rows(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_update_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"
