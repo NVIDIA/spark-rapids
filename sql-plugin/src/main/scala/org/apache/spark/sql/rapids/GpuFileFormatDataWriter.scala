@@ -476,29 +476,31 @@ class GpuDynamicPartitionDataSingleWriter(
     val outDataTypes = description.dataColumns.map(_.dataType).toArray
 
     // We have an entire batch that is sorted, so we need to split it up by key
-    val (paths, splits) = withResource(cb) { _ =>
-      val (cbKeys, splits) = withResource(getPartitionColumnsAsTable(cb)) { partitionColumnsTbl =>
-        withResource(distinctAndSort(partitionColumnsTbl)) { distinctKeysTbl =>
-          val partitionIndexes = splitIndexes(partitionColumnsTbl, distinctKeysTbl)
-          val splits = withResource(getOutputColumnsAsTable(cb)) { outputColumnsTbl =>
-            outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
+    val (cbKeys, outputColumnsTbl, partitionIndexes) = withResource(cb) { _ =>
+      withResource(getPartitionColumnsAsTable(cb)) { partitionColumnsTbl =>
+        val (cbKeys, partitionIndexes) =
+          withResource(distinctAndSort(partitionColumnsTbl)) { distinctKeysTbl =>
+            val partitionIndexes = splitIndexes(partitionColumnsTbl, distinctKeysTbl)
+            val cbKeys = copyToHostAsBatch(distinctKeysTbl, partDataTypes)
+            (cbKeys, partitionIndexes)
           }
-          val cbKeys = closeOnExcept(splits) { _ =>
-            copyToHostAsBatch(distinctKeysTbl, partDataTypes)
-          }
-          (cbKeys, splits)
+        val outputColumnsTbl = closeOnExcept(cbKeys) { _ =>
+          getOutputColumnsAsTable(cb)
         }
+        (cbKeys, outputColumnsTbl, partitionIndexes)
       }
-      withResource(cbKeys) { _ =>
-        closeOnExcept(splits) { _ =>
-          // Use the existing code to convert each row into a path. It would be nice to do this
-          // on the GPU, but the data should be small and there are things we cannot easily
-          // support on the GPU right now
-          import scala.collection.JavaConverters._
-          // paths
-          val paths = cbKeys.rowIterator().asScala.map(getPartitionPath).toArray
-          (paths, splits)
-        }
+    }
+    val splits = withResource(outputColumnsTbl) { _ =>
+      outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
+    }
+    val paths = withResource(cbKeys) { _ =>
+      closeOnExcept(splits) { _ =>
+        // Use the existing code to convert each row into a path. It would be nice to do this
+        // on the GPU, but the data should be small and there are things we cannot easily
+        // support on the GPU right now
+        import scala.collection.JavaConverters._
+        // paths
+        cbKeys.rowIterator().asScala.map(getPartitionPath).toArray
       }
     }
     withResource(splits) { _ =>
