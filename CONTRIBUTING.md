@@ -201,27 +201,56 @@ This may require some modifications to IDEs' standard Maven import functionality
 
 #### IntelliJ IDEA
 
-Last tested with IntelliJ IDEA 2022.3.1 (Community Edition)
+Last tested with IntelliJ IDEA 2023.1.2 (Community Edition)
+
+##### Manual Maven Install for a target Spark build
+
+Before proceeding with importing spark-rapids into IDEA or switching to a different Spark release
+profile, execute the install phase with the corresponding `buildver`, e.g. for Spark 3.4.0:
+
+```bash
+ mvn clean install -Dbuildver=340 -Dskip -Dmaven.javadoc.skip -DskipTests
+```
+
+##### Importing the project
+
+Our build relies on [symlink generation](./docs/dev/shimplify.md#symlinks--ide) for Spark
+release-specific sources. It is recommended to install
+the IDEA Resolve Symlinks plugin via `Marketplace` tab.
 
 To start working with the project in IDEA is as easy as
 [opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent)
 [pom.xml](pom.xml).
 
-In the most recent versions of IDEA [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
-"Import using the new IntelliJ Workspace Model API (experimental)".
+In IDEA 2022.3.1 [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
+"Import using the new IntelliJ Workspace Model API (experimental)". After 2023.1.2 the default
+"Enable fast import" can be used.
+
 In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
 [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html) "Keep source and test folders on reimport".
 
 If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
 Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2022.3/maven-projects-tool-window.html) and
 select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0.
+Make sure [Manual Maven Install](#manual-maven-install-for-a-target-spark-build) for that profile
+has been executed.
 
 Go to `File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing` and make sure
 that `Generated sources folders` is set to `Detect automatically` and `Phase to be used for folders update`
-is changed to `process-test-resources`. In the Maven tool window hit `Reload all projects` and
-`Generate Sources and Update Folders For all Projects`.
+is changed to `process-test-resources`.
+
+In the Maven tool window hit
+
+1. `Reload all projects`
+1. `Generate Sources and Update Folders For all Projects`.
 
 Known Issues:
+
+* With the old "slow" Maven importer it might be necessary to bump up maximum Java Heap size `-Xmx`
+via
+`File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing | VM options for importer`
+
+* When IDEA is upgraded, it might be necessary to remove `.idea` from the local git repository root.
 
 * There is a known issue that the test sources added via the `build-helper-maven-plugin` are not handled
 [properly](https://youtrack.jetbrains.com/issue/IDEA-100532). The workaround is to `mark` the affected
