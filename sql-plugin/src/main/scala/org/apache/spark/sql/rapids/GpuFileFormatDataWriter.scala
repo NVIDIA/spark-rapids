@@ -640,10 +640,10 @@ class GpuDynamicPartitionDataSingleWriter(
           currentWriterStatus.recordsInFile = 0
         }
         splits(partIx) = null
-        withResource(part) { _ =>
-          writeBatchUsingCurrentWriterAndClose(
-            GpuColumnVector.from(part.getTable, outDataTypes))
+        val batch = withResource(part) { _ =>
+          GpuColumnVector.from(part.getTable, outDataTypes)
         }
+        writeBatchUsingCurrentWriterAndClose(batch)
         needNewWriter = true
       }
     }
