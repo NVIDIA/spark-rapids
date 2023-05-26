@@ -70,8 +70,13 @@ passed in the `MAVEN_OPTS` environment variable.
 
 ### Building a Distribution for Multiple Versions of Spark
 
-By default the distribution jar only includes code for a single version of Spark. If you want
-to create a jar with multiple versions we have the following options.
+By default the distribution jar only includes code for a single version of Spark, albeit the jar file
+layout will be such that it can be accessed only using the Shim loading logic for
+[multiple Spark versions](./docs/dev/shims.md#run-time-issues). See
+[below](#building-a-distribution-for-a-single-spark-release) for dist jar creation without
+the need for a special shim class loader.
+
+If you want to create a jar with multiple versions we have the following options.
 
 1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
 2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
@@ -94,6 +99,23 @@ mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
+
+Verify that shim-specific classes are hidden from a conventional classloader.
+
+```bash
+$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
+```
+
+However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
+
+```bash
+$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+Compiled from "SparkShims.scala"
+public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
+```
+
 #### Building with buildall script
 
 There is a build script `build/buildall` that automates the local build process. Use
@@ -115,13 +137,32 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 You can build against different versions of the CUDA Toolkit by using qone of the following profiles:
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
+### Building a Distribution for a Single Spark Release
+
+In many situations the user knows that the Plugin jar will be deployed for a single specific Spark
+release. It is most commonly the case when a container image for a cloud or local deployment includes
+Spark binaries as well. In such a case it is advantageous to create a jar with
+a conventional class directory structure avoiding complications such as
+[#3704](https://github.com/NVIDIA/spark-rapids/issues/3704). To this end add
+`-DallowConventionalDistJar=true` when invoking Maven.
+
+```bash
+mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
+```
+
+Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
+
+```bash
+$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Compiled from "SparkShims.scala"
+public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
+```
+
 ### Building and Testing with JDK9+
+
 We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
 the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
-
-At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
-a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
 
 Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or later to correctly process
 [maven.compiler.release](https://github.com/davidB/scala-maven-plugin/blob/4.6.1/src/main/java/scala_maven/ScalaMojoSupport.java#L161)
