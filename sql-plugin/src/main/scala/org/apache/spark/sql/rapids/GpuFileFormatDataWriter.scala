@@ -526,9 +526,10 @@ class GpuDynamicPartitionDataSingleWriter(
             // write concat table
             if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile,
                 currentWriterStatus.recordsInFile, concat.getRowCount)) {
-              withResource(concat) { _ =>
-                writeTableUsingCurrentWriter(concat, outDataTypes)
+              val concatBatch = withResource(concat) { _ =>
+                GpuColumnVector.from(concat, outDataTypes)
               }
+              writeBatchUsingCurrentWriterAndClose(concatBatch)
               None
             } else {
               splits(partIx) = null
@@ -538,9 +539,10 @@ class GpuDynamicPartitionDataSingleWriter(
             if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile,
                 currentWriterStatus.recordsInFile, partContigTable.getRowCount)) {
               splits(partIx) = null
-              withResource(partContigTable) { _ =>
-                writeTableUsingCurrentWriter(partContigTable.getTable, outDataTypes)
+              val partBatch = withResource(partContigTable) { _ =>
+                GpuColumnVector.from(partContigTable.getTable, outDataTypes)
               }
+              writeBatchUsingCurrentWriterAndClose(partBatch)
               None
             } else {
               splits(partIx) = null
@@ -639,19 +641,18 @@ class GpuDynamicPartitionDataSingleWriter(
         }
         splits(partIx) = null
         withResource(part) { _ =>
-          writeTableUsingCurrentWriter(part.getTable, outDataTypes)
+          writeBatchUsingCurrentWriterAndClose(
+            GpuColumnVector.from(part.getTable, outDataTypes))
         }
         needNewWriter = true
       }
     }
   }
 
-  private def writeTableUsingCurrentWriter(
-      table: Table, outDataTypes: Array[DataType]): Unit = {
-    val bc = GpuColumnVector.from(table, outDataTypes)
-    statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), bc))
-    currentWriterStatus.recordsInFile += bc.numRows()
-    currentWriterStatus.outputWriter.writeAndClose(bc, statsTrackers)
+  private def writeBatchUsingCurrentWriterAndClose(batch: ColumnarBatch): Unit = {
+    statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), batch))
+    currentWriterStatus.recordsInFile += batch.numRows()
+    currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
   }
 
   /** Release all resources. */
@@ -1011,16 +1012,14 @@ class GpuDynamicPartitionDataConcurrentWriter(
             status.writerStatus.outputWriter = w
             status.writerStatus.recordsInFile = 0L
           }
-          val cb = GpuColumnVector.from(b.getTable, dataTypes)
+          val cb = withResource(b)(_ => GpuColumnVector.from(b.getTable, dataTypes))
           closeOnExcept(cb) { _ =>
             statsTrackers.foreach(_.newBatch(status.writerStatus.outputWriter.path(), cb))
-            status.writerStatus.recordsInFile += b.getRowCount
+            status.writerStatus.recordsInFile += cb.numRows()
           }
           // close the contiguous table
           tabs(partIndex) = null
-          withResource(b) { _ =>
-            status.writerStatus.outputWriter.writeAndClose(cb, statsTrackers)
-          }
+          status.writerStatus.outputWriter.writeAndClose(cb, statsTrackers)
           needNewWriter = true
         }
       }
