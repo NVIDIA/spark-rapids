@@ -26,7 +26,8 @@ import com.nvidia.spark.rapids.GpuOverrides.expr
 
 import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, IntegralDivide, Multiply, Remainder}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, DecimalRemainderChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDecimalRemainder, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
+// import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, DecimalRemainderChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDecimalRemainder, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDecimalRemainder, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
 import org.apache.spark.sql.types.DecimalType
 
 object DecimalArithmeticOverrides {
@@ -106,23 +107,6 @@ object DecimalArithmeticOverrides {
           ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
-          // See https://github.com/NVIDIA/spark-rapids/issues/8330
-          // Basically if we overflow on Decimal128 values when up-casting the operands, we need
-          // to fall back to CPU since we don't currently have enough precision to support that 
-          // on the GPU. 
-          override def tagExprForGpu(): Unit = {
-            if (a.left.dataType.isInstanceOf[DecimalType] &&
-                a.right.dataType.isInstanceOf[DecimalType]) {
-              val lhsType = a.left.dataType.asInstanceOf[DecimalType]
-              val rhsType = a.right.dataType.asInstanceOf[DecimalType]
-              val needed = DecimalRemainderChecks.neededPrecision(lhsType, rhsType)
-              if (needed > DType.DECIMAL128_MAX_PRECISION) {
-                willNotWorkOnGpu(s"needed intermediate precision ($needed) will overflow " +
-                  s"outside of the maximum available decimal128 precision")
-              }
-            }
-          }
-
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
               GpuDecimalRemainder(lhs, rhs)
