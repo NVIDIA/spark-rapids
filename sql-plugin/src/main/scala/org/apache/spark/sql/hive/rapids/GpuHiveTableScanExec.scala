@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
+import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable
@@ -258,13 +259,18 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
     val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
 
+    def canBeSplit(file: FileStatus, hadoopConf: Configuration): Boolean = {
+      val codec = new CompressionCodecFactory(hadoopConf).getCodec(file.getPath)
+      codec == null || codec.isInstanceOf[SplittableCompressionCodec]
+    }
+
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { f =>
         PartitionedFileUtil.splitFiles(
           sparkSession,
           f,
           f.getPath,
-          isSplitable = true,
+          isSplitable = canBeSplit(f, hadoopConf),
           maxSplitBytes,
           partition.values
         )
