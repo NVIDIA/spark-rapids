@@ -263,8 +263,7 @@ class GpuDynamicPartitionDataSingleWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
-  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer)
-  with WriterUtil{
+  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) {
 
   /** Wrapper class for status of a unique single output writer. */
   protected class WriterStatus(
@@ -1109,8 +1108,4 @@ class GpuWriteJobDescription(
          |Partition columns: ${partitionColumns.mkString(", ")}
          |Data columns: ${dataColumns.mkString(", ")}
        """.stripMargin)
-}
-
-trait WriterUtil {
-
 }
