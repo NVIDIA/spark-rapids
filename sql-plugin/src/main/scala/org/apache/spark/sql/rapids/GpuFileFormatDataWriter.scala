@@ -477,23 +477,27 @@ class GpuDynamicPartitionDataSingleWriter(
 
     // We have an entire batch that is sorted, so we need to split it up by key
     val (paths, splits) = withResource(cb) { _ =>
-      withResource(getPartitionColumnsAsTable(cb)) { partitionColumnsTbl =>
+      val (cbKeys, splits) = withResource(getPartitionColumnsAsTable(cb)) { partitionColumnsTbl =>
         withResource(distinctAndSort(partitionColumnsTbl)) { distinctKeysTbl =>
           val partitionIndexes = splitIndexes(partitionColumnsTbl, distinctKeysTbl)
-          withResource(copyToHostAsBatch(distinctKeysTbl, partDataTypes)) { cbKeys =>
-            val splits = withResource(getOutputColumnsAsTable(cb)) { outputColumnsTbl =>
-              outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
-            }
-            closeOnExcept(splits) { _ =>
-              // Use the existing code to convert each row into a path. It would be nice to do this
-              // on the GPU, but the data should be small and there are things we cannot easily
-              // support on the GPU right now
-              import scala.collection.JavaConverters._
-              // paths
-              val paths = cbKeys.rowIterator().asScala.map(getPartitionPath).toArray
-              (paths, splits)
-            }
+          val splits = withResource(getOutputColumnsAsTable(cb)) { outputColumnsTbl =>
+            outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
           }
+          val cbKeys = closeOnExcept(splits) { _ =>
+            copyToHostAsBatch(distinctKeysTbl, partDataTypes)
+          }
+          (cbKeys, splits)
+        }
+      }
+      withResource(cbKeys) { _ =>
+        closeOnExcept(splits) { _ =>
+          // Use the existing code to convert each row into a path. It would be nice to do this
+          // on the GPU, but the data should be small and there are things we cannot easily
+          // support on the GPU right now
+          import scala.collection.JavaConverters._
+          // paths
+          val paths = cbKeys.rowIterator().asScala.map(getPartitionPath).toArray
+          (paths, splits)
         }
       }
     }
@@ -973,8 +977,10 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     if (!shouldSplitToFitMaxRecordsPerFile(
         maxRecordsPerFile, status.writerStatus.recordsInFile, batch.numRows())) {
-      statsTrackers.foreach(_.newBatch(status.writerStatus.outputWriter.path(), batch))
-      status.writerStatus.recordsInFile += batch.numRows()
+      closeOnExcept(batch) { _ =>
+        statsTrackers.foreach(_.newBatch(status.writerStatus.outputWriter.path(), batch))
+        status.writerStatus.recordsInFile += batch.numRows()
+      }
       status.writerStatus.outputWriter.writeAndClose(batch, statsTrackers)
     } else {
       val (tabs, dataTypes) = withResource(batch) { batch =>
@@ -989,7 +995,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
       }
       var needNewWriter = status.writerStatus.recordsInFile >= maxRecordsPerFile
       withResource(tabs) { _ =>
-        tabs.foreach(b => {
+        tabs.zipWithIndex.foreach { case (b, partIndex) =>
           if (needNewWriter) {
             status.writerStatus.fileCounter += 1
             assert(status.writerStatus.fileCounter <= MAX_FILE_COUNTER,
@@ -1003,11 +1009,17 @@ class GpuDynamicPartitionDataConcurrentWriter(
             status.writerStatus.recordsInFile = 0L
           }
           val cb = GpuColumnVector.from(b.getTable, dataTypes)
-          statsTrackers.foreach(_.newBatch(status.writerStatus.outputWriter.path(), cb))
-          status.writerStatus.recordsInFile += b.getRowCount
-          status.writerStatus.outputWriter.writeAndClose(cb, statsTrackers)
+          closeOnExcept(cb) { _ =>
+            statsTrackers.foreach(_.newBatch(status.writerStatus.outputWriter.path(), cb))
+            status.writerStatus.recordsInFile += b.getRowCount
+          }
+          // close the contiguous table
+          tabs(partIndex) = null
+          withResource(b) { _ =>
+            status.writerStatus.outputWriter.writeAndClose(cb, statsTrackers)
+          }
           needNewWriter = true
-        })
+        }
       }
     }
     status.tableCaches.clear()
