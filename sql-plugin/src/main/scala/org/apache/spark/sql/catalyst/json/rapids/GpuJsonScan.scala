@@ -25,7 +25,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
@@ -315,15 +315,13 @@ class JsonPartitionReader(
       getFileFormatShortName, partFile)
     withResource(jsonTbl) { tbl =>
       val columns = new ListBuffer[ColumnVector]()
-      closeOnExcept(columns) { _ =>
-        for (name <- readDataSchema.fieldNames) {
-          val i = cudfSchema.getColumnNames.indexOf(name)
-          if (i == -1) {
-            throw new IllegalStateException(
-              s"read schema contains field named '$name' that is not in the data schema")
-          }
-          columns += tbl.getColumn(i)
+      for (name <- readDataSchema.fieldNames) {
+        val i = cudfSchema.getColumnNames.indexOf(name)
+        if (i == -1) {
+          throw new IllegalStateException(
+            s"read schema contains field named '$name' that is not in the data schema")
         }
+        columns += tbl.getColumn(i)
       }
       new Table(columns: _*)
     }
