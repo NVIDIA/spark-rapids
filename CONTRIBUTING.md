@@ -140,7 +140,7 @@ You can build against different versions of the CUDA Toolkit by using qone of th
 ### Building a Distribution for a Single Spark Release
 
 In many situations the user knows that the Plugin jar will be deployed for a single specific Spark
-release. It is most commonly the case a container image for a cloud or local deployment includes
+release. It is most commonly the case when a container image for a cloud or local deployment includes
 Spark binaries as well. In such a case it is advantageous to create a jar with
 a conventional class directory structure avoiding complications such as
 [#3704](https://github.com/NVIDIA/spark-rapids/issues/3704). To this end add
