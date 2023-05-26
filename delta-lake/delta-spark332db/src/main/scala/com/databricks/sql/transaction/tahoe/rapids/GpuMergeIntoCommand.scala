@@ -346,7 +346,8 @@ case class GpuMergeIntoCommand(
             Option(condition.sql),
             matchedClauses.map(DeltaOperations.MergePredicate(_)),
             notMatchedClauses.map(DeltaOperations.MergePredicate(_)),
-            // TODO do we need to pass something in here?
+            // We do not support notMatchedBySourcePredicates yet and fall back to CPU
+            // See https://github.com/NVIDIA/spark-rapids/issues/8415
             notMatchedBySourcePredicates = Seq.empty[MergePredicate]
         ))
 

@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.delta
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
+import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -35,6 +36,7 @@ class MergeIntoCommandMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    DeltaLogShim.tagForGpu(this, mergeCmd)
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
@@ -64,6 +66,7 @@ class MergeIntoCommandEdgeMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    DeltaLogShim.tagForGpu(this, mergeCmd)
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)

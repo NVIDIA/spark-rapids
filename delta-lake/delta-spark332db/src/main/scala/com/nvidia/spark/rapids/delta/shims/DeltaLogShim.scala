@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.DeltaLog
 import com.databricks.sql.transaction.tahoe.actions.Metadata
+import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
+import com.nvidia.spark.rapids.delta.{MergeIntoCommandMeta, MergeIntoCommandEdgeMeta}
 
 import org.apache.spark.sql.execution.datasources.FileFormat
 
@@ -27,5 +29,19 @@ object DeltaLogShim {
   }
   def getMetadata(deltaLog: DeltaLog): Metadata = {
     deltaLog.unsafeVolatileSnapshot.metadata
+  }
+
+  def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {
+    // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
+    }
+  }
+
+  def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {
+    // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
+    }
   }
 }
