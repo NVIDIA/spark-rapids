@@ -657,8 +657,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
     val wip = batches.safeMap(_.getColumnarBatch())
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
-    ret
+    ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
@@ -778,8 +777,7 @@ class GpuCompressionAwareCoalesceIterator(
       }
       wip
     }
-    val onGPU = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(toConcat, sparkTypes)
-    onGPU
+    ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(toConcat, sparkTypes)
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {

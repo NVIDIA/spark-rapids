@@ -409,9 +409,7 @@ case class GpuOutOfCoreSortIterator(
       withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
         while(sortedIt.hasNext) {
           val sortedTbl = sortedIt.next()
-          val rows = closeOnExcept(sortedTbl) { _ =>
-            sortedTbl.getRowCount.toInt
-          }
+          val rows = sortedTbl.getRowCount.toInt
           // filter out empty batches
           if (rows > 0) {
             val sp = withResource(sortedTbl) { _ =>
