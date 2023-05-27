@@ -260,6 +260,8 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
 
     def canBeSplit(file: FileStatus, hadoopConf: Configuration): Boolean = {
+      // Checks if `file` can be split.
+      // Uncompressed Hive Text files may be split. GZIP compressed files are not.
       val codec = new CompressionCodecFactory(hadoopConf).getCodec(file.getPath)
       codec == null || codec.isInstanceOf[SplittableCompressionCodec]
     }
