@@ -29,7 +29,6 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
-import scala.math.max
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
@@ -1974,8 +1973,7 @@ class MultiFileParquetPartitionReader(
       dataBuffer, 0, dataSize, metrics,
       extraInfo.isCorrectedInt96RebaseMode, extraInfo.isCorrectedRebaseMode,
       extraInfo.hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
-      clippedSchema, None,
-      _ => ()) // The max size is computed later on...
+      clippedSchema, None)
   }
 
   override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
@@ -2545,8 +2543,7 @@ class MultiFileCloudParquetPartitionReader(
         parseOpts,
         hostBuffer, 0, dataSize, metrics,
         isCorrectInt96RebaseMode, isCorrectRebaseMode, hasInt96Timestamps,
-        isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, None,
-        tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
+        isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, None)
 
       val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
 
@@ -2585,13 +2582,12 @@ object MakeParquetTableProducer {
       useFieldId: Boolean,
       readDataSchema: StructType,
       clippedParquetSchema: MessageType,
-      filePath: Option[Path],
-      onTableSize: Long => Unit): GpuDataProducer[Table] = {
+      filePath: Option[Path]): GpuDataProducer[Table] = {
     if (useChunkedReader) {
       ParquetTableReader(conf, chunkSizeByteLimit, opts, buffer, offset, len, metrics,
         isCorrectedInt96RebaseMode, isCorrectedRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,
-        filePath, onTableSize)
+        filePath)
     } else {
       val table = try {
         RmmRapidsRetryIterator.withRetryNoSplit(buffer) { _ =>
@@ -2612,8 +2608,6 @@ object MakeParquetTableProducer {
       closeOnExcept(table) { _ =>
         GpuParquetScan.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
           hasInt96Timestamps)
-        val actualSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
-        onTableSize(actualSize)
         if (readDataSchema.length < table.getNumberOfColumns) {
           filePath match {
             case Some(path) =>
@@ -2648,8 +2642,7 @@ case class ParquetTableReader(
     useFieldId: Boolean,
     readDataSchema: StructType,
     clippedParquetSchema: MessageType,
-    filePath: Option[Path],
-    onTableSize: Long => Unit) extends GpuDataProducer[Table] {
+    filePath: Option[Path]) extends GpuDataProducer[Table] {
   private[this] val reader = new ParquetChunkedReader(chunkSizeByteLimit, opts, buffer, offset, len)
 
   override def hasNext: Boolean = reader.hasNext
@@ -2663,8 +2656,6 @@ case class ParquetTableReader(
     closeOnExcept(table) { _ =>
       GpuParquetScan.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
         hasInt96Timestamps)
-      val actualSize = GpuColumnVector.getTotalDeviceMemoryUsed(table)
-      onTableSize(actualSize)
       if (readDataSchema.length < table.getNumberOfColumns) {
         filePath match {
           case Some(path) =>
@@ -2734,7 +2725,6 @@ class ParquetPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batchIter = readBatches()
       }
@@ -2796,8 +2786,7 @@ class ParquetPartitionReader(
                 isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
                 hasInt96Timestamps, isSchemaCaseSensitive,
                 useFieldId, readDataSchema,
-                clippedParquetSchema, Some(filePath),
-                tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
+                clippedParquetSchema, Some(filePath))
               CachedGpuBatchIterator(producer, colTypes)
             }
           }

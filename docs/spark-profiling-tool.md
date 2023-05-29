@@ -654,10 +654,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 Starting with release _22.10_, the Profiling tool a new _Auto-Tuner_ that aims at optimizing
 Apache Spark applications by recommending a set of configurations to tune the performance of
 Rapids accelerator.  
+
 Currently, the _Auto-Tuner_ calculates a set of configurations that impact the performance of Apache
 Spark apps executing on GPU. Those calculations can leverage cluster information
 (e.g. memory, cores, Spark default configurations) as well as information processed in the
-application event logs.
+application event logs.  Note that the tool also will recommend settings for the application assuming
+that the job will be able to use all the cluster resources (CPU and GPU) when it is running.
+
 The values loaded from the app logs have higher precedence than the default configs.  
 Please refer to [Understanding the Profiling tool output](#d-recommended-configuration) for
 more details on the output of the _Auto-Tuner_.

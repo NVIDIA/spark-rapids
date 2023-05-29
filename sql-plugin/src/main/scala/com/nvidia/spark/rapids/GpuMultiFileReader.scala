@@ -28,7 +28,7 @@ import scala.language.implicitConversions
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -376,7 +376,6 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   metrics = execMetrics
 
   protected var isDone: Boolean = false
-  protected var maxDeviceMemory: Long = 0
   protected var batchIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
 
   override def get(): ColumnarBatch = {
@@ -782,7 +781,6 @@ abstract class MultiFileCloudPartitionReaderBase(
           readBuffersToBatch(fileBufsAndMeta, true)
         } else {
           isDone = true
-          metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
         }
       }
     }
@@ -1113,7 +1111,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batchIter = readBatch()
       }

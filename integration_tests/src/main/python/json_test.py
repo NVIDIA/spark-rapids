@@ -435,3 +435,28 @@ def test_json_datetime_parsing_fallback_no_datetime(std_input_path, filename, sc
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").json(data_path),
         conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
+    all_confs = {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.rapids.sql.format.json.read.enabled': True,
+            'spark.rapids.sql.format.json.enabled': True}
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').json(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(gen.data_type).json(data_path).selectExpr(col_name),
+            conf=all_confs)
