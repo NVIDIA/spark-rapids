@@ -38,6 +38,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.shims.{OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -818,6 +819,16 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
 
     // 3) Write length of the PostScript
     outStream.write(postScriptLength.toInt)
+  }
+
+  protected final def calculateFileTailSize(
+      ctx: OrcPartitionReaderContext,
+      footerStartOffset: Long,
+      stripes: Seq[OrcOutputStripe]): Long = {
+    withResource(new NullHostMemoryOutputStream) { nullStream =>
+      writeOrcFileTail(nullStream, ctx, footerStartOffset, stripes)
+      nullStream.getPos
+    }
   }
 
   /**
@@ -2010,39 +2021,66 @@ class MultiFileCloudOrcPartitionReader(
       // 2) Allocate the buffer with the estimated size
       val combined = closeOnExcept(HostMemoryBuffer.allocate(combinedBufSize)) { combinedBuf =>
         // 3) Build the combined memory file:
-        withResource(new HostMemoryOutputStream(combinedBuf)) { outStream =>
-          //   a: Write the ORC header
-          var offset = writeOrcFileHeader(outStream)
+        var offset = withResource(new HostMemoryOutputStream(combinedBuf)) { outStream =>
+          // a: Write the ORC header
+          writeOrcFileHeader(outStream)
+        }
 
-          //   b: Copy the stripes from read buffers
-          toCombine.foreach { hmbWithMeta =>
-            hmbWithMeta.memBuffersAndSizes.foreach { buf =>
-              val dataCopyAmount = buf.blockMeta.map(_.getBlockSize).sum
-              if (dataCopyAmount > 0 && buf.hmb != null) {
-                combinedBuf.copyFromHostBuffer(
-                  offset, buf.hmb, OrcTools.ORC_MAGIC.length, dataCopyAmount)
-              }
-              // update the offset for each stripe
-              var stripeOffset = offset
-              buf.blockMeta.foreach { block =>
-                block.stripe.infoBuilder.setOffset(stripeOffset)
-                stripeOffset += block.getBlockSize
-              }
-              offset += dataCopyAmount
-              if (buf.hmb != null) {
-                buf.hmb.close()
+        // b: Copy the stripes from read buffers
+        val allOutputStripes = new ArrayBuffer[OrcOutputStripe]()
+        toCombine.foreach { hmbWithMeta =>
+          hmbWithMeta.memBuffersAndSizes.foreach { buf =>
+            val dataCopyAmount = buf.blockMeta.map(_.getBlockSize).sum
+            if (dataCopyAmount > 0 && buf.hmb != null) {
+              combinedBuf.copyFromHostBuffer(
+                offset, buf.hmb, OrcTools.ORC_MAGIC.length, dataCopyAmount)
+            }
+            // update the offset for each stripe
+            var stripeOffset = offset
+            buf.blockMeta.foreach { block =>
+              block.stripe.infoBuilder.setOffset(stripeOffset)
+              stripeOffset += block.getBlockSize
+            }
+            offset += dataCopyAmount
+            if (buf.hmb != null) {
+              buf.hmb.close()
+            }
+            allOutputStripes ++= buf.blockMeta.map(_.stripe)
+          }
+        }
+
+        // c: check if there is enough buffer for file tail, and reallocate the buf if needed
+        val actualTailSize = calculateFileTailSize(blockMetas.head.ctx, offset, allOutputStripes)
+        val maybeNewBuf = if ((combinedBufSize - offset) < actualTailSize) {
+          val newBufferSize = offset + actualTailSize + OrcTools.INEFFICIENT_CODEC_BUF_SIZE
+          logWarning(s"The original estimated size $combinedBufSize is too small, " +
+            s"reallocating and copying data to bigger buffer size: $newBufferSize")
+          // Copy the old buffer to a new allocated bigger buffer and close the old buffer
+          withResource(combinedBuf) { _ =>
+            withResource(new HostMemoryInputStream(combinedBuf, offset)) { in =>
+              // realloc memory and copy
+              closeOnExcept(HostMemoryBuffer.allocate(newBufferSize)) { newhmb =>
+                withResource(new HostMemoryOutputStream(newhmb)) { out =>
+                  IOUtils.copy(in, out)
+                }
+                newhmb
               }
             }
           }
-          //   c: Write the ORC footer
-          outStream.seek(offset)
+        } else {
+          combinedBuf
+        }
+
+        withResource(new HostMemoryOutputStream(maybeNewBuf)) { outStream =>
+          // d: Write the ORC footer
           // Use the context of the first meta for codec type and schema, it's OK
           // because we have checked the compatibility for them.
-          writeOrcFileTail(outStream, blockMetas.head.ctx, offset, blockMetas.map(_.stripe))
+          outStream.seek(offset)
+          writeOrcFileTail(outStream, blockMetas.head.ctx, offset, allOutputStripes)
 
-          //   d: Create the new meta for the combined buffer
+          // e: Create the new meta for the combined buffer
           val numRows = combinedMeta.allPartValues.map(_._1).sum
-          val combinedRet = SingleHMBAndMeta(combinedBuf, outStream.getPos, numRows, blockMetas)
+          val combinedRet = SingleHMBAndMeta(maybeNewBuf, outStream.getPos, numRows, blockMetas)
           val newHmbWithMeta = metaToUse.copy(
             memBuffersAndSizes = Array(combinedRet),
             allPartValues = Some(combinedMeta.allPartValues))
