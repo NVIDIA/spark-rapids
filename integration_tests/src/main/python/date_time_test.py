@@ -57,7 +57,7 @@ def test_timeadd_from_subquery(data_gen):
     def fun(spark):
         df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
         df.createOrReplaceTempView("testTime")
-        spark.sql("select a, ((select last(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
+        spark.sql("select a, ((select max(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where datePlus > current_timestamp")
 
     assert_gpu_and_cpu_are_equal_collect(fun)
@@ -68,7 +68,7 @@ def test_timesub_from_subquery(data_gen):
     def fun(spark):
         df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
         df.createOrReplaceTempView("testTime")
-        spark.sql("select a, ((select last(a) from testTime) - interval 1 day) as dateMinus from testTime").createOrReplaceTempView("testTime2")
+        spark.sql("select a, ((select min(a) from testTime) - interval 1 day) as dateMinus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where dateMinus < current_timestamp")
 
     assert_gpu_and_cpu_are_equal_collect(fun)
