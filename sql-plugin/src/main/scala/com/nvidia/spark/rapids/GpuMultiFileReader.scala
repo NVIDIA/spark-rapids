@@ -30,6 +30,7 @@ import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Tab
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -1130,6 +1131,18 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     batchIter.hasNext
   }
 
+  /**
+   * Set this to a splitter instance when chunked reading is supported
+   */
+  def chunkedSplit(buffer: HostMemoryBuffer): Seq[HostMemoryBuffer] = {
+    throw new SplitAndRetryOOM("Split is not currently supported")
+  }
+
+  /**
+   * You can reset the target batch size if needed for splits...
+   */
+  def startNewBufferRetry: Unit = ()
+
   private def readBatch(): Iterator[ColumnarBatch] = {
     withResource(new NvtxRange(s"$getFileFormatShortName readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkMeta = populateCurrentBlockChunk()
@@ -1157,7 +1170,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             dataBuffer.close()
             CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
-            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+            startNewBufferRetry
+            RmmRapidsRetryIterator.withRetry(dataBuffer, chunkedSplit(_)) { _ =>
               // We don't want to actually close the host buffer until we know that we don't
               // want to retry more, so offset the close for now.
               dataBuffer.incRefCount()
@@ -1165,7 +1179,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
                 dataSize, currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
                 currentChunkMeta.extraInfo)
               CachedGpuBatchIterator(tableReader, colTypes)
-            }
+            }.flatten
           }
         }
       }
