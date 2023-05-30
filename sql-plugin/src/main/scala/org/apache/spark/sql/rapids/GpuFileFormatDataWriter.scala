@@ -532,8 +532,10 @@ class GpuDynamicPartitionDataSingleWriter(
     // to get a batch per path
     val (splits, paths) = splitBatchByKey(cb, partDataTypes)
     withResource(splits) { _ =>
-      splits.zipWithIndex.foreach { case (partContigTable, partIx) =>
-        val partPath = paths(partIx)
+      // NOTE: the `zip` here has the effect that will remove an extra `ContiguousTable`
+      // added at the end of `splits` because we use `upperBound` to find the split points,
+      // and the last split point is the number of rows.
+      splits.zip(paths).zipWithIndex.foreach { case ((partContigTable, partPath), partIx) =>
         // If fall back from for `GpuDynamicPartitionDataConcurrentWriter`, we should get the
         // saved status
         val savedStatus = updateCurrentWriterIfNeeded(partPath, cachesMap)
