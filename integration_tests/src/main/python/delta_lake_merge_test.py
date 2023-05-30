@@ -126,6 +126,29 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
                          merge_sql=merge_sql,
                          check_func=checker)
 
+@allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
+def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
+    def checker(data_path, do_merge):
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec")
+    merge_sql = "MERGE INTO {dest_table} " \
+                "USING {src_table} " \
+                "ON {src_table}.a == {dest_table}.a " \
+                "WHEN MATCHED THEN " \
+                "  UPDATE SET {dest_table}.b = {src_table}.b " \
+                "WHEN NOT MATCHED THEN " \
+                "  INSERT (a, b) VALUES ({src_table}.a, {src_table}.b) " \
+                "WHEN NOT MATCHED BY SOURCE AND {dest_table}.b > 0 THEN " \
+                "  UPDATE SET {dest_table}.b = 0"
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
+                         use_cdf=False,
+                         src_table_func=lambda spark: binary_op_df(spark, SetValuesGen(IntegerType(), range(10))),
+                         dest_table_func=lambda spark: binary_op_df(spark, SetValuesGen(IntegerType(), range(20, 30))),
+                         merge_sql=merge_sql,
+                         check_func=checker)
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
