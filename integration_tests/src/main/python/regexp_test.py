@@ -956,3 +956,11 @@ def test_regexp_memory_ok():
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
     )
+
+def test_re_replace_all():
+    # regression test for https://github.com/NVIDIA/spark-rapids/issues/8323
+    gen = mk_str_gen('[a-z]{0,2}\n{0,2}[a-z]{0,2}\n{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, ".*$", "PROD", 1)'),
+        conf=_regexp_conf)
