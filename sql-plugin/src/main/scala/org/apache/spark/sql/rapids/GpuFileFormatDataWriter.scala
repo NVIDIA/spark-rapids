@@ -539,7 +539,6 @@ class GpuDynamicPartitionDataSingleWriter(
         // If fall back from for `GpuDynamicPartitionDataConcurrentWriter`, we should get the
         // saved status
         val savedStatus = updateCurrentWriterIfNeeded(partPath, cachesMap)
-        // `tbl` is either a Table or a ContiguousTable
         val batchToWrite =
           if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
             // convert caches seq to tables and close caches seq
