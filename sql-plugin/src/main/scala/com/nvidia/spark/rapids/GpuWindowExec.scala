@@ -17,16 +17,13 @@
 package com.nvidia.spark.rapids
 
 import java.util.concurrent.TimeUnit
-
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
-
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -36,7 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
@@ -1863,35 +1860,44 @@ class GpuCachedDoublePassWindowIterator(
     }
   }
 
+  var postProcessedIter: Option[Iterator[ColumnarBatch]] = None
+
   override def next(): ColumnarBatch = {
     if (!hasNext) {
       throw new NoSuchElementException()
     }
-    while (readyForPostProcessing.isEmpty) {
-      // Keep reading and processing data until we have something to output
-      cacheBatchIfNeeded()
-      if (waitingForFirstPass.isEmpty) {
-        lastBatch()
-      } else {
-        val cb = waitingForFirstPass.get
-        waitingForFirstPass = None
-        withResource(
-            new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
-          // firstPassComputeAndCache takes ownership of the batch passed to it
-          firstPassComputeAndCache(cb)
+    postProcessedIter match {
+      case Some(it) if it.hasNext =>
+        it.next()
+      case _ =>
+        while (readyForPostProcessing.isEmpty) {
+          // Keep reading and processing data until we have something to output
+          cacheBatchIfNeeded()
+          if (waitingForFirstPass.isEmpty) {
+            lastBatch()
+          } else {
+            val cb = waitingForFirstPass.get
+            waitingForFirstPass = None
+            withResource(
+              new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
+              // firstPassComputeAndCache takes ownership of the batch passed to it
+              firstPassComputeAndCache(cb)
+            }
+          }
         }
-      }
-    }
-    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
-      withResource(sb.getColumnarBatch()) { cb =>
-        val ret = withResource(
-          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-          postProcess(cb)
-        }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
-      }
+        postProcessedIter = Some(withRetry(readyForPostProcessing.dequeue(),
+            splitSpillableInHalfByRows) { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            val ret = withResource(
+              new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+              postProcess(cb)
+            }
+            numOutputBatches += 1
+            numOutputRows += ret.numRows()
+            ret
+          }
+        })
+        postProcessedIter.get.next()
     }
   }
 }
