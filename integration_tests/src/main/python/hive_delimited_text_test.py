@@ -422,10 +422,14 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
         conf=hive_text_enabled_conf)
 
 
-def test_read_compressed_hive_text(spark_tmp_table_factory):
+@pytest.mark.parametrize('codec', ['BZip2Codec',    # BZ2 compression, i.e. Splittable.
+                                   'DefaultCodec',  # DEFLATE, i.e. Gzip, without headers. Unsplittable.
+                                   'GzipCodec'])    # Gzip proper. Unsplittable.
+def test_read_compressed_hive_text(spark_tmp_table_factory, codec):
     """
     This tests whether compressed Hive Text tables are readable from spark-rapids.
-    For GZIP compressed tables, spark-rapids should not attempt to split the input files.
+    For GZIP/DEFLATE compressed tables, spark-rapids should not attempt to split the input files.
+    Bzip2 compressed tables are splittable, and should remain readable.
     """
 
     table_name = spark_tmp_table_factory.get()
@@ -438,7 +442,9 @@ def test_read_compressed_hive_text(spark_tmp_table_factory):
 
     # Create Hive Text table with compression enabled.
     with_cpu_session(create_table_with_compressed_files,
-                     {"hive.exec.compress.output": "true"})
+                     {"hive.exec.compress.output": "true",
+                      "mapreduce.output.fileoutputformat.compress.codec":
+                          "org.apache.hadoop.io.compress.{}".format(codec)})
 
     # Attempt to read from table with very small (2KB) splits.
     assert_gpu_and_cpu_are_equal_collect(
