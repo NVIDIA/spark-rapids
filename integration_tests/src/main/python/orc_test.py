@@ -431,6 +431,37 @@ def test_missing_column_names_count(spark_tmp_table_factory, reader_confs):
         lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
         reader_confs)
 
+# ORC checks if there are no column names by looking at the column names
+# so it is possible to have some of the names match the pattern and other not
+def setup_orc_file_partial_no_column_names(spark, table_name, location=None):
+    drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
+    create_query = "CREATE TABLE `{}` (`_col1` INT, `arr` ARRAY<STRING>, `str` STRUCT<a: INT>) USING orc".format(table_name)
+    if location:
+        create_query += f" LOCATION '{location}'"
+    insert_query = "INSERT INTO {} VALUES(13, array('155'), named_struct('a', 2020))".format(table_name)
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_partial_missing_column_names(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_partial_no_column_names(spark, table_name))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT str,arr FROM {}".format(table_name)),
+        reader_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_partial_missing_column_names_count(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_partial_no_column_names(spark, table_name))
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
+        reader_confs)
+
+
+
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_missing_column_names_with_schema(spark_tmp_table_factory, spark_tmp_path, reader_confs):
     table_name = spark_tmp_table_factory.get()
@@ -746,3 +777,32 @@ def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, da
         reader(std_input_path + '/' + data_file),
         cpu_fallback_class_name="ProjectExec",
         conf={})
+
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, orc_impl, reader_confs, col_name):
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.orc.impl': orc_impl})
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    reader = read_func(data_path)
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').orc(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).selectExpr(col_name),
+            conf=all_confs)
