@@ -126,7 +126,7 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
 The UCX packages for Rocky are divided into different RPMs.
 
 For example, UCX 1.14.0 available at
-https://github.com/openucx/ucx/releases/download/v1.14.0/ucx-v1.14.0-centos8-mofed5-cuda11.tar.bz2
+https://github.com/openucx/ucx/releases/download/v1.14.0/ucx-1.14.0-centos8-mofed5-cuda11.tar.bz2
 contains:
 
 ```
