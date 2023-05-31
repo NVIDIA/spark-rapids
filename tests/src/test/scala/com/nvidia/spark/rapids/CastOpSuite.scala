@@ -446,7 +446,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
     Seq(10, 15, 28).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
-        testCastToString(DataTypes.createDecimalType(precision, scale))
+        testCastToString(DataTypes.createDecimalType(precision, scale),
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
       }
     }
   }
