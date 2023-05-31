@@ -74,9 +74,9 @@ The script below will initialize with the following:
 ### Create a Dataproc Cluster using T4's
 * One 16-core master node and 5 32-core worker nodes
 * Two NVIDIA T4 for each worker node
-Note that for image-version 2.1, secure boot is enabled by default, please add disable the secure boot by adding `--no-shielded-secure-boot`
-  while creating the cluster to make sure the nvidia driver is installed correctly.
-  More details please find this [document](https://cloud.google.com/compute/docs/gpus/install-drivers-gpu#secure-boot).
+Note that currently for image-version 2.1, not all operating systems is available for installing GPU drivers with Secure Boot, please
+  find this [document](https://cloud.google.com/compute/docs/gpus/install-drivers-gpu#secure-boot) for more details. For the not
+  supported operating systems please add `--no-shielded-secure-boot` while creating the cluster to make sure the nvidia driver is installed correctly.
   
 ```bash
     export REGION=[Your Preferred GCP Region]
