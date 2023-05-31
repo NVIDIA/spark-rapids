@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from datetime import date, datetime, timedelta, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import *
 import math
 from pyspark.context import SparkContext
