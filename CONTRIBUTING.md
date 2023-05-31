@@ -250,7 +250,7 @@ Before proceeding with importing spark-rapids into IDEA or switching to a differ
 profile, execute the install phase with the corresponding `buildver`, e.g. for Spark 3.4.0:
 
 ```bash
- mvn clean install -Dbuildver=340 -Dskip -Dmaven.javadoc.skip -DskipTests
+ mvn clean install -Dbuildver=340 -Dskip -DskipTests
 ```
 
 ##### Importing the project
@@ -326,7 +326,6 @@ mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -pl aggregator -am \
   -Dbuildver=320 \
   -DskipTests \
   -Dskip \
-  -Dmaven.javadoc.skip \
   -Dmaven.scalastyle.skip=true \
   -Dmaven.updateconfig.skip=true
 ```
@@ -410,7 +409,7 @@ it by making sure Metals Server (Bloop client) and Bloop Server are both running
       mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
       -DdownloadSources=true \
       -Dbuildver=331 \
-      -Dskip -DskipTests -Dmaven.javadoc.skip
+      -Dskip -DskipTests
     ```
 
 1. Add [`metals.javaHome`][2] to VSCode preferences to point to Java 11+.
