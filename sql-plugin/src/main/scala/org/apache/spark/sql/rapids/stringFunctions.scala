@@ -1369,7 +1369,8 @@ case class GpuRegExpReplaceWithBackref(
       }
       withResource(isEmpty) { _ =>
         withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-          withResource(input.getBase.stringReplaceWithBackrefs(prog, cudfReplacementString)) { replacement =>
+          withResource(input.getBase.stringReplaceWithBackrefs(prog,
+              cudfReplacementString)) { replacement =>
             isEmpty.ifElse(emptyString, replacement)
           }
         }
