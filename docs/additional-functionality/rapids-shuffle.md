@@ -57,6 +57,7 @@ pools is the number of cores in the system divided by the number of executors pe
 
 As of the spark-rapids 23.06 release, UCX packages support CUDA 11.
 UCX support for CUDA 12 in the RAPIDS Accelerator will be added in a future release.
+
 ---
 
 UCX mode (`spark.rapids.shuffle.mode=UCX`) has two components: a spillable cache, and a transport that can utilize 
