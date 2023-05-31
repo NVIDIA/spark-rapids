@@ -394,6 +394,35 @@ case class GpuProjectAstExec(
     }
   }
 
+  def projectWithRetrySingleBatch(sb: SpillableColumnarBatch): ColumnarBatch = {
+    if (areAllDeterministic) {
+      // If all of the expressions are deterministic we can just run everything and retry it
+      // at the top level. If some things are non-deterministic we need to split them up and
+      // do the processing in a way that makes it so retries are more likely to succeed.
+      RmmRapidsRetryIterator.withRetryNoSplit {
+        withResource(sb.getColumnarBatch()) { cb =>
+          project(cb)
+        }
+      }
+    } else {
+      @tailrec
+      def recurse(boundExprs: Seq[Seq[GpuExpression]],
+          sb: SpillableColumnarBatch): SpillableColumnarBatch = boundExprs match {
+        case Nil => sb
+        case exprSet :: tail =>
+          val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+            val projectResult = GpuProjectExec.projectWithRetrySingleBatch(sb, exprSet)
+            SpillableColumnarBatch(projectResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          }
+          recurse(tail, projectSb)
+      }
+      // Process tiers sequentially
+      withResource(recurse(exprTiers, sb)) { ret =>
+        ret.getColumnarBatch()
+      }
+    }
+  }
+
   def project(batch: ColumnarBatch): ColumnarBatch = {
     @tailrec
     def recurse(boundExprs: Seq[Seq[GpuExpression]],
