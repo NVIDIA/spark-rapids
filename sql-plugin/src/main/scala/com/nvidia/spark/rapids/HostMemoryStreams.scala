@@ -30,7 +30,7 @@ import ai.rapids.cudf.HostMemoryBuffer
  * @param buffer the buffer to receive written data
  */
 class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream {
-  private var pos: Long = 0
+  protected var pos: Long = 0
 
   override def write(i: Int): Unit = {
     buffer.setByte(pos, i.toByte)
@@ -75,6 +75,30 @@ class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream 
       pos += bytesToCopy
     }
   }
+}
+
+/** A HostMemoryOutputStream only counts the written bytes, nothing is actually written. */
+final class NullHostMemoryOutputStream extends HostMemoryOutputStream(null) {
+  override def write(i: Int): Unit = {
+    pos += 1
+  }
+
+  override def write(bytes: Array[Byte]): Unit = {
+    pos += bytes.length
+  }
+
+  override def write(bytes: Array[Byte], offset: Int, len: Int): Unit = {
+    pos += len
+  }
+
+  override def copyFromChannel(channel: ReadableByteChannel, length: Long): Unit = {
+    val endPos = pos + length
+    while (pos != endPos) {
+      val bytesToCopy = (endPos - pos).min(Integer.MAX_VALUE)
+      pos += bytesToCopy
+    }
+  }
+
 }
 
 trait HostMemoryInputStreamMixIn extends InputStream {
