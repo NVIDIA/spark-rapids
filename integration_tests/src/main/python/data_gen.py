@@ -27,11 +27,99 @@ import struct
 from conftest import skip_unless_precommit_tests
 import time
 import os
+from functools import lru_cache
+import logging
+import hashlib
+import warnings
 
 # set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
 # refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
 os.environ['TZ'] = 'UTC'
 time.tzset()
+
+# bypass internal functions
+bypass = ['_gen_func']
+
+## given a object that may be a nested list or dict, return a hashable object
+# def dfs_hash(obj):
+#     if isinstance(obj, list):
+#         # logging.info('obj: {}'.format(str(obj)))
+#         ls = []
+#         for i in obj:
+#             ls.append(dfs_hash(i))
+#         tup = tuple(sorted(ls))
+#         hash_value = int(hashlib.sha256(repr(tup).encode()).hexdigest(), 16)
+#     elif isinstance(obj, dict):
+#         # logging.info('obj: {}'.format(str(obj)))
+#         ls = []
+#         for k, v in obj.items():
+#             ls.append((k, dfs_hash(v)))
+#         tup = tuple(sorted(ls))
+#         hash_value = int(hashlib.sha256(repr(tup).encode()).hexdigest(), 16)
+#     elif isinstance(obj, DataGen):
+#         # logging.info('obj: {}'.format(str(obj)))
+#         attributes_dict = vars(obj)
+#         hash_value = dfs_hash(attributes_dict)
+#     else:
+#         # logging.info('obj: {}'.format(str(obj)))
+#         hash_value = int(hashlib.sha256(repr(obj).encode()).hexdigest(), 16)   
+#     # logging.info('obj: {}'.format(str(obj)))
+#     # logging.info('hash_value: {}'.format(hash_value))
+#     return hash_value
+
+def hash_object(obj):
+    # logging.info('obj: {}'.format(str(obj)))
+    h = hashlib.blake2b(digest_size=10)
+    if isinstance(obj, (list, tuple)):
+        # h = hashlib.md5()
+        for item in obj:
+            h.update(hash_object(item).encode())
+        # logging.info("hash: {}".format(int(h.hexdigest().encode(), 16)))
+        # return h.hexdigest()  
+    elif isinstance(obj, dict):
+        # h = hashlib.md5()
+        keys = sorted(obj.keys())  
+        for k in keys:     
+            h.update(hash_object(k).encode()) 
+            h.update(hash_object(obj[k]).encode())
+        # logging.info("hash: {}".format(int(h.hexdigest().encode(), 16)))
+        # return h.hexdigest()
+    elif isinstance(obj, DataGen):
+        # if obj._hash_value is not None:
+        #     return obj._hash_value
+        # h = hashlib.md5()
+        attrs = vars(obj)
+        keys = sorted(attrs.keys())
+        for k in keys:
+            if str(k) in bypass:
+                continue
+            h.update(hash_object(k).encode())
+            h.update(hash_object(attrs[k]).encode())
+        # logging.info("hash: {}".format(int(h.hexdigest().encode(), 16)))
+        # return h.hexdigest()
+    elif callable(obj):
+        # h = hashlib.md5()
+        h.update(obj.__code__.co_code)
+        # logging.info("hash: {}".format(obj.__code__.co_code))
+        # logging.info("hash: {}".format(int(h.hexdigest().encode(), 16)))
+        # return h.hexdigest()
+    elif isinstance(obj, (int, float, str, bool, type(None))):
+        # h = hashlib.md5()
+        h.update(str(obj).encode())
+        # logging.info("hash: {}".format(int(h.hexdigest().encode(), 16)))
+        # return h.hexdigest()
+    elif isinstance(obj, (IntegerType, LongType, FloatType, DoubleType, 
+                          ShortType, ByteType,
+                          DecimalType, StringType, BinaryType, BooleanType, 
+                          DateType, TimestampType, ArrayType, MapType, StructType)):
+        # h = hashlib.md5()
+        h.update(str(hash(obj)).encode())
+        # logging.info("hash: {}".format(int(h.hexdigest().encode(), 16)))
+        # return h.hexdigest()
+    else:
+        # raise TypeError('Unsupported type for hashing: {}'.format(type(obj)))
+        h.update(str(hash(obj)).encode())
+    return h.hexdigest()  
 
 class DataGen:
     """Base class for data generation"""
@@ -40,12 +128,21 @@ class DataGen:
         if not self.nullable:
             return self.__class__.__name__[:-3] + '(not_null)'
         return self.__class__.__name__[:-3]
-
+    
     def __hash__(self):
-        return hash(str(self))
+        # logging.info('Start: {}'.format(str(self)))
+        hash_value = hash_object(self)
+        # logging.info('!!!!Object: {}'.format(str(self)))
+        # logging.info("!!!!end hash self: {}".format(hash_value))
+        return int(hash_value, 16)
 
     def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+        # print self and other's hash value
+        # logging.info('$$$$Hash self: {}'.format(hash(self)))
+        # logging.info('$$$$Hash other: {}'.format(hash(other)))
+        warnings.warn("Called here, why?")
+        return isinstance(other, self.__class__) and hash(self) == hash(other)
+        # return isinstance(other, self.__class__) and self.__dict__ == other.__dict__    
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -681,7 +778,65 @@ def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
+@lru_cache(maxsize=128)
+def gen_df_help(spark, data_gen, length=2048, seed=0, num_slices=None):
+    rand = random.Random(seed)
+    data_gen.start(rand)
+    data = [data_gen.gen() for index in range(0, length)]
+    # We use `numSlices` to create an RDD with the specific number of partitions,
+    # which is then turned into a dataframe. If not specified, it is `None` (default spark value)
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
+        data_gen.data_type)
+
+# @lru_cache(maxsize=128)
 def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
+    """Generate a spark dataframe from the given data generators."""
+    if isinstance(data_gen, list):
+        src = StructGen(data_gen, nullable=False)
+    else:
+        src = data_gen
+        # we cannot create a data frame from a nullable struct
+        assert not data_gen.nullable
+
+    # logging.info(dict(src))
+
+    # Before we get too far we need to verify that we can run with timestamps
+    if src.contains_ts():
+        skip_if_not_utc()
+
+    return gen_df_help(spark, src, length, seed, num_slices)
+
+# @lru_cache(maxsize=128)
+def gen_df_help_data(data_gen, length=2048, seed=0):
+    rand = random.Random(seed)
+    data_gen.start(rand)
+    data = [data_gen.gen() for index in range(0, length)]
+    return data
+
+# @lru_cache(maxsize=128)
+def gen_df_data(spark, data_gen, length=2048, seed=0, num_slices=None):
+    """Generate a spark dataframe from the given data generators."""
+    if isinstance(data_gen, list):
+        src = StructGen(data_gen, nullable=False)
+    else:
+        src = data_gen
+        # we cannot create a data frame from a nullable struct
+        assert not data_gen.nullable
+
+    # logging.info(dict(src))
+
+    # Before we get too far we need to verify that we can run with timestamps
+    if src.contains_ts():
+        skip_if_not_utc()
+
+    data = gen_df_help_data(src, length, seed)
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
+        src.data_type)
+
+@lru_cache(maxsize=256)
+def gen_df_old(spark, data_gen, length=2048, seed=0, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)

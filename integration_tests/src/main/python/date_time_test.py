@@ -438,3 +438,9 @@ def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
             .withColumnRenamed("filename", "r_filename")
         return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
     assert_gpu_and_cpu_are_equal_collect(do_join_cast)
+
+# def test_lru_cache():
+#     info = gen_df_help.cache_info()
+#     logging.info(info)
+#     assert info.hits > 0
+#     print(info)

@@ -23,6 +23,8 @@ from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_spark_340_or_later, is_before_spark_340
 
+import warnings
+
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
     StructField('orig_channel', StringType()),
@@ -607,3 +609,6 @@ def test_read_case_col_name(spark_tmp_path, spark_tmp_table_factory, read_func, 
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : reader(spark).selectExpr(col_name),
             conf=all_confs)
+    
+    info = gen_df_help.cache_info()
+    warnings.warn("gen_df cache info:" + str(info))

@@ -613,3 +613,8 @@ def test_map_filter(data_gen):
                'map_filter(a, (key, value) -> isnotnull(key) and isnull(value) )']
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(columns))
+
+def test_lru_cache():
+    info = gen_df_help.cache_info()
+    assert info.hits > 0
+    print(info)
