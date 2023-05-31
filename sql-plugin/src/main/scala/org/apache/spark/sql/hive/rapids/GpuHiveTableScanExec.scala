@@ -19,7 +19,7 @@ package org.apache.spark.sql.hive.rapids
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
+import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable
@@ -173,7 +174,6 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY),
     "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time")
   )
 
@@ -258,13 +258,20 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
     val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
 
+    def canBeSplit(file: FileStatus, hadoopConf: Configuration): Boolean = {
+      // Checks if `file` can be split.
+      // Uncompressed Hive Text files may be split. GZIP compressed files are not.
+      val codec = new CompressionCodecFactory(hadoopConf).getCodec(file.getPath)
+      codec == null || codec.isInstanceOf[SplittableCompressionCodec]
+    }
+
     val splitFiles = selectedPartitions.flatMap { partition =>
       partition.files.flatMap { f =>
         PartitionedFileUtil.splitFiles(
           sparkSession,
           f,
           f.getPath,
-          isSplitable = true,
+          isSplitable = canBeSplit(f, hadoopConf),
           maxSplitBytes,
           partition.values
         )
