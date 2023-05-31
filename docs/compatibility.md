@@ -447,7 +447,6 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
-- `regexp_replace` does not support back-references
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
