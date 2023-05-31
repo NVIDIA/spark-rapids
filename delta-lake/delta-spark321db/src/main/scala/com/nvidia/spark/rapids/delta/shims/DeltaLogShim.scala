@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.DeltaLog
 import com.databricks.sql.transaction.tahoe.actions.Metadata
-import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
-import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
 import org.apache.spark.sql.execution.datasources.FileFormat
 

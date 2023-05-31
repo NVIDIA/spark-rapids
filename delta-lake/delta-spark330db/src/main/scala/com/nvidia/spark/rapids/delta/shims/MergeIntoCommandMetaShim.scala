@@ -16,17 +16,10 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.DeltaLog
-import com.databricks.sql.transaction.tahoe.actions.Metadata
+import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
+import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
-import org.apache.spark.sql.execution.datasources.FileFormat
-
-object DeltaLogShim {
-  def fileFormat(deltaLog: DeltaLog): FileFormat = {
-    deltaLog.fileFormat()
-  }
-
-  def getMetadata(deltaLog: DeltaLog): Metadata = {
-    deltaLog.snapshot.metadata
-  }
+object MergeIntoCommandMetaShim {
+  def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {}
+  def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {}
 }
