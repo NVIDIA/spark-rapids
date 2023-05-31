@@ -958,7 +958,9 @@ def test_regexp_memory_ok():
     )
 
 def test_re_replace_all():
-    # regression test for https://github.com/NVIDIA/spark-rapids/issues/8323
+    """
+    regression test for https://github.com/NVIDIA/spark-rapids/issues/8323
+    """
     gen = mk_str_gen('[a-z]{0,2}\n{0,2}[a-z]{0,2}\n{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
