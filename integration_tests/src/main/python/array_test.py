@@ -368,8 +368,6 @@ def test_array_repeat_with_count_column(data_gen):
             'array_repeat("abc", cnt)'))
 
 
-# TODO: revert skip after https://github.com/NVIDIA/spark-rapids/issues/8409 is resolved
-@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/8409')
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
 def test_array_repeat_with_count_scalar(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
