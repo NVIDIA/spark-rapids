@@ -305,7 +305,7 @@ object GpuParquetScan {
     }
   }
 
-  val minTargetBatchSizeMiB = 10
+  private[this] val minTargetBatchSizeMiB = 10
 
   /**
    * Check that we can split the targetBatchSize and then return a split targetBatchSize. This
