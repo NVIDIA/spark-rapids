@@ -26,7 +26,7 @@ from pyspark.sql.functions import *
 from spark_init_internal import spark_version
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from conftest import is_databricks_runtime, is_dataproc_runtime
-import warnings
+
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -1502,6 +1502,3 @@ def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_c
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : reader(spark).selectExpr(col_name),
             conf=all_confs)
-    
-    info = gen_df_help.cache_info()
-    warnings.warn("gen_df cache info:" + str(info))
