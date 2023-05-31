@@ -1782,11 +1782,22 @@ class GpuCachedDoublePassWindowIterator(
   }
 
   // Compute the window operation and cache/update caches as needed.
+  // This method takes ownership of cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
-    withResource(computeBasicWindow(cb)) { basic =>
-      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
+
+    val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val (basic, parts) = withRetryNoSplit(sp) { _ =>
+      withResource(sp.getColumnarBatch()) { batch =>
+        closeOnExcept(computeBasicWindow(batch)) { basic =>
+          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
+        }
+      }
+    }
+
+    withResource(basic) { _ =>
+      withResource(parts) { _ =>
         val partColumns = GpuColumnVector.extractBases(parts)
 
         val firstLastEqual = areRowPartsEqual(lastPartsCaching, partColumns, Seq(0, numRows - 1))
@@ -1862,26 +1873,25 @@ class GpuCachedDoublePassWindowIterator(
       if (waitingForFirstPass.isEmpty) {
         lastBatch()
       } else {
-        withResource(waitingForFirstPass.get) { cb =>
-          waitingForFirstPass = None
-          withResource(
+        val cb = waitingForFirstPass.get
+        waitingForFirstPass = None
+        withResource(
             new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
-            firstPassComputeAndCache(cb)
-          }
+          // firstPassComputeAndCache takes ownership of the batch passed to it
+          firstPassComputeAndCache(cb)
         }
       }
     }
-    val cb = withResource(readyForPostProcessing.dequeue()) { sb =>
-      sb.getColumnarBatch()
-    }
-    withResource(cb) { cb =>
-      val ret = withResource(
-        new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-        postProcess(cb)
+    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val ret = withResource(
+          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+          postProcess(cb)
+        }
+        numOutputBatches += 1
+        numOutputRows += ret.numRows()
+        ret
       }
-      numOutputBatches += 1
-      numOutputRows += ret.numRows()
-      ret
     }
   }
 }
