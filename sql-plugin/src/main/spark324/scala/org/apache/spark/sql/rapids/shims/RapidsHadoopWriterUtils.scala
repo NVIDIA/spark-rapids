@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,10 @@ import org.apache.hadoop.mapred.JobID
 
 import org.apache.spark.internal.io.SparkHadoopWriterUtils
 
-/* This shim object uses the underlying fix from SparkHadoopWriterUtils in case this
-   logic is updated in the future for other versions of Spark 3.3 */
+/**
+ * This shim object uses the underlying fix from SparkHadoopWriterUtils in case this
+ *  logic is updated in the future for other versions of Spark 3.3
+ */
 object RapidsHadoopWriterUtils {
   // SPARK-41448 create a jobID directly from the jobTrackerID
   def createJobID(jobTrackerID: String, id: Int): JobID = {
