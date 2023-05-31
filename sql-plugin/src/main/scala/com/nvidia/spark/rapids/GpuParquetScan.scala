@@ -305,6 +305,29 @@ object GpuParquetScan {
     }
   }
 
+  val minTargetBatchSizeMiB = 10
+
+  /**
+   * Check that we can split the targetBatchSize and then return a split targetBatchSize. This
+   * is intended to be called from the SplitAndRetryOOM handler for all implementations of
+   * the parquet reader
+   * @param targetBatchSize the current target batch size.
+   * @param useChunkedReader if chunked reading is enabled. This only works if chunked reading is
+   *                       enabled.
+   * @return the updated target batch size.
+   */
+  def splitTargetBatchSize(targetBatchSize: Long, useChunkedReader: Boolean): Long = {
+      if (!useChunkedReader) {
+      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
+          "chunked parquet reader is configured off")
+    }
+    val ret = targetBatchSize / 2
+    if (targetBatchSize < minTargetBatchSizeMiB * 1024 * 1024) {
+           throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
+          s"target batch size to less than $minTargetBatchSizeMiB MiB")
+    }
+    ret
+  }
 }
 
 /**
@@ -1960,15 +1983,8 @@ class MultiFileParquetPartitionReader(
   private var currentTargetBatchSize = targetBatchSizeBytes
 
   override final def chunkedSplit(buffer: HostMemoryBuffer): Seq[HostMemoryBuffer] = {
-    if (!useChunkedReader) {
-      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
-          "chunked parquet reader is configured off")
-    }
-    currentTargetBatchSize = currentTargetBatchSize / 2
-    if (currentTargetBatchSize < 10 * 1024 * 1024) { // 10 MiB
-      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
-          "target batch size to less than 10 MiB")
-    }
+    currentTargetBatchSize =
+      GpuParquetScan.splitTargetBatchSize(currentTargetBatchSize, useChunkedReader)
     Seq(buffer)
   }
 
@@ -2556,15 +2572,8 @@ class MultiFileCloudParquetPartitionReader(
 
     var currentTargetBatchSize = targetBatchSizeBytes
     val splitBatchSizePolicy: HostMemoryBuffer => Seq[HostMemoryBuffer] = hostBuffer => {
-      if (!useChunkedReader) {
-        throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
-            "chunked parquet reader is configured off")
-      }
-      currentTargetBatchSize = currentTargetBatchSize / 2
-      if (currentTargetBatchSize < 10 * 1024 * 1024) { // 10 MiB
-        throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
-            "target batch size to less than 10 MiB")
-      }
+      currentTargetBatchSize =
+        GpuParquetScan.splitTargetBatchSize(currentTargetBatchSize, useChunkedReader)
       Seq(hostBuffer)
     }
 
