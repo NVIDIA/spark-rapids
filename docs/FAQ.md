@@ -508,13 +508,12 @@ from a default of 64M to something larger, for example 512M.
 
 ### Why am I getting "Unable to acquire buffer" or "Trying to free an invalid buffer"?
 
-The RAPIDS Accelerator makes use of a tracking system called `RapidsBufferCatalog` for GPU memory
-spill required for out-of-core algorithms, our reliability (retry) framework, and UCX-accelerated shuffle. 
-Spark threads will acquire/free objects from this catalog over time in order to execute a task.
+The RAPIDS Accelerator tracks GPU allocations that can be spilled to CPU memory or even disk using
+the `RapidsBufferCatalog` class.
 
-During executor shutdown, we often see race conditions between task threads finishing up and
-the executor main thread shutting down. This race causes the catalog to log messages that should be
-ignored, as they are likely not the root cause of the shutdown. 
+When a fatal Spark exception happens, the executor process will not wait for task threads to complete
+before starting to shut down the process. This shutdown includes the `RapidsBufferCatalog`. 
+This race can cause the catalog to log the following messages that can be ignored.
 
 The beginning of a shutdown is logged as such:
 
