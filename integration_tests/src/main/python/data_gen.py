@@ -70,7 +70,7 @@ class DataGen:
         if not self.nullable:
             return self.__class__.__name__[:-3] + '(not_null)'
         return self.__class__.__name__[:-3]
-    
+
     def __hash__(self):
         return int(hash_object(self), 16)
 
@@ -731,8 +731,6 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
         src = data_gen
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
-
-    # logging.info(dict(src))
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
