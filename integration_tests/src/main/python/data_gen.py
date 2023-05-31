@@ -49,6 +49,7 @@ def hash_object(obj):
             h.update(hash_object(k).encode()) 
             h.update(hash_object(obj[k]).encode())
     elif isinstance(obj, DataGen):
+        h.update(obj.__class__.__name__.encode())
         attrs = vars(obj)
         keys = sorted(attrs.keys())
         for k in keys:
