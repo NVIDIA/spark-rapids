@@ -2048,7 +2048,7 @@ class MultiFileCloudOrcPartitionReader(
         // c: check if there is enough buffer for file tail, and reallocate the buf if needed
         val actualTailSize = calculateFileTailSize(blockMetas.head.ctx, offset, allOutputStripes)
         val maybeNewBuf = if ((combinedBufSize - offset) < actualTailSize) {
-          val newBufferSize = offset + actualTailSize + OrcTools.INEFFICIENT_CODEC_BUF_SIZE
+          val newBufferSize = offset + actualTailSize
           logWarning(s"The original estimated size $combinedBufSize is too small, " +
             s"reallocating and copying data to bigger buffer size: $newBufferSize")
           // Copy the old buffer to a new allocated bigger buffer and close the old buffer
