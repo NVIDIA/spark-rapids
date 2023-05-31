@@ -1105,6 +1105,7 @@ object GpuRegExpUtils {
     }
     parseAST(pattern) match {
       case RegexSequence(parts) if parts.lastOption.contains(RegexChar('$')) =>
+        // handle pattern ".*$"
         isASTEmptyRepetition(RegexSequence(parts.dropRight(1)))
       case other => isASTEmptyRepetition(other)
     }
