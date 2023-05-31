@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.datasources.{ExecutedWriteSummary, WriteTaskStats}
-object GpuFileFormatDataWriter {
+object GpuFileFormatDataWriterShim {
   def createWriteSummary(updatedPartitions: Set[String], stats: Seq[WriteTaskStats]) = {
     ExecutedWriteSummary(
       updatedPartitions,
