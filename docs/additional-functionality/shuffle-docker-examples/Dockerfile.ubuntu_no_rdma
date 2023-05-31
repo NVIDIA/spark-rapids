@@ -20,7 +20,7 @@
 #   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matching a specific UCX version and 
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
-#   - UBUNTU_VER: 22.04 by default
+#   - UBUNTU_VER: 20.04 by default
 #
 
 ARG CUDA_VER=11.8.0

@@ -23,7 +23,7 @@
 #   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matching a specific UCX version and
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
-#   - UBUNTU_VER: 22.04 by default
+#   - UBUNTU_VER: 20.04 by default
 #
 # The Dockerfile first fetches and builds `rdma-core` to satisfy requirements for
 # the ucx-ib and ucx-rdma RPMs.
@@ -36,7 +36,7 @@ ARG RDMA_CORE_VERSION=32.1
 ARG CUDA_VER=11.8.0
 ARG UCX_VER=1.14.0
 ARG UCX_CUDA_VER=11
-ARG UBUNTU_VER=22.04
+ARG UBUNTU_VER=20.04
 
 # Throw away image to build rdma_core
 FROM ubuntu:${UBUNTU_VER} as rdma_core
