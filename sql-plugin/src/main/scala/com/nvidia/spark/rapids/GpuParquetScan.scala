@@ -1113,9 +1113,30 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
-  private val combineThresholdSize = rapidsConf.getParquetMultithreadedCombineThreshold
-  private val combineWaitTime = rapidsConf.getParquetMultithreadedCombineWaitTime
-  private val keepReadsInOrderFromConf = rapidsConf.getParquetMultithreadedReaderKeepOrder
+  private val combineThresholdSize =
+    RapidsConf.PARQUET_MULTITHREADED_COMBINE_THRESHOLD.get(sqlConf)
+      .map { deprecatedVal =>
+        logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_COMBINE_THRESHOLD} is deprecated, " +
+          s"use ${RapidsConf.READER_MULTITHREADED_COMBINE_THRESHOLD} instead. But for now " +
+          "the deprecated one will be honored if both are set.")
+        deprecatedVal
+      }.getOrElse(rapidsConf.getMultithreadedCombineThreshold)
+  private val combineWaitTime =
+    RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME.get(sqlConf)
+      .map {
+        logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME} is deprecated, " +
+          s"use ${RapidsConf.READER_MULTITHREADED_COMBINE_WAIT_TIME} instead. But for now " +
+          "the deprecated one will be honored if both are set.")
+        _.intValue()
+      }.getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
+  private val keepReadsInOrderFromConf =
+    RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER.get(sqlConf)
+      .map { deprecatedVal =>
+        logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER} is deprecated, " +
+          s"use ${RapidsConf.READER_MULTITHREADED_READ_KEEP_ORDER} instead. But for now " +
+          "the deprecated one will be honored if both are set.")
+        deprecatedVal
+      }.getOrElse(rapidsConf.getMultithreadedReaderKeepOrder)
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
 
@@ -1143,13 +1164,13 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       filterHandler.filterBlocks(footerReadType, file, conf,
         filters, readDataSchema)
     }
+    val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes,
       useChunkedReader, metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
       alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
-      combineThresholdSize, combineWaitTime, queryUsesInputFile,
-      keepReadsInOrderFromConf)
+      queryUsesInputFile, keepReadsInOrderFromConf, combineConf)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1777,6 +1798,16 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         .includeColumn(includeColumns : _*)
         .build()
   }
+
+  /** conversions used by multithreaded reader and coalescing reader */
+  implicit def toBlockMetaData(block: DataBlockBase): BlockMetaData =
+    block.asInstanceOf[ParquetDataBlock].dataBlock
+
+  implicit def toDataBlockBase(blocks: Seq[BlockMetaData]): Seq[DataBlockBase] =
+    blocks.map(ParquetDataBlock)
+
+  implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
+    blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 }
 
 // Parquet schema wrapper
@@ -1850,15 +1881,6 @@ class MultiFileParquetPartitionReader(
   // Some implicits to convert the base class to the sub-class and vice versa
   implicit def toMessageType(schema: SchemaBase): MessageType =
     schema.asInstanceOf[ParquetSchemaWrapper].schema
-
-  implicit def toBlockMetaData(block: DataBlockBase): BlockMetaData =
-    block.asInstanceOf[ParquetDataBlock].dataBlock
-
-  implicit def toDataBlockBase(blocks: Seq[BlockMetaData]): Seq[DataBlockBase] =
-    blocks.map(ParquetDataBlock)
-
-  implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
-    blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 
   implicit def ParquetSingleDataBlockMeta(in: ExtraInfo): ParquetExtraInfo =
     in.asInstanceOf[ParquetExtraInfo]
@@ -2013,12 +2035,10 @@ class MultiFileParquetPartitionReader(
  * @param useFieldId Whether to use field id for column matching
  * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
- * @param combineThresholdSize The size to combine to when combining small files
- * @param combineWaitTime The amount of time to wait for other files to be ready to see if we
- *                        can combine them before sending them to the GPU
  * @param queryUsesInputFile Whether the query requires the input file name functionality
  * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
  *                         Defaults to true for formats that don't explicitly handle this.
+ * @param combineConf configs relevant to combination
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -2039,15 +2059,13 @@ class MultiFileCloudParquetPartitionReader(
     useFieldId: Boolean,
     alluxioPathReplacementMap: Map[String, String],
     alluxioReplacementTaskTime: Boolean,
-    combineThresholdSize: Long,
-    combineWaitTime: Int,
     queryUsesInputFile: Boolean,
-    keepReadsInOrder: Boolean)
+    keepReadsInOrder: Boolean,
+    combineConf: CombineConf)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
     execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
-    alluxioPathReplacementMap, alluxioReplacementTaskTime, combineThresholdSize,
-    combineWaitTime, queryUsesInputFile, keepReadsInOrder)
-    with ParquetPartitionReaderBase {
+    alluxioPathReplacementMap, alluxioReplacementTaskTime, keepReadsInOrder, combineConf)
+  with ParquetPartitionReaderBase {
 
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
       next: HostMemoryBuffersWithMetaData): Boolean = {
@@ -2056,8 +2074,8 @@ class MultiFileCloudParquetPartitionReader(
       next.isCorrectRebaseMode,
       current.isCorrectInt96RebaseMode,
       next.isCorrectInt96RebaseMode,
-      ParquetSchemaWrapper(current.memBuffersAndSizes.head.schema),
-      ParquetSchemaWrapper(next.memBuffersAndSizes.head.schema),
+      ParquetSchemaWrapper(current.clippedSchema),
+      ParquetSchemaWrapper(next.clippedSchema),
       current.partitionedFile.filePath.toString(),
       next.partitionedFile.filePath.toString()
     )
@@ -2068,7 +2086,7 @@ class MultiFileCloudParquetPartitionReader(
       logDebug("Query uses input file name, can't use combine mode")
       false
     } else {
-      combineThresholdSize > 0
+      combineConf.combineThresholdSize > 0
     }
   }
 
@@ -2097,7 +2115,7 @@ class MultiFileCloudParquetPartitionReader(
     // we already separated, just use the clippedSchema from metadata
     val schemaToUse = metaToUse.clippedSchema
     val blocksAlreadyRead = toCombineHmbs.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta))
-    val footerSize = calculateParquetFooterSize(blocksAlreadyRead, schemaToUse)
+    val footerSize = calculateParquetFooterSize(blocksAlreadyRead.toSeq, schemaToUse)
     // all will have same schema so same number of columns
     val numCols = blocksAlreadyRead.head.getColumns().size()
     val extraMemory = calculateExtraMemoryForParquetFooter(numCols, blocksAlreadyRead.size)
@@ -2161,7 +2179,7 @@ class MultiFileCloudParquetPartitionReader(
         }
       }
       val newHmbBufferInfo = SingleHMBAndMeta(buf, offset,
-        combinedMeta.allPartValues.map(_._1).sum, Seq.empty, schemaToUse)
+        combinedMeta.allPartValues.map(_._1).sum, Seq.empty)
       val newHmbMeta = HostMemoryBuffersWithMetaData(
         metaToUse.partitionedFile,
         metaToUse.origPartitionedFile, // this doesn't matter since already read
@@ -2389,7 +2407,7 @@ class MultiFileCloudParquetPartitionReader(
                   readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
                 val numRows = blocksToRead.map(_.getRowCount).sum.toInt
                 hostBuffers += SingleHMBAndMeta(dataBuffer, dataSize,
-                  numRows, blockMeta, fileBlockMeta.schema)
+                  numRows, blockMeta)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
