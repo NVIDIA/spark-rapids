@@ -26,8 +26,12 @@ import com.nvidia.spark.rapids.jni.CastStrings
 object GpuCastShims {
   def CastDecimalToString(decimalInput: ColumnView, ansiMode: Boolean): ColumnVector = {
     if (ansiMode) {
+      // This is equivalent to
+      // https://docs.oracle.com/javase/8/docs/api/java/math/BigDecimal.html#toPlainString--
       decimalInput.castTo(DType.STRING)
     } else {
+      // This is equivalent to
+      // https://docs.oracle.com/javase/8/docs/api/java/math/BigDecimal.html#toString--
       CastStrings.fromDecimal(decimalInput)
     }
   }

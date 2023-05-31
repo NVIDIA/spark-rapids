@@ -465,7 +465,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
           ansiMode = true,
-          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+          comparisonFunc = None)
       }
     }
   }

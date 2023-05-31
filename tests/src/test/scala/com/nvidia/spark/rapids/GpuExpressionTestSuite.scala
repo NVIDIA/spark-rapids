@@ -174,10 +174,6 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  def compareStringifiedDecimalsInSemantic(expected: String, actual: String): Boolean = {
-    (expected == actual)
-  }
-
   private def getAs(column: RapidsHostColumnVector, index: Int, dataType: DataType): Option[Any] = {
     if (column.isNullAt(index)) {
       None
