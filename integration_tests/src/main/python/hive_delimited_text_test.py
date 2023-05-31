@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_fallback_collect
 from conftest import get_non_gpu_allowed
 from data_gen import *
 from enum import Enum
@@ -420,6 +420,37 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
         lambda spark: read_hive_text_table(spark, table_name),
         cpu_fallback_class_name=get_non_gpu_allowed()[0],
         conf=hive_text_enabled_conf)
+
+
+@pytest.mark.parametrize('codec', ['BZip2Codec',    # BZ2 compression, i.e. Splittable.
+                                   'DefaultCodec',  # DEFLATE, i.e. Gzip, without headers. Unsplittable.
+                                   'GzipCodec'])    # Gzip proper. Unsplittable.
+def test_read_compressed_hive_text(spark_tmp_table_factory, codec):
+    """
+    This tests whether compressed Hive Text tables are readable from spark-rapids.
+    For GZIP/DEFLATE compressed tables, spark-rapids should not attempt to split the input files.
+    Bzip2 compressed tables are splittable, and should remain readable.
+    """
+
+    table_name = spark_tmp_table_factory.get()
+
+    def create_table_with_compressed_files(spark):
+        spark.range(100000)\
+            .selectExpr("id",
+                        "cast(id as string) id_string")\
+            .repartition(1).write.format("hive").saveAsTable(table_name)
+
+    # Create Hive Text table with compression enabled.
+    with_cpu_session(create_table_with_compressed_files,
+                     {"hive.exec.compress.output": "true",
+                      "mapreduce.output.fileoutputformat.compress.codec":
+                          "org.apache.hadoop.io.compress.{}".format(codec)})
+
+    # Attempt to read from table with very small (2KB) splits.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("SELECT COUNT(1) FROM {}".format(table_name)),
+        conf={"spark.sql.files.maxPartitionBytes": "2048b"}
+    )
 
 
 # Hive Delimited Text writer tests follow.
