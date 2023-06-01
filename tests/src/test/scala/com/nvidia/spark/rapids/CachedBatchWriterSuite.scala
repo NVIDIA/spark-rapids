@@ -16,21 +16,21 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
-import org.mockito.ArgumentMatchers._
-import org.mockito.Mockito._
-import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.mockito.ArgumentMatchers._
+import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
+
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 
 /**

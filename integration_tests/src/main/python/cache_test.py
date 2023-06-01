@@ -348,3 +348,6 @@ def test_aqe_cache_join(data_gen):
 def test_inmem_cache_count():
     conf={"spark.sql.session.timeZone": "America/Los_Angeles"}
     function_to_test_on_cached_df(with_gpu_session, lambda df: df.selectExpr("cast(a as timestamp)").cache().count(), int_gen, test_conf=conf)
+
+def test_batch_no_cols():
+    function_to_test_on_cached_df(with_gpu_session, lambda df: df.drop("a").cache().count(), int_gen, test_conf={})

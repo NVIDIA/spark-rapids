@@ -319,9 +319,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       }
 
       input.flatMap(batch => {
-        if (batch.numCols() == 0 || batch.numRows() == 0) {
+        if (batch.numCols() == 0 || structSchema.isEmpty) {
           if (batch.numCols() > 0 && batch.column(0).isInstanceOf[GpuColumnVector]) {
-            batch.close();
+            batch.close()
           }
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
@@ -478,6 +478,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       originalSelectedAttributes: Seq[Attribute]): RDD[ColumnarBatch] = {
 
     val cbRdd: RDD[ColumnarBatch] = input.map {
+      case parquetCB: ParquetCachedBatch if parquetCB.sizeInBytes == 0 =>
+        GpuColumnVector.emptyBatch(originalSelectedAttributes.asJava)
       case parquetCB: ParquetCachedBatch =>
         val parquetOptions = ParquetOptions.builder()
             .includeColumn(selectedAttributes.map(_.name).asJavaCollection).build()
