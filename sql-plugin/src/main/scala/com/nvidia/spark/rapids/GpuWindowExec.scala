@@ -17,13 +17,16 @@
 package com.nvidia.spark.rapids
 
 import java.util.concurrent.TimeUnit
+
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -33,7 +36,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
