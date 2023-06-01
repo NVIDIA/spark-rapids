@@ -1870,22 +1870,7 @@ class GpuCachedDoublePassWindowIterator(
       case Some(it) if it.hasNext =>
         it.next()
       case _ =>
-        while (readyForPostProcessing.isEmpty) {
-          // Keep reading and processing data until we have something to output
-          cacheBatchIfNeeded()
-          if (waitingForFirstPass.isEmpty) {
-            lastBatch()
-          } else {
-            val cb = waitingForFirstPass.get
-            waitingForFirstPass = None
-            withResource(
-              new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
-              // firstPassComputeAndCache takes ownership of the batch passed to it
-              firstPassComputeAndCache(cb)
-            }
-          }
-        }
-        postProcessedIter = Some(withRetry(readyForPostProcessing.dequeue(),
+        postProcessedIter = Some(withRetry(getReadyForPostProcessing(),
             splitSpillableInHalfByRows) { sb =>
           withResource(sb.getColumnarBatch()) { cb =>
             val ret = withResource(
@@ -1900,6 +1885,29 @@ class GpuCachedDoublePassWindowIterator(
         postProcessedIter.get.next()
     }
   }
+
+  /**
+   * Get the next batch that is ready for post-processing.
+   */
+  private def getReadyForPostProcessing(): SpillableColumnarBatch = {
+    while (readyForPostProcessing.isEmpty) {
+      // Keep reading and processing data until we have something to output
+      cacheBatchIfNeeded()
+      if (waitingForFirstPass.isEmpty) {
+        lastBatch()
+      } else {
+        val cb = waitingForFirstPass.get
+        waitingForFirstPass = None
+        withResource(
+          new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
+          // firstPassComputeAndCache takes ownership of the batch passed to it
+          firstPassComputeAndCache(cb)
+        }
+      }
+    }
+    readyForPostProcessing.dequeue()
+  }
+
 }
 
 /**
