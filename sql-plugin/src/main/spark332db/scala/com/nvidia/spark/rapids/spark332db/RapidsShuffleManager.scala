@@ -15,12 +15,12 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
+{"spark": "332db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.spark330db
+package com.nvidia.spark.rapids.spark332db
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark330db.ProxyRapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.shims.spark332db.ProxyRapidsShuffleInternalManager
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(

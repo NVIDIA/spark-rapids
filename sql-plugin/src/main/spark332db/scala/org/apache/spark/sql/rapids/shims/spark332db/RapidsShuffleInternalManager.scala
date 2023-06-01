@@ -15,9 +15,9 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
+{"spark": "332db"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims.spark330db
+package org.apache.spark.sql.rapids.shims.spark332db
 
 import org.apache.spark.SparkConf
 import org.apache.spark.shuffle._
