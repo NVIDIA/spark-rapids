@@ -364,64 +364,61 @@ case class GpuProjectAstExec(
     }
   }
 
-  def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch): ColumnarBatch = {
+  private [this] def projectWithRetrySingleBatchInternal(sb: SpillableColumnarBatch,
+      closeInputBatch: Boolean): ColumnarBatch = {
     if (areAllDeterministic) {
       // If all of the expressions are deterministic we can just run everything and retry it
       // at the top level. If some things are non-deterministic we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
-      RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
-        withResource(sb.getColumnarBatch()) { cb =>
-          project(cb)
+      if (closeInputBatch) {
+        RmmRapidsRetryIterator.withRetryNoSplit(sb) { _ =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            project(cb)
+          }
+        }
+      } else {
+        RmmRapidsRetryIterator.withRetryNoSplit {
+          withResource(sb.getColumnarBatch()) { cb =>
+            project(cb)
+          }
         }
       }
     } else {
       @tailrec
       def recurse(boundExprs: Seq[Seq[GpuExpression]],
-          sb: SpillableColumnarBatch): SpillableColumnarBatch = boundExprs match {
+          sb: SpillableColumnarBatch,
+          recurseCloseInputBatch: Boolean): SpillableColumnarBatch = boundExprs match {
         case Nil => sb
         case exprSet :: tail =>
           val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
-            val projectResult = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb,
-              exprSet)
+            val projectResult = if (recurseCloseInputBatch) {
+              GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprSet)
+            } else {
+              GpuProjectExec.projectWithRetrySingleBatch(sb, exprSet)
+            }
             SpillableColumnarBatch(projectResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           }
-          recurse(tail, projectSb)
+          // We always want to close the temp batches that we make...
+          recurse(tail, projectSb, recurseCloseInputBatch = true)
       }
-      // Process tiers sequentially
-      withResource(recurse(exprTiers, sb)) { ret =>
+      // Process tiers sequentially, but don't close the first batch because we don
+      withResource(recurse(exprTiers, sb, closeInputBatch)) { ret =>
         ret.getColumnarBatch()
       }
     }
   }
 
-  def projectWithRetrySingleBatch(sb: SpillableColumnarBatch): ColumnarBatch = {
-    if (areAllDeterministic) {
-      // If all of the expressions are deterministic we can just run everything and retry it
-      // at the top level. If some things are non-deterministic we need to split them up and
-      // do the processing in a way that makes it so retries are more likely to succeed.
-      RmmRapidsRetryIterator.withRetryNoSplit {
-        withResource(sb.getColumnarBatch()) { cb =>
-          project(cb)
-        }
-      }
-    } else {
-      @tailrec
-      def recurse(boundExprs: Seq[Seq[GpuExpression]],
-          sb: SpillableColumnarBatch): SpillableColumnarBatch = boundExprs match {
-        case Nil => sb
-        case exprSet :: tail =>
-          val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
-            val projectResult = GpuProjectExec.projectWithRetrySingleBatch(sb, exprSet)
-            SpillableColumnarBatch(projectResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-          }
-          recurse(tail, projectSb)
-      }
-      // Process tiers sequentially
-      withResource(recurse(exprTiers, sb)) { ret =>
-        ret.getColumnarBatch()
-      }
-    }
-  }
+  /**
+   * Do a project with retry and close the input batch when done.
+   */
+  def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch): ColumnarBatch =
+    projectWithRetrySingleBatchInternal(sb, closeInputBatch = true)
+
+  /**
+   * Do a project with retry, but don't close the input batch.
+   */
+  def projectWithRetrySingleBatch(sb: SpillableColumnarBatch): ColumnarBatch =
+    projectWithRetrySingleBatchInternal(sb, closeInputBatch = false)
 
   def project(batch: ColumnarBatch): ColumnarBatch = {
     @tailrec
