@@ -29,8 +29,4 @@ object DeltaLogShim {
   def getMetadata(deltaLog: DeltaLog): Metadata = {
     deltaLog.snapshot.metadata
   }
-
-  def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {}
-
-  def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {}
 }
