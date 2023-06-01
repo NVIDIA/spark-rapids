@@ -1778,6 +1778,8 @@ class GpuCachedDoublePassWindowIterator(
     }
   }
 
+  var firstPassIter: Option[Iterator[(Array[cudf.ColumnVector], ColumnarBatch)]] = None
+
   // Compute the window operation and cache/update caches as needed.
   // This method takes ownership of cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
@@ -1785,12 +1787,18 @@ class GpuCachedDoublePassWindowIterator(
     val numRows = cb.numRows()
 
     val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    val (basic, parts) = withRetryNoSplit(sp) { _ =>
-      withResource(sp.getColumnarBatch()) { batch =>
-        closeOnExcept(computeBasicWindow(batch)) { basic =>
-          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
-        }
-      }
+
+    val (basic, parts) = firstPassIter match {
+      case Some(it) if it.hasNext => it.next()
+      case _ =>
+        firstPassIter = Some(withRetry(sp, splitSpillableInHalfByRows) { sp =>
+          withResource(sp.getColumnarBatch()) { batch =>
+            closeOnExcept(computeBasicWindow(batch)) { basic =>
+              (basic, GpuProjectExec.project(batch, boundPartitionSpec))
+            }
+          }
+        })
+        firstPassIter.get.next()
     }
 
     withResource(basic) { _ =>
@@ -1874,7 +1882,7 @@ class GpuCachedDoublePassWindowIterator(
             splitSpillableInHalfByRows) { sb =>
           withResource(sb.getColumnarBatch()) { cb =>
             val ret = withResource(
-              new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+                new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
               postProcess(cb)
             }
             numOutputBatches += 1
