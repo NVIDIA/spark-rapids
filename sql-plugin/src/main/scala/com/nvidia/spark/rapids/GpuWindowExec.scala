@@ -1658,6 +1658,8 @@ class GpuCachedDoublePassWindowIterator(
 
   override def isRunningBatched: Boolean = true
 
+  private var firstPassIter: Option[Iterator[(Array[cudf.ColumnVector], ColumnarBatch)]] = None
+  private var postProcessedIter: Option[Iterator[ColumnarBatch]] = None
   private var readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
   private var firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
   // This should only ever be cached in between calls to `hasNext` and `next`.
@@ -1778,8 +1780,6 @@ class GpuCachedDoublePassWindowIterator(
     }
   }
 
-  var firstPassIter: Option[Iterator[(Array[cudf.ColumnVector], ColumnarBatch)]] = None
-
   // Compute the window operation and cache/update caches as needed.
   // This method takes ownership of cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
@@ -1867,8 +1867,6 @@ class GpuCachedDoublePassWindowIterator(
       waitingForFirstPass.isDefined
     }
   }
-
-  var postProcessedIter: Option[Iterator[ColumnarBatch]] = None
 
   override def next(): ColumnarBatch = {
     if (!hasNext) {
