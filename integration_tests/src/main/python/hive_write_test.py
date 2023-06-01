@@ -140,7 +140,7 @@ def test_optimized_hive_bucketed_fallback_33X(gens, storage, spark_tmp_table_fac
 # Since Spark 3.4.0, the internal "SortExec" will be pulled out by default
 # from the FileFormatWriter. Then it is visible in the planning stage.
 @allow_non_gpu("DataWritingCommandExec", "SortExec", "WriteFilesExec")
-@pytest.mark.skipif(not (is_hive_available() and is_spark_340_or_later()),
+@pytest.mark.skipif(not (is_hive_available() and (is_spark_340_or_later() or is_databricks122_or_later())),
                     reason="Requires Hive and Spark 3.4+ to write bucketed Hive tables with SortExec pulled out")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
