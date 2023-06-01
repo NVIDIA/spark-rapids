@@ -1,5 +1,5 @@
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION. All Rights Reserved.
+  Copyright (c) 2020-2023, NVIDIA CORPORATION. All Rights Reserved.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -107,8 +107,6 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <!-- ================================================================================ -->
     <!--       rules we'd like to enforce, but haven't cleaned up the codebase yet        -->
     <!-- ================================================================================ -->
-
-    <!-- This project uses Javadoc rather than Scaladoc so scaladoc checks are disabled -->
     <check enabled="false" class="org.scalastyle.scalariform.ScalaDocChecker" level="warning"/>
 
 </scalastyle>

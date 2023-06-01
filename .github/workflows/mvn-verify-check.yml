@@ -28,7 +28,6 @@ env:
     -Ddist.jar.compress=false
     -DskipTests
     -Dskip
-    -Dmaven.javadoc.skip
 
 jobs:
   get-shim-versions-from-dist:
