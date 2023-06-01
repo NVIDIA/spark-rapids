@@ -39,6 +39,7 @@ time.tzset()
 def hash_object(obj):
     h = hashlib.blake2b(digest_size=10)
     if isinstance(obj, (int, float, str, bool, type(None))):
+        # convert to bytes-like object
         h.update(str(obj).encode())
     elif isinstance(obj, (list, tuple)):
         for item in obj:
@@ -723,7 +724,6 @@ def gen_df_help(spark, data_gen, length=2048, seed=0, num_slices=None):
         SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
         data_gen.data_type)
 
-# @lru_cache(maxsize=128)
 def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
