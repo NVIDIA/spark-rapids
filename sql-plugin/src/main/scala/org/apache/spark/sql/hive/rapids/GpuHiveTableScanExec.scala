@@ -258,10 +258,13 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
     val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
 
-    def canBeSplit(file: FileStatus, hadoopConf: Configuration): Boolean = {
-      // Checks if `file` can be split.
+    def canBeSplit(filePath: Path, hadoopConf: Configuration): Boolean = {
+      // Checks if file at path `filePath` can be split.
       // Uncompressed Hive Text files may be split. GZIP compressed files are not.
-      val codec = new CompressionCodecFactory(hadoopConf).getCodec(file.getPath)
+      // Note: This method works on a Path, and cannot take a `FileStatus`.
+      //       partition.files is an Array[FileStatus] on vanilla Apache Spark,
+      //       but an Array[SerializableFileStatus] on Databricks.
+      val codec = new CompressionCodecFactory(hadoopConf).getCodec(filePath)
       codec == null || codec.isInstanceOf[SplittableCompressionCodec]
     }
 
@@ -271,7 +274,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
           sparkSession,
           f,
           f.getPath,
-          isSplitable = canBeSplit(f, hadoopConf),
+          isSplitable = canBeSplit(f.getPath, hadoopConf),
           maxSplitBytes,
           partition.values
         )
