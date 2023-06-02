@@ -1436,7 +1436,7 @@ def test_to_date_with_window_functions():
     )
 
 def test_lru_cache_datagen():
-    # log cache info to see if the cache is working, put it at last test, not related to window functions.
+    # log cache info at the end of integration tests, not related to window functions
     info = gen_df_help.cache_info()
     warnings.warn("Cache info: {}".format(info))
     gen_df_help.cache_clear()
