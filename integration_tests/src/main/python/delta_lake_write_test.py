@@ -25,7 +25,7 @@ from conftest import is_databricks_runtime
 from marks import *
 from parquet_write_test import limited_timestamp, parquet_part_write_gens, parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_330, with_cpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_databricks122_or_later, with_cpu_session
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -154,6 +154,7 @@ def get_last_operation_metrics(path):
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.write.enabled": "false"}], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -325,6 +326,7 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
 @ignore_order
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -347,6 +349,7 @@ def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
     def write_func(spark, path):
         writer = unary_op_df(spark, int_gen).coalesce(1).write.format("delta")
@@ -368,6 +371,7 @@ def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -384,6 +388,7 @@ def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_opt
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_hadoop_confs(spark):
@@ -408,6 +413,7 @@ def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_opti
 @ignore_order
 @pytest.mark.parametrize('codec', ['gzip'])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_compression_fallback(spark_tmp_path, codec):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.compression.codec": codec})
@@ -422,6 +428,7 @@ def test_delta_write_compression_fallback(spark_tmp_path, codec):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_legacy_format_fallback(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.writeLegacyFormat": "true"})
@@ -799,6 +806,7 @@ def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 @pytest.mark.parametrize("gen", [
     simple_string_to_string_map_gen,
     StructGen([("x", ArrayGen(int_gen))]),
@@ -892,6 +900,7 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),

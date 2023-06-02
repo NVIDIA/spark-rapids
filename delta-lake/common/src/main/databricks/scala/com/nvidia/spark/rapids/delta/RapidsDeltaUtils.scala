@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, TypeSig, WriteFileOp}
+import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
@@ -32,7 +33,7 @@ object RapidsDeltaUtils {
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    deltaLog.fileFormat() match {
+    DeltaLogShim.fileFormat(deltaLog) match {
       case _: DeltaParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
       case f =>
@@ -65,7 +66,7 @@ object RapidsDeltaUtils {
         orderableTypeSig.isSupportedByPlugin(t)
       }
       if (unorderableTypes.nonEmpty) {
-        val metadata = deltaLog.snapshot.metadata
+        val metadata = DeltaLogShim.getMetadata(deltaLog)
         val hasPartitioning = metadata.partitionColumns.nonEmpty ||
             options.get(DataSourceUtils.PARTITIONING_COLUMNS_KEY).exists(_.nonEmpty)
         if (!hasPartitioning) {
