@@ -52,7 +52,7 @@ class DataGen:
         return self.__repr__() + '(' + specialcases + ')'
 
     def __hash__(self):
-        return hash(self.cache_repr())
+        return hash(str(self))
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.cache_repr() == other.cache_repr()
@@ -156,7 +156,7 @@ class ConvertGen(DataGen):
         self._func = func
     
     def __repr__(self):
-        return super().__repr__() + '(' + self._child_gen.__repr__() + ')'
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -329,7 +329,7 @@ class RepeatSeqGen(DataGen):
         self._index = 0
 
     def __repr__(self):
-        return super().__repr__() + '(' + self._child.__repr__() + ',' + str(self._length) + ')'
+        return super().__repr__() + '(' + str(self._child) + ',' + str(self._length) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
@@ -484,7 +484,7 @@ class StructGen(DataGen):
         self.children = children
     
     def __repr__(self):
-        return super().__repr__() + '(' + ','.join([name + child.__repr__() for name, child in self.children]) + ')'
+        return super().__repr__() + '(' + ','.join([name + str(child) for name, child in self.children]) + ')'
 
     def start(self, rand):
         for name, child in self.children:
@@ -644,7 +644,7 @@ class MapGen(DataGen):
         super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
 
     def __repr__(self):
-        return super().__repr__() + '(' + self._key_gen.__repr__() + ',' + self._value_gen.__repr__() + ')'
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen)+ ')'
 
     def start(self, rand):
         self._key_gen.start(rand)
