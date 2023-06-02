@@ -250,10 +250,10 @@ basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_t
 # https://github.com/NVIDIA/spark-rapids/issues/6339
 basic_map_gens_for_cast_to_string = [
     MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
-    MapGen(DecimalGen(nullable=False, special_cases=[]),
-           DecimalGen(precision=7, scale=3, special_cases=[])),
-    MapGen(DecimalGen(precision=7, scale=7, nullable=False, special_cases=[]),
-           DecimalGen(precision=12, scale=2), special_cases=[])]
+    MapGen(DecimalGen(nullable=False),
+           DecimalGen(precision=7, scale=3)),
+    MapGen(DecimalGen(precision=7, scale=7, nullable=False),
+           DecimalGen(precision=12, scale=2))]
 
 # GPU does not match CPU to casting these types to string, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]
@@ -285,8 +285,7 @@ def _assert_cast_to_string_equal (data_gen, conf):
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true', 
-        "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
@@ -295,8 +294,7 @@ def test_cast_array_to_string(data_gen, legacy):
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
-         "spark.rapids.sql.castFloatToString.enabled"       : "true", 
+        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -306,8 +304,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled"    : 'true',
-        "spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
 @pytest.mark.parametrize('data_gen', not_matched_map_gens_for_cast_to_string, ids=idfn)
@@ -316,8 +313,7 @@ def test_cast_map_to_string(data_gen, legacy):
 def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
-         "spark.rapids.sql.castFloatToString.enabled"       : "true",
+        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -327,8 +323,7 @@ def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled": 'true', 
-         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 # https://github.com/NVIDIA/spark-rapids/issues/2309
@@ -371,8 +366,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castDecimalToString.enabled"     : 'true',
-         "spark.rapids.sql.castFloatToString.enabled"       : "true", 
+        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
