@@ -35,7 +35,10 @@ in our plugin:
 ## Multi-Threaded Mode
 
 Multi-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
-more CPU threads for compute-intensive tasks, such as compression and decompression. 
+more CPU threads for compute-intensive tasks, such as compression and decompression.
+
+The multi-threaded shuffle targets the "BypassMergeSortShuffle" shuffle algorithm in Spark,
+which is the default when `spark.shuffle.partitions` is 200 or less.
 
 Minimum configuration:
 
@@ -470,3 +473,12 @@ for this, other than to trigger a GC cycle on the driver.
 Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that
 can be used to periodically cause garbage collection. If you are experiencing OOM situations, or
 performance degradation with several Spark actions, consider tuning this setting in your jobs.
+
+#### Known Issues
+
+- UCX configures TCP keep-alive for TCP transports. We have seen [issues with keep-alive in multi-NIC environments](https://github.com/NVIDIA/spark-rapids/issues/7940) after long periods of inactivity (when the inactivity is greater 
+  than the system's `tcp_keepalive_time`). If you see errors such as:
+  ```
+  ERROR UCX: UcpListener detected an error for executorId 2: UCXError(-25,Connection reset by remote peer)
+  ```
+  Consider turning off keep-alive for UCX using: `spark.executorEnv.UCX_TCP_KEEPINTVL=inf`.
