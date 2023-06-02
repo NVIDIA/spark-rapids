@@ -422,6 +422,9 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
         conf=hive_text_enabled_conf)
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @pytest.mark.parametrize('codec', ['BZip2Codec',    # BZ2 compression, i.e. Splittable.
                                    'DefaultCodec',  # DEFLATE, i.e. Gzip, without headers. Unsplittable.
                                    'GzipCodec'])    # Gzip proper. Unsplittable.
