@@ -732,7 +732,7 @@ def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=128, typed=True)
 def gen_df_help(spark, data_gen, length=2048, seed=0, num_slices=None):
     rand = random.Random(seed)
     data_gen.start(rand)
