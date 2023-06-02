@@ -132,6 +132,8 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
   }
 }
 
+private class EmptyBatchEncounteredException(msg: String) extends Exception(msg)
+
 private object ByteArrayOutputFile {
   val BLOCK_SIZE: Int = 32 * 1024 * 1024 // 32M
 }
@@ -862,11 +864,15 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         if (!cbIter.hasNext) {
           Iterator.empty
         } else {
-          new ShimCurrentBatchIterator(
-            cbIter.next().asInstanceOf[ParquetCachedBatch],
-            conf,
-            selectedAttributes,
-            options, hadoopConf)
+          try {
+            new ShimCurrentBatchIterator(
+              cbIter.next().asInstanceOf[ParquetCachedBatch],
+              conf,
+              selectedAttributes,
+              options, hadoopConf)
+          } catch {
+            case _: EmptyBatchEncounteredException => Iterator.empty
+          }
         }
       }
 
@@ -1046,7 +1052,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           // iterator has exhausted, we should clean up
           close()
         }
-        queue.nonEmpty || iter.hasNext
+        !cachedAttributes.isEmpty && (queue.nonEmpty || iter.hasNext)
       }
 
       private val queue = new mutable.Queue[CachedBatch]()
@@ -1112,7 +1118,11 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
             queue += ParquetCachedBatch(rows, stream.toByteArray)
           }
         }
-        queue.dequeue()
+        if (!queue.isEmpty) {
+          queue.dequeue()
+        } else {
+          throw new EmptyBatchEncounteredException("Encountered an empty batch")
+        }
       }
     }
 

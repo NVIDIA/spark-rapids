@@ -349,5 +349,7 @@ def test_inmem_cache_count():
     conf={"spark.sql.session.timeZone": "America/Los_Angeles"}
     function_to_test_on_cached_df(with_gpu_session, lambda df: df.selectExpr("cast(a as timestamp)").cache().count(), int_gen, test_conf=conf)
 
-def test_batch_no_cols():
-    function_to_test_on_cached_df(with_gpu_session, lambda df: df.drop("a").cache().count(), int_gen, test_conf={})
+
+@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
+def test_batch_no_cols(with_x_session):
+    function_to_test_on_cached_df(with_x_session, lambda df: df.drop("a").cache().count(), int_gen, test_conf={})

@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK
+import org.apache.spark.storage.StorageLevel.MEMORY_ONLY
 
 /**
  * Unit tests for cached batch writing
@@ -39,7 +39,7 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     val cb0 = FuzzerUtils.createColumnarBatch(schema.toStructType, 0)
     val cb = FuzzerUtils.createColumnarBatch(schema.toStructType, 10)
     val rdd = spark.sparkContext.parallelize(Seq(cb, cb0))
-    val storageLevel = MEMORY_AND_DISK
+    val storageLevel = MEMORY_ONLY
     val cachedRdd = ser.convertColumnarBatchToCachedBatch(rdd, schema, storageLevel, conf)
     val cbRdd = ser.convertCachedBatchToColumnarBatch(cachedRdd, schema, schema, conf)
     val part = cbRdd.partitions.head
@@ -54,11 +54,5 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
 
   test("cache empty columnar batch on GPU") {
     withGpuSparkSession(writeAndConsumeEmptyBatch())
-  }
-
-  test("cache empty columnar batch on CPU") {
-    val conf = new SQLConf
-    conf.setConfString("spark.rapids.sql.enabled", "false")
-    withCpuSparkSession(writeAndConsumeEmptyBatch(conf))
   }
 }
