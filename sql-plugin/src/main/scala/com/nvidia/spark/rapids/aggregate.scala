@@ -849,7 +849,7 @@ class GpuHashAggregateIterator(
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val finalProjections = groupingExpressions ++
+      val finalProjections = groupingAttributes ++
           aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
       Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
