@@ -182,11 +182,25 @@ def test_cast_string_timestamp_fallback():
     DecimalGen(precision=36, scale=5), DecimalGen(precision=38, scale=0),
     DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),
     DecimalGen(precision=38, scale=-10)], ids=meta_idfn('from:'))
-@pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType()], ids=meta_idfn('to:'))
+@pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType(), StringType()], ids=meta_idfn('to:'))
 def test_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
             conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', [
+    decimal_gen_32bit, decimal_gen_32bit_neg_scale, DecimalGen(precision=7, scale=7),
+    decimal_gen_64bit, decimal_gen_128bit, DecimalGen(precision=30, scale=2),
+    DecimalGen(precision=36, scale=5), DecimalGen(precision=38, scale=0),
+    DecimalGen(precision=38, scale=10), DecimalGen(precision=36, scale=-5),
+    DecimalGen(precision=38, scale=-10)], ids=meta_idfn('from:'))
+@pytest.mark.parametrize('to_type', [FloatType(), DoubleType(), StringType()], ids=meta_idfn('to:'))
+def test_ansi_cast_decimal_to(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
+            conf = {'spark.rapids.sql.castDecimalToFloat.enabled': True,
+                'spark.sql.ansi.enabled': True})
 
 @pytest.mark.parametrize('data_gen', [
     DecimalGen(7, 1),

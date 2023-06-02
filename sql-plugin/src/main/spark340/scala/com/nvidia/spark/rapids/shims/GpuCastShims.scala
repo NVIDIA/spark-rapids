@@ -20,15 +20,40 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
+import java.math.BigInteger
+
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.CastStrings
 
 object GpuCastShims {
+  def makeZeroScalar(t: DType): Scalar = t.getTypeId match {
+    case DType.DTypeEnum.DECIMAL32 => Scalar.fromDecimal(t.getScale, 0)
+    case DType.DTypeEnum.DECIMAL64 => Scalar.fromDecimal(t.getScale, 0L)
+    case DType.DTypeEnum.DECIMAL128 => Scalar.fromDecimal(t.getScale, BigInteger.ZERO)
+    case _ => throw new IllegalArgumentException(s"Unsupported type in cast $t")
+  }
+
   def CastDecimalToString(decimalInput: ColumnView, ansiMode: Boolean): ColumnVector = {
     if (ansiMode) {
       // This is equivalent to
       // https://docs.oracle.com/javase/8/docs/api/java/math/BigDecimal.html#toPlainString--
-      decimalInput.castTo(DType.STRING)
+      // except there are a few corner cases, but they are really rare
+      val t = decimalInput.getType
+      if (t.getScale > 0) {
+        val isZero = withResource(makeZeroScalar(t)) { zero =>
+          zero.equalTo(decimalInput)
+        }
+        withResource(isZero) { isZero =>
+          withResource(decimalInput.castTo(DType.STRING)) { decStr =>
+            withResource(Scalar.fromString("0")) { zeroStr =>
+              isZero.ifElse(zeroStr, decStr)
+            }
+          }
+        }
+      } else {
+        decimalInput.castTo(DType.STRING)
+      }
     } else {
       // This is equivalent to
       // https://docs.oracle.com/javase/8/docs/api/java/math/BigDecimal.html#toString--

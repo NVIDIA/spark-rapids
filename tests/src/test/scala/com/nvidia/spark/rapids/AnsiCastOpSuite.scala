@@ -475,7 +475,14 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
-  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
+  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => {
+    d match {
+      case dec: Decimal if isSpark340OrLater =>
+        Some(dec.toJavaBigDecimal.toPlainString)
+      case _ =>
+        Some(String.valueOf(d))
+    }
+  }
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
       comparisonFunc: Option[(String, String) => Boolean] ): Unit = {
