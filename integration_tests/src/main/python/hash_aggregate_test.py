@@ -1861,3 +1861,12 @@ def test_min_max_for_single_level_struct(data_gen):
         "hash_agg_table",
         'select min(a) from hash_agg_table',
         _float_conf)
+
+# Some Spark implementations will optimize this aggregation as a
+# complete aggregation (i.e.: only one aggregation node in the plan)
+@ignore_order(local=True)
+def test_hash_aggregate_complete_with_grouping_expressions():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : spark.range(10).withColumn("id2", f.col("id")),
+        "hash_agg_complete_table",
+        "select id, avg(id) from hash_agg_complete_table group by id, id2 + 1")
