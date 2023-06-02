@@ -401,7 +401,7 @@ case class GpuProjectAstExec(
           // We always want to close the temp batches that we make...
           recurse(tail, projectSb, recurseCloseInputBatch = true)
       }
-      // Process tiers sequentially, but don't close the first batch because we don
+      // Process tiers sequentially. The input batch is closed by recurse if requested.
       withResource(recurse(exprTiers, sb, closeInputBatch)) { ret =>
         ret.getColumnarBatch()
       }
