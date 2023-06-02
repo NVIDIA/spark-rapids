@@ -17,8 +17,8 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.{GpuColumnVector, RmmRapidsRetryIterator}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuColumnVector
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.broadcast.Broadcast
@@ -43,8 +43,10 @@ object GpuBroadcastHelper {
                         broadcastSchema: StructType): ColumnarBatch = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
-          broadcastBatch.batch.getColumnarBatch()
+        RmmRapidsRetryIterator.withRetryNoSplit {
+          withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
+            broadcastBatch.batch.getColumnarBatch()
+          }
         }
       case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)

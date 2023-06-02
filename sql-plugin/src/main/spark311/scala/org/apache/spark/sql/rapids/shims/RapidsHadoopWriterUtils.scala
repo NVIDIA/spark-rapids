@@ -36,6 +36,9 @@ import org.apache.hadoop.mapred.JobID
 object RapidsHadoopWriterUtils {
   // SPARK-41448 create a jobID directly from the jobTrackerID
   def createJobID(jobTrackerID: String, id: Int): JobID = {
+    if (id < 0) {
+      throw new IllegalArgumentException("Job number is negative")
+    }
     new JobID(jobTrackerID, id)
   }
 }
