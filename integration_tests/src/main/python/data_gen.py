@@ -38,6 +38,8 @@ class DataGen:
     """Base class for data generation"""
 
     def __repr__(self):
+        # repr of DataGens and their children will be used to generate the cache key
+        # make sure it is unique for different DataGens
         notnull = '(not_null)' if not self.nullable else ''
         datatype = '(' + str(self.data_type) + ')'
         return self.__class__.__name__[:-3] + notnull + ', ' + datatype
