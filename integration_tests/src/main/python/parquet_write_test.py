@@ -182,7 +182,7 @@ def test_int96_write_conf(spark_tmp_path, data_gen):
         ['DataWritingCommandExec'],
         confs)
 
-@pytest.mark.skipif(is_before_spark_340(), reason="`WriteFilesExec` is only supported in Spark 340+")
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 # Note: From Spark 340, WriteFilesExec is introduced.
 @pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
