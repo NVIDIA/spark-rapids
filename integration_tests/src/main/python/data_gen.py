@@ -28,53 +28,29 @@ from conftest import skip_unless_precommit_tests
 import time
 import os
 from functools import lru_cache
-import hashlib
 
 # set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
 # refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
 os.environ['TZ'] = 'UTC'
 time.tzset()
 
-# hash object with nested data types for caching
-def hash_object(obj):
-    h = hashlib.blake2b(digest_size=10)
-    if isinstance(obj, (int, float, str, bool, type(None))):
-        # convert to bytes-like object
-        h.update(str(obj).encode())
-    elif isinstance(obj, (list, tuple)):
-        for item in obj:
-            h.update(hash_object(item).encode())
-    elif isinstance(obj, dict):
-        keys = sorted(obj.keys())  
-        for k in keys:     
-            h.update(hash_object(k).encode()) 
-            h.update(hash_object(obj[k]).encode())
-    elif isinstance(obj, DataGen):
-        h.update(obj.__class__.__name__.encode())
-        attrs = vars(obj)
-        keys = sorted(attrs.keys())
-        for k in keys:
-            if str(k) == '_gen_func':
-                # bypass internal functions
-                continue
-            h.update(hash_object(k).encode())
-            h.update(hash_object(attrs[k]).encode())
-    elif callable(obj):
-        h.update(obj.__code__.co_code)
-    else:
-        h.update(str(hash(obj)).encode())
-    return h.hexdigest()  
 
 class DataGen:
     """Base class for data generation"""
 
     def __repr__(self):
-        if not self.nullable:
-            return self.__class__.__name__[:-3] + '(not_null)'
-        return self.__class__.__name__[:-3]
+        notnull = '(not_null)' if not self.nullable else ''
+        datatype = str(self.data_type)
+        specialcases = ''
+        for (weight, case) in self._special_cases:
+            if (callable(case)):
+                continue
+                # case = case.__code__.co_code
+            specialcases += str(case) + ' ' + str(weight) + ', '
+        return self.__class__.__name__ + notnull + '(' + datatype + ', ' + specialcases + ')'
 
     def __hash__(self):
-        return int(hash_object(self), 16)
+        return hash(self.__repr__())
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and hash(self) == hash(other) 
@@ -477,7 +453,7 @@ class StructGen(DataGen):
         tmp = [StructField(name, child.data_type, nullable=child.nullable) for name, child in children]
         super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
         self.children = children
-
+    
     def __repr__(self):
         return super().__repr__() + '(' + ','.join([str(i) for i in self.children]) + ')'
 
