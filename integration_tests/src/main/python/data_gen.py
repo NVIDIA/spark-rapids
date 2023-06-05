@@ -482,7 +482,7 @@ class StructGen(DataGen):
         tmp = [StructField(name, child.data_type, nullable=child.nullable) for name, child in children]
         super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
         self.children = children
-    
+
     def __repr__(self):
         return super().__repr__() + '(' + ','.join([name + str(child) for name, child in self.children]) + ')'
 
@@ -644,7 +644,7 @@ class MapGen(DataGen):
         super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen)+ ')'
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
 
     def start(self, rand):
         self._key_gen.start(rand)
@@ -730,6 +730,8 @@ def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
+# SparkSession with the same runtime configs will have same memory address and vice versa, 
+# so we can cache the spark here safely.
 @lru_cache(maxsize=128, typed=True)
 def gen_df_help(spark, data_gen, length=2048, seed=0, num_slices=None):
     rand = random.Random(seed)
