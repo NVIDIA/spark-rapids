@@ -29,7 +29,6 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.collection.mutable
 import scala.language.implicitConversions
-import scala.math.max
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -886,7 +885,6 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
             isCaseSensitive, splits)) { t =>
           val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
           logDebug(s"GPU batch size: $batchSizeBytes bytes")
-          maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
           metrics(NUM_OUTPUT_BATCHES) += 1
           // convert to batch
           Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
@@ -1067,8 +1065,6 @@ class GpuOrcPartitionReader(
         case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
         case _ => EmptyGpuColumnarBatchIterator
       }
-    } else {
-      metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
 
     // NOTE: At this point, the task may not have yet acquired the semaphore if `batch` is `None`.
@@ -1588,7 +1584,7 @@ private case class GpuOrcFileFilterHandler(
     private val missingColumnNamePattern = Pattern.compile("_col\\d+")
 
     private def isMissingColumnNames(t: TypeDescription): Boolean = {
-      t.getFieldNames.asScala.exists(f => missingColumnNamePattern.matcher(f).matches())
+      t.getFieldNames.asScala.forall(f => missingColumnNamePattern.matcher(f).matches())
     }
   }
 }
@@ -2182,7 +2178,6 @@ class MultiFileOrcPartitionReader(
     val tableReader = new SingleGpuDataProducer(decodeToTable(dataBuffer, dataSize, clippedSchema,
       extraInfo.requestedMapping, isCaseSensitive, files))
     GpuDataProducer.wrap(tableReader) { table =>
-      maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
             s"but read ${table.getNumberOfColumns}")

@@ -357,22 +357,17 @@ class GpuSorter(
    * data, and drop the added columns.
    * @param inputBatch the batch to sort
    * @param sortTime metric for the amount of time taken to sort.
-   * @param peakDevMemory metric for the peak memory usage
    * @return the sorted batch
    */
   final def fullySortBatch(
       inputBatch: ColumnarBatch,
-      sortTime: GpuMetric,
-      peakDevMemory: GpuMetric): ColumnarBatch = {
+      sortTime: GpuMetric): ColumnarBatch = {
     if (inputBatch.numCols() == 0) {
       // Special case
       return new ColumnarBatch(Array.empty, inputBatch.numRows())
     }
 
-    var peakMem = 0L
     val sortedTbl = withResource(appendProjectedColumns(inputBatch)) { toSort =>
-      // inputBatch is completely contained in toSort, so don't need to add it too
-      peakMem += GpuColumnVector.getTotalDeviceMemoryUsed(toSort)
       // We are going to skip gathering the computed columns
       // In cases where we don't need the computed columns again this can save some time
       withResource(computeSortOrder(toSort, sortTime)) { gatherMap =>
@@ -384,8 +379,6 @@ class GpuSorter(
       }
     }
     withResource(sortedTbl) { sortedTbl =>
-      peakMem += GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
-      peakDevMemory.set(Math.max(peakDevMemory.value, peakMem))
       // We don't need to remove any projected columns, because they were never gathered
       GpuColumnVector.from(sortedTbl, originalTypes)
     }
