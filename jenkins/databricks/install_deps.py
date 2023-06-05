@@ -32,10 +32,15 @@ def define_deps(spark_version, scala_version):
     hive_version = "*"
     hadoop_version = "*"
     spark_prefix = '----workspace'
-    if spark_version.startswith('3.3'):
+    mvn_prefix = '--maven-trees'
+
+    if spark_version.startswith('3.2'):
+        spark_prefix = '----workspace_spark_3_2'
+    elif spark_version.startswith('3.3'):
         spark_prefix = '----ws_3_3'
+        mvn_prefix = '--mvn'
     spark_suffix = f'{hive_version}__hadoop-{hadoop_version}_{scala_version}'
-    prefix_ws_sp_mvn_hadoop = spark_prefix + '--mvn--hadoop3'
+    prefix_ws_sp_mvn_hadoop = spark_prefix + mvn_prefix + '--hadoop3'
 
     deps = [
         # Spark
