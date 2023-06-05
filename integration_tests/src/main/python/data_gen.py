@@ -154,7 +154,7 @@ class ConvertGen(DataGen):
         super().__init__(data_type, nullable=nullable)
         self._child_gen = child_gen
         self._func = func
-    
+
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
