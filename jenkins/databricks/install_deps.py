@@ -58,7 +58,7 @@ def define_deps(spark_version, scala_version):
 
         # Spark Hive Patches
         Artifact('org.apache.spark', f'spark-hive_{scala_version}',
-                         f'{spark_prefix}--sql--hive--hive-{spark_suffix}_shaded*.jar'),
+                         f'{spark_prefix}--sql--hive--hive-{spark_suffix}_*.jar'),
         Artifact('org.apache.hive', 'hive-exec',
                          f'{spark_prefix}--patched-hive-with-glue--hive-exec*.jar'),
         Artifact('org.apache.hive', 'hive-metastore-client-patched',
@@ -74,7 +74,7 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.parquet', 'parquet-hadoop',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__*-databricks*.jar'),
         Artifact('org.apache.parquet', 'parquet-common',
-                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__*-databricks-0002.jar'),
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__*-databricks*.jar'),
         Artifact('org.apache.parquet', 'parquet-column',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__*-databricks*.jar'),
         Artifact('org.apache.parquet', 'parquet-format',
@@ -115,7 +115,7 @@ def define_deps(spark_version, scala_version):
         Artifact('com.fasterxml.jackson.core', 'jackson-annotations',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__*.jar'),
         Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                 f'{spark_prefix}--vendor--avro--avro-{hive_version}__{spark_suffix}*.jar'),
+                 f'{spark_prefix}--vendor--avro--avro-*.jar'),
         Artifact('org.apache.avro', 'avro-mapred',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__*.jar'),
         Artifact('org.apache.avro', 'avro',
@@ -123,7 +123,7 @@ def define_deps(spark_version, scala_version):
     ]
 
     # log4j-core
-    if spark_version == "3.3.0" or spark_version == "3.3.2":
+    if spark_version.startswith('3.3'):
         deps += Artifact('org.apache.logging.log4j', 'log4j-core',
                          f'{prefix_ws_sp_mvn_hadoop}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__*.jar'),
 
