@@ -672,7 +672,6 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
@@ -714,7 +713,6 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
