@@ -1420,7 +1420,6 @@ class GpuRunningWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1431,6 +1430,8 @@ class GpuRunningWindowIterator(
   private var lastParts: Array[Scalar] = Array.empty
   private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -1657,7 +1658,6 @@ class GpuCachedDoublePassWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1669,6 +1669,8 @@ class GpuCachedDoublePassWindowIterator(
   private var lastPartsCaching: Array[Scalar] = Array.empty
   private var lastPartsProcessing: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
     lastPartsCaching.foreach(_.close())
