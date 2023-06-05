@@ -332,6 +332,38 @@ pipeline {
                     }
                 } // end of DB runtime 11.3
 
+                stage('DB runtime 12.2') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            expression { db_build }
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-12.2-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '12.2'
+                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
+                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
+                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 6, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 12.2
+
                 stage('Dummy stage: blue ocean log view') {
                     steps {
                         echo "workaround for blue ocean bug https://issues.jenkins.io/browse/JENKINS-48879"
