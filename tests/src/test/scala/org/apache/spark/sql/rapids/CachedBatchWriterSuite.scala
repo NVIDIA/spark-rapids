@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.{FuzzerUtils, SparkQueryCompareTestSuite}
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.storage.StorageLevel.MEMORY_ONLY
@@ -32,7 +31,7 @@ import org.apache.spark.storage.StorageLevel.MEMORY_ONLY
  */
 class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
 
-  private def writeAndConsumeEmptyBatch(conf: SQLConf = new SQLConf)(spark: SparkSession): Unit = {
+  private def writeAndConsumeEmptyBatch(spark: SparkSession): Unit = {
     SparkSession.setActiveSession(spark)
     val ser = new ParquetCachedBatchSerializer
     val schema = Seq(AttributeReference("_col0", IntegerType, true)())
@@ -40,6 +39,7 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     val cb = FuzzerUtils.createColumnarBatch(schema.toStructType, 10)
     val rdd = spark.sparkContext.parallelize(Seq(cb, cb0))
     val storageLevel = MEMORY_ONLY
+    val conf = spark.sqlContext.conf
     val cachedRdd = ser.convertColumnarBatchToCachedBatch(rdd, schema, storageLevel, conf)
     val cbRdd = ser.convertCachedBatchToColumnarBatch(cachedRdd, schema, schema, conf)
     val part = cbRdd.partitions.head
@@ -53,6 +53,6 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("cache empty columnar batch on GPU") {
-    withGpuSparkSession(writeAndConsumeEmptyBatch())
+    withGpuSparkSession(writeAndConsumeEmptyBatch)
   }
 }
