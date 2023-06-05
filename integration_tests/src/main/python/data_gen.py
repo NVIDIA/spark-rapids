@@ -28,6 +28,7 @@ from conftest import skip_unless_precommit_tests
 import time
 import os
 from functools import lru_cache
+import hashlib
 
 # set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
 # refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
@@ -41,23 +42,20 @@ class DataGen:
         # repr of DataGens and their children will be used to generate the cache key
         # make sure it is unique for different DataGens
         notnull = '(not_null)' if not self.nullable else ''
-        datatype = '(' + str(self.data_type) + ')'
-        return self.__class__.__name__[:-3] + notnull + ', ' + datatype
-
-    def cache_repr(self):
-        # not include special cases in cache repr to make test cases more readable
+        datatype = str(self.data_type)
         specialcases = ''
         for (weight, case) in self._special_cases:
             if (callable(case)):
                 case = case.__code__.co_code
             specialcases += str(case) + ' ' + str(weight) + ', '
-        return self.__repr__() + '(' + specialcases + ')'
+        specialcases = hashlib.blake2b(specialcases.encode('utf-8'), digest_size=8).hexdigest()
+        return self.__class__.__name__[:-3] + notnull + ', ' + datatype + ', ' + str(specialcases)
 
     def __hash__(self):
         return hash(str(self))
 
     def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.cache_repr() == other.cache_repr()
+        return isinstance(other, self.__class__) and self.__repr__() == other.__repr__()
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -264,11 +262,11 @@ class DecimalGen(DataGen):
         self.scale = scale
         self.precision = precision
         negative_pattern = "-" if avoid_positive_values else "-?"
-        pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
-        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+        self.pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.base_strs = sre_yield.AllStrings(self.pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
+        return super().__repr__() + '(' + self.pattern + ')'
 
     def start(self, rand):
         strs = self.base_strs
@@ -331,7 +329,7 @@ class RepeatSeqGen(DataGen):
         self._index = 0
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._child) + ',' + str(self._length) + ')'
+        return super().__repr__() + '(' + str(self._child) + ',' + str(self._length) + str(self._index) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
