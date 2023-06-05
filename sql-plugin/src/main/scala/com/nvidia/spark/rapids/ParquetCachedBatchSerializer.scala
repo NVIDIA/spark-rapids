@@ -321,6 +321,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       }
 
       input.flatMap(batch => {
+        // If the structSchema is empty or the batch has no cols in that case return an empty batch.
         if (batch.numCols() == 0 || structSchema.isEmpty) {
           if (batch.numCols() > 0 && batch.column(0).isInstanceOf[GpuColumnVector]) {
             batch.close()
@@ -481,6 +482,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
     val cbRdd: RDD[ColumnarBatch] = input.map {
       case parquetCB: ParquetCachedBatch if parquetCB.sizeInBytes == 0 =>
+        // If the buffer is empty, we have cached an empty batch, we don't need to decode it, instead just return
+        // an empty ColumnarBatch
         GpuColumnVector.emptyBatch(originalSelectedAttributes.asJava)
       case parquetCB: ParquetCachedBatch =>
         val parquetOptions = ParquetOptions.builder()
@@ -871,6 +874,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
               selectedAttributes,
               options, hadoopConf)
           } catch {
+            // The CurrentBatchIterator encountered an empty batch. Return an empty Iterator just like we do
+            // when hasNext returns false
             case _: EmptyBatchEncounteredException => Iterator.empty
           }
         }
@@ -1052,6 +1057,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           // iterator has exhausted, we should clean up
           close()
         }
+        // If there are no cachedAttributes, there is nothing to read
         !cachedAttributes.isEmpty && (queue.nonEmpty || iter.hasNext)
       }
 
