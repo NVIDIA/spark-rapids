@@ -160,6 +160,9 @@ class ConvertGen(DataGen):
         self._child_gen = child_gen
         self._func = func
 
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
+
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
 
@@ -359,6 +362,9 @@ class SetValuesGen(DataGen):
         super().__init__(data_type, nullable=False)
         self.nullable = any(x is None for x in data)
         self._vals = data
+
+    def __repr__(self):
+        return super().__repr__() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
 
     def _cache_repr(self):
         return super()._cache_repr() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
@@ -631,6 +637,9 @@ class ArrayGen(DataGen):
         self._child_gen = child_gen
         self.all_null = all_null
 
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
+
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
 
@@ -656,6 +665,9 @@ class MapGen(DataGen):
         self._key_gen = key_gen
         self._value_gen = value_gen
         super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
 
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
