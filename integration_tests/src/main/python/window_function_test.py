@@ -1353,7 +1353,7 @@ def test_unbounded_to_unbounded_window():
         'COUNT(1) OVER ()'))
 
 
-_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample + [binary_gen]
 exprs_for_nth_first_last = \
     'first(a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), ' \
     'first(a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), ' \
