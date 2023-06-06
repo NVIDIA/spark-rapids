@@ -39,23 +39,15 @@ class DataGen:
     """Base class for data generation"""
 
     def __repr__(self):
-        # repr of DataGens and their children will be used to generate the cache key
-        # make sure it is unique for different DataGens
-        notnull = '(not_null)' if not self.nullable else ''
-        datatype = str(self.data_type)
-        specialcases = ''
-        for (weight, case) in self._special_cases:
-            if (callable(case)):
-                case = case.__code__.co_code
-            specialcases += str(case) + ' ' + str(weight) + ', '
-        specialcases = hashlib.blake2b(specialcases.encode('utf-8'), digest_size=8).hexdigest()
-        return self.__class__.__name__[:-3] + notnull + ', ' + datatype + ', ' + str(specialcases)
+        if not self.nullable:
+            return self.__class__.__name__[:-3] + '(not_null)'
+        return self.__class__.__name__[:-3]
 
     def __hash__(self):
         return hash(str(self))
 
     def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__repr__() == other.__repr__()
+        return isinstance(other, self.__class__) and self._cache_repr() == other._cache_repr()
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -81,6 +73,19 @@ class DataGen:
                 self.with_special_case(element[0], element[1])
             else:
                 self.with_special_case(element)
+
+    def _cache_repr(self):
+        # repr of DataGens and their children will be used to generate the cache key
+        # make sure it is unique for different DataGens
+        notnull = '(not_null)' if not self.nullable else ''
+        datatype = str(self.data_type)
+        specialcases = ''
+        for (weight, case) in self._special_cases:
+            if (callable(case)):
+                case = case.__code__.co_code
+            specialcases += str(case) + ', ' + str(weight) + ', '
+        specialcases = hashlib.blake2b(specialcases.encode('utf-8'), digest_size=8).hexdigest()
+        return self.__class__.__name__[:-3] + notnull + ', ' + datatype + ', ' + str(specialcases)
 
     def copy_special_case(self, special_case, weight=1.0):
         # it would be good to do a deepcopy, but sre_yield is not happy with that.
@@ -155,8 +160,8 @@ class ConvertGen(DataGen):
         self._child_gen = child_gen
         self._func = func
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._child_gen) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -171,12 +176,12 @@ class StringGen(DataGen):
     def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
         super().__init__(StringType(), nullable=nullable)
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
-        # save pattern and charset for repr
+        # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
         self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
     
-    def __repr__(self):
-        return super().__repr__() + '(' + self.stringrepr + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self.stringrepr + ')'
 
     def with_special_pattern(self, pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
         """
@@ -210,8 +215,8 @@ class ByteGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
 
 SHORT_MIN = -(1 << 15)
 SHORT_MAX = (1 << 15) - 1
@@ -223,8 +228,8 @@ class ShortGen(DataGen):
         self._min_val = min_val
         self._max_val = max_val
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
@@ -239,8 +244,8 @@ class IntegerGen(DataGen):
         self._min_val = min_val
         self._max_val = max_val
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
@@ -266,6 +271,9 @@ class DecimalGen(DataGen):
         self.base_strs = sre_yield.AllStrings(self.pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
+        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
+
+    def _cache_repr(self):
         return super().__repr__() + '(' + self.pattern + ')'
 
     def start(self, rand):
@@ -286,8 +294,8 @@ class LongGen(DataGen):
         self._min_val = min_val
         self._max_val = max_val
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
@@ -311,8 +319,8 @@ class LongRangeGen(DataGen):
                 return tmp
             self._do_it = inc_it
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._start_val) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._start_val) + ')'
 
     def start(self, rand):
         self._current_val = self._start_val
@@ -329,7 +337,10 @@ class RepeatSeqGen(DataGen):
         self._index = 0
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._child) + ',' + str(self._length) + str(self._index) + ')'
+        return super().__repr__() + '(' + str(self._child) + ')'
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + str(self._index) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
@@ -349,8 +360,8 @@ class SetValuesGen(DataGen):
         self.nullable = any(x is None for x in data)
         self._vals = data
 
-    def __repr__(self):
-        return super().__repr__() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
 
     def start(self, rand):
         data = self._vals
@@ -382,8 +393,8 @@ class FloatGen(DataGen):
             v = None if self.nullable else 0.0
         return v
     
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._no_nans) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._no_nans) + ')'
 
     def start(self, rand):
         def gen_float():
@@ -429,8 +440,8 @@ class DoubleGen(DataGen):
                 special_cases.append(NEG_DOUBLE_NAN_MAX_VALUE)
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_exp) + ',' + str(self._max_exp) + ',' + str(self._no_nans) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_exp) + ',' + str(self._max_exp) + ',' + str(self._no_nans) + ')'
 
     @staticmethod
     def make_from(sign, exp, fraction):
@@ -484,7 +495,10 @@ class StructGen(DataGen):
         self.children = children
 
     def __repr__(self):
-        return super().__repr__() + '(' + ','.join([name + str(child) for name, child in self.children]) + ')'
+        return super().__repr__() + '(' + ','.join([str(i) for i in self.children]) + ')'
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + ','.join([name + child._cache_repr() for name, child in self.children]) + ')'
 
     def start(self, rand):
         for name, child in self.children:
@@ -535,8 +549,8 @@ class DateGen(DataGen):
                 if (next_day > start and next_day < end):
                     self.with_special_case(next_day)
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._start_day) + ',' + str(self._end_day) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._start_day) + ',' + str(self._end_day) + ')'
 
     @staticmethod
     def _guess_leap_year(t):
@@ -588,8 +602,8 @@ class TimestampGen(DataGen):
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._start_time) + ',' + str(self._end_time) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + ')'
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _us = timedelta(microseconds=1)
@@ -617,8 +631,8 @@ class ArrayGen(DataGen):
         self._child_gen = child_gen
         self.all_null = all_null
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._child_gen) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -643,8 +657,8 @@ class MapGen(DataGen):
         self._value_gen = value_gen
         super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
 
     def start(self, rand):
         self._key_gen.start(rand)
@@ -704,8 +718,8 @@ class DayTimeIntervalGen(DataGen):
         # If above issue is fixed, should update this DayTimeIntervalGen.
         return timedelta(microseconds=micros)
     
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + ')'
 
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
@@ -717,8 +731,8 @@ class BinaryGen(DataGen):
         self._min_length = min_length
         self._max_length = max_length
 
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self._min_length) + ',' + str(self._max_length) + ')'
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_length) + ',' + str(self._max_length) + ')'
 
     def start(self, rand):
         def gen_bytes():
