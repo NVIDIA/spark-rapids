@@ -27,7 +27,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
@@ -82,6 +82,11 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
           doFloatToIntCheck && !conf.isCastFloatToIntegralTypesEnabled =>
         willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
       case (dt: DecimalType, _: StringType) =>
+        if (!conf.isCastDecimalToStringEnabled) {
+          willNotWorkOnGpu("the GPU does not produce the exact same string as Spark produces, " +
+              s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
+              s"equivalent decimal strings are sufficient for your application.")
+        }
         if (dt.precision > DType.DECIMAL128_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
               s"precision > ${DType.DECIMAL128_MAX_PRECISION} is not supported yet")
@@ -463,7 +468,7 @@ object GpuCast {
         castBinToString(input)
 
       case (_: DecimalType, StringType) =>
-        GpuCastShims.CastDecimalToString(input, ansiMode)
+        input.castTo(DType.STRING)
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>

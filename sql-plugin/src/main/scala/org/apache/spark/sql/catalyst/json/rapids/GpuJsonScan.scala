@@ -20,11 +20,12 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
@@ -313,14 +314,16 @@ class JsonPartitionReader(
     val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, jsonOpts,
       getFileFormatShortName, partFile)
     withResource(jsonTbl) { tbl =>
-      val cudfColumnNames = cudfSchema.getColumnNames
-      val columns = readDataSchema.map { field =>
-        val i = cudfColumnNames.indexOf(field.name)
-        if (i == -1) {
-          throw new IllegalStateException(
-            s"read schema contains field named '${field.name}' that is not in the data schema")
+      val columns = new ListBuffer[ColumnVector]()
+      closeOnExcept(columns) { _ =>
+        for (name <- readDataSchema.fieldNames) {
+          val i = cudfSchema.getColumnNames.indexOf(name)
+          if (i == -1) {
+            throw new IllegalStateException(
+              s"read schema contains field named '$name' that is not in the data schema")
+          }
+          columns += tbl.getColumn(i)
         }
-        tbl.getColumn(i)
       }
       new Table(columns: _*)
     }

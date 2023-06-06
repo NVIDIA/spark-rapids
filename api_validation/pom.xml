@@ -42,7 +42,7 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release311</id>
+            <id>spark311</id>
             <properties>
                 <spark.version>${spark311.version}</spark.version>
             </properties>
@@ -55,7 +55,7 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release320</id>
+            <id>spark320</id>
             <properties>
                 <spark.version>${spark320.version}</spark.version>
             </properties>

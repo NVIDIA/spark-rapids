@@ -77,7 +77,8 @@ case class GpuExpandExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
   // as UNKNOWN partitioning
@@ -113,11 +114,13 @@ class GpuExpandIterator(
 
   private var cb: ColumnarBatch = _
   private var projectionIndex = 0
+  private var maxDeviceMemory = 0L
   private val numInputBatches = metrics(NUM_INPUT_BATCHES)
   private val numOutputBatches = metrics(NUM_OUTPUT_BATCHES)
   private val numInputRows = metrics(NUM_INPUT_ROWS)
   private val numOutputRows = metrics(NUM_OUTPUT_ROWS)
   private val opTime = metrics(OP_TIME)
+  private val peakDeviceMemory = metrics(PEAK_DEVICE_MEMORY)
 
   Option(TaskContext.get())
     .foreach(_.addTaskCompletionListener[Unit](_ => Option(cb).foreach(_.close())))
@@ -171,8 +174,12 @@ class GpuExpandIterator(
       new ColumnarBatch(projectedColumns.toArray, cb.numRows())
     }
 
+    val deviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(uniqueDeviceColumns.toArray)
+
     numOutputBatches += 1
     numOutputRows += projectedBatch.numRows()
+    maxDeviceMemory = maxDeviceMemory.max(deviceMemory)
+    peakDeviceMemory.set(maxDeviceMemory)
 
     projectionIndex += 1
     if (projectionIndex == boundProjections.length) {

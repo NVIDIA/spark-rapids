@@ -450,11 +450,12 @@ class CastOpSuite extends GpuExpressionTestSuite with BeforeAndAfterAll {
   test("cast decimal to string") {
     val sqlCtx = SparkSession.getActiveSession.get.sqlContext
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
 
     Seq(10, 15, 28).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
-          comparisonFunc = None)
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
       }
     }
   }

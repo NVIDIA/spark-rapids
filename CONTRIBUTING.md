@@ -70,13 +70,8 @@ passed in the `MAVEN_OPTS` environment variable.
 
 ### Building a Distribution for Multiple Versions of Spark
 
-By default the distribution jar only includes code for a single version of Spark, albeit the jar file
-layout will be such that it can be accessed only using the Shim loading logic for
-[multiple Spark versions](./docs/dev/shims.md#run-time-issues). See
-[below](#building-a-distribution-for-a-single-spark-release) for dist jar creation without
-the need for a special shim class loader.
-
-If you want to create a jar with multiple versions we have the following options.
+By default the distribution jar only includes code for a single version of Spark. If you want
+to create a jar with multiple versions we have the following options.
 
 1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
 2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
@@ -99,23 +94,6 @@ mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
-
-Verify that shim-specific classes are hidden from a conventional classloader.
-
-```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
-Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
-```
-
-However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
-
-```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
-Compiled from "SparkShims.scala"
-public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
-```
-
 #### Building with buildall script
 
 There is a build script `build/buildall` that automates the local build process. Use
@@ -137,32 +115,13 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 You can build against different versions of the CUDA Toolkit by using qone of the following profiles:
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
-### Building a Distribution for a Single Spark Release
-
-In many situations the user knows that the Plugin jar will be deployed for a single specific Spark
-release. It is most commonly the case when a container image for a cloud or local deployment includes
-Spark binaries as well. In such a case it is advantageous to create a jar with
-a conventional class directory structure avoiding complications such as
-[#3704](https://github.com/NVIDIA/spark-rapids/issues/3704). To this end add
-`-DallowConventionalDistJar=true` when invoking Maven.
-
-```bash
-mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
-```
-
-Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
-
-```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Compiled from "SparkShims.scala"
-public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
-```
-
 ### Building and Testing with JDK9+
-
 We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
 the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
+
+At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
+a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
 
 Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or later to correctly process
 [maven.compiler.release](https://github.com/davidB/scala-maven-plugin/blob/4.6.1/src/main/java/scala_maven/ScalaMojoSupport.java#L161)
@@ -242,56 +201,27 @@ This may require some modifications to IDEs' standard Maven import functionality
 
 #### IntelliJ IDEA
 
-Last tested with IntelliJ IDEA 2023.1.2 (Community Edition)
-
-##### Manual Maven Install for a target Spark build
-
-Before proceeding with importing spark-rapids into IDEA or switching to a different Spark release
-profile, execute the install phase with the corresponding `buildver`, e.g. for Spark 3.4.0:
-
-```bash
- mvn clean install -Dbuildver=340 -Dskip -DskipTests
-```
-
-##### Importing the project
-
-Our build relies on [symlink generation](./docs/dev/shimplify.md#symlinks--ide) for Spark
-release-specific sources. It is recommended to install
-the IDEA Resolve Symlinks plugin via `Marketplace` tab.
+Last tested with IntelliJ IDEA 2022.3.1 (Community Edition)
 
 To start working with the project in IDEA is as easy as
 [opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent)
 [pom.xml](pom.xml).
 
-In IDEA 2022.3.1 [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
-"Import using the new IntelliJ Workspace Model API (experimental)". After 2023.1.2 the default
-"Enable fast import" can be used.
-
+In the most recent versions of IDEA [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
+"Import using the new IntelliJ Workspace Model API (experimental)".
 In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
 [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html) "Keep source and test folders on reimport".
 
 If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
 Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2022.3/maven-projects-tool-window.html) and
 select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0.
-Make sure [Manual Maven Install](#manual-maven-install-for-a-target-spark-build) for that profile
-has been executed.
 
 Go to `File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing` and make sure
 that `Generated sources folders` is set to `Detect automatically` and `Phase to be used for folders update`
-is changed to `process-test-resources`.
-
-In the Maven tool window hit
-
-1. `Reload all projects`
-1. `Generate Sources and Update Folders For all Projects`.
+is changed to `process-test-resources`. In the Maven tool window hit `Reload all projects` and
+`Generate Sources and Update Folders For all Projects`.
 
 Known Issues:
-
-* With the old "slow" Maven importer it might be necessary to bump up maximum Java Heap size `-Xmx`
-via
-`File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing | VM options for importer`
-
-* When IDEA is upgraded, it might be necessary to remove `.idea` from the local git repository root.
 
 * There is a known issue that the test sources added via the `build-helper-maven-plugin` are not handled
 [properly](https://youtrack.jetbrains.com/issue/IDEA-100532). The workaround is to `mark` the affected
@@ -326,6 +256,7 @@ mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -pl aggregator -am \
   -Dbuildver=320 \
   -DskipTests \
   -Dskip \
+  -Dmaven.javadoc.skip \
   -Dmaven.scalastyle.skip=true \
   -Dmaven.updateconfig.skip=true
 ```
@@ -409,7 +340,7 @@ it by making sure Metals Server (Bloop client) and Bloop Server are both running
       mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
       -DdownloadSources=true \
       -Dbuildver=331 \
-      -Dskip -DskipTests
+      -Dskip -DskipTests -Dmaven.javadoc.skip
     ```
 
 1. Add [`metals.javaHome`][2] to VSCode preferences to point to Java 11+.

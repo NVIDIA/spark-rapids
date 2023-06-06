@@ -121,7 +121,8 @@ case class GpuSortExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] =
     Map(
       OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
-      SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME))
+      SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
+      PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   private lazy val targetSize = GpuSortExec.targetSize(conf)
 
@@ -129,6 +130,7 @@ case class GpuSortExec(
     val sorter = new GpuSorter(gpuSortOrder, output)
 
     val sortTime = gpuLongMetric(SORT_TIME)
+    val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
     val opTime = gpuLongMetric(OP_TIME)
     val outputBatch = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -138,12 +140,13 @@ case class GpuSortExec(
       if (outOfCore) {
         val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
-          targetSize, opTime, sortTime, outputBatch, outputRows)
+          targetSize, opTime, sortTime, outputBatch, outputRows,
+          peakDevMemory)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter
       } else {
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
-          opTime, sortTime, outputBatch, outputRows)
+          opTime, sortTime, outputBatch, outputRows, peakDevMemory)
       }
     }
   }
@@ -156,13 +159,14 @@ case class GpuSortEachBatchIterator(
     opTime: GpuMetric = NoopMetric,
     sortTime: GpuMetric = NoopMetric,
     outputBatches: GpuMetric = NoopMetric,
-    outputRows: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+    outputRows: GpuMetric = NoopMetric,
+    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): ColumnarBatch = {
     withResource(iter.next()) { cb =>
       withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
-        val ret = sorter.fullySortBatch(cb, sortTime)
+        val ret = sorter.fullySortBatch(cb, sortTime, peakDevMemory)
         outputBatches += 1
         outputRows += ret.numRows()
         if (singleBatch) {
@@ -244,8 +248,15 @@ case class GpuOutOfCoreSortIterator(
     opTime: GpuMetric,
     sortTime: GpuMetric,
     outputBatches: GpuMetric,
-    outputRows: GpuMetric) extends Iterator[ColumnarBatch]
+    outputRows: GpuMetric,
+    peakDevMemory: GpuMetric) extends Iterator[ColumnarBatch]
     with AutoCloseable {
+
+  // There are so many places where we might hit a new peak that it gets kind of complex
+  // so we are picking a few places that are likely to increase the amount of memory used.
+  // and we update this temporary value. Only when we output a batch do we put this into the
+  // peakDevMemory metric
+  private var peakMemory = 0L
 
   // A priority queue of data that is not merged yet.
   private val pending = new Pending(cpuOrd)
@@ -302,6 +313,7 @@ case class GpuOutOfCoreSortIterator(
   private final def splitTableAfterSort(
       sortedTbl: Table,
       sortedOffset: Int): (Option[SpillableColumnarBatch], Seq[OutOfCoreBatch]) = {
+    var memUsed: Long = GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
     // We need to figure out how to split up the data into reasonable batches. We could try and do
     // something really complicated and figure out how much data get per batch, but in practice
     // we really only expect to see one or two batches worth of data come in, so lets optimize
@@ -319,6 +331,7 @@ case class GpuOutOfCoreSortIterator(
       // The entire thing is sorted
       val batch = GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)
       val sp = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      memUsed += sp.sizeInBytes
       sortedCb = Some(sp)
     } else {
       val hasFullySortedData = sortedOffset > 0
@@ -339,12 +352,16 @@ case class GpuOutOfCoreSortIterator(
         withResource(new NvtxRange("boundaries", NvtxColor.ORANGE)) { _ =>
           withResource(ColumnVector.fromInts(gatherIndexes: _*)) { gatherMap =>
             withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
+              // Hopefully this is minor but just in case...
+              memUsed += gatherMap.getDeviceMemorySize +
+                  GpuColumnVector.getTotalDeviceMemoryUsed(boundariesTab)
               convertBoundaries(boundariesTab)
             }
           }
         }
 
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { splits =>
+        memUsed += splits.map(_.getBuffer.getLength).sum
         val stillPending = if (hasFullySortedData) {
           val sp = SpillableColumnarBatch(splits.head, sorter.projectedBatchTypes,
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
@@ -371,6 +388,7 @@ case class GpuOutOfCoreSortIterator(
         }
       }
     }
+    peakMemory = Math.max(peakMemory, memUsed)
     (sortedCb, pendingObs)
   }
 
@@ -393,8 +411,11 @@ case class GpuOutOfCoreSortIterator(
    */
   private final def firstPassReadBatches(): Unit = {
     while(iter.hasNext) {
+      var memUsed = 0L
       val spillBatch = closeOnExcept(iter.next()) { batch =>
-        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        val scb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        memUsed += scb.sizeInBytes
+        scb
       }
       val sortedIt =
         withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, opTime)){ _ =>
@@ -409,7 +430,11 @@ case class GpuOutOfCoreSortIterator(
       withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, opTime)) { _ =>
         while(sortedIt.hasNext) {
           val sortedTbl = sortedIt.next()
-          val rows = sortedTbl.getRowCount.toInt
+          val rows = closeOnExcept(sortedTbl) { _ =>
+            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
+            peakMemory = Math.max(peakMemory, memUsed)
+            sortedTbl.getRowCount.toInt
+          }
           // filter out empty batches
           if (rows > 0) {
             val sp = withResource(sortedTbl) { _ =>
@@ -436,6 +461,7 @@ case class GpuOutOfCoreSortIterator(
    *         queue then optionally return it.
    */
   private final def mergeSortEnoughToOutput(): Option[ColumnarBatch] = {
+    var memUsed = 0L
     // Now get enough sorted data to return
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
@@ -452,7 +478,12 @@ case class GpuOutOfCoreSortIterator(
       // Here may need to retry work, however `mergeSortAndClose` already has some
       // optimization to reduce the GPU memory pressure for some cases.
       val mergedBatch = sorter.mergeSortAndClose(pendingSort, sortTime)
+      memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(mergedBatch)
 
+      // We now have closed the input tables to merge sort so reset the memory used
+      // we will ignore the upper bound and the single column because it should not have much
+      // of an impact, but if we wanted to be exact we would look at those too.
+      peakMemory = Math.max(peakMemory, memUsed)
       val (retBatch, sortedOffset) = closeOnExcept(mergedBatch) { _ =>
         // First we want figure out what is fully sorted from what is not
         val sortSplitOffset = if (pending.isEmpty) {
@@ -520,7 +551,8 @@ case class GpuOutOfCoreSortIterator(
         spillCbs += tmp
       }
     }
-    if (spillCbs.length == 1) {
+    var memUsed = totalBytes
+    val ret = if (spillCbs.length == 1) {
       // We cannot concat a single table
       withRetryNoSplit(spillCbs.head) { attemptSp =>
         onConcatOutput()
@@ -541,11 +573,14 @@ case class GpuOutOfCoreSortIterator(
           withResource(Table.concatenate(tables: _*)) { combined =>
             // ignore the output of removing the columns because it is just dropping columns
             // so it will be smaller than this with not added memory
+            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(combined)
             sorter.removeProjectedColumns(combined)
           }
         }
       }
     }
+    peakMemory = Math.max(peakMemory, memUsed)
+    ret
   }
 
   override def next(): ColumnarBatch = {
@@ -561,6 +596,7 @@ case class GpuOutOfCoreSortIterator(
 
         outputBatches += 1
         outputRows += ret.numRows()
+        peakDevMemory.set(Math.max(peakMemory, peakDevMemory.value))
         // We already read in all of the data so calling hasNext is cheap
         if (hasNext) {
           ret

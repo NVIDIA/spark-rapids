@@ -334,14 +334,12 @@ out.count()
 out.explain()
 ```
 
-### Submit Spark jobs to an EMR Cluster Accelerated by GPUs
+### Submit Spark jobs to a EMR Cluster Accelerated by GPUs
 
 Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark application job to be
 submitted. The mortgage examples we use are also available as a spark application.  You can also use
 **spark shell** to run the scala code or **pyspark** to run the python code on the primary node through
 CLI.
-In the Spark History Server UI, you can find the cpu operations have been replaced by gpu operations with `GPU` prefix:
-![Spark History Server UI](../img/AWS-EMR/spark-history-server-UI.png)
 
 ### Running GPU Accelerated Mortgage ETL Example using EMR Notebook
 

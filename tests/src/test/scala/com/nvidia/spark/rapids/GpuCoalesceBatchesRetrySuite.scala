@@ -264,6 +264,7 @@ class GpuCoalesceBatchesRetrySuite
       NoopMetric,
       NoopMetric,
       NoopMetric,
+      NoopMetric,
       "test",
       false)
     with CoalesceIteratorMocks {
@@ -288,6 +289,7 @@ class GpuCoalesceBatchesRetrySuite
         Seq(LongType).toArray,
         goal,
         maxDecompressBatchMemory=10240,
+        NoopMetric,
         NoopMetric,
         NoopMetric,
         NoopMetric,
@@ -320,6 +322,7 @@ class GpuCoalesceBatchesRetrySuite
         batchesToConcat.iterator,
         Seq(LongType).toArray,
         goal,
+        NoopMetric,
         NoopMetric,
         NoopMetric,
         NoopMetric,

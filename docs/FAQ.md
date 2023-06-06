@@ -506,36 +506,6 @@ Try increasing the
 [`spark.kryoserializer.buffer.max`](https://spark.apache.org/docs/latest/configuration.html#compression-and-serialization)
 from a default of 64M to something larger, for example 512M.
 
-### Why am I getting "Unable to acquire buffer" or "Trying to free an invalid buffer"?
-
-The RAPIDS Accelerator tracks GPU allocations that can be spilled to CPU memory or even disk using
-the `RapidsBufferCatalog` class.
-
-When a fatal Spark exception happens, the executor process will not wait for task threads to complete
-before starting to shut down the process. This shutdown includes the `RapidsBufferCatalog`. 
-This race can cause the catalog to log the following messages that can be ignored.
-
-The beginning of a shutdown is logged as such:
-
-```
-INFO com.nvidia.spark.rapids.RapidsBufferCatalog: Closing storage
-```
-
-After shutdown starts, we could see acquire-after-free exception, where the storage already disposed of the
-object (GPU, host memory, and disk) and a task thread is not aware of the shutdown yet: 
-
-```
-ERROR org.apache.spark.executor.Executor: Exception in task 1420.0 in stage 29.0 (TID 39681)
-java.lang.IllegalStateException: Unable to acquire buffer for ID: TempSpillBufferId(3122,temp_local_a5806b35-3110-44f4-911c-39d55785e8f5)
-```
-
-Similarly, a double free is detected (where the first free is the catalog shutdown, and the second free is a
-task thread that freed as part of its logic), and will cause a WARN to be logged:
-
-```
-WARN com.nvidia.spark.rapids.RapidsDeviceMemoryStore: Trying to free an invalid buffer => TempSpillBufferId(3183,temp_local_e7f190f2-a5da-4dbf-b6ae-bd683089c102), size = 406702784, device memory buffer size=406702784
-```
-
 ### Is speculative execution supported?
 
 Yes, speculative execution in Spark is fine with the RAPIDS Accelerator plugin.

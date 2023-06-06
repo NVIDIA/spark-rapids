@@ -24,11 +24,12 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
+import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -356,6 +357,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
         withResource(sendToGpuUnchecked(hostBuf, bufSize, splits)) { t =>
           val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
           logDebug(s"GPU batch size: $batchSizeBytes bytes")
+          maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
           metrics(NUM_OUTPUT_BATCHES) += 1
           // convert to batch
           Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
@@ -544,6 +546,7 @@ class GpuAvroPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
+        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batchIter = readBatch() match {
           case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
@@ -822,7 +825,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty)))
+                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty, null)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
@@ -937,6 +940,7 @@ class GpuMultiFileAvroPartitionReader(
       new SingleGpuDataProducer(sendToGpuUnchecked(dataBuffer, dataSize, splits))
     }
     GpuDataProducer.wrap(tableReader) { table =>
+      maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
             s"but read ${table.getNumberOfColumns}")

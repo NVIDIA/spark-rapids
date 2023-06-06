@@ -233,7 +233,7 @@ object GpuTopN {
       sorter: GpuSorter,
       batch: ColumnarBatch,
       sortTime: GpuMetric): ColumnarBatch = {
-    withResource(sorter.fullySortBatch(batch, sortTime)) { sorted =>
+    withResource(sorter.fullySortBatch(batch, sortTime, NoopMetric)) { sorted =>
       takeN(sorted, limit)
     }
   }

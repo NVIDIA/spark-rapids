@@ -35,10 +35,7 @@ in our plugin:
 ## Multi-Threaded Mode
 
 Multi-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
-more CPU threads for compute-intensive tasks, such as compression and decompression.
-
-The multi-threaded shuffle targets the "BypassMergeSortShuffle" shuffle algorithm in Spark,
-which is the default when `spark.shuffle.partitions` is 200 or less.
+more CPU threads for compute-intensive tasks, such as compression and decompression. 
 
 Minimum configuration:
 
@@ -58,8 +55,8 @@ pools is the number of cores in the system divided by the number of executors pe
 ---
 **NOTE:**
 
-As of the spark-rapids 23.06 release, UCX packages support CUDA 11.
-UCX support for CUDA 12 in the RAPIDS Accelerator will be added in a future release.
+As of the spark-rapids 23.02 release, Ubuntu 22.04 UCX packages are not available. They
+will be available for future releases.
 
 ---
 
@@ -98,8 +95,8 @@ In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its 
 be installed on the host and inside Docker containers (if not baremetal). A host has additional
 requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
 
-The minimum UCX requirement for the RAPIDS Shuffle Manager is
-[UCX 1.14.0](https://github.com/openucx/ucx/releases/tag/v1.14.0).
+The required UCX version for the RAPIDS Shuffle Manager is
+[UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1). Versions higher than 1.12.1 have not been tested.
 
 #### Baremetal
 
@@ -129,53 +126,52 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    further.
 
 2. Fetch and install the UCX package for your OS from:
-   [UCX 1.14.0](https://github.com/openucx/ucx/releases/tag/v1.14.0).
+   [UCX 1.12.1](https://github.com/openucx/ucx/releases/tag/v1.12.1).
 
    RDMA packages have extra requirements that should be satisfied by MLNX_OFED.
 
-##### Rocky UCX RPM
-The UCX packages for Rocky are divided into different RPMs.
-
-For example, UCX 1.14.0 available at
-https://github.com/openucx/ucx/releases/download/v1.14.0/ucx-1.14.0-centos8-mofed5-cuda11.tar.bz2
+##### CentOS UCX RPM
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.12.1
+available at
+https://github.com/openucx/ucx/releases/download/v1.12.1/ucx-v1.12.1-centos7-mofed5-cuda11.tar.bz2
 contains:
 
 ```
-ucx-devel-1.14.0-1.el8.x86_64.rpm
-ucx-debuginfo-1.14.0-1.el8.x86_64.rpm
-ucx-1.14.0-1.el8.x86_64.rpm
-ucx-cuda-1.14.0-1.el8.x86_64.rpm
-ucx-rdmacm-1.14.0-1.el8.x86_64.rpm
-ucx-cma-1.14.0-1.el8.x86_64.rpm
-ucx-ib-1.14.0-1.el8.x86_64.rpm
+ucx-devel-1.12.1-1.el7.x86_64.rpm
+ucx-debuginfo-1.12.1-1.el7.x86_64.rpm
+ucx-1.12.1-1.el7.x86_64.rpm
+ucx-cuda-1.12.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.12.1-1.el7.x86_64.rpm
+ucx-cma-1.12.1-1.el7.x86_64.rpm
+ucx-ib-1.12.1-1.el7.x86_64.rpm
 ```
 
 For a setup without RoCE or Infiniband networking, the only packages required are:
 
 ```
-ucx-1.14.0-1.el8.x86_64.rpm
-ucx-cuda-1.14.0-1.el8.x86_64.rpm
+ucx-1.12.1-1.el7.x86_64.rpm
+ucx-cuda-1.12.1-1.el7.x86_64.rpm
 ```
 
 If accelerated networking is available, the package list is:
 
 ```
-ucx-1.14.0-1.el8.x86_64.rpm
-ucx-cuda-1.14.0-1.el8.x86_64.rpm
-ucx-rdmacm-1.14.0-1.el8.x86_64.rpm
-ucx-ib-1.14.0-1.el8.x86_64.rpm
+ucx-1.12.1-1.el7.x86_64.rpm
+ucx-cuda-1.12.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.12.1-1.el7.x86_64.rpm
+ucx-ib-1.12.1-1.el7.x86_64.rpm
 ```
 
 ---
 **NOTE:**
 
-The Rocky RPM requires CUDA installed via RPMs to satisfy its dependencies. The CUDA runtime can be
+The CentOS RPM requires CUDA installed via RPMs to satisfy its dependencies. The CUDA runtime can be
 downloaded from [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads)
 (note the [Archive of Previous CUDA releases](https://developer.nvidia.com/cuda-toolkit-archive)
 link to download prior versions of the runtime).
 
-For example, in order to download the CUDA RPM for Rocky 8 running on x86:
-`Linux` > `x86_64` > `Rocky` > `8` > `rpm (local)` or `rpm (network)`.
+For example, in order to download the CUDA RPM for CentOS 7 running on x86:
+`Linux` > `x86_64` > `CentOS` > `7` or `8` > `rpm (local)` or `rpm (network)`.
 
 ---
 
@@ -200,7 +196,7 @@ configurations as we are able to test different scenarios.
 NOTE: A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the host
 system if you have RDMA capable hardware.
 
-The following are examples of Docker containers with UCX 1.14.0 and CUDA 11.8 support.
+The following are examples of Docker containers with UCX 1.12.1 and CUDA 11.5 support.
 
 | OS Type | RDMA | Dockerfile                                                                     |
 |---------| ---- |--------------------------------------------------------------------------------|
@@ -208,6 +204,8 @@ The following are examples of Docker containers with UCX 1.14.0 and CUDA 11.8 su
 | Ubuntu  | No   | [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma) |
 | Rocky   | Yes  | [Dockerfile.rocky_rdma](shuffle-docker-examples/Dockerfile.rocky_rdma)         |
 | Rocky   | No   | [Dockerfile.rocky_no_rdma](shuffle-docker-examples/Dockerfile.rocky_no_rdma)   |
+| CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma)       |
+| CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) |
 
 ### Validating UCX Environment
 
@@ -334,7 +332,7 @@ In this section, we are using a docker container built using the sample dockerfi
 1. Choose the version of the shuffle manager that matches your Spark version. Please refer to
    the table at the top of this document for `spark.shuffle.manager` values.
 
-2. Settings for UCX 1.14.0+:
+2. Settings for UCX 1.12.1:
 
     Minimum configuration:
 
@@ -385,10 +383,9 @@ guide for Databricks. The following are extra steps required to enable UCX.
 ```
 #!/bin/bash
 sudo apt install -y wget libnuma1 &&
-wget https://github.com/openucx/ucx/releases/download/v1.14.0/ucx-1.14.0-ubuntu18.04-mofed5-cuda11.tar.bz2 &&
-tar -xvf ucx-1.14.0-ubuntu18.04-mofed5-cuda11.tar.bz2 &&
-sudo dpkg -i ucx-1.14.0.deb ucx-cuda-1.14.0.deb &&
-rm ucx-1.14.0-ubuntu18.04-mofed5-cuda11.tar.bz2 ucx-1.14.0.deb ucx-cuda-1.14.0.deb
+wget https://github.com/openucx/ucx/releases/download/v1.12.1/ucx-v1.12.1-ubuntu18.04-mofed5-cuda11.deb &&
+sudo dpkg -i ucx-v1.12.1-ubuntu18.04-mofed5-cuda11.deb &&
+rm ucx-v1.12.1-ubuntu18.04-mofed5-cuda11.deb
 ```
 
 Save the script in DBFS and add it to the "Init Scripts" list:
@@ -473,12 +470,3 @@ for this, other than to trigger a GC cycle on the driver.
 Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that
 can be used to periodically cause garbage collection. If you are experiencing OOM situations, or
 performance degradation with several Spark actions, consider tuning this setting in your jobs.
-
-#### Known Issues
-
-- UCX configures TCP keep-alive for TCP transports. We have seen [issues with keep-alive in multi-NIC environments](https://github.com/NVIDIA/spark-rapids/issues/7940) after long periods of inactivity (when the inactivity is greater 
-  than the system's `tcp_keepalive_time`). If you see errors such as:
-  ```
-  ERROR UCX: UcpListener detected an error for executorId 2: UCXError(-25,Connection reset by remote peer)
-  ```
-  Consider turning off keep-alive for UCX using: `spark.executorEnv.UCX_TCP_KEEPINTVL=inf`.

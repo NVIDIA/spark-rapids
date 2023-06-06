@@ -28,7 +28,7 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
-MVN_BUILD_ARGS="-Drat.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
+MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."

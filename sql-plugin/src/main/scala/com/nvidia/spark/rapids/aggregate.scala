@@ -528,6 +528,8 @@ class GpuHashAggregateIterator(
       boundFinalProjections: Option[Seq[GpuExpression]],
       boundResultReferences: Seq[Expression])
 
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val boundExpressions = setupReferences()
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
@@ -539,8 +541,6 @@ class GpuHashAggregateIterator(
 
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
-
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     sortFallbackIter.map(_.hasNext).getOrElse {
@@ -751,7 +751,8 @@ class GpuHashAggregateIterator(
       opTime = metrics.opTime,
       sortTime = metrics.sortTime,
       outputBatches = NoopMetric,
-      outputRows = NoopMetric))
+      outputRows = NoopMetric,
+      peakDevMemory = NoopMetric))
 
     // The out of core sort iterator does not guarantee that a batch contains all of the values
     // for a particular key, so add a key batching iterator to enforce this. That allows each batch
@@ -767,7 +768,8 @@ class GpuHashAggregateIterator(
       numOutputRows = NoopMetric,
       numOutputBatches = NoopMetric,
       concatTime = metrics.concatTime,
-      opTime = metrics.opTime)
+      opTime = metrics.opTime,
+      peakDevMemory = NoopMetric)
 
     // Finally wrap the key batching iterator with a merge aggregation on the output batches.
     new Iterator[ColumnarBatch] {
@@ -849,7 +851,7 @@ class GpuHashAggregateIterator(
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val finalProjections = groupingAttributes ++
+      val finalProjections = groupingExpressions ++
           aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
       Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {

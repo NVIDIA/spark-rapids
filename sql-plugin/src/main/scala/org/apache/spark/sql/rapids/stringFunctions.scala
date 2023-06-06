@@ -1103,12 +1103,7 @@ object GpuRegExpUtils {
         case _ => false
       }
     }
-    parseAST(pattern) match {
-      case RegexSequence(parts) if parts.lastOption.contains(RegexChar('$')) =>
-        // handle pattern ".*$"
-        isASTEmptyRepetition(RegexSequence(parts.dropRight(1)))
-      case other => isASTEmptyRepetition(other)
-    }
+    isASTEmptyRepetition(parseAST(pattern))
   }
 
   /**
@@ -1347,37 +1342,18 @@ case class GpuRegExpReplaceWithBackref(
     override val child: Expression,
     searchExpr: Expression,
     replaceExpr: Expression)
-    (javaRegexpPattern: String,
-     cudfRegexPattern: String,
+    (cudfRegexPattern: String,
     cudfReplacementString: String)
   extends GpuUnaryExpression with ImplicitCastInputTypes {
 
-  override def otherCopyArgs: Seq[AnyRef] = Seq(javaRegexpPattern, cudfRegexPattern,
-    cudfReplacementString)
+  override def otherCopyArgs: Seq[AnyRef] = Seq(cudfRegexPattern, cudfReplacementString)
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
   override def dataType: DataType = StringType
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val prog = new RegexProgram(cudfRegexPattern)
-    if (SparkShimImpl.reproduceEmptyStringBug &&
-        GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
-      val isEmpty = withResource(input.getBase.getCharLengths) { len =>
-        withResource(Scalar.fromInt(0)) { zero =>
-          len.equalTo(zero)
-        }
-      }
-      withResource(isEmpty) { _ =>
-        withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-          withResource(input.getBase.stringReplaceWithBackrefs(prog,
-              cudfReplacementString)) { replacement =>
-            isEmpty.ifElse(emptyString, replacement)
-          }
-        }
-      }
-    } else {
-      input.getBase.stringReplaceWithBackrefs(prog, cudfReplacementString)
-    }
+    input.getBase.stringReplaceWithBackrefs(prog, cudfReplacementString)
   }
 
 }

@@ -758,6 +758,14 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
+      .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
+        "does NOT produce exact same string as spark produces, but producing strings which are " +
+        "semantically equal. For instance, given input BigDecimal(123, -2), the GPU produces " +
+        "\"12300\", which spark produces \"1.23E+4\".")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
       .booleanConf
@@ -893,36 +901,6 @@ object RapidsConf {
     .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
-  val READER_MULTITHREADED_COMBINE_THRESHOLD =
-    conf("spark.rapids.sql.reader.multithreaded.combine.sizeBytes")
-      .doc("The target size in bytes to combine multiple small files together when using the " +
-        "MULTITHREADED parquet or orc reader. With combine disabled, the MULTITHREADED reader " +
-        "reads the files in parallel and sends individual files down to the GPU, but that can " +
-        "be inefficient for small files. When combine is enabled, files that are ready within " +
-        "spark.rapids.sql.reader.multithreaded.combine.waitTime together, up to this " +
-        "threshold size, are combined before sending down to GPU. This can be disabled by " +
-        "setting it to 0. Note that combine also will not go over the " +
-        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes limits.")
-      .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(64 * 1024 * 1024) // 64M
-
-  val READER_MULTITHREADED_COMBINE_WAIT_TIME =
-    conf("spark.rapids.sql.reader.multithreaded.combine.waitTime")
-      .doc("When using the multithreaded parquet or orc reader with combine mode, how long " +
-        "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
-        "Note that this will wait this amount of time from when the last file was available, " +
-        "so total wait time could be larger then this.")
-      .integerConf
-      .createWithDefault(200) // ms
-
-  val READER_MULTITHREADED_READ_KEEP_ORDER =
-    conf("spark.rapids.sql.reader.multithreaded.read.keepOrder")
-      .doc("When using the MULTITHREADED reader, if this is set to true we read " +
-        "the files in the same order Spark does, otherwise the order may not be the same. " +
-        "Now it is supported only for parquet and orc.")
-      .booleanConf
-      .createWithDefault(true)
-
   val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
     conf("spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes")
       .doc("The target size in bytes to combine multiple small files together when using the " +
@@ -932,28 +910,25 @@ object RapidsConf {
         "spark.rapids.sql.format.parquet.multithreaded.combine.waitTime together, up to this " +
         "threshold size, are combined before sending down to GPU. This can be disabled by " +
         "setting it to 0. Note that combine also will not go over the " +
-        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes " +
-        s"limits. DEPRECATED: use $READER_MULTITHREADED_COMBINE_THRESHOLD instead.")
+        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes limits.")
       .bytesConf(ByteUnit.BYTE)
-      .createOptional
+      .createWithDefault(64 * 1024 * 1024) // 64M
 
   val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
     conf("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
       .doc("When using the multithreaded parquet reader with combine mode, how long " +
         "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
         "Note that this will wait this amount of time from when the last file was available, " +
-        "so total wait time could be larger then this. " +
-        s"DEPRECATED: use $READER_MULTITHREADED_COMBINE_WAIT_TIME instead.")
+        "so total wait time could be larger then this.")
       .integerConf
-      .createOptional
+      .createWithDefault(200) // ms
 
   val PARQUET_MULTITHREADED_READ_KEEP_ORDER =
     conf("spark.rapids.sql.format.parquet.multithreaded.read.keepOrder")
       .doc("When using the MULTITHREADED reader, if this is set to true we read " +
-        "the files in the same order Spark does, otherwise the order may not be the same. " +
-        s"DEPRECATED: use $READER_MULTITHREADED_READ_KEEP_ORDER instead.")
+        "the files in the same order Spark does, otherwise the order may not be the same.")
       .booleanConf
-      .createOptional
+      .createWithDefault(true)
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
@@ -2269,6 +2244,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
+  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
+
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
@@ -2323,14 +2300,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
-  lazy val getMultithreadedCombineThreshold: Long =
-    get(READER_MULTITHREADED_COMBINE_THRESHOLD)
+  lazy val getParquetMultithreadedCombineThreshold: Long =
+    get(PARQUET_MULTITHREADED_COMBINE_THRESHOLD)
 
-  lazy val getMultithreadedCombineWaitTime: Int =
-    get(READER_MULTITHREADED_COMBINE_WAIT_TIME)
+  lazy val getParquetMultithreadedCombineWaitTime: Int =
+    get(PARQUET_MULTITHREADED_COMBINE_WAIT_TIME)
 
-  lazy val getMultithreadedReaderKeepOrder: Boolean =
-    get(READER_MULTITHREADED_READ_KEEP_ORDER)
+  lazy val getParquetMultithreadedReaderKeepOrder: Boolean =
+    get(PARQUET_MULTITHREADED_READ_KEEP_ORDER)
 
   lazy val isParquetWriteEnabled: Boolean = get(ENABLE_PARQUET_WRITE)
 

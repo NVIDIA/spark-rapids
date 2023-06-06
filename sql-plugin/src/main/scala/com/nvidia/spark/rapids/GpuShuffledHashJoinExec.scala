@@ -107,6 +107,7 @@ case class GpuShuffledHashJoinExec(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
+    PEAK_DEVICE_MEMORY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
@@ -360,7 +361,7 @@ object GpuShuffledHashJoinExec {
       new GpuCoalesceIterator(inputIter, inputAttrs.map(_.dataType).toArray, goal,
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
         coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME),
-        "single build batch")
+        coalesceMetrics(GpuMetric.PEAK_DEVICE_MEMORY), "single build batch")
     } else {
       inputIter
     }

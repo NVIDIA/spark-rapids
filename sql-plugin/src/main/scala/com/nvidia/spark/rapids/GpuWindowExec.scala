@@ -1420,6 +1420,7 @@ class GpuRunningWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1430,8 +1431,6 @@ class GpuRunningWindowIterator(
   private var lastParts: Array[Scalar] = Array.empty
   private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
-
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -1658,6 +1657,7 @@ class GpuCachedDoublePassWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1669,8 +1669,6 @@ class GpuCachedDoublePassWindowIterator(
   private var lastPartsCaching: Array[Scalar] = Array.empty
   private var lastPartsProcessing: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
-
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
     lastPartsCaching.foreach(_.close())
@@ -1784,22 +1782,11 @@ class GpuCachedDoublePassWindowIterator(
   }
 
   // Compute the window operation and cache/update caches as needed.
-  // This method takes ownership of cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
-
-    val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    val (basic, parts) = withRetryNoSplit(sp) { _ =>
-      withResource(sp.getColumnarBatch()) { batch =>
-        closeOnExcept(computeBasicWindow(batch)) { basic =>
-          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
-        }
-      }
-    }
-
-    withResource(basic) { _ =>
-      withResource(parts) { _ =>
+    withResource(computeBasicWindow(cb)) { basic =>
+      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
 
         val firstLastEqual = areRowPartsEqual(lastPartsCaching, partColumns, Seq(0, numRows - 1))
@@ -1875,25 +1862,26 @@ class GpuCachedDoublePassWindowIterator(
       if (waitingForFirstPass.isEmpty) {
         lastBatch()
       } else {
-        val cb = waitingForFirstPass.get
-        waitingForFirstPass = None
-        withResource(
+        withResource(waitingForFirstPass.get) { cb =>
+          waitingForFirstPass = None
+          withResource(
             new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
-          // firstPassComputeAndCache takes ownership of the batch passed to it
-          firstPassComputeAndCache(cb)
+            firstPassComputeAndCache(cb)
+          }
         }
       }
     }
-    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
-      withResource(sb.getColumnarBatch()) { cb =>
-        val ret = withResource(
-          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-          postProcess(cb)
-        }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
+    val cb = withResource(readyForPostProcessing.dequeue()) { sb =>
+      sb.getColumnarBatch()
+    }
+    withResource(cb) { cb =>
+      val ret = withResource(
+        new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+        postProcess(cb)
       }
+      numOutputBatches += 1
+      numOutputRows += ret.numRows()
+      ret
     }
   }
 }
