@@ -1379,7 +1379,6 @@ object RapidsConf {
     .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
       "The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must " +
       "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
-    .commonlyUsed()
     .booleanConf
     .createWithDefault(true)
 
@@ -1395,7 +1394,6 @@ object RapidsConf {
       "\"CACHE_ONLY\": use when running a single executor, for short-circuit cached " +
       "shuffle (for testing purposes).")
     .startupOnly()
-    .commonlyUsed()
     .stringConf
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
