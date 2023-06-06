@@ -289,8 +289,11 @@ object ShimLoader extends Logging {
       provider.getClass.getName
     }.getOrElse {
         val supportedVersions = restProviders.map { case (p, _) => p.getShimVersion }.mkString(", ")
-        throw new IllegalArgumentException(s"Spark build $sparkVersion not supported. " +
-          s"Spark build versions supported by Spark RAPIDS: ${supportedVersions}")
+        throw new IllegalArgumentException(
+          s"This RAPIDS Plugin build does not support Spark build ${sparkVersion}. " +
+          s"Supported Spark build versions: ${supportedVersions}. " +
+          "Consult the Release documentation at " +
+          "https://nvidia.github.io/spark-rapids/docs/download.html")
     }
   }
 
