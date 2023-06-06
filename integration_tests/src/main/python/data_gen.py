@@ -757,7 +757,9 @@ def skip_if_not_utc():
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
 # SparkSession with the same runtime configs will have same memory address and vice versa, 
-# so we can cache the spark here safely.
+# so we can cache the spark here safely. 
+# Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
+# will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
 def gen_df_help(spark, data_gen, length=2048, seed=0, num_slices=None):
     rand = random.Random(seed)
