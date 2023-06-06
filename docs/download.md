@@ -33,7 +33,7 @@ Software Requirements:
 
 	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4, 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.4.0 Databricks 10.4 ML LTS or 11.3 ML LTS Runtime and GCP Dataproc 2.0, Dataproc 2.1
 
-	Python 3.6+, Scala 2.12, Scala 2.13, Java 8, Java 17
+	Python 3.6+, Scala 2.12, Java 8, Java 17
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
