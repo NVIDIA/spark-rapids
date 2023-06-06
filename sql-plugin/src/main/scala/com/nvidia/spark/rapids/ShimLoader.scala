@@ -255,7 +255,7 @@ object ShimLoader extends Logging {
         serviceProviderListPath)
 
     val numShimServiceProviders = serviceProviderList.size
-    val shimServiceProviderOpt = serviceProviderList.flatMap { shimServiceProviderStr =>
+    val (matchingProviders, restProviders) = serviceProviderList.flatMap { shimServiceProviderStr =>
       val mask = shimIdFromPackageName(shimServiceProviderStr)
       try {
         val shimURL = new java.net.URL(s"${shimRootURL.toString}$mask/")
@@ -278,18 +278,19 @@ object ShimLoader extends Logging {
           logDebug(cnf + ": Could not load the provider, likely a dev build", cnf)
           None
       }
-    }.find { case (shimServiceProvider, _) =>
-      shimServiceProviderOverrideClassName.nonEmpty ||
-        shimServiceProvider.matchesVersion(sparkVersion)
-    }.map { case (inst, url) =>
-      shimURL = url
-      shimProvider = inst
-      // this class will be loaded again by the real executor classloader
-      inst.getClass.getName
+    }.partition { case (inst, _) =>
+      shimServiceProviderOverrideClassName.nonEmpty || inst.matchesVersion(sparkVersion)
     }
 
-    shimServiceProviderOpt.getOrElse {
-        throw new IllegalArgumentException(s"Could not find Spark Shim Loader for $sparkVersion")
+    matchingProviders.headOption.map { case (provider, url) =>
+      shimURL = url
+      shimProvider = provider
+      // this class will be loaded again by the real executor classloader
+      provider.getClass.getName
+    }.getOrElse {
+        val supportedVersions = restProviders.map { case (p, _) => p.getShimVersion }.mkString(", ")
+        throw new IllegalArgumentException(s"Spark build $sparkVersion not supported. " +
+          s"Spark build versions supported by Spark RAPIDS: ${supportedVersions}")
     }
   }
 
