@@ -277,7 +277,7 @@ class DecimalGen(DataGen):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def _cache_repr(self):
-        return super().__repr__() + '(' + self.pattern + ')'
+        return super()._cache_repr() + '(' + self.pattern + ')'
 
     def start(self, rand):
         strs = self.base_strs
@@ -761,7 +761,7 @@ def skip_if_not_utc():
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
-def gen_df_help(spark, data_gen, length=2048, seed=0, num_slices=None):
+def gen_df_help(spark, data_gen, length, seed, num_slices, sparkconf):
     rand = random.Random(seed)
     data_gen.start(rand)
     data = [data_gen.gen() for index in range(0, length)]
@@ -784,7 +784,10 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     if src.contains_ts():
         skip_if_not_utc()
 
-    return gen_df_help(spark, src, length, seed, num_slices)
+    # record the spark conf for cache key
+    sparkconf = spark._jconf.getAllConfs().toString()
+
+    return gen_df_help(spark, src, length, seed, num_slices, sparkconf)
 
 def _mark_as_lit(data, data_type):
     # To support nested types, 'data_type' is required.
