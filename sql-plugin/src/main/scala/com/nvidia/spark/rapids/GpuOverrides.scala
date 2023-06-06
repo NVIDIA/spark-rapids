@@ -928,13 +928,9 @@ object GpuOverrides extends Logging {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
-        Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
-          TypeSig.all),
+        TypeSig.all,
+        Seq(ParamCheck("windowFunction", TypeSig.all, TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64,
             TypeSig.numericAndInterval))),
@@ -3938,7 +3934,7 @@ object GpuOverrides extends Logging {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY).nested(),
         TypeSig.all,
         Map("partitionSpec" ->
             InputCheck(
