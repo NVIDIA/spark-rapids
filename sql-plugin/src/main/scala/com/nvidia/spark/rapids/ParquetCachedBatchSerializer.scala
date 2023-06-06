@@ -482,8 +482,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
     val cbRdd: RDD[ColumnarBatch] = input.map {
       case parquetCB: ParquetCachedBatch if parquetCB.sizeInBytes == 0 =>
-        // If the buffer is empty, we have cached an empty batch, we don't need to decode it, instead just return
-        // an empty ColumnarBatch
+        // If the buffer is empty, we have cached an empty batch, we don't need to decode it,
+        // instead just return an empty ColumnarBatch
         GpuColumnVector.emptyBatch(originalSelectedAttributes.asJava)
       case parquetCB: ParquetCachedBatch =>
         val parquetOptions = ParquetOptions.builder()
@@ -874,8 +874,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
               selectedAttributes,
               options, hadoopConf)
           } catch {
-            // The CurrentBatchIterator encountered an empty batch. Return an empty Iterator just like we do
-            // when hasNext returns false
+            // The CurrentBatchIterator encountered an empty batch. Return an empty Iterator just
+            // like we do when hasNext returns false
             case _: EmptyBatchEncounteredException => Iterator.empty
           }
         }
