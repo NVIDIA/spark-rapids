@@ -116,7 +116,7 @@ install_dependencies()
 {
     local depsPomXml="$(mktemp /tmp/install-databricks-deps-XXXXXX-pom.xml)"
 
-    python jenkins/databricks/install_deps.py ${BASE_SPARK_VERSION} ${SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS} ${SCALA_VERSION} ${M2DIR} ${JARDIR} > ${depsPomXml}
+    python jenkins/databricks/install_deps.py "${BASE_SPARK_VERSION}" "${SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}" "${SCALA_VERSION}" "${M2DIR}" "${JARDIR}" "${depsPomXml}"
 
     $MVN_CMD -f ${depsPomXml} initialize
     echo "Done with installation of Databricks dependencies, removing ${depsPomXml}"

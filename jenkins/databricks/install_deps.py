@@ -139,7 +139,7 @@ def define_deps(spark_version, scala_version):
 
     return deps
 
-def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir):
+def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir, file):
     pom_xml_header = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <project xmlns=\"http://maven.apache.org/POM/4.0.0\"
             xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
@@ -158,7 +158,7 @@ def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir
                         <version>2.4</version>
                         <executions>
         """
-    print(pom_xml_header)
+    print(pom_xml_header, file=file)
 
     i = 0
     for artifact in deps:
@@ -172,7 +172,7 @@ def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir
         if len(files) == 0:
             raise Exception("No jar found that matches pattern {}".format(filename))
         elif len(files) > 1:
-            raise Exception("Ambiguous filename pattern {} matches multiple files".format(filename))
+            raise Exception("Ambiguous filename pattern {} matches multiple files: {}".format(filename, files))
 
         jar = files[0]
 
@@ -193,7 +193,7 @@ def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir
                     <packaging>jar</packaging>
                 </configuration>
             </execution>"""
-        print(pom_xml_dep)
+        print(pom_xml_dep, file=file)
 
     pom_xml_footer = """
                         </executions>
@@ -202,7 +202,7 @@ def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir
             </build>
         </project>
         """
-    print(pom_xml_footer)
+    print(pom_xml_footer, file=file)
 
 
 if __name__ == "__main__":
@@ -212,6 +212,8 @@ if __name__ == "__main__":
     parser.add_argument('scala_version')
     parser.add_argument('m2_dir')
     parser.add_argument('jar_dir')
+    parser.add_argument('pom_filename')
     args = parser.parse_args()
     deps = define_deps(args.spark_version, args.scala_version)
-    install_deps(deps, args.spark_version_to_install_databricks_jars, args.m2_dir, args.jar_dir)
+    with open(args.pom_filename, "w") as f:
+        install_deps(deps, args.spark_version_to_install_databricks_jars, args.m2_dir, args.jar_dir, f)
