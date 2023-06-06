@@ -263,7 +263,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         concatTime = NoopMetric,
         copyBufTime = NoopMetric,
         opTime = NoopMetric,
-        peakDevMemory = NoopMetric,
         opName = "concat test",
         useArrowCopyOpt = false)
     coalesceIter.foreach { batch =>
@@ -290,7 +289,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -314,7 +312,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -353,7 +350,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -388,7 +384,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = false)
 
@@ -527,7 +522,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      dummyMetric,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 
@@ -603,7 +597,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       GpuColumnVector.extractTypes(schema),
       TargetSize(coalesceTargetBytes),
       maxCompressedBatchMemoryLimit,
-      dummyMetric,
       dummyMetric,
       dummyMetric,
       dummyMetric,
