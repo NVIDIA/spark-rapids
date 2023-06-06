@@ -281,11 +281,11 @@ def test_empty_filter(op, spark_tmp_path):
 
     def do_it(spark):
         df = spark.createDataFrame([(14, "Tom"), (23, "Alice"), (16, "Bob")], ["age", "name"])
-        # we repartition the data to 3 because for some reason spark writes 4 files for 3 rows.
+        # we repartition the data to 1 because for some reason Spark can write 4 files for 3 rows.
         # In this case that causes a race condition with the last aggregation which can result
         # in a null being returned. For some reason this happens a lot on the GPU in local mode
         # and not on the CPU in local mode.
-        df.repartition(3).write.mode("overwrite").parquet(spark_tmp_path)
+        df.repartition(1).write.mode("overwrite").parquet(spark_tmp_path)
         df = spark.read.parquet(spark_tmp_path)
         curDate = df.withColumn("current_date", f.current_date())
         curDate.createOrReplaceTempView("empty_filter_test_curDate")

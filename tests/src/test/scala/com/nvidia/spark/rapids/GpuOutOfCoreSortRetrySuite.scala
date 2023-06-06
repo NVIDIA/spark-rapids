@@ -192,7 +192,7 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
       concatOutExp: Throwable = null,
       expMaxCount: Int = 1)
     extends GpuOutOfCoreSortIterator(iter, sorter, cpuOrd, targetSize,
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric){
+      NoopMetric, NoopMetric, NoopMetric, NoopMetric){
 
     private var expCnt = expMaxCount
 
