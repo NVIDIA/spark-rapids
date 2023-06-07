@@ -133,8 +133,6 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
   }
 }
 
-private class EmptyBatchEncounteredException(msg: String) extends Exception(msg)
-
 private object ByteArrayOutputFile {
   val BLOCK_SIZE: Int = 32 * 1024 * 1024 // 32M
 }
@@ -1080,7 +1078,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         if (!queue.isEmpty) {
           queue.dequeue()
         } else {
-          throw new EmptyBatchEncounteredException("Encountered an empty batch")
+          throw new IllegalStateException("Encountered an empty batch")
         }
       }
 
