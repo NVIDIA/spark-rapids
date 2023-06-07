@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils {
@@ -211,14 +211,9 @@ class GpuSorter(
     }
   }
 
-  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
-    order.child.dataType match {
-      case _: BinaryType =>
-        // binary is represented in cudf as a LIST column of UINT8
-        true
-      case t => DataTypeUtils.isNestedType(t)
-    }
-  }
+  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists ( order =>
+    DataTypeUtils.isNestedType(order.child.dataType)
+  )
 
   /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
   private[this] lazy val hasUnsupportedNestedInRideColumns = {
@@ -226,7 +221,7 @@ class GpuSorter(
     val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
     rideColumnIndices.exists { idx =>
       TrampolineUtil.dataTypeExistsRecursively(projectedBatchTypes(idx),
-        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType] || t.isInstanceOf[BinaryType])
+        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType])
     }
   }
 

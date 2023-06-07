@@ -46,7 +46,7 @@ gcloud services enable dataproc.googleapis.com
 gcloud services enable storage-api.googleapis.com
 ``` 
 
-After the command line environment is set up, log in to your GCP account.  You can now create a
+After the command line environment is setup, log in to your GCP account.  You can now create a
 Dataproc cluster. Dataproc supports multiple different GPU types depending on your use case.
 Generally, T4 is a good option for use with the RAPIDS Accelerator for Spark. We also support
 MIG on the Ampere architecture GPUs like the A100. Using
@@ -74,12 +74,6 @@ The script below will initialize with the following:
 ### Create a Dataproc Cluster using T4's
 * One 16-core master node and 5 32-core worker nodes
 * Two NVIDIA T4 for each worker node
-Note that with image-version 2.1 Secure Boot is enabled by default and not all operating systems currently have
-support for installing GPU drivers that are properly signed.  Please follow this 
-[document](https://cloud.google.com/compute/docs/gpus/install-drivers-gpu#secure-boot) for more details on how
-to set up supported operating systems with secure boot and signed GPU drivers.  For unsupported operating
-systems you can disable secure boot by adding `--no-shielded-secure-boot` while creating the cluster. This
-should allow the cluster to boot correctly with unsigned GPU drivers.
 
 ```bash
     export REGION=[Your Preferred GCP Region]
@@ -269,7 +263,7 @@ Download the desired data, decompress it, and upload the csv files to a GCS buck
 
 The sample notebook will transcode the CSV files into Parquet files before running an ETL query
 that prepares the dataset for training.  The ETL query splits the data, saving 20% of the data in
-a separate GCS location training for evaluation.  Using the default notebook configuration the
+a seaprate GCS location training for evaluation.  Using the default notebook configuration the
 first stage should take ~110 seconds (1/3 of CPU execution time with same config) and the second
 stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook depends on
 the pre-compiled [Spark RAPIDS SQL

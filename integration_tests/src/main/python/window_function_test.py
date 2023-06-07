@@ -159,7 +159,7 @@ def test_float_window_min_max_all_nans(data_gen):
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: three_col_df(spark, byte_gen, UniqueLongGen(), data_gen),
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
         'window_agg_table',
         'select '
         ' count(c) over '
@@ -171,7 +171,7 @@ def test_decimal128_count_window(data_gen):
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
         'window_agg_table',
         'select '
         ' count(b) over '
@@ -183,7 +183,7 @@ def test_decimal128_count_window_no_part(data_gen):
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: three_col_df(spark, byte_gen, UniqueLongGen(), data_gen),
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
         'window_agg_table',
         'select '
         ' sum(c) over '
@@ -195,7 +195,7 @@ def test_decimal_sum_window(data_gen):
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
         'window_agg_table',
         'select '
         ' sum(b) over '
@@ -208,7 +208,7 @@ def test_decimal_sum_window_no_part(data_gen):
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_running_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: three_col_df(spark, byte_gen, UniqueLongGen(), data_gen),
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
         'window_agg_table',
         'select '
         ' sum(c) over '
@@ -221,7 +221,7 @@ def test_decimal_running_sum_window(data_gen):
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_decimal_running_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
         'window_agg_table',
         'select '
         ' sum(b) over '
@@ -388,7 +388,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
     [('grp', RepeatSeqGen(int_gen, length=20)),  # Grouping column.
-     ('ord', UniqueLongGen(nullable=True)),       # Order-by column (after cast to STRING).
+     ('ord', LongRangeGen(nullable=True)),       # Order-by column (after cast to STRING).
      ('agg', IntegerGen())]                      # Aggregation column.
 ], ids=idfn)
 def test_range_windows_with_string_order_by_column(data_gen, batch_size):
@@ -449,7 +449,7 @@ def test_window_running_no_part(b_gen, batch_size):
         query_parts.append('sum(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
 
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
+        lambda spark : two_col_df(spark, LongRangeGen(), b_gen, length=1024 * 14),
         "window_agg_table",
         'select ' +
         ', '.join(query_parts) +
@@ -474,7 +474,7 @@ def test_running_float_sum_no_part(batch_size):
             'sum(cast(b as float)) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as shrt_flt_sum',
             'sum(abs(flt)) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as flt_sum']
 
-    gen = StructGen([('a', UniqueLongGen()),('b', short_gen),('flt', float_gen),('dbl', double_gen)], nullable=False)
+    gen = StructGen([('a', LongRangeGen()),('b', short_gen),('flt', float_gen),('dbl', double_gen)], nullable=False)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, gen, length=1024 * 14),
         "window_agg_table",
@@ -561,7 +561,7 @@ def test_window_running(b_gen, c_gen, batch_size):
         query_parts.append('sum(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
 
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : three_col_df(spark, UniqueLongGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
+        lambda spark : three_col_df(spark, LongRangeGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
         "window_agg_table",
         'select ' +
         ', '.join(query_parts) +
@@ -589,7 +589,7 @@ def test_window_running_float_decimal_sum(batch_size):
             'sum(abs(flt)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as flt_sum',
             'sum(cast(c as Decimal(6,1))) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dec_sum']
 
-    gen = StructGen([('a', UniqueLongGen()),('b', RepeatSeqGen(int_gen, length=1000)),('c', short_gen),('flt', float_gen),('dbl', double_gen)], nullable=False)
+    gen = StructGen([('a', LongRangeGen()),('b', RepeatSeqGen(int_gen, length=1000)),('c', short_gen),('flt', float_gen),('dbl', double_gen)], nullable=False)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, gen, length=1024 * 14),
         "window_agg_table",
@@ -693,7 +693,7 @@ lead_lag_array_data_gens =\
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', lead_lag_array_data_gens, ids=meta_idfn('agg:'))
-@pytest.mark.parametrize('c_gen', [UniqueLongGen()], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
 def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
@@ -779,7 +779,7 @@ def test_percent_rank_single_part_multiple_batches():
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
-@pytest.mark.parametrize('c_gen', [UniqueLongGen()], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
 def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
@@ -803,7 +803,7 @@ def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lag', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
-@pytest.mark.parametrize('c_gen', [UniqueLongGen()], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
 def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
@@ -948,7 +948,7 @@ def test_window_aggregations_for_big_decimal_ranges(data_gen):
 
 _gen_data_for_collect_list = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
-    ('b', UniqueLongGen()),
+    ('b', LongRangeGen()),
     ('c_bool', BooleanGen()),
     ('c_short', ShortGen()),
     ('c_int', IntegerGen()),
@@ -1063,8 +1063,8 @@ def test_running_window_function_exec_for_all_aggs():
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_join_sum_window_of_window(data_gen):
     def do_it(spark):
-        agg_table = gen_df(spark, StructGen([('a_1', UniqueLongGen()), ('c', data_gen)], nullable=False))
-        part_table = gen_df(spark, StructGen([('a_2', UniqueLongGen()), ('b', byte_gen)], nullable=False))
+        agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
+        part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
         agg_table.createOrReplaceTempView("agg")
         part_table.createOrReplaceTempView("part")
         # Note that if we include `c` in the select clause here (the output projection), the bug described
@@ -1086,7 +1086,7 @@ def test_join_sum_window_of_window(data_gen):
 # And GpuCollectSet does not yet support struct type.
 _gen_data_for_collect_set = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
-    ('b', UniqueLongGen()),
+    ('b', LongRangeGen()),
     ('c_bool', RepeatSeqGen(BooleanGen(), length=15)),
     ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
     ('c_long', RepeatSeqGen(LongGen(), length=15)),
@@ -1106,7 +1106,7 @@ _gen_data_for_collect_set = [
 
 _gen_data_for_collect_set_nested = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
-    ('b', UniqueLongGen()),
+    ('b', LongRangeGen()),
     ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
     ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_nans, length=15)),
     ('c_struct_array_2', RepeatSeqGen(StructGen([
@@ -1193,6 +1193,7 @@ def test_window_aggs_for_rows_collect_set():
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
+        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
@@ -1272,7 +1273,7 @@ def test_window_aggs_for_rows_collect_set_nested_array():
 def test_nested_part_fallback(part_gen):
     data_gen = [
             ('a', RepeatSeqGen(part_gen, length=20)),
-            ('b', UniqueLongGen()),
+            ('b', LongRangeGen()),
             ('c', int_gen)]
     window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
 
@@ -1288,7 +1289,7 @@ def test_nested_part_fallback(part_gen):
 def test_nested_part_struct(part_gen):
     data_gen = [
             ('a', RepeatSeqGen(part_gen, length=20)),
-            ('b', UniqueLongGen()),
+            ('b', LongRangeGen()),
             ('c', int_gen)]
     window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
 
@@ -1304,7 +1305,7 @@ def test_nested_part_struct(part_gen):
 @pytest.mark.parametrize('ride_along', all_basic_gens + decimal_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_window_ride_along(ride_along):
     assert_gpu_and_cpu_are_equal_sql(
-            lambda spark : gen_df(spark, [('a', UniqueLongGen()), ('b', ride_along)]),
+            lambda spark : gen_df(spark, [('a', LongRangeGen()), ('b', ride_along)]),
             "window_agg_table",
             'select *,'
             ' row_number() over (order by a) as row_num '

@@ -38,6 +38,7 @@ _orig_conf_keys = _orig_conf.keys()
 _default_conf = {
     'spark.ansi.enabled': 'false',
     'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
+    'spark.rapids.sql.castDecimalToString.enabled': 'false',
     'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
     'spark.rapids.sql.castFloatToString.enabled': 'false',

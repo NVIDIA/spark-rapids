@@ -1123,11 +1123,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       }.getOrElse(rapidsConf.getMultithreadedCombineThreshold)
   private val combineWaitTime =
     RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME.get(sqlConf)
-      .map { f =>
+      .map {
         logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME} is deprecated, " +
           s"use ${RapidsConf.READER_MULTITHREADED_COMBINE_WAIT_TIME} instead. But for now " +
           "the deprecated one will be honored if both are set.")
-        f.intValue()
+        _.intValue()
       }.getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
   private val keepReadsInOrderFromConf =
     RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER.get(sqlConf)

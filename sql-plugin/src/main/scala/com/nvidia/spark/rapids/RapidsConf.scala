@@ -738,6 +738,14 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
+      .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
+        "does NOT produce exact same string as spark produces, but producing strings which are " +
+        "semantically equal. For instance, given input BigDecimal(123, -2), the GPU produces " +
+        "\"12300\", which spark produces \"1.23E+4\".")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
       .booleanConf
@@ -2190,6 +2198,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
+
+  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 

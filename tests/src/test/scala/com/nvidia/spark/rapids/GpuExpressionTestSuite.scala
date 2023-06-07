@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, Decimal, DecimalType, StructType}
 
 abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
 
@@ -172,6 +172,11 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
       // whole number need to be within tolerance
       compare(expected.toDouble, actual.toDouble, 0.00001)
     }
+  }
+
+  def compareStringifiedDecimalsInSemantic(expected: String, actual: String): Boolean = {
+    (expected == null && actual == null) ||
+        (expected != null && actual != null && Decimal(expected) == Decimal(actual))
   }
 
   private def getAs(column: RapidsHostColumnVector, index: Int, dataType: DataType): Option[Any] = {

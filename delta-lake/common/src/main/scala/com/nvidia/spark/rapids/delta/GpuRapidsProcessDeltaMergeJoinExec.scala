@@ -219,12 +219,12 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
     metrics: Map[String, GpuMetric])
     extends Iterator[ColumnarBatch] with AutoCloseable {
 
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+
   private[this] val intermediateTypes: Array[DataType] = noopCopyOutput.map(_.dataType).toArray
   private[this] var nextBatch: Option[ColumnarBatch] = None
   private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME, NoopMetric)
   private[this] val numOutputRows = metrics.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric)
-
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     nextBatch = nextBatch.orElse(processNextBatch())

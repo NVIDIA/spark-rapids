@@ -460,12 +460,13 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   test("ansi_cast decimal to string") {
     val sqlCtx = SparkSession.getActiveSession.get.sqlContext
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
 
     Seq(10, 15, 18).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
           ansiMode = true,
-          comparisonFunc = None)
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
       }
     }
   }
@@ -475,14 +476,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
-  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => {
-    d match {
-      case dec: Decimal if isSpark340OrLater =>
-        Some(dec.toJavaBigDecimal.toPlainString)
-      case _ =>
-        Some(String.valueOf(d))
-    }
-  }
+  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
       comparisonFunc: Option[(String, String) => Boolean] ): Unit = {

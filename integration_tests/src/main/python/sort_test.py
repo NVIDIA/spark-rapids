@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -264,9 +264,7 @@ def test_large_orderby(data_gen, stable_sort):
 
 # This is similar to test_large_orderby, but here we want to test some types
 # that are not being sorted on, but are going along with it
-@pytest.mark.parametrize('data_gen', [
-    binary_gen,
-    byte_gen,
+@pytest.mark.parametrize('data_gen', [byte_gen,
     string_gen,
     float_gen,
     date_gen,
@@ -278,10 +276,10 @@ def test_large_orderby(data_gen, stable_sort):
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
 @pytest.mark.order(2)
 def test_large_orderby_nested_ridealong(data_gen):
-    # We use a UniqueLongGen to avoid duplicate keys that can cause ambiguity in the sort
-    # results, especially on distributed clusters.
+    # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
+    #  results, especially on distributed clusters.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, UniqueLongGen(), data_gen, length=1024*127)\
+            lambda spark : two_col_df(spark, LongRangeGen(), data_gen, length=1024*127)\
                     .orderBy(f.col('a').desc()),
             conf = {'spark.rapids.sql.batchSizeBytes': '16384'})
 
@@ -298,8 +296,8 @@ def test_large_orderby_nested_ridealong(data_gen):
     ArrayGen(decimal_gen_128bit, max_length=5)], ids=idfn)
 @pytest.mark.order(2)
 def test_orderby_nested_ridealong_limit(data_gen):
-    # We use a UniqueLongGen to avoid duplicate keys that can cause ambiguity in the sort
-    # results, especially on distributed clusters.
+    # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
+    #  results, especially on distributed clusters.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, UniqueLongGen(), data_gen)\
+            lambda spark : two_col_df(spark, LongRangeGen(), data_gen)\
                     .orderBy(f.col('a').desc()).limit(100))
