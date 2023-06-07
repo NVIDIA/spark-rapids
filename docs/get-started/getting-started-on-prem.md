@@ -6,7 +6,7 @@ parent: Getting-Started
 ---
 
 # Getting Started with RAPIDS Accelerator with on premise cluster or local mode
-## The primary methods of deploy Spark
+## Spark Deployment Methods
 The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
 the RAPIDS Accelerator for Apache Spark. The primary methods to deploy Spark are:
 * [Local mode](#local-mode) - this is for dev/testing only, not for production
