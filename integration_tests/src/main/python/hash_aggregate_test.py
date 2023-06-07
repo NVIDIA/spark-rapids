@@ -552,12 +552,12 @@ _full_repeat_agg_column_for_collect_op = [
 _gen_data_for_collect_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen),
-    ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op]
+    ('c', UniqueLongGen())] for value_gen in _repeat_agg_column_for_collect_op]
 
 _full_gen_data_for_collect_op = _gen_data_for_collect_op + [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen),
-    ('c', LongRangeGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
+    ('c', UniqueLongGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
 
 _repeat_agg_column_for_collect_list_op = [
         RepeatSeqGen(ArrayGen(int_gen), length=15),
@@ -672,7 +672,6 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
@@ -714,7 +713,6 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
@@ -877,7 +875,7 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
 def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
         non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
         table_name='table',
@@ -1413,7 +1411,7 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
@@ -1422,7 +1420,7 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
@@ -1431,7 +1429,7 @@ def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         0.5, conf)
 
 @incompat
