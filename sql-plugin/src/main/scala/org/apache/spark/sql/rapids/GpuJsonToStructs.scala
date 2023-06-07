@@ -33,12 +33,37 @@ case class GpuJsonToStructs(
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
-  
-  private def cleanAndConcat(input: cudf.ColumnVector): (cudf.ColumnVector, cudf.ColumnVector) ={
-    withResource(cudf.Scalar.fromString("{}")) { emptyRow =>
-      val stripped = withResource(cudf.Scalar.fromString(" ")) { space =>
-        input.strip(space)
+
+  // Construct a dummy json string given an input schema, for example:
+  // schema = StructType([StructField("a", StringType), StructField("b", IntegerType)])
+  // returns "{"a": "", "b": 0}"
+  private def constructEmptyRow(): String = {
+    schema match {
+      case struct: StructType if (struct.fields.length > 0) => {
+        val res = struct.fields.foldRight ("") ((field, acc) => 
+          field.dataType match {
+            case IntegerType => "\"" + field.name + "\": 0, " + acc
+            case _ => "\"" + field.name + "\": \"\", " + acc
+          }
+        )
+        "{" + res.dropRight(2) + "}"
       }
+      case _ => "{}"
+    }
+  }
+  
+  private def cleanAndConcat(input: cudf.ColumnVector): (cudf.ColumnVector, cudf.ColumnVector) = {
+    val emptyRowStr = constructEmptyRow()
+    withResource(cudf.Scalar.fromString(emptyRowStr)) { emptyRow =>
+
+      val stripped = if (input.getData == null) {
+        input.incRefCount
+      } else {
+        withResource(cudf.Scalar.fromString(" ")) { space =>
+          input.strip(space)
+        }
+      }
+
       withResource(stripped) { stripped =>
         val isNullOrEmptyInput = withResource(input.isNull) { isNull =>
           val isEmpty = withResource(stripped.getCharLengths) { lengths =>

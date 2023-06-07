@@ -417,6 +417,16 @@ def test_from_json_struct_of_list(data_gen, schema):
             .select(f.from_json(f.col('a'), schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.parametrize('data_gen', [StringGen('', nullable=True)])
+@pytest.mark.parametrize('schema', [StructType([StructField("a", StringType())]),
+                                    StructType([StructField("a", StringType()), StructField("b", IntegerType())])
+                                    ])
+def test_from_json_struct_empty_string_input(data_gen, schema):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen) \
+            .select(f.from_json(f.col('a'), schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
 @pytest.mark.parametrize('filename,schema', [("dates.json", _date_schema),("dates.json", _timestamp_schema),
