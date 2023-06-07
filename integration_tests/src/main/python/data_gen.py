@@ -317,7 +317,7 @@ class UniqueLongGen(DataGen):
         return self._current_val
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._start_val) + ')'
+        return super()._cache_repr() + '(' + str(self._current_val) + ')'
 
     def start(self, rand):
         self._current_val = 0
