@@ -27,6 +27,8 @@ import struct
 from conftest import skip_unless_precommit_tests
 import time
 import os
+from functools import lru_cache
+import hashlib
 
 # set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
 # refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
@@ -45,7 +47,7 @@ class DataGen:
         return hash(str(self))
 
     def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+        return isinstance(other, self.__class__) and self._cache_repr() == other._cache_repr()
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -71,6 +73,19 @@ class DataGen:
                 self.with_special_case(element[0], element[1])
             else:
                 self.with_special_case(element)
+
+    def _cache_repr(self):
+        # repr of DataGens and their children will be used to generate the cache key
+        # make sure it is unique for different DataGens
+        notnull = '(not_null)' if not self.nullable else ''
+        datatype = str(self.data_type)
+        specialcases = ''
+        for (weight, case) in self._special_cases:
+            if (callable(case)):
+                case = case.__code__.co_code
+            specialcases += str(case) + ', ' + str(weight) + ', '
+        specialcases = hashlib.blake2b(specialcases.encode('utf-8'), digest_size=8).hexdigest()
+        return self.__class__.__name__[:-3] + notnull + ', ' + datatype + ', ' + str(specialcases)
 
     def copy_special_case(self, special_case, weight=1.0):
         # it would be good to do a deepcopy, but sre_yield is not happy with that.
@@ -148,6 +163,9 @@ class ConvertGen(DataGen):
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+
     def start(self, rand):
         self._child_gen.start(rand)
         def modify():
@@ -161,6 +179,12 @@ class StringGen(DataGen):
     def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
         super().__init__(StringType(), nullable=nullable)
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
+        # save pattern and charset for cache repr
+        charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
+        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
+    
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self.stringrepr + ')'
 
     def with_special_pattern(self, pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
         """
@@ -194,6 +218,9 @@ class ByteGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+
 SHORT_MIN = -(1 << 15)
 SHORT_MAX = (1 << 15) - 1
 class ShortGen(DataGen):
@@ -203,6 +230,9 @@ class ShortGen(DataGen):
         super().__init__(ShortType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
@@ -216,6 +246,9 @@ class IntegerGen(DataGen):
         super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
@@ -237,11 +270,14 @@ class DecimalGen(DataGen):
         self.scale = scale
         self.precision = precision
         negative_pattern = "-" if avoid_positive_values else "-?"
-        pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
-        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+        self.pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.base_strs = sre_yield.AllStrings(self.pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self.pattern + ')'
 
     def start(self, rand):
         strs = self.base_strs
@@ -261,6 +297,9 @@ class LongGen(DataGen):
         self._min_val = min_val
         self._max_val = max_val
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
@@ -276,6 +315,9 @@ class UniqueLongGen(DataGen):
         else:
             self._current_val = -self._current_val - 1
         return self._current_val
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._current_val) + ')'
 
     def start(self, rand):
         self._current_val = 0
@@ -293,6 +335,9 @@ class RepeatSeqGen(DataGen):
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child) + ')'
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + str(self._index) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
@@ -314,6 +359,9 @@ class SetValuesGen(DataGen):
 
     def __repr__(self):
         return super().__repr__() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
+
+    def _cache_repr(self):
+        return super()._cache_repr() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
 
     def start(self, rand):
         data = self._vals
@@ -344,6 +392,9 @@ class FloatGen(DataGen):
         if self._no_nans and (math.isnan(v) or v == math.inf or v == -math.inf):
             v = None if self.nullable else 0.0
         return v
+    
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._no_nans) + ')'
 
     def start(self, rand):
         def gen_float():
@@ -388,6 +439,9 @@ class DoubleGen(DataGen):
                 special_cases.append(float('nan'))
                 special_cases.append(NEG_DOUBLE_NAN_MAX_VALUE)
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_exp) + ',' + str(self._max_exp) + ',' + str(self._no_nans) + ')'
 
     @staticmethod
     def make_from(sign, exp, fraction):
@@ -443,6 +497,9 @@ class StructGen(DataGen):
     def __repr__(self):
         return super().__repr__() + '(' + ','.join([str(i) for i in self.children]) + ')'
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + ','.join([name + child._cache_repr() for name, child in self.children]) + ')'
+
     def start(self, rand):
         for name, child in self.children:
             child.start(rand)
@@ -491,6 +548,9 @@ class DateGen(DataGen):
                 next_day = date(y, 3, 1)
                 if (next_day > start and next_day < end):
                     self.with_special_case(next_day)
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._start_day) + ',' + str(self._end_day) + ')'
 
     @staticmethod
     def _guess_leap_year(t):
@@ -542,6 +602,9 @@ class TimestampGen(DataGen):
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + ')'
+
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _us = timedelta(microseconds=1)
 
@@ -571,6 +634,9 @@ class ArrayGen(DataGen):
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+
     def start(self, rand):
         self._child_gen.start(rand)
         def gen_array():
@@ -596,6 +662,9 @@ class MapGen(DataGen):
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
+
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
 
     def start(self, rand):
         self._key_gen.start(rand)
@@ -654,6 +723,9 @@ class DayTimeIntervalGen(DataGen):
         # https://issues.apache.org/jira/browse/SPARK-38577
         # If above issue is fixed, should update this DayTimeIntervalGen.
         return timedelta(microseconds=micros)
+    
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + ')'
 
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
@@ -665,6 +737,9 @@ class BinaryGen(DataGen):
         self._min_length = min_length
         self._max_length = max_length
 
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self._min_length) + ',' + str(self._max_length) + ')'
+
     def start(self, rand):
         def gen_bytes():
             length = rand.randint(self._min_length, self._max_length)
@@ -674,6 +749,15 @@ class BinaryGen(DataGen):
 def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
+
+# Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
+# will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
+@lru_cache(maxsize=128, typed=True)
+def gen_df_help(data_gen, length, seed):
+    rand = random.Random(seed)
+    data_gen.start(rand)
+    data = [data_gen.gen() for index in range(0, length)]
+    return data
 
 def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
@@ -688,9 +772,8 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     if src.contains_ts():
         skip_if_not_utc()
 
-    rand = random.Random(seed)
-    src.start(rand)
-    data = [src.gen() for index in range(0, length)]
+    data = gen_df_help(src, length, seed)
+
     # We use `numSlices` to create an RDD with the specific number of partitions,
     # which is then turned into a dataframe. If not specified, it is `None` (default spark value)
     return spark.createDataFrame(
