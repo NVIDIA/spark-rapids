@@ -1060,7 +1060,7 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample + [binary_gen]
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_first_last_reductions_decimal_types(data_gen):
@@ -1193,6 +1193,19 @@ def test_agg_count(data_gen, count_func):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
                               length=1024).groupBy('a').agg(count_func("b")))
+
+# Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
+# Have pytest do the sorting rather than Spark as a workaround.
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+               'HashPartitioning', 'ShuffleExchangeExec', 'Count')
+@pytest.mark.parametrize('data_gen', array_gens_sample + [binary_gen], ids=idfn)
+@pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
+def test_groupby_list_types_fallback(data_gen, count_func):
+    assert_gpu_fallback_collect(
+        lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
+                              length=1024).groupBy('a').agg(count_func("b")),
+        "HashAggregateExec")
 
 def subquery_create_temp_views(spark, expr):
     t1 = "select * from values (1,2) as t1(a,b)"
