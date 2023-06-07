@@ -35,7 +35,7 @@ sudo apt-get -y install cuda
 ```	
 
 You can check if the GPU driver and CUDA toolkit is 
-installed successfully by running [nvidia-smi](https://developer.download.nvidia.com/compute/DCGM/docs/nvidia-smi-367.38.pdf) command.
+installed successfully by running the [nvidia-smi](https://developer.download.nvidia.com/compute/DCGM/docs/nvidia-smi-367.38.pdf) command.
 
 Below are sections on installing Spark and the RAPIDS Accelerator on a single node.  You may want
 to read the deployment method sections before doing any installations.
