@@ -3876,7 +3876,7 @@ object GpuOverrides extends Logging {
             .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP, TypeEnum.BINARY),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
-              "not allowed for grouping expressions if containing Array or Map as child"),
+              "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[ObjectHashAggregateExec](
@@ -3887,12 +3887,12 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
-            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
-              "converted between CPU and GPU")
+            .withPsNote(TypeEnum.BINARY, "not allowed for grouping expressions and " +
+              "only allowed when aggregate buffers can be converted between CPU and GPU")
             .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
-              "not allowed for grouping expressions if containing Array or Map as child"),
+              "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
     exec[ShuffledHashJoinExec](
@@ -3905,12 +3905,12 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
-            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
-              "converted between CPU and GPU")
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP, TypeEnum.BINARY),
+            .withPsNote(TypeEnum.BINARY, "not allowed for grouping expressions and " +
+              "only allowed when aggregate buffers can be converted between CPU and GPU")
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
-              "not allowed for grouping expressions if containing Array or Map as child"),
+              "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
     exec[SortExec](
