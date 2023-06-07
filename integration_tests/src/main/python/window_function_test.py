@@ -22,6 +22,7 @@ from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_320, is_before_spark_340, is_databricks113_or_later
+import warnings
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -1432,3 +1433,9 @@ def test_to_date_with_window_functions():
         FROM window_input
         """
     )
+
+def test_lru_cache_datagen():
+    # log cache info at the end of integration tests, not related to window functions
+    info = gen_df_help.cache_info()
+    warnings.warn("Cache info: {}".format(info))
+    gen_df_help.cache_clear()
