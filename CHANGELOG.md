@@ -7,7 +7,6 @@ Generated on 2023-06-08
 |||
 |:---|:---|
 |[#8079](https://github.com/NVIDIA/spark-rapids/issues/8079)|[FEA] Release Spark 3.4 Support|
-|[#8163](https://github.com/NVIDIA/spark-rapids/issues/8163)|[FEA] update release script and pipeline to support cuda12|
 |[#7043](https://github.com/NVIDIA/spark-rapids/issues/7043)|[FEA] Support Empty2Null expression on Spark 3.4.0|
 |[#8222](https://github.com/NVIDIA/spark-rapids/issues/8222)|[FEA] String Split Unsupported escaped character '.'|
 |[#8211](https://github.com/NVIDIA/spark-rapids/issues/8211)|[FEA] Add tencent blob store uri to spark rapids cloudScheme defaults|
@@ -15,13 +14,11 @@ Generated on 2023-06-08
 |[#7094](https://github.com/NVIDIA/spark-rapids/issues/7094)|[FEA] Add a shim layer for Spark 3.2.4|
 |[#6202](https://github.com/NVIDIA/spark-rapids/issues/6202)|[SPARK-39528][SQL] Use V2 Filter in SupportsRuntimeFiltering|
 |[#6034](https://github.com/NVIDIA/spark-rapids/issues/6034)|[FEA] Support `offset` parameter in `TakeOrderedAndProject`|
-|[#1940](https://github.com/NVIDIA/spark-rapids/issues/1940)|[FEA] Spilling working batch of fixed length lazy explode|
 |[#8196](https://github.com/NVIDIA/spark-rapids/issues/8196)|[FEA] Add retry handling to GpuGenerateExec.fixedLenLazyArrayGenerate path|
 |[#7891](https://github.com/NVIDIA/spark-rapids/issues/7891)|[FEA] Support StddevSamp with cast(col as double)  for input|
 |[#62](https://github.com/NVIDIA/spark-rapids/issues/62)|[FEA] stddevsamp function|
 |[#7867](https://github.com/NVIDIA/spark-rapids/issues/7867)|[FEA] support json to struct function|
 |[#7883](https://github.com/NVIDIA/spark-rapids/issues/7883)|[FEA] support order by string in windowing function|
-|[#8188](https://github.com/NVIDIA/spark-rapids/issues/8188)|[FEA] Refactor shims to remove dependency from 340 to 330db for cast/try_cast|
 |[#7882](https://github.com/NVIDIA/spark-rapids/issues/7882)|[FEA] support StringTranslate function|
 |[#7843](https://github.com/NVIDIA/spark-rapids/issues/7843)|[FEA] build with CUDA 12|
 |[#8045](https://github.com/NVIDIA/spark-rapids/issues/8045)|[FEA] Support repetition in choice on regular expressions|
