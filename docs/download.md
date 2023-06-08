@@ -64,15 +64,15 @@ The output if signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Deliver enhanced operator support with OOM retry framework to provide robust experience that minimizes OOM or GPU specific config changes across a wide variety of large scale workloads.
-* Deliver spill framework to reduce OOM issues to provide robust experience that minimizes OOM or GPU specific config changes across a wide variety of large scale workloads.
-* Deliver AQE skewed BHJ for all supported Databricks versions.
-* Support json to struct function on GPU.
-* Support StringTranslate function on GPU.
-* Support Windows function with str input in orderBy.
-* Support Regular expressions with line anchors in choice input.  
-* Support Rlike function with line anchor input.
-* Improve the performance of small ORC files reading.
+* Enhanced operator support with an OOM retry framework to minimize OOM or GPU specific config changes 
+* Spill framework to reduce OOM issues to minimize OOM or GPU specific config changes 
+* AQE for skewed broadcast hash join performance improvement
+* Support JSON to struct
+* Support StringTranslate 
+* Support windows function with string input in order by clause
+* Support regular expressions with line anchors in choice input  
+* Support rlike function with line anchor input
+* Improve the performance of ORC small file reads
 * Qualification and Profiling tool:
   * Qualification tool support Databricks Azure now.
   * Improve Qualification tool to not require a live cluster, and only rely on READ permission.
