@@ -158,20 +158,20 @@ def test_trim():
                 'TRIM(BOTH NULL FROM a)',
                 'TRIM("" FROM a)'))
 
-def test_ltrim():
-    gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
+def test_ltrim(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'LTRIM(a)',
                 'LTRIM("Ab", a)',
                 'TRIM(LEADING "A\ud720" FROM a)',
                 'TRIM(LEADING NULL FROM a)',
                 'TRIM(LEADING "" FROM a)'))
 
-def test_rtrim():
-    gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
+def test_rtrim(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'RTRIM(a)',
                 'RTRIM("Ab", a)',
                 'TRIM(TRAILING "A\ud720" FROM a)',

@@ -283,7 +283,11 @@ case class GpuStringTrimLeft(column: Expression, trimParameters: Option[Expressi
   val trimMethod = "gpuTrimLeft"
 
   override def strippedColumnVector(column: GpuColumnVector, t: Scalar): GpuColumnVector =
-    GpuColumnVector.from(column.getBase.lstrip(t), dataType)
+    if (column.getBase.getData == null) {
+      GpuColumnVector.from(column.getBase.incRefCount, dataType)
+    } else {
+      GpuColumnVector.from(column.getBase.lstrip(t), dataType)
+    }
 }
 
 case class GpuStringTrimRight(column: Expression, trimParameters: Option[Expression] = None)
@@ -303,7 +307,11 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
   val trimMethod = "gpuTrimRight"
 
   override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector =
-    GpuColumnVector.from(column.getBase.rstrip(t), dataType)
+    if (column.getBase.getData == null) {
+      GpuColumnVector.from(column.getBase.incRefCount, dataType)
+    } else {
+      GpuColumnVector.from(column.getBase.rstrip(t), dataType)
+    }
 }
 
 case class GpuConcatWs(children: Seq[Expression])
