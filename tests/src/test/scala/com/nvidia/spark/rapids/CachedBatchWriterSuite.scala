@@ -16,20 +16,29 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable
+
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableFromBatchColumns
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
-import org.mockito.ArgumentMatchers._
-import org.mockito.Mockito._
+import org.mockito.ArgumentMatchers.{any, isA}
+import org.mockito.Mockito.{doAnswer, mock, mockStatic, spy, times, verify, when}
 import org.mockito.invocation.InvocationOnMock
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.SparkSession.setActiveSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.execution.columnar.DefaultCachedBatchSerializer
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.storage.StorageLevel.MEMORY_ONLY
 
 
 /**
@@ -130,6 +139,71 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
           CompressionType.NONE
         }) == opts.getCompressionType)
     }
+  }
+
+  test("cache empty columnar batch on GPU") {
+    withGpuSparkSession(writeAndConsumeEmptyBatch)
+  }
+
+  private def writeAndConsumeEmptyBatch(spark: SparkSession): Unit = {
+    setActiveSession(spark)
+    val schema = Seq(AttributeReference("_col0", IntegerType, true)())
+    val columnarBatch0 = FuzzerUtils.createColumnarBatch(schema.toStructType, 0)
+    val columnarBatch = FuzzerUtils.createColumnarBatch(schema.toStructType, 10)
+    // increase count to verify the result later
+    columnarBatch.column(0).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+    columnarBatch0.column(0).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+
+    val rdd = spark.sparkContext.parallelize(Seq(columnarBatch, columnarBatch0))
+    val storageLevel = MEMORY_ONLY
+    val conf = TrampolineUtil.getSparkConf(spark)
+    val context = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
+
+    // Default Serializer round trip
+    val defaultSer = new DefaultCachedBatchSerializer
+    val toClose = ListBuffer[ColumnarBatch]()
+    val irRdd = rdd.flatMap { batch =>
+      val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
+        withResource(batch) { batch =>
+          new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
+        }
+      } else {
+        batch
+      }
+      toClose += hostBatch
+      hostBatch.rowIterator().asScala
+    }
+
+    val expectedCachedRdd = defaultSer
+      .convertInternalRowToCachedBatch(irRdd, schema, storageLevel, conf)
+    val expectedCbRdd = defaultSer
+      .convertCachedBatchToColumnarBatch(expectedCachedRdd, schema, schema, conf)
+    val defaultBatches = expectedCbRdd.compute(expectedCbRdd.partitions.head, context)
+
+    // PCBS round trip
+    val ser = new ParquetCachedBatchSerializer
+    val cachedRdd = ser.convertColumnarBatchToCachedBatch(rdd, schema, storageLevel, conf)
+    val cbRdd = ser.convertCachedBatchToColumnarBatch(cachedRdd, schema, schema, conf)
+    TrampolineUtil.setTaskContext(context)
+    val batches = cbRdd.compute(cbRdd.partitions.head, context)
+
+    // Read the batches to consume the cache
+    assert(batches.hasNext)
+    assert(defaultBatches.hasNext)
+    val cb = batches.next()
+    val expectedCb = defaultBatches.next()
+    val hostCol = cb.column(0)
+    val hostColExpected = expectedCb.column(0)
+    assert(cb.numRows() == 10)
+    for (i <- 0 until 10) {
+      assert(hostCol.isNullAt(i) == hostColExpected.isNullAt(i))
+      if (!hostCol.isNullAt(i)) {
+        assert(hostCol.getInt(i) == hostColExpected.getInt(i))
+      }
+    }
+    assert(!batches.hasNext)
+    assert(!defaultBatches.hasNext)
+    toClose.foreach(cb => cb.close())
   }
 
   val ROWS = 3 * 1024 * 1024

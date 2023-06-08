@@ -320,12 +320,14 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       }
 
       input.flatMap(batch => {
-        // If the structSchema is empty or the batch has no cols in that case return an empty batch.
+        // If the structSchema is empty or the batch has no cols in that case return a batch with
+        // just rows.
         if (batch.numCols() == 0 || structSchema.isEmpty) {
+          val rows = batch.numRows()
           if (batch.numCols() > 0 && batch.column(0).isInstanceOf[GpuColumnVector]) {
             batch.close()
           }
-          List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
+          List(ParquetCachedBatch(rows, new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
             compressColumnarBatchWithParquet(gpuCB, structSchema, schema.toStructType,
@@ -481,8 +483,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
     val cbRdd: RDD[ColumnarBatch] = input.map {
       case parquetCB: ParquetCachedBatch if parquetCB.sizeInBytes == 0 =>
-        // If the buffer is empty, we have cached an empty batch, we don't need to decode it,
-        // instead just return an empty ColumnarBatch
+        // If the buffer is empty, we have cached a batch with no columns, we don't need to decode
+        // it, instead just return a ColumnarBatch with only rows
         withResource(new GpuColumnarBatchBuilder(originalSelectedAttributes.toStructType,
           parquetCB.numRows)) {
           builder => builder.build(parquetCB.numRows)
@@ -870,17 +872,16 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           Iterator.empty
         } else {
           val cachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
-          try {
+          if (cachedBatch.sizeInBytes == 0) {
+            // Edge case where we have stored an empty parquet file possibly a dataframe with no
+            // columns
+            List(new ColumnarBatch(null, cachedBatch.numRows)).iterator
+          } else {
             new ShimCurrentBatchIterator(
               cachedBatch,
               conf,
               selectedAttributes,
               options, hadoopConf)
-          } catch {
-            case r: RuntimeException if r.getMessage.contains("too small length: 0") =>
-              // Edge case where we have stored an empty parquet file possibly a dataframe with no
-              // columns
-              List(new ColumnarBatch(null, cachedBatch.numRows)).iterator
           }
         }
       }
@@ -1103,7 +1104,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           } catch {
             case _: InvalidSchemaException =>
               // The schema is invalid, most probably it is because of the edge case where there
-              // are no columns in the Dataframe but has rows so let's create an empty CachedBatch
+              // are no columns in the Dataframe but has rows so let's create an CachedBatch with
+              // rows
               queue += new ParquetCachedBatch(rowIterator.size, new Array[Byte](0))
               return queue
           }
