@@ -47,8 +47,8 @@ for your hardware's minimum driver version.
 
 This package is built against CUDA 11.8, all CUDA 11.x and 12.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
-on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
-do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will
+on V100, T4, A2, A10, A30, A100, L4 and H100  GPUs with CUDA 11.8-12.0.  For those using other types of GPUs 
+which do not have CUDA forward compatibility (for example, GeForce), CUDA 11.8 or later is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
