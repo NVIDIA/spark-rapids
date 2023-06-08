@@ -185,25 +185,29 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     val cachedRdd = ser.convertColumnarBatchToCachedBatch(rdd, schema, storageLevel, conf)
     val cbRdd = ser.convertCachedBatchToColumnarBatch(cachedRdd, schema, schema, conf)
     TrampolineUtil.setTaskContext(context)
-    val batches = cbRdd.compute(cbRdd.partitions.head, context)
+    try {
+      val batches = cbRdd.compute(cbRdd.partitions.head, context)
 
-    // Read the batches to consume the cache
-    assert(batches.hasNext)
-    assert(defaultBatches.hasNext)
-    val cb = batches.next()
-    val expectedCb = defaultBatches.next()
-    val hostCol = cb.column(0)
-    val hostColExpected = expectedCb.column(0)
-    assert(cb.numRows() == 10)
-    for (i <- 0 until 10) {
-      assert(hostCol.isNullAt(i) == hostColExpected.isNullAt(i))
-      if (!hostCol.isNullAt(i)) {
-        assert(hostCol.getInt(i) == hostColExpected.getInt(i))
+      // Read the batches to consume the cache
+      assert(batches.hasNext)
+      assert(defaultBatches.hasNext)
+      val cb = batches.next()
+      val expectedCb = defaultBatches.next()
+      val hostCol = cb.column(0)
+      val hostColExpected = expectedCb.column(0)
+      assert(cb.numRows() == 10)
+      for (i <- 0 until 10) {
+        assert(hostCol.isNullAt(i) == hostColExpected.isNullAt(i))
+        if (!hostCol.isNullAt(i)) {
+          assert(hostCol.getInt(i) == hostColExpected.getInt(i))
+        }
       }
+      assert(!batches.hasNext)
+      assert(!defaultBatches.hasNext)
+    } finally {
+      toClose.foreach(cb => cb.close())
+      TrampolineUtil.unsetTaskContext()
     }
-    assert(!batches.hasNext)
-    assert(!defaultBatches.hasNext)
-    toClose.foreach(cb => cb.close())
   }
 
   val ROWS = 3 * 1024 * 1024
