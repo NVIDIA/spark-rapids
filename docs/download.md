@@ -74,10 +74,9 @@ New functionality and performance improvements for this release include:
 * Support rlike function with line anchor input
 * Improve the performance of ORC small file reads
 * Qualification and Profiling tool:
-  * Qualification tool support Databricks Azure now.
-  * Improve Qualification tool to not require a live cluster, and only rely on READ permission.
-  * Improve Profiling tool to not require a live cluster, and only rely on READ permission.
-  * Improve Profiling tool recommendations to support more tuning options.
+  * Qualification tool support for Azure Databricks
+  * The Qualification and Profiling tools do not require a live cluster, and only require read permissions on clusters
+  * Improve Profiling tool recommendations to support more tuning options
   
   
 For a detailed list of changes, please refer to the
