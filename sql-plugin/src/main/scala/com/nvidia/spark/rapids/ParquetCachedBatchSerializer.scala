@@ -40,6 +40,7 @@ import org.apache.parquet.hadoop.ParquetFileWriter.Mode
 import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream}
+import org.apache.parquet.schema.InvalidSchemaException
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -1078,7 +1079,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         if (!queue.isEmpty) {
           queue.dequeue()
         } else {
-          throw new IllegalStateException("Queue is empty")
+          throw new IllegalStateException("Encountered an empty batch")
         }
       }
 
@@ -1096,17 +1097,17 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           val outputFile: OutputFile = new ByteArrayOutputFile(stream)
           conf.setConfString(SparkShimImpl.parquetRebaseWriteKey,
             LegacyBehaviorPolicy.CORRECTED.toString)
-          val schemaSize = DataType.fromJson(hadoopConf.get(ParquetWriteSupport.SPARK_ROW_SCHEMA))
-            .asInstanceOf[StructType].size
-          if (schemaSize == 0) {
-            // The schema is empty, most probably it is because of the edge case where there
-            // are no columns in the Dataframe but has rows so let's create an CachedBatch with
-            // rows
-            queue += new ParquetCachedBatch(rowIterator.size, new Array[Byte](0))
-            return queue
-          }
-          val recordWriter = SQLConf.withExistingConf(conf) {
-            parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
+          val recordWriter = try {
+            SQLConf.withExistingConf(conf) {
+              parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
+            }
+          } catch {
+            case _: InvalidSchemaException =>
+              // The schema is invalid, most probably it is because of the edge case where there
+              // are no columns in the Dataframe but has rows so let's create an CachedBatch with
+              // rows
+              queue += new ParquetCachedBatch(rowIterator.size, new Array[Byte](0))
+              return queue
           }
           var totalSize = 0
           while ((rowIterator.hasNext || leftOverRow.nonEmpty)
