@@ -1192,7 +1192,6 @@ def test_window_aggs_for_rows_collect_set():
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 

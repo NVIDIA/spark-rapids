@@ -259,6 +259,7 @@ object GpuFileFormatWriter extends Logging {
         rdd
       }
 
+      // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
       sparkSession.sparkContext.runJob(

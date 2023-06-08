@@ -528,8 +528,6 @@ class GpuHashAggregateIterator(
       boundFinalProjections: Option[Seq[GpuExpression]],
       boundResultReferences: Seq[Expression])
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val boundExpressions = setupReferences()
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
@@ -541,6 +539,8 @@ class GpuHashAggregateIterator(
 
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
+
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     sortFallbackIter.map(_.hasNext).getOrElse {
@@ -849,7 +849,7 @@ class GpuHashAggregateIterator(
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val finalProjections = groupingExpressions ++
+      val finalProjections = groupingAttributes ++
           aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
       Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
