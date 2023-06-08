@@ -23,12 +23,20 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.internal.config.ConfigEntry
 
 object RapidsPrivateUtil {
+
+  private lazy val extraConfigs = 
+    getPrivateConfigs("spark-rapids-extra-configs-classes", isStartup = false)
+  private lazy val extraStartupConfigs = 
+    getPrivateConfigs("spark-rapids-extra-startup-configs-classes", isStartup = true)
+
+  val commonConfigKeys = List("filecache.enabled")
+
   def getPrivateConfigs(): Seq[ConfEntry[_]] = {
-    getPrivateConfigs("spark-rapids-extra-configs-classes", isStartup=false) ++
-        getPrivateConfigs("spark-rapids-extra-startup-configs-classes", isStartup=true)
+    extraConfigs ++ extraStartupConfigs
   }
 
   private def getPrivateConfigs(resourceName: String, isStartup: Boolean): Seq[ConfEntry[_]] = {
+    // Will register configs, call this at most once for each resource
     withResource(Source.fromResource(resourceName).bufferedReader()) { r =>
       val className = r.readLine().trim
       Class.forName(className)
@@ -39,20 +47,25 @@ object RapidsPrivateUtil {
     }
   }
 
+  private def isCommonlyUsed(confName: String): Boolean = {
+    commonConfigKeys.exists(key => confName.contains(key))
+  }
+
   /** Convert Spark ConfigEntry to Spark RAPIDS ConfEntry */
   private def convert(e: ConfigEntry[_], isStartup: Boolean): ConfEntry[_] = {
+    val isCommonly = isCommonlyUsed(e.key)
     e.defaultValue match {
-      case None => createEntry[String](e.key, e.doc, _.toString, isStartup)
+      case None => createEntry[String](e.key, e.doc, _.toString, isStartup, isCommonly)
       case Some(value: Boolean) =>
-        createEntryWithDefault[Boolean](e.key, e.doc, _.toBoolean, value, isStartup)
+        createEntryWithDefault[Boolean](e.key, e.doc, _.toBoolean, value, isStartup, isCommonly)
       case Some(value: Integer) =>
-        createEntryWithDefault[Integer](e.key, e.doc, _.toInt, value, isStartup)
+        createEntryWithDefault[Integer](e.key, e.doc, _.toInt, value, isStartup, isCommonly)
       case Some(value: Long) =>
-        createEntryWithDefault[Long](e.key, e.doc, _.toLong, value, isStartup)
+        createEntryWithDefault[Long](e.key, e.doc, _.toLong, value, isStartup, isCommonly)
       case Some(value: Double) =>
-        createEntryWithDefault[Double](e.key, e.doc, _.toDouble, value, isStartup)
+        createEntryWithDefault[Double](e.key, e.doc, _.toDouble, value, isStartup, isCommonly)
       case Some(value: String) =>
-        createEntryWithDefault[String](e.key, e.doc, _.toString, value, isStartup)
+        createEntryWithDefault[String](e.key, e.doc, _.toString, value, isStartup, isCommonly)
       case Some(other) => throw new IllegalStateException(
         s"Unsupported private config defaultValue type: $other")
     }
@@ -63,16 +76,19 @@ object RapidsPrivateUtil {
       doc: String,
       converter: String => T,
       value: T,
-      isStartup: Boolean) = {
+      isStartup: Boolean,
+      isCommonly: Boolean) = {
     new ConfEntryWithDefault[T](key, converter, doc, isInternal = false,
-      isStartupOnly = isStartup, value)
+      isStartupOnly = isStartup, isCommonlyUsed = isCommonly, defaultValue = value)
   }
 
   private def createEntry[T](
       key: String,
       doc: String,
       converter: String => T,
-      isStartup: Boolean) = {
-    new OptionalConfEntry[T](key, converter, doc, isInternal = false, isStartupOnly = isStartup)
+      isStartup: Boolean,
+      isCommonly: Boolean) = {
+    new OptionalConfEntry[T](key, converter, doc, isInternal = false, isStartupOnly = isStartup,
+      isCommonlyUsed = isCommonly)
   }
 }
