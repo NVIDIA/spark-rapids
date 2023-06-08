@@ -40,7 +40,6 @@ import org.apache.parquet.hadoop.ParquetFileWriter.Mode
 import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream}
-import org.apache.parquet.schema.InvalidSchemaException
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -1097,17 +1096,17 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           val outputFile: OutputFile = new ByteArrayOutputFile(stream)
           conf.setConfString(SparkShimImpl.parquetRebaseWriteKey,
             LegacyBehaviorPolicy.CORRECTED.toString)
-          val recordWriter = try {
-            SQLConf.withExistingConf(conf) {
-              parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
-            }
-          } catch {
-            case _: InvalidSchemaException =>
-              // The schema is invalid, most probably it is because of the edge case where there
-              // are no columns in the Dataframe but has rows so let's create an CachedBatch with
-              // rows
-              queue += new ParquetCachedBatch(rowIterator.size, new Array[Byte](0))
-              return queue
+          val noSchema = hadoopConf.get(ParquetWriteSupport.SPARK_ROW_SCHEMA)
+            .contains("\"fields\":[]")
+          if (noSchema) {
+            // The schema is invalid, most probably it is because of the edge case where there
+            // are no columns in the Dataframe but has rows so let's create an CachedBatch with
+            // rows
+            queue += new ParquetCachedBatch(rowIterator.size, new Array[Byte](0))
+            return queue
+          }
+          val recordWriter = SQLConf.withExistingConf(conf) {
+            parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
           }
           var totalSize = 0
           while ((rowIterator.hasNext || leftOverRow.nonEmpty)
