@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -528,8 +528,6 @@ class GpuHashAggregateIterator(
       boundFinalProjections: Option[Seq[GpuExpression]],
       boundResultReferences: Seq[Expression])
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val boundExpressions = setupReferences()
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
@@ -541,6 +539,8 @@ class GpuHashAggregateIterator(
 
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
+
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     sortFallbackIter.map(_.hasNext).getOrElse {
@@ -849,7 +849,7 @@ class GpuHashAggregateIterator(
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val finalProjections = groupingExpressions ++
+      val finalProjections = groupingAttributes ++
           aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
       Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
@@ -930,11 +930,13 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def tagPlanForGpu(): Unit = {
     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
     // we need to run recursive type check on the structs.
-    val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
+    val listTypeGroupings = agg.groupingExpressions.exists(e =>
       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
-    if (arrayOrMapGroupings) {
-      willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
+        dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]
+          || dt.isInstanceOf[BinaryType]))
+    if (listTypeGroupings) {
+      willNotWorkOnGpu("ArrayType, MapType, or BinaryType " +
+        "in grouping expressions are not supported")
     }
 
     tagForReplaceMode()

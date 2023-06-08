@@ -117,31 +117,29 @@ class SerializeConcatHostBuffersDeserializeBatch(
       }
       assert(headers.length <= 1 && buffers.length <= 1)
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
-        try {
-          val res = if (headers.isEmpty) {
-            SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
+        val res = if (headers.isEmpty) {
+          SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
             SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          } else {
-            withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
-              tableInfo =>
-                val table = tableInfo.getContiguousTable
-                if (table == null) {
-                  val numRows = tableInfo.getNumRows
-                  SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
-                    SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-                } else {
-                  SpillableColumnarBatch(table, dataTypes, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-                }
-            }
+        } else {
+          withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
+            tableInfo =>
+              val table = tableInfo.getContiguousTable
+              if (table == null) {
+                val numRows = tableInfo.getNumRows
+                SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
+                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              } else {
+                SpillableColumnarBatch(table, dataTypes, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              }
           }
-          batchInternal = res
-          res
-        } finally {
-          // At this point we no longer need the host data and should not need to touch it again.
-          buffers.safeClose()
-          headers = null
-          buffers = null
         }
+        batchInternal = res
+        // We don't need them any more, and we don't want to close it on an exception
+        // in case we need to retry it
+        buffers.safeClose()
+        headers = null
+        buffers = null
+        res
       }
     }
   }

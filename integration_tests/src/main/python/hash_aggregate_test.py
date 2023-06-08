@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -552,12 +552,12 @@ _full_repeat_agg_column_for_collect_op = [
 _gen_data_for_collect_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen),
-    ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op]
+    ('c', UniqueLongGen())] for value_gen in _repeat_agg_column_for_collect_op]
 
 _full_gen_data_for_collect_op = _gen_data_for_collect_op + [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen),
-    ('c', LongRangeGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
+    ('c', UniqueLongGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
 
 _repeat_agg_column_for_collect_list_op = [
         RepeatSeqGen(ArrayGen(int_gen), length=15),
@@ -672,7 +672,6 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
@@ -714,7 +713,6 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
-        "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
@@ -877,7 +875,7 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
 def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
         non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
         table_name='table',
@@ -1062,7 +1060,7 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample + [binary_gen]
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_first_last_reductions_decimal_types(data_gen):
@@ -1195,6 +1193,19 @@ def test_agg_count(data_gen, count_func):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
                               length=1024).groupBy('a').agg(count_func("b")))
+
+# Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
+# Have pytest do the sorting rather than Spark as a workaround.
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+               'HashPartitioning', 'ShuffleExchangeExec', 'Count')
+@pytest.mark.parametrize('data_gen', array_gens_sample + [binary_gen], ids=idfn)
+@pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
+def test_groupby_list_types_fallback(data_gen, count_func):
+    assert_gpu_fallback_collect(
+        lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
+                              length=1024).groupBy('a').agg(count_func("b")),
+        "HashAggregateExec")
 
 def subquery_create_temp_views(spark, expr):
     t1 = "select * from values (1,2) as t1(a,b)"
@@ -1413,7 +1424,7 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
@@ -1422,7 +1433,7 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
@@ -1431,7 +1442,7 @@ def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         0.5, conf)
 
 @incompat
@@ -1863,3 +1874,12 @@ def test_min_max_for_single_level_struct(data_gen):
         "hash_agg_table",
         'select min(a) from hash_agg_table',
         _float_conf)
+
+# Some Spark implementations will optimize this aggregation as a
+# complete aggregation (i.e.: only one aggregation node in the plan)
+@ignore_order(local=True)
+def test_hash_aggregate_complete_with_grouping_expressions():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : spark.range(10).withColumn("id2", f.col("id")),
+        "hash_agg_complete_table",
+        "select id, avg(id) from hash_agg_complete_table group by id, id2 + 1")

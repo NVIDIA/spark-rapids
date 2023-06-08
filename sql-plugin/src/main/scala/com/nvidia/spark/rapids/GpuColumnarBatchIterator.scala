@@ -95,7 +95,7 @@ class SingleGpuColumnarBatchIterator(private var batch: ColumnarBatch)
  * @param partSchema the partition schema
  */
 class GpuColumnarBatchWithPartitionValuesIterator(
-    inputIter: GpuColumnarBatchIterator,
+    inputIter: Iterator[ColumnarBatch],
     partValues: Array[InternalRow],
     partRowNums: Array[Long],
     partSchema: StructType) extends Iterator[ColumnarBatch] {

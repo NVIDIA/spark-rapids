@@ -928,13 +928,9 @@ object GpuOverrides extends Logging {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
-        Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
-          TypeSig.all),
+        TypeSig.all,
+        Seq(ParamCheck("windowFunction", TypeSig.all, TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64,
             TypeSig.numericAndInterval))),
@@ -1985,15 +1981,11 @@ object GpuOverrides extends Logging {
       }),
     expr[AggregateExpression](
       "Aggregate expression",
+      // Let the underlying expression checks decide whether this can be on the GPU.
       ExprChecks.fullAgg(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all,
-        Seq(ParamCheck(
-          "aggFunc",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-              TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-          TypeSig.all)),
+        TypeSig.all,
+        Seq(ParamCheck("aggFunc", TypeSig.all, TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
         private val filter: Option[BaseExprMeta[_]] =
@@ -2158,11 +2150,11 @@ object GpuOverrides extends Logging {
     expr[NthValue](
       "nth window operator",
       ExprChecks.windowOnly(
-        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
         TypeSig.all,
         Seq(ParamCheck("input",
-          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
           TypeSig.all),
           ParamCheck("offset", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT)))
@@ -2177,11 +2169,11 @@ object GpuOverrides extends Logging {
     expr[First](
       "first aggregate operator",
       ExprChecks.fullAgg(
-        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
         TypeSig.all,
         Seq(ParamCheck("input",
-          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
           TypeSig.all))
       ),
@@ -2195,11 +2187,11 @@ object GpuOverrides extends Logging {
     expr[Last](
     "last aggregate operator",
       ExprChecks.fullAgg(
-        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
         TypeSig.all,
         Seq(ParamCheck("input",
-          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
           TypeSig.all))
       ),
@@ -3186,11 +3178,11 @@ object GpuOverrides extends Logging {
     expr[CollectList](
       "Collect a list of non-unique elements, not supported in reduction",
       ExprChecks.fullAgg(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
               TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
@@ -3878,13 +3870,13 @@ object GpuOverrides extends Logging {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP, TypeEnum.BINARY),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
-              "not allowed for grouping expressions if containing Array or Map as child"),
+              "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[ObjectHashAggregateExec](
@@ -3895,12 +3887,12 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
-            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
-              "converted between CPU and GPU")
+            .withPsNote(TypeEnum.BINARY, "not allowed for grouping expressions and " +
+              "only allowed when aggregate buffers can be converted between CPU and GPU")
             .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
-              "not allowed for grouping expressions if containing Array or Map as child"),
+              "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
     exec[ShuffledHashJoinExec](
@@ -3913,12 +3905,12 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
-            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
-              "converted between CPU and GPU")
+            .withPsNote(TypeEnum.BINARY, "not allowed for grouping expressions and " +
+              "only allowed when aggregate buffers can be converted between CPU and GPU")
             .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
-              "not allowed for grouping expressions if containing Array or Map as child"),
+              "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
     exec[SortExec](
@@ -3942,7 +3934,7 @@ object GpuOverrides extends Logging {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY).nested(),
         TypeSig.all,
         Map("partitionSpec" ->
             InputCheck(

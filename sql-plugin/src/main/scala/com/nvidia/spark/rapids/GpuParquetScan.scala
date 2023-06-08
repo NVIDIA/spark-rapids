@@ -38,7 +38,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy}
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.ParquetFooter
+import com.nvidia.spark.rapids.jni.{ParquetFooter, SplitAndRetryOOM}
 import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
@@ -305,6 +305,29 @@ object GpuParquetScan {
     }
   }
 
+  private[this] val minTargetBatchSizeMiB = 10
+
+  /**
+   * Check that we can split the targetBatchSize and then return a split targetBatchSize. This
+   * is intended to be called from the SplitAndRetryOOM handler for all implementations of
+   * the parquet reader
+   * @param targetBatchSize the current target batch size.
+   * @param useChunkedReader if chunked reading is enabled. This only works if chunked reading is
+   *                       enabled.
+   * @return the updated target batch size.
+   */
+  def splitTargetBatchSize(targetBatchSize: Long, useChunkedReader: Boolean): Long = {
+      if (!useChunkedReader) {
+      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
+          "chunked parquet reader is configured off")
+    }
+    val ret = targetBatchSize / 2
+    if (targetBatchSize < minTargetBatchSizeMiB * 1024 * 1024) {
+           throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
+          s"target batch size to less than $minTargetBatchSizeMiB MiB")
+    }
+    ret
+  }
 }
 
 /**
@@ -1123,11 +1146,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       }.getOrElse(rapidsConf.getMultithreadedCombineThreshold)
   private val combineWaitTime =
     RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME.get(sqlConf)
-      .map {
+      .map { f =>
         logWarning(s"${RapidsConf.PARQUET_MULTITHREADED_COMBINE_WAIT_TIME} is deprecated, " +
           s"use ${RapidsConf.READER_MULTITHREADED_COMBINE_WAIT_TIME} instead. But for now " +
           "the deprecated one will be honored if both are set.")
-        _.intValue()
+        f.intValue()
       }.getOrElse(rapidsConf.getMultithreadedCombineWaitTime)
   private val keepReadsInOrderFromConf =
     RapidsConf.PARQUET_MULTITHREADED_READ_KEEP_ORDER.get(sqlConf)
@@ -1957,6 +1980,18 @@ class MultiFileParquetPartitionReader(
 
   override final def getFileFormatShortName: String = "Parquet"
 
+  private var currentTargetBatchSize = targetBatchSizeBytes
+
+  override final def chunkedSplit(buffer: HostMemoryBuffer): Seq[HostMemoryBuffer] = {
+    currentTargetBatchSize =
+      GpuParquetScan.splitTargetBatchSize(currentTargetBatchSize, useChunkedReader)
+    Seq(buffer)
+  }
+
+  override final def startNewBufferRetry(): Unit = {
+    currentTargetBatchSize = targetBatchSizeBytes
+  }
+
   override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
       clippedSchema: SchemaBase, readDataSchema: StructType,
       extraInfo: ExtraInfo): GpuDataProducer[Table] = {
@@ -1969,7 +2004,7 @@ class MultiFileParquetPartitionReader(
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes, parseOpts,
+    MakeParquetTableProducer(useChunkedReader, conf, currentTargetBatchSize, parseOpts,
       dataBuffer, 0, dataSize, metrics,
       extraInfo.isCorrectedInt96RebaseMode, extraInfo.isCorrectedRebaseMode,
       extraInfo.hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
@@ -2535,11 +2570,18 @@ class MultiFileCloudParquetPartitionReader(
     }
     val colTypes = readDataSchema.fields.map(f => f.dataType)
 
-    RmmRapidsRetryIterator.withRetryNoSplit(hostBuffer) { _ =>
+    var currentTargetBatchSize = targetBatchSizeBytes
+    val splitBatchSizePolicy: HostMemoryBuffer => Seq[HostMemoryBuffer] = hostBuffer => {
+      currentTargetBatchSize =
+        GpuParquetScan.splitTargetBatchSize(currentTargetBatchSize, useChunkedReader)
+      Seq(hostBuffer)
+    }
+
+    RmmRapidsRetryIterator.withRetry(hostBuffer, splitBatchSizePolicy) { _ =>
       // The MakeParquetTableProducer will close the input buffer, and that would be bad
       // because we don't want to close it until we know that we are done with it
       hostBuffer.incRefCount()
-      val tableReader = MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes,
+      val tableReader = MakeParquetTableProducer(useChunkedReader, conf, currentTargetBatchSize,
         parseOpts,
         hostBuffer, 0, dataSize, metrics,
         isCorrectInt96RebaseMode, isCorrectRebaseMode, hasInt96Timestamps,
@@ -2561,7 +2603,7 @@ class MultiFileCloudParquetPartitionReader(
           addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
         }
       }
-    }
+    }.flatten
   }
 }
 

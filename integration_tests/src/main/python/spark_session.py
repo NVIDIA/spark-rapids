@@ -38,7 +38,6 @@ _orig_conf_keys = _orig_conf.keys()
 _default_conf = {
     'spark.ansi.enabled': 'false',
     'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
-    'spark.rapids.sql.castDecimalToString.enabled': 'false',
     'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
     'spark.rapids.sql.castFloatToString.enabled': 'false',
@@ -190,6 +189,9 @@ def is_databricks104_or_later():
 
 def is_databricks113_or_later():
     return is_databricks_version_or_later(11, 3)
+
+def is_databricks122_or_later():
+    return is_databricks_version_or_later(12, 2)
 
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")

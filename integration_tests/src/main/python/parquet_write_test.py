@@ -20,7 +20,8 @@ from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, is_databricks_runtime, is_before_spark_340, is_spark_340_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, \
+    is_databricks_runtime, is_before_spark_340, is_spark_340_or_later, is_databricks122_or_later
 
 import pyspark.sql.functions as f
 import pyspark.sql.utils
@@ -165,7 +166,7 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
 
-@pytest.mark.skipif(is_spark_340_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
+@pytest.mark.skipif(is_spark_340_or_later() or is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 @pytest.mark.allow_non_gpu("DataWritingCommandExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):
@@ -181,7 +182,7 @@ def test_int96_write_conf(spark_tmp_path, data_gen):
         ['DataWritingCommandExec'],
         confs)
 
-@pytest.mark.skipif(is_before_spark_340(), reason="`WriteFilesExec` is only supported in Spark 340+")
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 # Note: From Spark 340, WriteFilesExec is introduced.
 @pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
@@ -479,7 +480,7 @@ def test_roundtrip_with_rebase_values(spark_tmp_path, ts_write_data_gen, date_ti
         conf=all_confs)
 
 
-test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]
+test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() or is_databricks122_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]
 
 @pytest.mark.allow_non_gpu(*test_non_empty_ctas_non_gpu_execs)
 @pytest.mark.parametrize('allow_non_empty', [True, False])

@@ -15,12 +15,9 @@
  */
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable
-
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -29,7 +26,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan}
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuExpandExecMeta(
@@ -53,7 +49,7 @@ class GpuExpandExecMeta(
   override def convertToGpu(): GpuExec = {
     val projections = gpuProjections.map(_.map(_.convertToGpu()))
     GpuExpandExec(projections, expand.output,
-      childPlans.head.convertIfNeeded())
+      childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
   }
 }
 
@@ -69,8 +65,11 @@ class GpuExpandExecMeta(
 case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
     output: Seq[Attribute],
-    child: SparkPlan)
-    extends ShimUnaryExecNode with GpuExec {
+    child: SparkPlan)(
+    useTieredProject: Boolean = false) extends ShimUnaryExecNode with GpuExec {
+
+  override def otherCopyArgs: Seq[AnyRef] =
+    Seq[AnyRef](useTieredProject.asInstanceOf[java.lang.Boolean])
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -88,8 +87,9 @@ case class GpuExpandExec(
     AttributeSet(projections.flatten.flatMap(_.references))
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val boundProjections: Seq[Seq[GpuExpression]] =
-      projections.map(GpuBindReferences.bindGpuReferences(_, child.output))
+    val boundProjections = projections.map { pl =>
+      GpuBindReferences.bindGpuReferencesTiered(pl, child.output, useTieredProject)
+    }
 
     // cache in a local to avoid serializing the plan
     val metricsMap = allMetrics
@@ -106,12 +106,12 @@ case class GpuExpandExec(
 }
 
 class GpuExpandIterator(
-    boundProjections: Seq[Seq[GpuExpression]],
+    boundProjections: Seq[GpuTieredProject],
     metrics: Map[String, GpuMetric],
     it: Iterator[ColumnarBatch])
   extends Iterator[ColumnarBatch] {
 
-  private var cb: ColumnarBatch = _
+  private var sb: Option[SpillableColumnarBatch] = None
   private var projectionIndex = 0
   private val numInputBatches = metrics(NUM_INPUT_BATCHES)
   private val numOutputBatches = metrics(NUM_OUTPUT_BATCHES)
@@ -120,55 +120,22 @@ class GpuExpandIterator(
   private val opTime = metrics(OP_TIME)
 
   Option(TaskContext.get())
-    .foreach(_.addTaskCompletionListener[Unit](_ => Option(cb).foreach(_.close())))
+    .foreach(_.addTaskCompletionListener[Unit](_ => sb.foreach(_.close())))
 
-  override def hasNext: Boolean = cb != null || it.hasNext
+  override def hasNext: Boolean = sb.isDefined || it.hasNext
 
   override def next(): ColumnarBatch = {
 
-    if (cb == null) {
-      cb = it.next()
+    if (sb.isEmpty) {
+      val cb = it.next()
       numInputBatches += 1
       numInputRows += cb.numRows()
+      sb = Some(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     }
-
-    val uniqueDeviceColumns = mutable.ListBuffer[GpuColumnVector]()
 
     val projectedBatch = withResource(new NvtxWithMetrics(
       "ExpandExec projections", NvtxColor.GREEN, opTime)) { _ =>
-
-      // ExpandExec typically produces many null columns so we re-use them where possible
-      val nullCVs = mutable.Map[DataType, GpuColumnVector]()
-
-      /**
-       * Create a null column vector for the specified data type, returning the vector and
-       * a boolean indicating whether an existing vector was re-used.
-       */
-      def getOrCreateNullCV(dataType: DataType): (GpuColumnVector, Boolean) = {
-        nullCVs.get(dataType) match {
-          case Some(cv) =>
-            (cv.incRefCount(), true)
-          case None =>
-            val cv = GpuColumnVector.fromNull(cb.numRows(), dataType)
-            nullCVs.put(dataType, cv)
-            (cv, false)
-        }
-      }
-
-      val projectedColumns = boundProjections(projectionIndex).safeMap(fn = expr => {
-        val sparkType = expr.dataType
-        val (cv, nullColumnReused) = expr.columnarEval(cb) match {
-          case null => getOrCreateNullCV(sparkType)
-          case other =>
-            (GpuExpressionsUtils.resolveColumnVector(other, cb.numRows), false)
-        }
-        if (!nullColumnReused) {
-          uniqueDeviceColumns += cv
-        }
-        cv
-      })
-
-      new ColumnarBatch(projectedColumns.toArray, cb.numRows())
+      boundProjections(projectionIndex).projectWithRetrySingleBatch(sb.get)
     }
 
     numOutputBatches += 1
@@ -179,11 +146,9 @@ class GpuExpandIterator(
       // we have processed all projections against the current batch
       projectionIndex = 0
 
-      cb.close()
-      cb = null
+      sb.foreach(_.close())
+      sb = None
     }
-
     projectedBatch
   }
-
 }
