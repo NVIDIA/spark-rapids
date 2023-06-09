@@ -20,9 +20,9 @@ import java.time.DateTimeException
 import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
-import scala.math.max
 
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
@@ -73,7 +73,7 @@ object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
  * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
  * the lines.
  */
-class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
   private var buffer = HostMemoryBuffer.allocate(size)
   private var location: Long = 0
 
@@ -127,7 +127,7 @@ object HostStringColBuffererFactory extends LineBuffererFactory[HostStringColBuf
 /**
  * Buffer the lines as a HostColumnVector of strings, one per line.
  */
-class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
   // We had to jump through some hoops so that we could grow the string columns dynamically
   //  might be nice to have this in CUDF, but this works fine too.
   private var dataBuffer = HostMemoryBuffer.allocate(size)
@@ -210,14 +210,13 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric],
     bufferFactory: FACT)
-  extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
+  extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
   import GpuMetric._
 
   private var batch: Option[ColumnarBatch] = None
   private val lineReader = new HadoopFileLinesReader(partFile, lineSeparatorInRead, conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
-  private var maxDeviceMemory: Long = 0
 
   metrics = execMetrics
 
@@ -325,7 +324,6 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         // The buffer that is sent down
         val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk,
             metrics(GPU_DECODE_TIME))
-        maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
         // parse boolean and numeric columns that were read as strings
         val castTable = withResource(table) { _ =>
@@ -593,7 +591,6 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   override def next(): Boolean = {
     batch.foreach(_.close())
     batch = if (isExhausted) {
-      metrics(PEAK_DEVICE_MEMORY).set(maxDeviceMemory)
       None
     } else {
       readBatch()

@@ -21,6 +21,7 @@ import java.io.OutputStream
 import scala.collection.mutable
 
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -64,7 +65,7 @@ abstract class ColumnarOutputWriterFactory extends Serializable {
 abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     dataSchema: StructType,
     rangeName: String,
-    includeRetry: Boolean) extends HostBufferConsumer with Arm {
+    includeRetry: Boolean) extends HostBufferConsumer {
 
   val tableWriter: TableWriter
   val conf = context.getConfiguration
@@ -155,6 +156,9 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
+  /** Apply any necessary casts before writing batch out */
+  def transform(cb: ColumnarBatch): Option[ColumnarBatch] = None
+
   private[this] def writeBatchWithRetry(batch: ColumnarBatch): Long = {
     val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     RmmRapidsRetryIterator.withRetry(sb, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { sb =>
@@ -164,12 +168,20 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       }
       val startTimestamp = System.nanoTime
       withResource(sb.getColumnarBatch()) { cb =>
+        //TODO: we should really apply the transformations to cast timestamps
+        // to the expected types before spilling but we need a SpillableTable
+        // rather than a SpillableColumnBatch to be able to do that
+        // See https://github.com/NVIDIA/spark-rapids/issues/8262
         RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
           withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-            withResource(GpuColumnVector.from(cb)) { table =>
-              scanTableBeforeWrite(table)
-              anythingWritten = true
-              tableWriter.write(table)
+            transform(cb) match {
+              case Some(transformed) =>
+                // because we created a new transformed batch, we need to make sure we close it
+                withResource(transformed) { _ =>
+                  scanAndWrite(transformed)
+                }
+              case _ =>
+                scanAndWrite(cb)
             }
           }
         }
@@ -186,10 +198,14 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     try {
       val startTimestamp = System.nanoTime
       withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-        withResource(GpuColumnVector.from(batch)) { table =>
-          scanTableBeforeWrite(table)
-          anythingWritten = true
-          tableWriter.write(table)
+        transform(batch) match {
+          case Some(transformed) =>
+            // because we created a new transformed batch, we need to make sure we close it
+            withResource(transformed) { _ =>
+              scanAndWrite(transformed)
+            }
+          case _ =>
+            scanAndWrite(batch)
         }
       }
 
@@ -204,6 +220,14 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       if (needToCloseBatch) {
         batch.close()
       }
+    }
+  }
+
+  private def scanAndWrite(batch: ColumnarBatch): Unit = {
+    withResource(GpuColumnVector.from(batch)) { table =>
+      scanTableBeforeWrite(table)
+      anythingWritten = true
+      tableWriter.write(table)
     }
   }
 
@@ -245,7 +269,7 @@ object ColumnarOutputWriter {
         }
       }
     } finally {
-      toProcess.map { case (buffer, len) => buffer }.safeClose()
+      toProcess.map { case (buffer, _) => buffer }.safeClose()
     }
   }
 }

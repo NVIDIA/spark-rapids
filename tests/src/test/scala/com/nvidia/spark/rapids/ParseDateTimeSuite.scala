@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, RegexProgram}
+import com.nvidia.spark.rapids.Arm.withResource
 import java.sql.{Date, Timestamp}
 import org.scalatest.BeforeAndAfterEach
 import scala.collection.mutable.ListBuffer

@@ -22,6 +22,7 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.ExecutionContext
 
 import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
@@ -59,9 +60,6 @@ case class GpuBroadcastToRowExec(
 
   @transient
   override lazy val relationFuture: Future[Broadcast[Any]] = {
-    // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
-    val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
-
     // This will run in another thread. Set the execution id so that we can connect these jobs
     // with the correct execution.
     SQLExecution.withThreadLocalCaptured[Broadcast[Any]](
@@ -105,7 +103,7 @@ case class GpuBroadcastToRowExec(
         cb.rowIterator().asScala.map { row =>
           val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
           broadcastMode match {
-            case map @ HashedRelationBroadcastMode(_, _) =>
+            case HashedRelationBroadcastMode(_, _) =>
               broadcastRow.copy().asInstanceOf[InternalRow]
             case _ =>
               val idx = index.get

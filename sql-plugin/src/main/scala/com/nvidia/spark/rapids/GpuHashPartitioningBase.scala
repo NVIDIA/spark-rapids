@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, PartitionedTable}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -61,23 +62,26 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
   }
 }
 
-object GpuHashPartitioningBase extends Arm {
+object GpuHashPartitioningBase {
 
   val DEFAULT_HASH_SEED: Int = 42
 
   def hashPartitionAndClose(batch: ColumnarBatch, keys: Seq[Expression], numPartitions: Int,
       nvtxName: String, seed: Int = DEFAULT_HASH_SEED): PartitionedTable = {
-    withResource(batch) { batch =>
-      val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
-        withResource(GpuMurmur3Hash.compute(batch, keys, seed)) { hash =>
-          withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
-            hash.pmod(partsLit, DType.INT32)
+    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val parts = withResource(new NvtxRange(nvtxName, NvtxColor.CYAN)) { _ =>
+          withResource(GpuMurmur3Hash.compute(cb, keys, seed)) { hash =>
+            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+              hash.pmod(partsLit, DType.INT32)
+            }
           }
         }
-      }
-      withResource(parts) { parts =>
-        withResource(GpuColumnVector.from(batch)) { table =>
-          table.partition(parts, numPartitions)
+        withResource(parts) { parts =>
+          withResource(GpuColumnVector.from(cb)) { table =>
+            table.partition(parts, numPartitions)
+          }
         }
       }
     }

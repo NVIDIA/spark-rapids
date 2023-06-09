@@ -2415,7 +2415,7 @@ object GpuOverrides extends Logging {
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
             TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ordinal", TypeSig.INT, TypeSig.INT)),
+        ("ordinal", TypeSig.integral, TypeSig.integral)),
       (in, conf, p, r) => new BinaryExprMeta[GetArrayItem](in, conf, p, r) {
         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
           GpuGetArrayItem(arr, ordinal, in.failOnError)
@@ -2956,6 +2956,21 @@ object GpuOverrides extends Logging {
               target: Option[Expression] = None): GpuExpression =
             GpuStringTrimRight(column, target)
         }),
+    expr[StringTranslate](
+      "StringTranslate operator",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("input", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("from", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("to", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new TernaryExprMeta[StringTranslate](in, conf, p, r) {
+        override def convertToGpu(
+            input: Expression,
+            from: Expression,
+            to: Expression): GpuExpression =
+          GpuStringTranslate(input, from, to)
+      }).incompat("the GPU implementation supports all unicode code points. In Spark versions " +
+          "< 3.2.0, translate() does not support unicode characters with code point >= U+10000 " +
+          "(See SPARK-34094)"),
     expr[StartsWith](
       "Starts with",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
@@ -3259,7 +3274,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
-      ExprChecks.aggNotReduction(
+      ExprChecks.fullAgg(
           TypeSig.DOUBLE, TypeSig.DOUBLE,
           Seq(ParamCheck("input", TypeSig.DOUBLE,
             TypeSig.DOUBLE))),
@@ -3358,14 +3373,25 @@ object GpuOverrides extends Logging {
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
-        TypeSig.MAP.nested(TypeSig.STRING),
+        TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
+              "MAP only supports keys and values that are of STRING type") +
+          TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.INT),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
         override def tagExprForGpu(): Unit =
+          a.schema match {
+            case MapType(_: StringType, _: StringType, _) => ()
+            case MapType(kt, vt, _) => {
+              willNotWorkOnGpu("JsonToStructs only supports MapType<StringType, StringType> for " +
+                               s"input MapType schema, but received MapType<$kt, $vt>")
+            }
+            case _ => ()
+          }
           GpuJsonScan.tagJsonToStructsSupport(a.options, this)
 
         override def convertToGpu(child: Expression): GpuExpression =
+          // GPU implementation currently does not support duplicated json key names in input
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
@@ -3777,8 +3803,10 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
-        override def convertToGpu(): GpuExec =
-          GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
+        override def convertToGpu(): GpuExec = {
+          GpuFilterExec(childExprs.head.convertToGpu(),
+            childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
+        }
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
@@ -3843,7 +3871,8 @@ object GpuOverrides extends Logging {
             conf.gpuTargetBatchSizeBytes)
           // The GPU does not yet support conditional joins, so conditions are implemented
           // as a filter after the join when possible.
-          condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+          condition.map(c => GpuFilterExec(c.convertToGpu(),
+            joinExec)(useTieredProject = conf.isTieredProjectEnabled)).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import scala.language.implicitConversions
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.orc.TypeDescription
 
@@ -32,7 +33,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-object SchemaUtils extends Arm {
+object SchemaUtils {
   // Parquet field ID metadata key
   val FIELD_ID_METADATA_KEY = "parquet.field.id"
 
@@ -91,7 +92,7 @@ object SchemaUtils extends Arm {
       tableSchema: StructType,
       readSchema: StructType,
       isCaseSensitive: Boolean,
-      castFunc: Option[(ColumnView, DataType) => ColumnView] = None,
+      castFunc: Option[(ColumnView, DataType, DataType) => ColumnView] = None,
       needCast: Boolean = false): Table = {
     // Schema evolution is needed when
     //   1) there are columns with precision can be stored in an int, or
@@ -137,7 +138,7 @@ object SchemaUtils extends Arm {
   private def evolveColumnRecursively(
       col: ColumnView, colType: DataType, targetType: DataType,
       isCaseSensitive: Boolean, toClose: ArrayBuffer[ColumnView],
-      castFunc: Option[(ColumnView, DataType) => ColumnView],
+      castFunc: Option[(ColumnView, DataType, DataType) => ColumnView],
       needCast: Boolean): ColumnView = {
     // An util function to add a view to the buffer "toClose".
     val addToClose = (v: ColumnView) => {
@@ -216,8 +217,12 @@ object SchemaUtils extends Arm {
       case (fromDec: DecimalType, toDec: DecimalType) if fromDec == toDec &&
           !GpuColumnVector.getNonNestedRapidsType(fromDec).equals(col.getType) =>
         col.castTo(DecimalUtil.createCudfDecimal(fromDec))
+      case (fromChar: CharType, toStringType: StringType) =>
+        castFunc.map(f => f(col, toStringType, fromChar))
+          .getOrElse(throw new QueryExecutionException("Casting function is missing for " +
+            s"type conversion from $colType to $targetType"))
       case _ if !GpuColumnVector.getNonNestedRapidsType(targetType).equals(col.getType) =>
-        castFunc.map(f => f(col, targetType))
+        castFunc.map(f => f(col, targetType, colType))
           .getOrElse(throw new QueryExecutionException("Casting function is missing for " +
             s"type conversion from $colType to $targetType"))
       case _ => col

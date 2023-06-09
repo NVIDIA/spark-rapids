@@ -23,8 +23,8 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -155,7 +155,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     val input = if (isPreNeeded) {
-      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())
+      GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())()
     } else {
       childPlans.head.convertIfNeeded()
     }
@@ -177,7 +177,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     if (isPostNeeded) {
-      GpuProjectExec(post.toList, windowExpr)
+      GpuProjectExec(post.toList, windowExpr)()
     } else {
       windowExpr
     }
@@ -291,7 +291,7 @@ case class BatchedOps(running: Seq[NamedExpression],
   def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
 }
 
-object GpuWindowExec extends Arm {
+object GpuWindowExec {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
@@ -582,7 +582,7 @@ case class AggAndReplace[T](agg: T, nullReplacePolicy: Option[ReplacePolicy])
  */
 case class BoundGpuWindowFunction(
     windowFunc: GpuWindowFunction,
-    boundInputLocations: Array[Int]) extends Arm {
+    boundInputLocations: Array[Int]) {
 
   /**
    * Get the operations to perform a scan aggregation.
@@ -638,7 +638,7 @@ case class BoundGpuWindowFunction(
 
 case class ParsedBoundary(isUnbounded: Boolean, value: Either[BigInt, Long])
 
-object GroupedAggregations extends Arm {
+object GroupedAggregations {
   /**
    * Get the window options for an aggregation
    * @param orderSpec the order by spec
@@ -683,13 +683,21 @@ object GroupedAggregations extends Arm {
             if (preceding.isEmpty) {
               windowOptionBuilder.unboundedPreceding()
             } else {
-              windowOptionBuilder.preceding(preceding.get)
+              if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
+                windowOptionBuilder.currentRowPreceding()
+              } else {
+                windowOptionBuilder.preceding(preceding.get)
+              }
             }
 
             if (following.isEmpty) {
               windowOptionBuilder.unboundedFollowing()
             } else {
-              windowOptionBuilder.following(following.get)
+              if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
+                windowOptionBuilder.currentRowFollowing()
+              } else {
+                windowOptionBuilder.following(following.get)
+              }
             }
 
             if (orderExpr.isAscending) {
@@ -762,6 +770,9 @@ object GroupedAggregations extends Arm {
           Scalar.fromDecimal(x.getScale, valueLong.get)
         case x if x.getTypeId == DType.DTypeEnum.DECIMAL128 =>
           Scalar.fromDecimal(x.getScale, bound.value.left.get.underlying())
+        case x if x.getTypeId == DType.DTypeEnum.STRING =>
+          // Not UNBOUNDED. The only other supported boundary for String is CURRENT ROW, i.e. 0.
+          Scalar.fromString("")
         case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
       }
       Some(s)
@@ -812,7 +823,7 @@ object GroupedAggregations extends Arm {
  * Window aggregations that are grouped together. It holds the aggregation and the offsets of
  * its input columns, along with the output columns it should write the result to.
  */
-class GroupedAggregations extends Arm {
+class GroupedAggregations {
   import GroupedAggregations._
 
   // The window frame to a map of the window function to the output locations for the result
@@ -1114,36 +1125,15 @@ class GroupedAggregations extends Arm {
    * Do all of the aggregations and put them in the output columns. There may be extra processing
    * after this before you get to a final result.
    */
-  def doAggsAndClose(isRunningBatched: Boolean,
+  def doAggs(isRunningBatched: Boolean,
       boundOrderSpec: Seq[SortOrder],
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
-      inputSpillable: SpillableColumnarBatch,
+      inputCb: ColumnarBatch,
       outputColumns: Array[cudf.ColumnVector]): Unit = {
-    withRetryNoSplit(inputSpillable) { attempt =>
-      // when there are exceptions in this body, we always want to close
-      // `outputColumns` before a likely retry.
-      try {
-        withResource(attempt.getColumnarBatch()) { attemptCb =>
-          doRunningWindowOptimizedAggs(
-            isRunningBatched, partByPositions, attemptCb, outputColumns)
-          doRowAggs(
-            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
-          doRangeAggs(
-            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
-        }
-      } catch {
-        case t: Throwable =>
-          // on exceptions we want to throw away any columns in outputColumns that
-          // are not pass-through
-          val columnsToClose = outputColumns.filter(_ != null)
-          outputColumns.indices.foreach { col =>
-            outputColumns(col) = null
-          }
-          columnsToClose.safeClose(t)
-          throw t
-      }
-    }
+    doRunningWindowOptimizedAggs(isRunningBatched, partByPositions, inputCb, outputColumns)
+    doRowAggs(boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns)
+    doRangeAggs(boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns)
   }
 
   /**
@@ -1168,7 +1158,7 @@ class GroupedAggregations extends Arm {
  * Calculates the results of window operations. It assumes that any batching of the data
  * or fixups after the fact to get the right answer is done outside of this.
  */
-trait BasicWindowCalc extends Arm {
+trait BasicWindowCalc {
   val boundWindowOps: Seq[GpuExpression]
   val boundPartitionSpec: Seq[GpuExpression]
   val boundOrderSpec: Seq[SortOrder]
@@ -1240,18 +1230,16 @@ trait BasicWindowCalc extends Arm {
    */
   def computeBasicWindow(cb: ColumnarBatch): Array[cudf.ColumnVector] = {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
-      val inputSpillable = SpillableColumnarBatch(
-        GpuProjectExec.project(cb, initialProjections),
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
 
-      // this takes ownership of `inputSpillable`
-      aggregations.doAggsAndClose(
-        isRunningBatched,
-        boundOrderSpec,
-        orderByPositions,
-        partByPositions,
-        inputSpillable,
-        outputColumns)
+      withResource(GpuProjectExec.project(cb, initialProjections)) { proj =>
+        aggregations.doAggs(
+          isRunningBatched,
+          boundOrderSpec,
+          orderByPositions,
+          partByPositions,
+          proj,
+          outputColumns)
+      }
 
       // if the window aggregates were successful, lets splice the passThrough
       // columns
@@ -1287,23 +1275,39 @@ class GpuWindowIterator(
 
   override def isRunningBatched: Boolean = false
 
-  override def hasNext: Boolean = input.hasNext
+  override def hasNext: Boolean = onDeck.isDefined || input.hasNext
+
+  var onDeck: Option[SpillableColumnarBatch] = None
 
   override def next(): ColumnarBatch = {
-    withResource(input.next()) { cb =>
-      withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
-        val ret = withResource(computeBasicWindow(cb)) { cols =>
-          convertToBatch(outputTypes, cols)
+    val cbSpillable = onDeck match {
+      case Some(x) =>
+        onDeck = None
+        x
+      case _ =>
+        getNext()
+    }
+    withRetryNoSplit(cbSpillable) { _ =>
+      withResource(cbSpillable.getColumnarBatch()) { cb =>
+        withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
+          val ret = withResource(computeBasicWindow(cb)) { cols =>
+            convertToBatch(outputTypes, cols)
+          }
+          numOutputBatches += 1
+          numOutputRows += ret.numRows()
+          ret
         }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
       }
     }
   }
+
+  def getNext(): SpillableColumnarBatch = {
+    SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+  }
+
 }
 
-object GpuBatchedWindowIterator extends Arm {
+object GpuBatchedWindowIterator {
   def cudfAnd(lhs: cudf.ColumnVector,
       rhs: cudf.ColumnVector): cudf.ColumnVector = {
     withResource(lhs) { lhs =>
@@ -1416,7 +1420,6 @@ class GpuRunningWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1427,6 +1430,8 @@ class GpuRunningWindowIterator(
   private var lastParts: Array[Scalar] = Array.empty
   private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -1482,34 +1487,59 @@ class GpuRunningWindowIterator(
     }
   }
 
-  def computeRunning(cb: ColumnarBatch): ColumnarBatch = {
+  def computeRunning(input: ColumnarBatch): ColumnarBatch = {
     val fixers = fixerIndexMap
-    val numRows = cb.numRows()
-
-    withResource(computeBasicWindow(cb)) { basic =>
-      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
-        val partColumns = GpuColumnVector.extractBases(parts)
-        withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
-          val fixedUp = if (fixerNeedsOrderMask) {
-            withResource(GpuProjectExec.project(cb, boundOrderColumns)) { order =>
-              val orderColumns = GpuColumnVector.extractBases(order)
-              // We need to fix up the rows that are part of the same batch as the end of the
-              // last batch
-              withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
-                orderEqual =>
-                  closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) { fixed =>
-                    saveLastOrder(getScalarRow(numRows - 1, orderColumns))
-                    fixed
+    val numRows = input.numRows()
+    val cbSpillable = SpillableColumnarBatch(input, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    withRetryNoSplit(cbSpillable) { _ =>
+      withResource(cbSpillable.getColumnarBatch()) { cb =>
+        withResource(computeBasicWindow(cb)) { basic =>
+          var newOrder: Option[Array[Scalar]] = None
+          var newParts: Option[Array[Scalar]] = None
+          val fixedUp = try {
+            // we backup the fixers state and restore it in the event of a retry
+            withRestoreOnRetry(fixers.values.toSeq) {
+              withResource(GpuProjectExec.project(cb,
+                boundPartitionSpec)) { parts =>
+                val partColumns = GpuColumnVector.extractBases(parts)
+                withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
+                  val fixedUp = if (fixerNeedsOrderMask) {
+                    withResource(GpuProjectExec.project(cb,
+                      boundOrderColumns)) { order =>
+                      val orderColumns = GpuColumnVector.extractBases(order)
+                      // We need to fix up the rows that are part of the same batch as the end of
+                      // the last batch
+                      withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
+                        orderEqual =>
+                          closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) {
+                            fixedUp =>
+                              newOrder = Some(getScalarRow(numRows - 1, orderColumns))
+                              fixedUp
+                          }
+                      }
+                    }
+                  } else {
+                    // No ordering needed
+                    fixUpAll(basic, fixers, partsEqual, None)
                   }
+                  newParts = Some(getScalarRow(numRows - 1, partColumns))
+                  fixedUp
+                }
               }
             }
-          } else {
-            // No ordering needed
-            fixUpAll(basic, fixers, partsEqual, None)
+          } catch {
+            case t: Throwable =>
+              // avoid leaking unused interim results
+              newOrder.foreach(_.foreach(_.close()))
+              newParts.foreach(_.foreach(_.close()))
+              throw t
           }
-          withResource(fixedUp) { fixed =>
-            saveLastParts(getScalarRow(numRows - 1, partColumns))
-            convertToBatch(outputTypes, fixed)
+          // this section is outside of the retry logic because the calls to saveLastParts
+          // and saveLastOrders can potentially close GPU resources
+          withResource(fixedUp) { _ =>
+            newOrder.foreach(saveLastOrder)
+            newParts.foreach(saveLastParts)
+            convertToBatch(outputTypes, fixedUp)
           }
         }
       }
@@ -1543,13 +1573,12 @@ class GpuRunningWindowIterator(
   }
 
   override def next(): ColumnarBatch = {
-    withResource(readNextInputBatch()) { cb =>
-      withResource(new NvtxWithMetrics("RunningWindow", NvtxColor.CYAN, opTime)) { _ =>
-        val ret = computeRunning(cb)
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
-      }
+    val cb = readNextInputBatch()
+    withResource(new NvtxWithMetrics("RunningWindow", NvtxColor.CYAN, opTime)) { _ =>
+      val ret = computeRunning(cb) // takes ownership of cb
+      numOutputBatches += 1
+      numOutputRows += ret.numRows()
+      ret
     }
   }
 }
@@ -1629,7 +1658,6 @@ class GpuCachedDoublePassWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1641,6 +1669,8 @@ class GpuCachedDoublePassWindowIterator(
   private var lastPartsCaching: Array[Scalar] = Array.empty
   private var lastPartsProcessing: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
+
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
     lastPartsCaching.foreach(_.close())
@@ -1754,11 +1784,22 @@ class GpuCachedDoublePassWindowIterator(
   }
 
   // Compute the window operation and cache/update caches as needed.
+  // This method takes ownership of cb
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
-    withResource(computeBasicWindow(cb)) { basic =>
-      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
+
+    val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    val (basic, parts) = withRetryNoSplit(sp) { _ =>
+      withResource(sp.getColumnarBatch()) { batch =>
+        closeOnExcept(computeBasicWindow(batch)) { basic =>
+          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
+        }
+      }
+    }
+
+    withResource(basic) { _ =>
+      withResource(parts) { _ =>
         val partColumns = GpuColumnVector.extractBases(parts)
 
         val firstLastEqual = areRowPartsEqual(lastPartsCaching, partColumns, Seq(0, numRows - 1))
@@ -1834,26 +1875,25 @@ class GpuCachedDoublePassWindowIterator(
       if (waitingForFirstPass.isEmpty) {
         lastBatch()
       } else {
-        withResource(waitingForFirstPass.get) { cb =>
-          waitingForFirstPass = None
-          withResource(
+        val cb = waitingForFirstPass.get
+        waitingForFirstPass = None
+        withResource(
             new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
-            firstPassComputeAndCache(cb)
-          }
+          // firstPassComputeAndCache takes ownership of the batch passed to it
+          firstPassComputeAndCache(cb)
         }
       }
     }
-    val cb = withResource(readyForPostProcessing.dequeue()) { sb =>
-      sb.getColumnarBatch()
-    }
-    withResource(cb) { cb =>
-      val ret = withResource(
-        new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-        postProcess(cb)
+    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        val ret = withResource(
+          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+          postProcess(cb)
+        }
+        numOutputBatches += 1
+        numOutputRows += ret.numRows()
+        ret
       }
-      numOutputBatches += 1
-      numOutputRows += ret.numRows()
-      ret
     }
   }
 }

@@ -20,11 +20,13 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "333"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{MapOutputTracker, SparkEnv, TaskContext}
 import org.apache.spark.serializer.SerializerManager
@@ -58,7 +60,6 @@ class RapidsShuffleThreadedReader[K, C] (
       numReaderThreads = numReaderThreads) {
 
   override protected def getMapSizes: GetMapSizesResult = {
-    val shuffleId = handle.shuffleId
     withResource(new NvtxRange("getMapSizesByExecId", NvtxColor.CYAN)) { _ =>
       if (handle.dependency.isShuffleMergeFinalizedMarked) {
         val res = mapOutputTracker.getPushBasedShuffleMapSizesByExecutorId(

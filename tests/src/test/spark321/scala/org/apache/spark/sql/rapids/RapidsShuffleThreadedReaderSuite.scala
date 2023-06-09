@@ -18,9 +18,11 @@
 {"spark": "321"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "333"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -28,7 +30,8 @@ package org.apache.spark.sql.rapids
 import java.io.{ByteArrayOutputStream, InputStream}
 import java.nio.ByteBuffer
 
-import com.nvidia.spark.rapids.{Arm, GpuColumnarBatchSerializer, GpuColumnVector, NoopMetric, SparkSessionHolder}
+import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuColumnVector, NoopMetric, SparkSessionHolder}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers.{eq => meq}
 import org.mockito.Mockito.{mock, when}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
@@ -69,7 +72,7 @@ class RecordingManagedBuffer(underlyingBuffer: NioManagedBuffer) extends Managed
 }
 
 class RapidsShuffleThreadedReaderSuite
-    extends FunSuite with BeforeAndAfterAll with Arm {
+    extends FunSuite with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     RapidsShuffleInternalManagerBase.stopThreadPool()

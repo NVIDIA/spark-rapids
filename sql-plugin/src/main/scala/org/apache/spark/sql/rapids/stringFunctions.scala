@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
@@ -361,12 +362,12 @@ case class GpuConcatWs(children: Seq[Expression])
     withResourceIfAllowed(expr.columnarEval(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
-          case ArrayType(st: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
+          case ArrayType(_: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
           case _ => vector.incRefCount()
         }
       case s: GpuScalar =>
         s.dataType match {
-          case ArrayType(st: StringType, _) =>
+          case ArrayType(_: StringType, _) =>
             // we have to first concatenate any array types
             withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
               concatArrayCol(colOrScalarSep, cv)
@@ -742,7 +743,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
 
 }
 
-trait HasGpuStringReplace extends Arm {
+trait HasGpuStringReplace {
   def doStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
@@ -762,7 +763,7 @@ trait HasGpuStringReplace extends Arm {
     strExpr: GpuColumnVector,
     search: Seq[String],
     replacement: String): ColumnVector = {
-      withResource(ColumnVector.fromStrings(search: _*)) { targets => 
+      withResource(ColumnVector.fromStrings(search: _*)) { targets =>
         withResource(ColumnVector.fromStrings(replacement)) {  repls =>
           strExpr.getBase.stringReplace(targets, repls)
         }
@@ -836,6 +837,109 @@ case class GpuStringReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuColumnVector,
       replaceExpr: GpuScalar): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+}
+
+case class GpuStringTranslate(
+    srcExpr: Expression,
+    fromExpr: Expression,
+    toExpr: Expression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = srcExpr.dataType
+
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
+
+  override def first: Expression = srcExpr
+  override def second: Expression = fromExpr
+  override def third: Expression = toExpr
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      fromExpr: GpuScalar,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuScalar): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuScalar,
+      toExpr: GpuColumnVector): ColumnVector =
+        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  private def buildLists(fromExpr: GpuScalar, toExpr: GpuScalar): (List[String], List[String]) = {
+    val fromString = fromExpr.getValue.asInstanceOf[UTF8String].toString
+    val toString = toExpr.getValue.asInstanceOf[UTF8String].toString
+    var fromCharsArray = Array[String]()
+    var toCharsArray = Array[String]()
+    var i = 0
+    var j = 0
+    while (i < fromString.length) {
+      val replaceStr = if (j < toString.length) {
+        val repCharCount = Character.charCount(toString.codePointAt(j))
+        val repStr = toString.substring(j, j + repCharCount)
+        j += repCharCount
+        repStr
+      } else {
+        ""
+      }
+      val matchCharCount = Character.charCount(fromString.codePointAt(i))
+      val matchStr = fromString.substring(i, i + matchCharCount)
+      i += matchCharCount
+      fromCharsArray :+= matchStr
+      toCharsArray :+= replaceStr
+    }
+    (fromCharsArray.toList, toCharsArray.toList)
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuScalar,
+      toExpr: GpuScalar): ColumnVector = {
+    // When from or to string is null, return all nulls like the CPU does.
+    if (!fromExpr.isValid || !toExpr.isValid) {
+      GpuColumnVector.columnVectorFromNull(strExpr.getRowCount.toInt, StringType)
+    } else if (fromExpr.getValue.asInstanceOf[UTF8String].numChars() == 0) {
+      // Return original string if search string is empty
+      strExpr.getBase.incRefCount()
+    } else {
+      val (fromStringList, toStringList) = buildLists(fromExpr, toExpr)
+      withResource(ColumnVector.fromStrings(fromStringList: _*)) { fromStringCol =>
+        withResource(ColumnVector.fromStrings(toStringList: _*)) { toStringCol =>
+          strExpr.getBase.stringReplace(fromStringCol, toStringCol)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
+      val2: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      fromExpr: GpuColumnVector,
+      toExpr: GpuScalar): ColumnVector =
         throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
@@ -999,7 +1103,12 @@ object GpuRegExpUtils {
         case _ => false
       }
     }
-    isASTEmptyRepetition(parseAST(pattern))
+    parseAST(pattern) match {
+      case RegexSequence(parts) if parts.lastOption.contains(RegexChar('$')) =>
+        // handle pattern ".*$"
+        isASTEmptyRepetition(RegexSequence(parts.dropRight(1)))
+      case other => isASTEmptyRepetition(other)
+    }
   }
 
   /**
@@ -1022,7 +1131,7 @@ object GpuRegExpUtils {
         getChoicesFromRegex(t)
       case RegexChoice(a, b) =>
         getChoicesFromRegex(a) match {
-          case Some(la) => 
+          case Some(la) =>
             getChoicesFromRegex(b) match {
               case Some(lb) => Some(la ++ lb)
               case _ => None
@@ -1033,7 +1142,7 @@ object GpuRegExpUtils {
         if (GpuOverrides.isSupportedStringReplacePattern(regex.toRegexString)) {
           Some(Seq(regex.toRegexString))
         } else {
-          parts.foldLeft(Some(Seq[String]()): Option[Seq[String]]) { (m: Option[Seq[String]], r) => 
+          parts.foldLeft(Some(Seq[String]()): Option[Seq[String]]) { (m: Option[Seq[String]], r) =>
             getChoicesFromRegex(r) match {
               case Some(l) => m.map(_ ++ l)
               case _ => None
@@ -1238,18 +1347,37 @@ case class GpuRegExpReplaceWithBackref(
     override val child: Expression,
     searchExpr: Expression,
     replaceExpr: Expression)
-    (cudfRegexPattern: String,
+    (javaRegexpPattern: String,
+     cudfRegexPattern: String,
     cudfReplacementString: String)
   extends GpuUnaryExpression with ImplicitCastInputTypes {
 
-  override def otherCopyArgs: Seq[AnyRef] = Seq(cudfRegexPattern, cudfReplacementString)
+  override def otherCopyArgs: Seq[AnyRef] = Seq(javaRegexpPattern, cudfRegexPattern,
+    cudfReplacementString)
   override def inputTypes: Seq[DataType] = Seq(StringType)
 
   override def dataType: DataType = StringType
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val prog = new RegexProgram(cudfRegexPattern)
-    input.getBase.stringReplaceWithBackrefs(prog, cudfReplacementString)
+    if (SparkShimImpl.reproduceEmptyStringBug &&
+        GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
+      val isEmpty = withResource(input.getBase.getCharLengths) { len =>
+        withResource(Scalar.fromInt(0)) { zero =>
+          len.equalTo(zero)
+        }
+      }
+      withResource(isEmpty) { _ =>
+        withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+          withResource(input.getBase.stringReplaceWithBackrefs(prog,
+              cudfReplacementString)) { replacement =>
+            isEmpty.ifElse(emptyString, replacement)
+          }
+        }
+      }
+    } else {
+      input.getBase.stringReplaceWithBackrefs(prog, cudfReplacementString)
+    }
   }
 
 }
@@ -1351,7 +1479,7 @@ case class GpuRegExpExtract(
     val (extractPattern, groupIndex) = idx.getValue match {
       case i: Int if i == 0 =>
         ("(" + cudfRegexPattern + ")", 0)
-      case i =>
+      case _ =>
         // Since we have transpiled all but one of the capture groups to non-capturing, the index
         // here moves to 0 to single out the one capture group left
         (cudfRegexPattern, 0)
@@ -1472,7 +1600,7 @@ case class GpuRegExpExtractAll(
       case 0 =>
         val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
         str.getBase.extractAllRecord(prog, 0)
-      case intIdx =>
+      case _ =>
         // Extract matches corresponding to idx. cuDF's extract_all_record does not support
         // group idx, so we must manually extract the relevant matches. Example:
         // Given the pattern (\d+)-(\d+) and idx=1
@@ -1843,7 +1971,7 @@ class GpuStringSplitMeta(
     }
 
     extractLit(expr.limit) match {
-      case Some(Literal(n: Int, _)) =>
+      case Some(Literal(_: Int, _)) =>
       case _ =>
         willNotWorkOnGpu("only literal limit is supported")
     }

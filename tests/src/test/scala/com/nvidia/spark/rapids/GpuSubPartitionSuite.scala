@@ -19,9 +19,10 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.Arm._
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, ExprId}
-import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuBatchSubPartitionIterator}
+import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuBatchSubPartitionIterator, GpuSubPartitionPairIterator}
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -36,7 +37,8 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
       val subPartitioner = new GpuBatchSubPartitioner(
         Iterator.empty,
         boundKeys,
-        numPartitions = 0)
+        numPartitions = 0,
+        hashSeed = 100)
 
       // at least two partitions even given 0
       assertResult(expected = 2)(subPartitioner.partitionsCount)
@@ -60,7 +62,8 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(emptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5)
+          numPartitions = 5,
+          hashSeed = 100)
 
         assertResult(expected = 5)(subPartitioner.partitionsCount)
         // empty batch is skipped
@@ -86,7 +89,8 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(nonemptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5)
+          numPartitions = 5,
+          hashSeed = 100)
 
         assertResult(expected = 5)(subPartitioner.partitionsCount)
         // nonempty batches exist
@@ -112,7 +116,8 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(emptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5)
+          numPartitions = 5,
+          hashSeed = 100)
         val subIter = new GpuBatchSubPartitionIterator(
           subPartitioner,
           targetBatchSize = 12L)
@@ -142,7 +147,8 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(nonemptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5)
+          numPartitions = 5,
+          hashSeed = 100)
         val subIter = new GpuBatchSubPartitionIterator(
           subPartitioner,
           targetBatchSize = 12L)
@@ -160,6 +166,78 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         }
         assertResult(nonemptyBatch.numRows())(actualRowNum)
         subPartitioner.close()
+      }
+    }
+  }
+
+  test("Sub-pair iterator repartition because of too big batch") {
+    withGpuSparkSession { _ =>
+      // cudf aligns output to 64 bytes for contiguous split used by the sub partitioner, so
+      // generate a little large data for this test.
+      val largeData = 0 until 1024
+      closeOnExcept {
+        val col = GpuColumnVector.from(ColumnVector.fromInts(largeData: _*), IntegerType)
+        new ColumnarBatch(Array(col), col.getRowCount.toInt)
+      } { nonemptyBatch =>
+        val subPairIter = new GpuSubPartitionPairIterator(
+          Seq(nonemptyBatch).toIterator, boundKeys,
+          Iterator.empty, boundKeys,
+          numPartitions = 2, targetBatchSize = 1024)
+
+        var actualRowNum, partCount = 0
+        while (subPairIter.hasNext) {
+          withResource(subPairIter.next()) { pair =>
+            val (buildCb, streamCbs) = pair.get
+            assert(streamCbs.isEmpty)
+            buildCb.foreach { cb =>
+              // got nonempty partition, add its row number
+              actualRowNum += cb.numRows()
+            }
+            partCount += 1
+          }
+        }
+        assertResult(nonemptyBatch.numRows())(actualRowNum)
+        // The final partition number should be larger than the original one (2).
+        assert(partCount > 2)
+        // Repartitioning should happen.
+        assert(subPairIter.isRepartitioned)
+        subPairIter.close()
+      }
+    }
+  }
+
+  test("Sub-pair iterator repartition because of skewed data") {
+    withGpuSparkSession { _ =>
+      // cudf aligns output to 64 bytes for contiguous split used by the sub partitioner, so
+      // generate a little large data for this test.
+      val largeData = (0 until 1000).map(_ => 1) ++ (0 until 24).map(_ => 2)
+      closeOnExcept {
+        val col = GpuColumnVector.from(ColumnVector.fromInts(largeData: _*), IntegerType)
+        new ColumnarBatch(Array(col), col.getRowCount.toInt)
+      } { nonemptyBatch =>
+        val subPairIter = new GpuSubPartitionPairIterator(
+          Seq(nonemptyBatch).toIterator, boundKeys,
+          Iterator.empty, boundKeys,
+          numPartitions = 10, targetBatchSize = 1024)
+
+        var actualRowNum, partCount = 0
+        while (subPairIter.hasNext) {
+          withResource(subPairIter.next()) { pair =>
+            val (buildCb, streamCbs) = pair.get
+            assert(streamCbs.isEmpty)
+            buildCb.foreach { cb =>
+              // got nonempty partition, add its row number
+              actualRowNum += cb.numRows()
+              partCount += 1
+            }
+          }
+        }
+        assertResult(nonemptyBatch.numRows())(actualRowNum)
+        // There should be two nonempty partitions, one for 1000 "1"s and one for 24 "2"s.
+        assert(partCount == 2)
+        // Repartitioning should happen.
+        assert(subPairIter.isRepartitioned)
+        subPairIter.close()
       }
     }
   }

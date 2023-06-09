@@ -598,7 +598,7 @@ def test_broadcast_join_mixed(join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.xfail(condition=is_emr_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/821')
 @pytest.mark.parametrize('repartition', ["true", "false"], ids=idfn)

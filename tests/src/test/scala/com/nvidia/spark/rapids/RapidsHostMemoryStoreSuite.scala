@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, Table}
+import com.nvidia.spark.rapids.Arm._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, times, verify, when}
@@ -31,7 +32,7 @@ import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerTyp
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
-class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
+class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
@@ -84,7 +85,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             ArgumentMatchers.eq(handle.id), ArgumentMatchers.eq(StorageTier.DEVICE))
           withResource(catalog.acquireBuffer(handle)) { buffer =>
             assertResult(StorageTier.HOST)(buffer.storageTier)
-            assertResult(bufferSize)(buffer.size)
+            assertResult(bufferSize)(buffer.getMemoryUsedBytes)
             assertResult(handle.id)(buffer.id)
             assertResult(spillPriority)(buffer.getSpillPriority)
           }
@@ -174,7 +175,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         override def getDiskPath(diskBlockManager: RapidsDiskBlockManager): File = null
       })
       when(mockStore.getMaxSize).thenAnswer(_ => None)
-      when(mockStore.copyBuffer(any(), any(), any())).thenReturn(mockBuff)
+      when(mockStore.copyBuffer(any(), any())).thenReturn(mockBuff)
       when(mockStore.tier) thenReturn (StorageTier.DISK)
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) { hostStore =>
         devStore.setSpillStore(hostStore)
@@ -199,7 +200,6 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               bigTable = null
               catalog.synchronousSpill(devStore, 0)
               verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
-                ArgumentMatchers.any[MemoryBuffer],
                 ArgumentMatchers.any[Cuda.Stream])
               withResource(catalog.acquireBuffer(bigHandle)) { buffer =>
                 assertResult(StorageTier.HOST)(buffer.storageTier)
@@ -217,13 +217,9 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             catalog.synchronousSpill(devStore, 0)
             val rapidsBufferCaptor: ArgumentCaptor[RapidsBuffer] =
               ArgumentCaptor.forClass(classOf[RapidsBuffer])
-            val memoryBufferCaptor: ArgumentCaptor[MemoryBuffer] =
-              ArgumentCaptor.forClass(classOf[MemoryBuffer])
             verify(mockStore).copyBuffer(rapidsBufferCaptor.capture(),
-              memoryBufferCaptor.capture(), ArgumentMatchers.any[Cuda.Stream])
-            withResource(memoryBufferCaptor.getValue) { _ =>
-              assertResult(bigHandle.id)(rapidsBufferCaptor.getValue.id)
-            }
+              ArgumentMatchers.any[Cuda.Stream])
+            assertResult(bigHandle.id)(rapidsBufferCaptor.getValue.id)
           }
         }
       }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -46,6 +47,21 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
       byteCv1.close()
       byteCv3.close()
       byteCv456.close()
+    }
+  }
+
+  test("convert columnar batch to cached batch on single col table with 0 rows in a batch") {
+    withResource(new TestResources()) { resources =>
+      val (_, spyGpuCol0) = getCudfAndGpuVectors(resources)
+      val cb = new ColumnarBatch(Array(spyGpuCol0), 0)
+      val ser = new ParquetCachedBatchSerializer
+      val dummySchema = new StructType(
+        Array(StructField("empty", ByteType, false),
+          StructField("empty", ByteType, false),
+          StructField("empty", ByteType, false)))
+      val listOfPCB = ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
+        BYTES_ALLOWED_PER_BATCH, false)
+      assert(listOfPCB.isEmpty)
     }
   }
 
@@ -167,24 +183,26 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     buffers.toArray
   }
 
+  def checkSize(table: Table): Unit = {
+    val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
+    if (tableSize > Int.MaxValue) {
+      fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
+    }
+  }
+
   private def testCompressColBatch(
      testResources: TestResources,
      cudfCols: Array[ColumnVector],
      gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector], splitAt: Int*): Unit = {
     // mock static method for Table
-    val theTableMock = mockStatic(classOf[Table], (_: InvocationOnMock) =>
-      new TableWriter {
-        override def write(table: Table): Unit = {
-          val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
-          if (tableSize > Int.MaxValue) {
-            fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
-          }
-        }
-
-        override def close(): Unit = {
-          // noop
-        }
-      })
+    val theTableMock = mockStatic(classOf[Table], (iom: InvocationOnMock) => {
+      val ret = iom.callRealMethod().asInstanceOf[TableWriter]
+      val spyRet = spy(ret)
+      doAnswer( invocation =>
+        checkSize(invocation.getArgument(0, classOf[Table]))
+      ).when(spyRet).write(isA(classOf[Table]))
+      spyRet
+    })
     val cb = new ColumnarBatch(gpuCols, ROWS)
     whenSplitCalled(cb, testResources, splitAt: _*)
     val ser = new ParquetCachedBatchSerializer

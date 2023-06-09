@@ -23,6 +23,7 @@ import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -176,6 +177,11 @@ object GpuCSVScan {
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
     // TODO parsedOptions.emptyValueInRead
+
+    if (GpuCsvUtils.enableDateTimeParsingFallback(parsedOptions) &&
+        (types.contains(DateType) || types.contains(TimestampType))) {
+      meta.willNotWorkOnGpu(s"GpuCSVScan does not support enableDateTimeParsingFallback")
+    }
 
     if (!meta.conf.isCsvFloatReadEnabled && types.contains(FloatType)) {
       meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
@@ -334,7 +340,7 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
 }
 
 
-object CSVPartitionReader extends Arm {
+object CSVPartitionReader {
   def readToTable(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,

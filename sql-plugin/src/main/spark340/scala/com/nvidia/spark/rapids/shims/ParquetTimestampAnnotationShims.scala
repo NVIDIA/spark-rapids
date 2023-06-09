@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,29 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "332"}
+{"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.hadoop.conf.Configuration
+import org.apache.parquet.schema.LogicalTypeAnnotation._
 
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types._
 
-object ParquetLegacyNanoAsLongShims {
-  def legacyParquetNanosAsLong(): Boolean = {
-    SQLConf.get.legacyParquetNanosAsLong
-  }
-
-  /**
-   * This method should strictly be used by ParquetCachedBatchSerializer(PCBS) as it is hard coding
-   * the value of LEGACY_PARQUET_NANOS_AS_LONG.
-   *
-   * As far as PCBS is concerned it really doesn't matter what we set it to as long as
-   * ParquetSchemaConverter doesn't see a "null" value.
-   *
-   * @param conf Hadoop conf
-   */
-  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
-    conf.setBoolean(SQLConf.LEGACY_PARQUET_NANOS_AS_LONG.key, true)
+object ParquetTimestampAnnotationShims {
+  def timestampTypeForMillisOrMicros(timestamp: TimestampLogicalTypeAnnotation): DataType = {
+    if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetInferTimestampNTZEnabled) {
+      TimestampType
+    } else {
+      TimestampNTZType
+    }
   }
 }

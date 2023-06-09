@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{CudfException, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
 import org.scalatest.mockito.MockitoSugar
@@ -28,8 +29,7 @@ import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
 class HashAggregateRetrySuite
     extends RmmSparkRetrySuiteBase
-        with MockitoSugar
-        with Arm {
+        with MockitoSugar {
   private def buildReductionBatch(): SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()
       .column(5L, null.asInstanceOf[java.lang.Long], 3L, 1L)

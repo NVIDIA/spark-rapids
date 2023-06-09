@@ -21,7 +21,8 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
@@ -57,7 +58,7 @@ class RapidsShuffleIterator(
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
-    with Logging with Arm {
+    with Logging {
 
   /**
    * General trait encapsulating either a buffer or an error. Used to hand off batches
@@ -139,8 +140,6 @@ class RapidsShuffleIterator(
   }
 
   private val localHost = localBlockManagerId.host
-
-  private val localExecutorId = localBlockManagerId.executorId.toLong
 
   private var started: Boolean = false
 
@@ -361,7 +360,7 @@ class RapidsShuffleIterator(
         try {
           sb = catalog.acquireBuffer(handle)
           cb = sb.getColumnarBatch(sparkTypes)
-          metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
+          metricsUpdater.update(blockedTime, 1, sb.getMemoryUsedBytes, cb.numRows())
         } finally {
           nvtxRangeAfterGettingBatch.close()
           range.close()

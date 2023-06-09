@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.functions.input_file_name
 import org.apache.spark.sql.rapids.{ExternalSource, GpuFileSourceScanExec}
 
-trait ReaderTypeSuite extends SparkQueryCompareTestSuite with Arm {
+trait ReaderTypeSuite extends SparkQueryCompareTestSuite {
 
   /** File format */
   protected def format: String

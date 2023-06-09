@@ -26,9 +26,10 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
@@ -257,7 +258,7 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
  * Note, this class should not be referenced directly in source code.
  * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
  */
-protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
+protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
@@ -318,7 +319,10 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       }
 
       input.flatMap(batch => {
-        if (batch.numCols() == 0) {
+        if (batch.numCols() == 0 || batch.numRows() == 0) {
+          if (batch.numCols() > 0 && batch.column(0).isInstanceOf[GpuColumnVector]) {
+            batch.close();
+          }
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
@@ -343,9 +347,13 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       origSchema: StructType,
       bytesAllowedPerBatch: Long,
       useCompression: Boolean): List[ParquetCachedBatch] = {
+    if (oldGpuCB.numRows() == 0) {
+      // return empty List of ParquetCachedBatch
+      return List.empty[ParquetCachedBatch]
+    }
     val estimatedRowSize = scala.Range(0, oldGpuCB.numCols()).map { idx =>
       oldGpuCB.column(idx).asInstanceOf[GpuColumnVector]
-          .getBase.getDeviceMemorySize / oldGpuCB.numRows()
+        .getBase.getDeviceMemorySize / oldGpuCB.numRows()
     }.sum
 
     val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
@@ -1200,6 +1208,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
     // From 3.3.0, Spark will check this filed ID config
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(hadoopConf, sqlConf)
+
+    // timestamp_NTZ flag is introduced in Spark 3.4.0
+    ParquetTimestampNTZShims.setupTimestampNTZConfig(hadoopConf, sqlConf)
 
     // From 3.3.2, Spark schema converter needs this conf
     ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(hadoopConf)

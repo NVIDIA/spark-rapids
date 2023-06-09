@@ -165,7 +165,7 @@ def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('codec', ['zlib', 'lzo'])
 def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
     gen = TimestampGen()
@@ -179,7 +179,7 @@ def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_f
             conf=all_confs)
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_fallback_write(
@@ -191,7 +191,7 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
 
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_orc_write_bloom_filter_with_options_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_fallback_write(
@@ -203,7 +203,7 @@ def test_orc_write_bloom_filter_with_options_cpu_fallback(spark_tmp_path, spark_
 
 
 @ignore_order
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 def test_orc_write_bloom_filter_sql_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/ORC_DATA'
     base_table_name = spark_tmp_table_factory.get()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.util
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
-import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -57,7 +57,7 @@ class BufferReceiveState(
     requests: Seq[PendingTransferRequest],
     transportOnClose: () => Unit,
     stream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends AutoCloseable with Logging with Arm {
+    extends AutoCloseable with Logging {
 
   val transportBuffer = new CudfTransportBuffer(bounceBuffer.buffer)
   // we use this to keep a list (should be depth 1) of "requests for receives"

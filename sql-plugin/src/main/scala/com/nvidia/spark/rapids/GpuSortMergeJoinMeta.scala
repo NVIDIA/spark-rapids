@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,6 +94,7 @@ class GpuSortMergeJoinMeta(
       join.rightKeys)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
+    filterCondition.map(c => GpuFilterExec(c,
+      joinExec)(useTieredProject = conf.isTieredProjectEnabled)).getOrElse(joinExec)
   }
 }

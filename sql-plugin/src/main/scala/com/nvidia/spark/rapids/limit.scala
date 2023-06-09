@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -181,7 +182,7 @@ class GpuCollectLimitMeta(
       )(SinglePartition), 0)
 }
 
-object GpuTopN extends Arm {
+object GpuTopN {
   private[this] def concatAndClose(a: SpillableColumnarBatch,
       b: ColumnarBatch,
       concatTime: GpuMetric): ColumnarBatch = {
@@ -205,23 +206,34 @@ object GpuTopN extends Arm {
     }
   }
 
-  private[this] def takeN(batch: ColumnarBatch, count: Int): ColumnarBatch = {
-    val end = Math.min(count, batch.numRows())
+  private[this] def sliceBatch(batch: ColumnarBatch, begin: Int, limit: Int): ColumnarBatch = {
+    val end = Math.min(limit, batch.numRows())
+    val start = Math.max(0, Math.min(begin, end))
     val numColumns = batch.numCols()
     closeOnExcept(new Array[ColumnVector](numColumns)) { columns =>
       val bases = GpuColumnVector.extractBases(batch)
       (0 until numColumns).foreach { i =>
-        columns(i) = GpuColumnVector.from(bases(i).subVector(0, end), batch.column(i).dataType())
+        columns(i) =
+          GpuColumnVector.from(bases(i).subVector(start, end), batch.column(i).dataType())
       }
-      new ColumnarBatch(columns, end)
+      new ColumnarBatch(columns, end - start)
     }
+  }
+
+  private[this] def takeN(batch: ColumnarBatch, count: Int): ColumnarBatch = {
+    sliceBatch(batch, 0, count)
+  }
+
+
+  private[this] def applyOffset(batch: ColumnarBatch, offset: Int): ColumnarBatch = {
+    sliceBatch(batch, offset, batch.numRows())
   }
 
   def apply(limit: Int,
       sorter: GpuSorter,
       batch: ColumnarBatch,
       sortTime: GpuMetric): ColumnarBatch = {
-    withResource(sorter.fullySortBatch(batch, sortTime, NoopMetric)) { sorted =>
+    withResource(sorter.fullySortBatch(batch, sortTime)) { sorted =>
       takeN(sorted, limit)
     }
   }
@@ -235,7 +247,8 @@ object GpuTopN extends Arm {
       inputBatches: GpuMetric,
       inputRows: GpuMetric,
       outputBatches: GpuMetric,
-      outputRows: GpuMetric): Iterator[ColumnarBatch] =
+      outputRows: GpuMetric,
+      offset: Int): Iterator[ColumnarBatch] =
     new Iterator[ColumnarBatch]() {
       override def hasNext: Boolean = iter.hasNext
 
@@ -274,9 +287,16 @@ object GpuTopN extends Arm {
                 Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
-        val ret = pending.get.getColumnarBatch()
+        val tmp = pending.get.getColumnarBatch()
         pending.get.close()
         pending = None
+        val ret = if (offset > 0) {
+          withResource(tmp) { _ =>
+            applyOffset(tmp, offset)
+          }
+        } else {
+          tmp
+        }
         outputBatches += 1
         outputRows += ret.numRows()
         ret
@@ -295,8 +315,9 @@ case class GpuTopN(
     limit: Int,
     gpuSortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan)(
-    cpuSortOrder: Seq[SortOrder]) extends GpuExec with ShimUnaryExecNode {
+    child: SparkPlan,
+    offset: Int = 0)(
+    cpuSortOrder: Seq[SortOrder]) extends GpuBaseLimitExec {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
@@ -330,7 +351,7 @@ case class GpuTopN(
 
     child.executeColumnar().mapPartitions { iter =>
       val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
-        inputBatches, inputRows, outputBatches, outputRows)
+        inputBatches, inputRows, outputBatches, outputRows, offset)
       if (localProjectList != childOutput) {
         topN.map { batch =>
           GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
@@ -352,6 +373,6 @@ case class GpuTopN(
     val orderByString = truncatedString(gpuSortOrder, "[", ",", "]", maxFields)
     val outputString = truncatedString(output, "[", ",", "]", maxFields)
 
-    s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString)"
+    s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString, offset=$offset)"
   }
 }

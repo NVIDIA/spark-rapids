@@ -20,10 +20,12 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "333"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -91,7 +93,7 @@ trait AnsiCastRuleShims extends SparkShims {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, GpuEvalMode.ANSI, conf = conf,
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = true))
   }
 }

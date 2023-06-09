@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,12 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, NamedExpression}
 import org.apache.spark.sql.types.{DataType, StringType}
 
-object GpuV1WriteUtils extends Arm {
+object GpuV1WriteUtils {
 
   /** A function that converts the empty string to null for partition values. */
   case class GpuEmpty2Null(child: Expression) extends GpuUnaryExpression {

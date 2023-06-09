@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -350,7 +350,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
   }
 
   private def athrow(state: State): State = {
-    val State(locals, top :: rest, cond, expr) = state
+    val State(locals, top :: _, cond, expr) = state
     if (!top.isInstanceOf[Repr.SparkExcept]) {
       throw new SparkException("Unsupported type for athrow")
     }

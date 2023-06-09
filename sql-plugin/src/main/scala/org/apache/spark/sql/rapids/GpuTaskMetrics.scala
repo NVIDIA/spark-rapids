@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 import java.{lang => jl}
 
@@ -77,7 +77,7 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   override def value: NanoTime = NanoTime(_sum)
 }
 
-class GpuTaskMetrics extends Arm with Serializable {
+class GpuTaskMetrics extends Serializable {
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val spillBlockTimeNs = new NanoSecondAccumulator
   private val readSpillTimeNs = new NanoSecondAccumulator

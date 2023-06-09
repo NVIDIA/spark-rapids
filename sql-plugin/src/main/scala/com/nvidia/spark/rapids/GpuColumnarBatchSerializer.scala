@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.{HostColumnVector, HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -32,7 +33,7 @@ import org.apache.spark.sql.types.NullType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class SerializedBatchIterator(dIn: DataInputStream)
-  extends Iterator[(Int, ColumnarBatch)] with Arm {
+  extends Iterator[(Int, ColumnarBatch)] {
   private[this] var nextHeader: Option[SerializedTableHeader] = None
   private[this] var toBeReturned: Option[ColumnarBatch] = None
   private[this] var streamClosed: Boolean = false

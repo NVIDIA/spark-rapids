@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import java.util.Optional
 
 import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.Arm.withResource
 
 /**
  * Provide a set of APIs to manipulate array/list columns in common ways.
  */
-object GpuListUtils extends Arm {
+object GpuListUtils {
   /**
    * Replace the data column in a LIST column. This will keep the same offsets and validity
    * of the listColumn.  This returns a view so it is the responsibility of the caller to keep

@@ -23,6 +23,7 @@ package com.nvidia.spark.rapids.shims
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.TaskContext

@@ -16,6 +16,7 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuExec
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 

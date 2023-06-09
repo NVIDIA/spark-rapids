@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,12 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ast, BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
 
-object ShiftHelper extends Arm {
+object ShiftHelper {
   // From the java language specification for Java 8
   // If the promoted type of the left-hand operand is int, then only the five lowest-order bits of
   // the right-hand operand are used as the shift distance. It is as if the right-hand operand

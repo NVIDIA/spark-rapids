@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids.tests.udf.hive;
 
-import org.apache.hadoop.hive.ql.exec.UDF;
-
 /** An empty Hive simple UDF returning the first input directly for row-based UDF test only. */
-public class EmptyHiveSimpleUDF extends UDF {
+@SuppressWarnings("deprecation")
+public class EmptyHiveSimpleUDF extends org.apache.hadoop.hive.ql.exec.UDF {
   public String evaluate(String in, String in2) {
     return in;
   }

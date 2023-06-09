@@ -199,7 +199,6 @@ __shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
                                     r'\n(.*)\n' +
                                     re.escape(__closing_shim_tag), re.DOTALL)
 
-
 def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
         contents = file.readlines()
@@ -355,7 +354,7 @@ def task_impl():
 def __generate_symlinks():
     """
     link
-    <module>/src/<main|test>/<buildver>/scala/<package_path>/SomeClass.scala
+    <module>/src/<main|test>/spark<buildver>/scala/<package_path>/SomeClass.scala
     <module>/target/<buildver>/generated/src/<main|test>/scala/<package_path>/SomeClass.scala
     """
     buildver = __ant_proj_prop('buildver')
@@ -447,25 +446,6 @@ def __shimplify_layout():
            "Adding and deleting a shim in a single invocation is not supported!"
     # map file -> [shims it's part of]
     files2bv = {}
-    for buildver in __all_shims_arr:
-        src_roots = __csv_ant_prop_as_arr("spark%s.sources" % buildver)
-        test_src_roots = __csv_ant_prop_as_arr("spark%s.test.sources" % buildver)
-        __log.debug("check %s sources: %s", buildver, src_roots)
-        __log.debug("check %s test sources: %s", buildver, test_src_roots)
-        main_and_test_roots = src_roots + test_src_roots
-        # alternatively we can use range dirs instead of files, which is more efficient.
-        # file level provides flexibility until/unless the shim layer becomes unexpectedly
-        # large
-        for src_root in main_and_test_roots:
-            __log.debug("os.walk looking for shim files from %s", src_root)
-            for dir, _, shim_source_files in os.walk(src_root):
-                for shim_file in shim_source_files:
-                    shim_path = os.path.join(dir, shim_file)
-                    __log.debug("updating files2bv %s -> %s", shim_path, buildver)
-                    if shim_path in files2bv.keys():
-                        files2bv[shim_path] += [buildver]
-                    else:
-                        files2bv[shim_path] = [buildver]
 
     # if the user allows to overwrite / reorganize shimplified shims,
     # commonly while adding or removing shims we must include new shim locations
@@ -522,11 +502,12 @@ def __add_new_shim_to_file_map(files2bv):
         bv_list = files2bv[shim_file]
         if __add_shim_base in bv_list:
             # adding a lookalike
-            # case 1) dedicated per-shim files with a spark${buildver} in the package path:
+            # case 1) dedicated per-shim files with a spark${buildver} in the package path,
+            #         which implies a substring like /spark332/ occurs at least twice in the path:
             #         CLONE the file with modifications
             # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
-            base_package = "spark%s" % __add_shim_base
-            if base_package in shim_file:
+            #
+            if shim_file.count("%sspark%s%s" % (os.sep, __add_shim_base, os.sep)) > 1:
                 assert len(bv_list) == 1, "Per-shim file %s is expected to belong to a single "\
                         "shim, actual shims: %s" % (shim_file, bv_list)
                 new_shim_file = __git_rename_or_copy(shim_file, __add_shim_buildver,
@@ -538,6 +519,7 @@ def __add_new_shim_to_file_map(files2bv):
             else:
                 # TODO figure out why __add_shim_buildver is unicode class, not a simple str
                 # and if we care
+                __log.info("Appending %s to %s for %s", __add_shim_buildver, bv_list, shim_file)
                 bv_list.append(__add_shim_buildver)
 
 

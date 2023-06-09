@@ -20,6 +20,7 @@ import java.util
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.{HostConcatResult, SerializedTableHeader}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -82,7 +83,7 @@ class HostShuffleCoalesceIterator(
     targetBatchByteSize: Long,
     dataTypes: Array[DataType],
     metricsMap: Map[String, GpuMetric])
-      extends Iterator[HostConcatResult] with Arm with AutoCloseable {
+      extends Iterator[HostConcatResult] with AutoCloseable {
   private[this] val concatTimeMetric = metricsMap(GpuMetric.CONCAT_TIME)
   private[this] val inputBatchesMetric = metricsMap(GpuMetric.NUM_INPUT_BATCHES)
   private[this] val inputRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
@@ -191,7 +192,7 @@ class HostShuffleCoalesceIterator(
 class GpuShuffleCoalesceIterator(iter: Iterator[HostConcatResult],
                                  dataTypes: Array[DataType],
                                  metricsMap: Map[String, GpuMetric])
-      extends Iterator[ColumnarBatch] with Arm {
+      extends Iterator[ColumnarBatch] {
   private[this] val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
   private[this] val outputBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
   private[this] val outputRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)

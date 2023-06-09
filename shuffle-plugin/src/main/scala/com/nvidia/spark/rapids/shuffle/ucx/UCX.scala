@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
+import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -68,7 +69,7 @@ case class UCXActiveMessage(activeMessageId: Int, header: Long, forceRndv: Boole
  * @param rapidsConf rapids configuration
  */
 class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: RapidsConf)
-    extends AutoCloseable with Logging with Arm {
+    extends AutoCloseable with Logging {
 
   private[this] val context = {
     val contextParams = new UcpParams()

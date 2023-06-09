@@ -21,6 +21,7 @@ import java.util.{Locale, Optional}
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ColumnView, DType, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
@@ -29,7 +30,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
-object ParquetSchemaUtils extends Arm {
+object ParquetSchemaUtils {
   // Copied from Spark
   private val SPARK_PARQUET_SCHEMA_NAME = "spark_schema"
   // Copied from Spark
@@ -369,8 +370,7 @@ object ParquetSchemaUtils extends Arm {
     // TODO: When we drop Spark 3.1.x, this should use Parquet's LogicalTypeAnnotation
     //       Note that the original type is not null for leaf nodes.
     //if (parquetList.getLogicalTypeAnnotation == null &&
-    val newSparkType = if (parquetList.getOriginalType == null &&
-        parquetList.isRepetition(Repetition.REPEATED)) {
+    val newSparkType = if (parquetList.isRepetition(Repetition.REPEATED)) {
       clipSparkType(elementType, parquetList, caseSensitive, useFieldId)
     } else {
       val parquetListGroup = parquetList.asGroupType()
@@ -573,7 +573,8 @@ object ParquetSchemaUtils extends Arm {
   // this means the parameter dt is from Spark meta module.
   // This implements the requested type behavior accordingly for GPU.
   // This is suitable for all Spark versions, no need to add to shim layer.
-  private def evolveSchemaCasts(cv: ColumnView, dt: DataType): ColumnView = {
+  private def evolveSchemaCasts(cv: ColumnView, dt: DataType, originalFromDt: DataType)
+  : ColumnView = {
     if (needDecimalCast(cv, dt)) {
       cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
     } else if (needUnsignedToSignedCast(cv, dt) || needInt32Downcast(cv, dt) ||

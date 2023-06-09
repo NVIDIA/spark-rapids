@@ -23,6 +23,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -126,18 +127,6 @@ object GpuTypeShims {
    * Get additional Csv supported types for this Shim
    */
   def additionalCsvSupportedTypes: TypeSig = TypeSig.none
-
-  def typesDayTimeCanCastTo: TypeSig = TypeSig.none
-
-  def typesYearMonthCanCastTo: TypeSig = TypeSig.none
-
-  def typesDayTimeCanCastToOnSpark: TypeSig = TypeSig.DAYTIME + TypeSig.STRING
-
-  def typesYearMonthCanCastToOnSpark: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING
-
-  def additionalTypesIntegralCanCastTo: TypeSig = TypeSig.none
-
-  def additionalTypesStringCanCastTo: TypeSig = TypeSig.none
 
   /**
    * Get additional Parquet supported types for this Shim

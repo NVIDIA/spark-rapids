@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.DType
 
 import org.apache.spark.sql.catalyst.expressions.NamedExpression
+import org.apache.spark.sql.functions.{avg, sum}
 import org.apache.spark.sql.rapids.{GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuLessThan, GpuLessThanOrEqual}
 import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType}
 
@@ -118,5 +119,12 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
     val expectedFunSV = (x: Decimal) => Option(litValue <= x)
     checkEvaluateGpuUnaryExpression(GpuLessThanOrEqual(lit, leftExpr),
       schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
+  }
+
+  // https://github.com/NVIDIA/spark-rapids/issues/6076
+  testSparkResultsAreEqual("SPARK-24957: average with decimal followed by " +
+      "aggregation returning wrong result", decimals) {
+    df => df.groupBy("text").agg(avg("number").as("avg_res"))
+        .groupBy("text").agg(sum("avg_res"))
   }
 }

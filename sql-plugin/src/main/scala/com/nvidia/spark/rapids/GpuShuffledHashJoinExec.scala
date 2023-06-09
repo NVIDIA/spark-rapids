@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -78,7 +79,8 @@ class GpuShuffledHashJoinMeta(
       join.rightKeys)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
+    filterCondition.map(c => GpuFilterExec(c,
+      joinExec)(useTieredProject = conf.isTieredProjectEnabled)).getOrElse(joinExec)
   }
 }
 
@@ -105,7 +107,6 @@ case class GpuShuffledHashJoinExec(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
-    PEAK_DEVICE_MEMORY -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
@@ -209,7 +210,7 @@ case class GpuShuffledHashJoinExec(
   }
 }
 
-object GpuShuffledHashJoinExec extends Arm {
+object GpuShuffledHashJoinExec {
   /**
    * Return the build data as a single ColumnarBatch when sub-partitioning is not enabled,
    * while as an iterator of ColumnarBatch when sub-partitioning is enabled.
@@ -359,7 +360,7 @@ object GpuShuffledHashJoinExec extends Arm {
       new GpuCoalesceIterator(inputIter, inputAttrs.map(_.dataType).toArray, goal,
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
         coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME),
-        coalesceMetrics(GpuMetric.PEAK_DEVICE_MEMORY), "single build batch")
+        "single build batch")
     } else {
       inputIter
     }

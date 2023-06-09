@@ -21,7 +21,8 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
+import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
@@ -38,7 +39,7 @@ import org.apache.spark.util.Utils
 
 @SerialVersionUID(100L)
 class GpuSerializableBatch(batch: ColumnarBatch)
-    extends Serializable with AutoCloseable with Arm {
+    extends Serializable with AutoCloseable {
 
   assert(batch != null)
   @transient private var internalBatch: ColumnarBatch = batch
@@ -125,8 +126,7 @@ class GpuCartesianRDD(
     numOutputBatches: GpuMetric,
     var rdd1: RDD[GpuSerializableBatch],
     var rdd2: RDD[GpuSerializableBatch])
-    extends RDD[ColumnarBatch](sc, Nil)
-        with Serializable with Arm {
+    extends RDD[ColumnarBatch](sc, Nil) with Serializable {
 
   private val numPartitionsInRdd2 = rdd2.partitions.length
 

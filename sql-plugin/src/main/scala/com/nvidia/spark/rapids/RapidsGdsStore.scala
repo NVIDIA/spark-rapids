@@ -23,6 +23,7 @@ import java.util.function.BiFunction
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -33,11 +34,17 @@ import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     batchWriteBufferSize: Long)
-    extends RapidsBufferStore(StorageTier.GDS) with Arm {
+    extends RapidsBufferStore(StorageTier.GDS) {
   private[this] val batchSpiller = new BatchSpiller()
 
-  override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
+  override protected def createBuffer(
+      other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
+    // assume that we get 1 buffer
+    val otherBuffer = withResource(other.getCopyIterator) { it =>
+      it.next()
+    }
+
     withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
         case d: BaseDeviceMemoryBuffer => d
@@ -58,11 +65,13 @@ class RapidsGdsStore(
 
   abstract class RapidsGdsBuffer(
       override val id: RapidsBufferId,
-      override val size: Long,
+      val size: Long,
       override val meta: TableMeta,
       spillPriority: Long)
-      extends RapidsBufferBase(id, size, meta, spillPriority) {
+      extends RapidsBufferBase(id, meta, spillPriority) {
     override val storageTier: StorageTier = StorageTier.GDS
+
+    override def getMemoryUsedBytes(): Long = size
 
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
   }
@@ -121,12 +130,12 @@ class RapidsGdsStore(
       CuFile.writeDeviceBufferToFile(path, 0, deviceBuffer)
       0
     }
-    logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
+    logDebug(s"Spilled to $path $fileOffset:${deviceBuffer.getLength} via GDS")
     new RapidsGdsSingleShotBuffer(
       id,
       path,
       fileOffset,
-      other.size,
+      deviceBuffer.getLength,
       other.meta,
       other.getSpillPriority)
   }
@@ -168,7 +177,7 @@ class RapidsGdsStore(
           id,
           currentFile,
           currentOffset,
-          other.size,
+          deviceBuffer.getLength,
           other.meta,
           other.getSpillPriority)
         currentOffset += alignUp(deviceBuffer.getLength)
@@ -221,6 +230,8 @@ class RapidsGdsStore(
         spillPriority: Long,
         var isPending: Boolean = true)
         extends RapidsGdsBuffer(id, size, meta, spillPriority) {
+
+      override def getMemoryUsedBytes(): Long = size
 
       override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
         closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>

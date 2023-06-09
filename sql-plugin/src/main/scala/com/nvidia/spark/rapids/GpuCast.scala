@@ -24,9 +24,10 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
 import ai.rapids.cudf
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
@@ -39,7 +40,7 @@ import org.apache.spark.sql.types._
 /** Meta-data for cast and ansi_cast. */
 final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression with NullIntolerant](
     cast: INPUT,
-    val ansiEnabled: Boolean,
+    val evalMode: GpuEvalMode.Value,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule,
@@ -52,14 +53,19 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
   def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
-    new CastExprMeta[INPUT](cast, ansiEnabled, conf, parent, rule,
+    new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
       doFloatToIntCheck, stringToAnsiDate, Some(newToType))
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
   val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 
-  override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
+  override def tagExprForGpu(): Unit = {
+    if (evalMode == GpuEvalMode.TRY) {
+      willNotWorkOnGpu("try_cast is not supported on the GPU")
+    }
+    recursiveTagExprForGpuCheck()
+  }
 
   private def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,
@@ -76,11 +82,6 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
           doFloatToIntCheck && !conf.isCastFloatToIntegralTypesEnabled =>
         willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
       case (dt: DecimalType, _: StringType) =>
-        if (!conf.isCastDecimalToStringEnabled) {
-          willNotWorkOnGpu("the GPU does not produce the exact same string as Spark produces, " +
-              s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
-              s"equivalent decimal strings are sufficient for your application.")
-        }
         if (dt.precision > DType.DECIMAL128_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
               s"precision > ${DType.DECIMAL128_MAX_PRECISION} is not supported yet")
@@ -155,14 +156,14 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   }
 
   override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
+    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId, legacyCastToString,
       stringToAnsiDate)
 
   // timezone tagging in type checks is good enough, so always false
   override protected val needTimezoneTagging: Boolean = false
 }
 
-object GpuCast extends Arm {
+object GpuCast {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
   private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
@@ -462,7 +463,7 @@ object GpuCast extends Arm {
         castBinToString(input)
 
       case (_: DecimalType, StringType) =>
-        input.castTo(DType.STRING)
+        GpuCastShims.CastDecimalToString(input, ansiMode)
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
@@ -606,8 +607,8 @@ object GpuCast extends Arm {
       minValue: => Scalar,
       maxValue: => Scalar,
       replaceValue: => Scalar,
-      inclusiveMin: Boolean = true,
-      inclusiveMax: Boolean = true): ColumnVector = {
+      inclusiveMin: Boolean,
+      inclusiveMax: Boolean): ColumnVector = {
 
     withResource(minValue) { minValue =>
       withResource(maxValue) { maxValue =>
@@ -1001,7 +1002,7 @@ object GpuCast extends Arm {
       regex: String,
       cudfFormat: String,
       orElse: ColumnVector): ColumnVector = {
-    
+
     val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
     val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>

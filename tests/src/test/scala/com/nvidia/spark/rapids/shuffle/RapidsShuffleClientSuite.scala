@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shuffle
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.ShuffleMetadata
 import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
@@ -131,7 +132,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
 
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
-    val contigBuffSize = 100000
 
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 

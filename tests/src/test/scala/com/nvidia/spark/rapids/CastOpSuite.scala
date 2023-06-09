@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,15 +25,22 @@ import java.util.TimeZone
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
+import org.scalatest.BeforeAndAfterAll
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-class CastOpSuite extends GpuExpressionTestSuite {
+class CastOpSuite extends GpuExpressionTestSuite with BeforeAndAfterAll {
   import CastOpSuite._
+
+  override def afterAll(): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+  }
 
   private val sparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
@@ -443,12 +450,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
   test("cast decimal to string") {
     val sqlCtx = SparkSession.getActiveSession.get.sqlContext
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
-    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
 
     Seq(10, 15, 28).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
-          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+          comparisonFunc = None)
       }
     }
   }
@@ -524,7 +530,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
+  def before3_4_0(s: SparkSession): (Boolean, String) = {
+    (s.version < "3.4.0", s"Spark version must be prior to 3.4.0")
+  }
+
+  def since3_4_0(s: SparkSession): (Boolean, String) = {
+    (s.version >= "3.4.0", s"Spark version must be at least 3.4.0")
+  }
+
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
+    assumeCondition = before3_4_0) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -537,6 +552,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(LongType),
       col("date").cast(TimestampType))
    }
+
+  testSparkResultsAreEqual("Test cast from date Spark 3.4.0+", timestampDatesMsecParquet,
+    assumeCondition = since3_4_0) {
+    frame =>
+      frame.select(
+        col("date"),
+        col("date").cast(TimestampType))
+  }
 
   testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))
@@ -1016,7 +1039,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     dataType: DataType,
     integralSize: Int,
     rndGenerator: scala.util.Random,
-    rowCount: Int = 100)(ss: SparkSession): DataFrame = {
+    rowCount: Int)(ss: SparkSession): DataFrame = {
 
     import ss.sqlContext.implicits._
     val enhancedRnd = new EnhancedRandom(rndGenerator, FuzzerOptions()) {

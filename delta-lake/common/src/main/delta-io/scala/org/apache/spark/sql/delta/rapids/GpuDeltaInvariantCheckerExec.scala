@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.delta.rapids
 
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuExec
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 

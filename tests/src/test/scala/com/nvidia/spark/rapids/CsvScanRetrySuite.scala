@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.sql.types._
 
-class CsvScanRetrySuite extends RmmSparkRetrySuiteBase with Arm {
+class CsvScanRetrySuite extends RmmSparkRetrySuiteBase {
   test("test simple retry") {
     val bufferer = HostLineBuffererFactory.createBufferer(100, Array('\n'.toByte))
     bufferer.add("1,2".getBytes, 0, 3)

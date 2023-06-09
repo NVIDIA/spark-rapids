@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import ai.rapids.cudf.{ContiguousTable, CuFile, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, times, verify, when}
@@ -31,7 +32,7 @@ import org.apache.spark.storage.BlockId
 
 object GdsTest extends Tag("GdsTest")
 
-class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
+class RapidsGdsStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
  test("single shot spill with shared path", GdsTest) {
    println("Trying to load CuFile")
@@ -91,7 +92,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
          withResource(catalog.acquireBuffer(handle)) { buffer =>
            assertResult(StorageTier.GDS)(buffer.storageTier)
            assertResult(id)(buffer.id)
-           assertResult(size)(buffer.size)
+           assertResult(size)(buffer.getMemoryUsedBytes)
            assertResult(spillPriority)(buffer.getSpillPriority)
          }
        }
@@ -125,7 +126,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
           ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
         withResource(catalog.acquireBuffer(handle)) { buffer =>
           assertResult(StorageTier.GDS)(buffer.storageTier)
-          assertResult(bufferSize)(buffer.size)
+          assertResult(bufferSize)(buffer.getMemoryUsedBytes)
           assertResult(bufferId)(buffer.id)
           assertResult(spillPriority)(buffer.getSpillPriority)
         }

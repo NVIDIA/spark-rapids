@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -56,9 +57,7 @@ abstract class AbstractGpuJoinIterator(
     targetSize: Long,
     val opTime: GpuMetric,
     joinTime: GpuMetric)
-    extends Iterator[ColumnarBatch]
-    with Arm
-    with TaskAutoCloseableResource {
+    extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
   private[this] var nextCb: Option[ColumnarBatch] = None
   private[this] var gathererStore: Option[JoinGatherer] = None
 
@@ -133,14 +132,22 @@ abstract class AbstractGpuJoinIterator(
 
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
     withResource(new NvtxWithMetrics(gatherNvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
+      val minTargetSize = Math.min(targetSize, 64L * 1024 * 1024)
+      val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize)
       val ret = gathererStore.map { gather =>
+        // This withRetry block will always return an iterator with one ColumnarBatch.
+        // The gatherer tracks how many rows we have used already.  The withRestoreOnRetry
+        // ensures that we restart at the same place in the gatherer.  In the case of a
+        // SplitAndRetryOOM, we retry with a smaller (halved) targetSize, so we are taking
+        // less from the gatherer, but because the gatherer tracks how much is used, the
+        // next call to this function will start in the right place.
         gather.checkpoint()
-        withRetryNoSplit[ColumnarBatch] {
+        withRetry(targetSizeWrapper, splitTargetSizeInHalf) { attempt =>
           withRestoreOnRetry(gather) {
-            val nextRows = JoinGatherer.getRowsInNextBatch(gather, targetSize)
+            val nextRows = JoinGatherer.getRowsInNextBatch(gather, attempt.targetSize)
             gather.gatherNext(nextRows)
           }
-        }
+        }.next()
       }
       if (gathererStore.exists(_.isDone)) {
         gathererStore.foreach(_.close())

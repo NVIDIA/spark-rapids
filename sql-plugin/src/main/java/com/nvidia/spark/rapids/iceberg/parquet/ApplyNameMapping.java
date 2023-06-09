@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Types;
@@ -68,10 +67,12 @@ public class ApplyNameMapping extends ParquetTypeVisitor<Type> {
     Type listElement = ParquetSchemaUtil.determineListElementType(list);
     MappedField field = nameMapping.find(currentPath());
 
+    // TODO undo suppress warnings after dropping Spark 3.1.x/Parquet 1.10
+    @SuppressWarnings("deprecation")
     Types.GroupBuilder<GroupType> listBuilder = Types.buildGroup(list.getRepetition())
         // Spark 3.1 uses Parquet 1.10 which does not have LogicalTypeAnnotation
 //        .as(LogicalTypeAnnotation.listType());
-        .as(OriginalType.LIST);
+        .as(org.apache.parquet.schema.OriginalType.LIST);
     if (listElement.isRepetition(Type.Repetition.REPEATED)) {
       listBuilder.addFields(elementType);
     } else {
@@ -88,10 +89,13 @@ public class ApplyNameMapping extends ParquetTypeVisitor<Type> {
         "Map type must have both key field and value field");
 
     MappedField field = nameMapping.find(currentPath());
+
+    // TODO undo suppress warnings after dropping Spark 3.1.x/Parquet 1.10
+    @SuppressWarnings("deprecation")
     Type mapType = Types.buildGroup(map.getRepetition())
         // Spark 3.1 uses Parquet 1.10 which does not have LogicalTypeAnnotation
 //        .as(LogicalTypeAnnotation.mapType())
-        .as(OriginalType.MAP)
+        .as(org.apache.parquet.schema.OriginalType.MAP)
         .repeatedGroup().addFields(keyType, valueType).named(map.getFieldName(0))
         .named(map.getName());
 
