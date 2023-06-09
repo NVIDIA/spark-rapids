@@ -263,7 +263,11 @@ case class GpuStringTrim(column: Expression, trimParameters: Option[Expression] 
   val trimMethod = "gpuTrim"
 
   override def strippedColumnVector(column: GpuColumnVector, t: Scalar): GpuColumnVector =
-    GpuColumnVector.from(column.getBase.strip(t), dataType)
+    if (column.getBase.getData == null) {
+      GpuColumnVector.from(column.getBase.incRefCount, dataType)
+    } else {
+      GpuColumnVector.from(column.getBase.strip(t), dataType)
+    }
 }
 
 case class GpuStringTrimLeft(column: Expression, trimParameters: Option[Expression] = None)

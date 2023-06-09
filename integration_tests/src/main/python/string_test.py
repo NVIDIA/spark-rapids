@@ -148,10 +148,10 @@ def test_contains():
                 f.col('a').contains(None)
                 ))
 
-def test_trim():
-    gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
+def test_trim(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'TRIM(a)',
                 'TRIM("Ab" FROM a)',
                 'TRIM("A\ud720" FROM a)',
