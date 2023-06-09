@@ -1096,12 +1096,10 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           val outputFile: OutputFile = new ByteArrayOutputFile(stream)
           conf.setConfString(SparkShimImpl.parquetRebaseWriteKey,
             LegacyBehaviorPolicy.CORRECTED.toString)
-          val noSchema = hadoopConf.get(ParquetWriteSupport.SPARK_ROW_SCHEMA)
-            .contains("\"fields\":[]")
-          if (noSchema) {
-            // The schema is invalid, most probably it is because of the edge case where there
-            // are no columns in the Dataframe but has rows so let's create an CachedBatch with
-            // rows
+          if (cachedAttributes.isEmpty) {
+            // The schema is empty, most probably it is because of the edge case where there
+            // are no columns in the Dataframe but has rows so let's create an empty CachedBatch
+            // with rows
             queue += new ParquetCachedBatch(rowIterator.size, new Array[Byte](0))
             return queue
           }
