@@ -383,11 +383,7 @@ object GpuOrcScan {
 
       case (DType.STRING, DType.STRING) if originalFromDt.isInstanceOf[CharType] =>
         // Trim trailing whitespace off of output strings, to match CPU output.
-        if (col.getData == null) {
-          col.copyToColumnVector
-        } else {
-          col.rstrip()
-        }
+        col.rstrip()
 
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
