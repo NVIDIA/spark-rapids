@@ -481,4 +481,4 @@ performance degradation with several Spark actions, consider tuning this setting
   ```
   ERROR UCX: UcpListener detected an error for executorId 2: UCXError(-25,Connection reset by remote peer)
   ```
-  Consider turning off keep-alive for UCX using: `spark.executorEnv.UCX_TCP_KEEPINTVL=inf`.
+  Consider turning off keep-alive for UCX using: `spark.executorEnv.UCX_TCP_KEEPINTVL=inf`. NOTE: this would only mitigate the issue but not resolve it.
