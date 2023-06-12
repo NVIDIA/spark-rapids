@@ -48,7 +48,7 @@ object DeltaRuntimeShim {
     } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
     } else {
-      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.3.x")
+      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.4.x")
     }
   }
 
