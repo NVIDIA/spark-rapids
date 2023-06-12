@@ -28,7 +28,6 @@ import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
@@ -168,7 +167,4 @@ object TrampolineUtil {
     Utils.classForName(className, initialize, noSparkClassLoader)
   }
 
-  def getSparkConf(spark: SparkSession): SQLConf = {
-    spark.sqlContext.conf
-  }
 }
