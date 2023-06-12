@@ -265,8 +265,12 @@ case class GpuDeleteCommand(
     metrics("rewriteTimeMs").set(rewriteTimeMs)
     metrics("numAddedChangeFiles").set(numAddedChangeFiles)
     metrics("changeFileBytes").set(changeFileBytes)
-    metrics("numBytesAdded").set(numBytesAdded)
-    metrics("numBytesRemoved").set(numBytesRemoved)
+
+    // Delta Lake 2.4.x does not have numBytesAdded or numBytesRemoved metric, at
+    // least in some cases
+    metrics.get("numBytesAdded").foreach(_.set(numBytesAdded))
+    metrics.get("numBytesRemoved").foreach(_.set(numBytesRemoved))
+
     metrics("numFilesBeforeSkipping").set(numFilesBeforeSkipping)
     metrics("numBytesBeforeSkipping").set(numBytesBeforeSkipping)
     metrics("numFilesAfterSkipping").set(numFilesAfterSkipping)

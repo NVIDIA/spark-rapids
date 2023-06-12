@@ -54,7 +54,13 @@ def del_keys(key_list, c_val, g_val):
 
 def fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""
-    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
+    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs", \
+            "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted", \
+            "numTargetBytesUpdated", "numTargetBytesRemoved", \
+            'numTargetRowsMatchedUpdated', \
+            'numTargetRowsMatchedDeleted', \
+            'numTargetRowsNotMatchedBySourceUpdated', \
+            'numTargetRowsNotMatchedBySourceDeleted':
         opm.pop(k, None)
 
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
