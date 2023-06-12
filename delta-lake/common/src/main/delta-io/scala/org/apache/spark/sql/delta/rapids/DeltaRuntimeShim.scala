@@ -45,6 +45,8 @@ object DeltaRuntimeShim {
         DeltaUDF.getClass.getMethod("stringStringUdf", classOf[String => String])
       }.map(_ => "org.apache.spark.sql.delta.rapids.delta21x.Delta21xRuntimeShim")
           .getOrElse("org.apache.spark.sql.delta.rapids.delta22x.Delta22xRuntimeShim")
+    } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
+      "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
     } else {
       throw new IllegalStateException("Delta Lake is not supported on Spark > 3.3.x")
     }

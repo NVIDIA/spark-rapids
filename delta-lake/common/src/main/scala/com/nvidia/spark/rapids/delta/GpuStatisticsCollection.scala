@@ -26,7 +26,8 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnView, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF, ShimUsesMetadataFields}
+import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF}
+import com.nvidia.spark.rapids.delta.shims.ShimUsesMetadataFields
 
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.catalyst.InternalRow

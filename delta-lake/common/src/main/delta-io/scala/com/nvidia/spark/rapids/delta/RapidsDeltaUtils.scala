@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
+import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
@@ -32,7 +33,7 @@ object RapidsDeltaUtils {
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    deltaLog.fileFormat() match {
+    DeltaLogShim.fileFormat(deltaLog) match {
       case _: DeltaParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
       case f =>
