@@ -680,8 +680,8 @@ def test_array_remove(data_gen):
     )
 
 
-def test_flatten_array():
-    data_gen = [ArrayGen(sub_gen) for sub_gen in array_gens_sample]
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in array_gens_sample], ids=idfn)
+def test_flatten_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')
     )
