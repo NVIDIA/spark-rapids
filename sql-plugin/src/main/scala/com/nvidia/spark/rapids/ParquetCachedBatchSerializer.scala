@@ -724,7 +724,14 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           // go over the batch and get the next non-degenerate iterator
           // and return if it hasNext
           while ((iter == null || !iter.hasNext) && cbIter.hasNext) {
-            iter = convertCachedBatchToInternalRowIter
+            val cachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
+            if (cachedBatch.sizeInBytes == 0) {
+              // Edge case where we have stored an empty parquet file possibly a dataframe with no
+              // columns
+              iter = new ColumnarBatch(null, cachedBatch.numRows).rowIterator().asScala
+            } else {
+              iter = convertCachedBatchToInternalRowIter
+            }
           }
           iter != null && iter.hasNext
         }
