@@ -3382,11 +3382,9 @@ object GpuOverrides extends Logging {
         override def tagExprForGpu(): Unit =
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
-            case MapType(kt, vt, _) => {
-              willNotWorkOnGpu("JsonToStructs only supports MapType<StringType, StringType> for " +
-                               s"input MapType schema, but received MapType<$kt, $vt>")
-            }
-            case _ => ()
+            case _ =>
+              willNotWorkOnGpu("JsonToStructs only supports MapType<StringType, StringType> " +
+                               "input schema")
           }
           GpuJsonScan.tagJsonToStructsSupport(a.options, this)
 
