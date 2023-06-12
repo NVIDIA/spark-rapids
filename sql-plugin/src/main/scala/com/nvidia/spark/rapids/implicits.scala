@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.{mutable, SeqLike}
+import scala.collection
 import scala.collection.generic.CanBuildFrom
+import scala.collection.mutable
 import scala.reflect.ClassTag
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -79,7 +80,7 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class AutoCloseableSeq[A <: AutoCloseable](val in: SeqLike[A, _]) {
+  implicit class AutoCloseableSeq[A <: AutoCloseable](val in: collection.SeqLike[A, _]) {
     /**
      * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
      * element of the sequence, even if prior close calls fail. In case of failure in any of the
@@ -107,7 +108,7 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: SeqLike[A, _]) {
+  implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: collection.SeqLike[A, _]) {
     /**
      * safeFree: Is an implicit on a sequence of RapidsBuffer classes that tries to free each
      * element of the sequence, even if prior free calls fail. In case of failure in any of the
@@ -201,7 +202,7 @@ object RapidsPluginImplicits {
      * @return a sequence of B, in the success case
      */
     protected def safeMap[B <: AutoCloseable, That](
-        in: SeqLike[A, Repr],
+        in: collection.SeqLike[A, Repr],
         fn: A => B)
         (implicit bf: CanBuildFrom[Repr, B, That]): That = {
       def builder: mutable.Builder[B, That] = {
@@ -223,7 +224,7 @@ object RapidsPluginImplicits {
               // @ unchecked suppresses a warning that the type of B
               // was eliminated due to erasure. That said B is AutoCloseble
               // and SeqLike[AutoCloseable, _] is defined
-              case b: SeqLike[B @ unchecked, _] => b.safeClose()
+              case b: collection.SeqLike[B @ unchecked, _] => b.safeClose()
               case a: Array[AutoCloseable] => a.safeClose()
             }
           }
