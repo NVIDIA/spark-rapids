@@ -2584,6 +2584,17 @@ object GpuOverrides extends Logging {
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
+    expr[Flatten](
+      "Creates a single array from an array of arrays",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[Flatten](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuFlattenArray(child)
+      }),
     expr[LambdaFunction](
       "Holds a higher order SQL function",
       ExprChecks.projectOnly(
