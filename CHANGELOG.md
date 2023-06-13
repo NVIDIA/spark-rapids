@@ -1,11 +1,12 @@
 # Change log
-Generated on 2023-06-08
+Generated on 2023-06-13
 
 ## Release 23.06
 
 ### Features
 |||
 |:---|:---|
+|[#6201](https://github.com/NVIDIA/spark-rapids/issues/6201)|[FEA] experiment with memoizing datagens in the integration_tests|
 |[#8079](https://github.com/NVIDIA/spark-rapids/issues/8079)|[FEA] Release Spark 3.4 Support|
 |[#7043](https://github.com/NVIDIA/spark-rapids/issues/7043)|[FEA] Support Empty2Null expression on Spark 3.4.0|
 |[#8222](https://github.com/NVIDIA/spark-rapids/issues/8222)|[FEA] String Split Unsupported escaped character '.'|
@@ -37,6 +38,7 @@ Generated on 2023-06-08
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#8522](https://github.com/NVIDIA/spark-rapids/issues/8522)|[BUG] `from_json` function failed testing with input column containing empty or null string|
 |[#8483](https://github.com/NVIDIA/spark-rapids/issues/8483)|[BUG] `test_read_compressed_hive_text` fails on CDH|
 |[#8330](https://github.com/NVIDIA/spark-rapids/issues/8330)|[BUG] Handle Decimal128 computation with overflow of Remainder on Spark 3.4|
 |[#8448](https://github.com/NVIDIA/spark-rapids/issues/8448)|[BUG] GpuRegExpReplaceWithBackref with empty string input produces incorrect result on GPU in Spark 3.1.1|
@@ -113,6 +115,19 @@ Generated on 2023-06-08
 ### PRs
 |||
 |:---|:---|
+|[#8567](https://github.com/NVIDIA/spark-rapids/pull/8567)|Fixed a link in config doc[skip ci]|
+|[#8562](https://github.com/NVIDIA/spark-rapids/pull/8562)|Update changelog to latest 230612 [skip ci]|
+|[#8560](https://github.com/NVIDIA/spark-rapids/pull/8560)|Fix relative path in config doc [skip ci]|
+|[#8557](https://github.com/NVIDIA/spark-rapids/pull/8557)|Disable `JsonToStructs` for input schema other than `Map<String, String>`|
+|[#8549](https://github.com/NVIDIA/spark-rapids/pull/8549)|Revert "Handle caching empty batch (#8507)"|
+|[#8507](https://github.com/NVIDIA/spark-rapids/pull/8507)|Handle caching empty batch|
+|[#8528](https://github.com/NVIDIA/spark-rapids/pull/8528)|Update deps JNI and private version to 23.06.0|
+|[#8492](https://github.com/NVIDIA/spark-rapids/pull/8492)|[Doc]update download docs for 2306 version[skip ci]|
+|[#8510](https://github.com/NVIDIA/spark-rapids/pull/8510)|[Doc] address getting-started-on-prem document issues [skip ci]|
+|[#8537](https://github.com/NVIDIA/spark-rapids/pull/8537)|Add limitation for the UCX shuffle keep_alive workaround [skip ci]|
+|[#8526](https://github.com/NVIDIA/spark-rapids/pull/8526)|Fix `from_json` function failure when input contains empty or null strings|
+|[#8529](https://github.com/NVIDIA/spark-rapids/pull/8529)|Init changelog 23.06 [skip ci]|
+|[#8338](https://github.com/NVIDIA/spark-rapids/pull/8338)|Moved some configs to an advanced config page|
 |[#8441](https://github.com/NVIDIA/spark-rapids/pull/8441)|Memoizing DataGens in integration tests|
 |[#8516](https://github.com/NVIDIA/spark-rapids/pull/8516)|Avoid calling Table.merge with BinaryType columns|
 |[#8515](https://github.com/NVIDIA/spark-rapids/pull/8515)|Fix warning about deprecated parquet config|

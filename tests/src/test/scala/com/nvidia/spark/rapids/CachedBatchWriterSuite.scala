@@ -74,25 +74,21 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("convert large columnar batch to cached batch on single col table") {
-    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
-      withResource(new TestResources()) { resources =>
-        val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
-        val splitAt = 2086912
-        testCompressColBatch(resources, Array(spyCol0), Array(spyGpuCol0), splitAt)
-        verify(spyCol0).split(splitAt)
-      }
+    withResource(new TestResources()) { resources =>
+      val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
+      val splitAt = 2086912
+      testCompressColBatch(resources, Array(spyCol0), Array(spyGpuCol0), splitAt)
+      verify(spyCol0).split(splitAt)
     }
   }
 
   test("convert large columnar batch to cached batch on multi-col table") {
-    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
-      withResource(new TestResources()) { resources =>
-        val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
-        val splitAt = Seq(695637, 1391274, 2086911, 2782548)
-        testCompressColBatch(resources, Array(spyCol0, spyCol0, spyCol0),
+    withResource(new TestResources()) { resources =>
+      val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors(resources)
+      val splitAt = Seq(695637, 1391274, 2086911, 2782548)
+      testCompressColBatch(resources, Array(spyCol0, spyCol0, spyCol0),
         Array(spyGpuCol0, spyGpuCol0, spyGpuCol0), splitAt: _*)
-        verify(spyCol0, times(3)).split(splitAt: _*)
-      }
+      verify(spyCol0, times(3)).split(splitAt: _*)
     }
   }
 

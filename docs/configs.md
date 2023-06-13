@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar \
+${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.08.0-SNAPSHOT-cuda11.jar \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.concurrentGpuTasks=2
 ```
@@ -48,6 +48,5 @@ Name | Description | Default Value | Applicable at
 <a name="sql.shuffle.spillThreads"></a>spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6|Runtime
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false|Runtime
 
-For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced 
-Configuration](https://nvidia.github.io/spark-rapids/docs/additional-functionality/advanced_configs.html) page.
+For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
 

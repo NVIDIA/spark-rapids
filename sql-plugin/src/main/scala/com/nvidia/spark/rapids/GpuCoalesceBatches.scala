@@ -698,7 +698,9 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override protected def popOnDeck(): ColumnarBatch = {
-    val ret = onDeck.get.getColumnarBatch()
+    val ret = withRetryNoSplit[ColumnarBatch] {
+      onDeck.get.getColumnarBatch()
+    }
     clearOnDeck()
     ret
   }
