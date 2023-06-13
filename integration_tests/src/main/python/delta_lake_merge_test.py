@@ -21,7 +21,7 @@ from data_gen import *
 from marks import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, spark_version
 
 # Databricks changes the number of files being written, so we cannot compare logs
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
@@ -129,7 +129,8 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
 @allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() < "3.3.2", reason="NOT MATCHED BY SOURCE added in DBR 12.2")
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_340(), reason="NOT MATCHED BY SOURCE added in Delta Lake 2.4")
 def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec")

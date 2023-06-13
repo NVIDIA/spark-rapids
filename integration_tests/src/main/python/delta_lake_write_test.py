@@ -54,6 +54,11 @@ def del_keys(key_list, c_val, g_val):
 
 def fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""
+    # note that we remove many byte metrics because number of bytes can vary
+    # between CPU and GPU. We skip `numTargetRows*` due to
+    # https://github.com/NVIDIA/spark-rapids/issues/8556 and this is currently
+    # safe because we fall back to CPU for queries involving
+    # `NOT MATCHED BY SOURCE. Tracking issue is https://github.com/NVIDIA/spark-rapids/issues/8415
     for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs", \
             "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted", \
             "numTargetBytesUpdated", "numTargetBytesRemoved", \
