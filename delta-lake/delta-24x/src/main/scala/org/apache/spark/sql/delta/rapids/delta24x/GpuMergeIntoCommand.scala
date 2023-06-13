@@ -22,15 +22,12 @@
 package org.apache.spark.sql.delta.rapids.delta24x
 
 import java.util.concurrent.TimeUnit
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.nvidia.spark.rapids.{BaseExprMeta, GpuOverrides, RapidsConf}
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
-
 import org.apache.spark.SparkContext
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.InternalRow
@@ -40,6 +37,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeRef
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.delta.DeltaOperations.MergePredicate
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddCDCFile, AddFile, FileAction}
 import org.apache.spark.sql.delta.commands.DeltaCommand
@@ -402,13 +400,17 @@ case class GpuMergeIntoCommand(
           }
         }
 
-        deltaTxn.commit(
+        // Note that this changed as of Delta Lake 2.4.0 to use `commitIfNeeded`
+        // instead of `commit`
+        deltaTxn.commitIfNeeded(
           deltaActions,
           DeltaOperations.Merge(
             Option(condition),
             matchedClauses.map(DeltaOperations.MergePredicate(_)),
             notMatchedClauses.map(DeltaOperations.MergePredicate(_)),
-            Seq.empty // TODO: notMatchedBySourcesPredicate
+            // We do not support notMatchedBySourcePredicates yet and fall back to CPU
+            // See https://github.com/NVIDIA/spark-rapids/issues/8415
+            notMatchedBySourcePredicates = Seq.empty[MergePredicate]
           )
         )
 
