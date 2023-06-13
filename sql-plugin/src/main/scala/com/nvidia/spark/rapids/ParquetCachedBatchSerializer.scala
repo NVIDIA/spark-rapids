@@ -730,7 +730,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
               // columns
               iter = new ColumnarBatch(null, cachedBatch.numRows).rowIterator().asScala
             } else {
-              iter = convertCachedBatchToInternalRowIter
+              iter = convertCachedBatchToInternalRowIter(cachedBatch)
             }
           }
           iter != null && iter.hasNext
@@ -748,8 +748,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         /**
          * This method converts a CachedBatch to an iterator of InternalRows.
          */
-        private def convertCachedBatchToInternalRowIter: Iterator[InternalRow] = {
-          val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
+        private def convertCachedBatchToInternalRowIter(
+            parquetCachedBatch: ParquetCachedBatch): Iterator[InternalRow] = {
           val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
           withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
             val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
