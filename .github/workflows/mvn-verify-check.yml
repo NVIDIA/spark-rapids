@@ -63,10 +63,12 @@ jobs:
 
           echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
+          # jdk8
+          jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8,\"profiles\":\"individual,pre-merge\"}" "${SPARK_BASE_SHIM_VERSION}")
           # jdk11
-          jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
+          jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11,\"profiles\":\"individual,pre-merge,jdk11\"}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
           # jdk17
-          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
+          jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"profiles\":\"individual,pre-merge,jdk17\"}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
           # jdk
           jdkVersionArrBody=$jdk11VersionArrBody$jdk17VersionArrBody
           jdkVersionArrBody=${jdkVersionArrBody:1}
@@ -137,6 +139,6 @@ jobs:
       - name: Build JDK
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P "individual,pre-merge,jdk${{ matrix.java-version }}"
+          -P "${{ matrix.profiles }}"
           -Dbuildver=${{ matrix.spark-version }}
           $COMMON_MVN_FLAGS
