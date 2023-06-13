@@ -49,5 +49,5 @@ Name | Description | Default Value | Applicable at
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false|Runtime
 
 For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced 
-Configuration](https://nvidia.github.io/spark-rapids/docs/additional-functionality/advanced_configs.html) page.
+Configuration](additional-functionality/advanced_configs.md) page.
 
