@@ -2014,7 +2014,7 @@ object RapidsConf {
         |The following configuration options are supported by the RAPIDS Accelerator for Apache Spark.
         |
         |For commonly used configurations and examples of setting options, please refer to the 
-        |[RAPIDS Accelerator for Configuration](configs.md) page.
+        |[RAPIDS Accelerator for Configuration](../configs.md) page.
         |""".stripMargin)
       // scalastyle:on line.size.limit
       println("\n## Advanced Configuration\n")

@@ -12,7 +12,7 @@ They are documented here for completeness and advanced usage.
 The following configuration options are supported by the RAPIDS Accelerator for Apache Spark.
 
 For commonly used configurations and examples of setting options, please refer to the 
-[RAPIDS Accelerator for Configuration](configs.md) page.
+[RAPIDS Accelerator for Configuration](../configs.md) page.
 
 
 ## Advanced Configuration
