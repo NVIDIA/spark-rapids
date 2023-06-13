@@ -48,6 +48,5 @@ Name | Description | Default Value | Applicable at
 <a name="sql.shuffle.spillThreads"></a>spark.rapids.sql.shuffle.spillThreads|Number of threads used to spill shuffle data to disk in the background.|6|Runtime
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false|Runtime
 
-For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced 
-Configuration](additional-functionality/advanced_configs.md) page.
+For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
 
