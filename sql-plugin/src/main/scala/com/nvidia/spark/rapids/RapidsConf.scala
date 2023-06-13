@@ -1989,8 +1989,7 @@ object RapidsConf {
     if (asTable) {
       // scalastyle:off line.size.limit
       println("""
-        |For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced 
-        |Configuration](additional-functionality/advanced_configs.md) page.
+        |For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
         |""".stripMargin)
       // scalastyle:on line.size.limit
     }
