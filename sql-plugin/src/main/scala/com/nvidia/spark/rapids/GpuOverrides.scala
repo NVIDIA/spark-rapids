@@ -3383,7 +3383,7 @@ object GpuOverrides extends Logging {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
             case _ =>
-              willNotWorkOnGpu("JsonToStructs only supports MapType<StringType, StringType> " +
+              willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                                "input schema")
           }
           GpuJsonScan.tagJsonToStructsSupport(a.options, this)
