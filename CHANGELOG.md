@@ -115,6 +115,8 @@ Generated on 2023-06-13
 ### PRs
 |||
 |:---|:---|
+|[#8567](https://github.com/NVIDIA/spark-rapids/pull/8567)|Fixed a link in config doc[skip ci]|
+|[#8562](https://github.com/NVIDIA/spark-rapids/pull/8562)|Update changelog to latest 230612 [skip ci]|
 |[#8560](https://github.com/NVIDIA/spark-rapids/pull/8560)|Fix relative path in config doc [skip ci]|
 |[#8557](https://github.com/NVIDIA/spark-rapids/pull/8557)|Disable `JsonToStructs` for input schema other than `Map<String, String>`|
 |[#8549](https://github.com/NVIDIA/spark-rapids/pull/8549)|Revert "Handle caching empty batch (#8507)"|
