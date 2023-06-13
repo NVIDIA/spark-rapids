@@ -207,6 +207,7 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     } finally {
       toClose.foreach(cb => cb.close())
       TrampolineUtil.unsetTaskContext()
+      context.markTaskComplete()
     }
   }
 
@@ -272,24 +273,25 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
      cudfCols: Array[ColumnVector],
      gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector], splitAt: Int*): Unit = {
     // mock static method for Table
-    val theTableMock = mockStatic(classOf[Table], (iom: InvocationOnMock) => {
-      val ret = iom.callRealMethod().asInstanceOf[TableWriter]
-      val spyRet = spy(ret)
+    val theTableMock = mockStatic(classOf[Table], (_: InvocationOnMock) => {
+      val ret = mock(classOf[TableWriter])
       doAnswer( invocation =>
         checkSize(invocation.getArgument(0, classOf[Table]))
-      ).when(spyRet).write(isA(classOf[Table]))
-      spyRet
+      ).when(ret).write(isA(classOf[Table]))
+      ret
     })
     val cb = new ColumnarBatch(gpuCols, ROWS)
-    whenSplitCalled(cb, testResources, splitAt: _*)
-    val ser = new ParquetCachedBatchSerializer
-    val dummySchema = new StructType(
-      Array(StructField("empty", ByteType, false),
-        StructField("empty", ByteType, false),
-        StructField("empty", ByteType, false)))
-    ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
-      BYTES_ALLOWED_PER_BATCH, false)
-    theTableMock.close()
+    try {
+      whenSplitCalled(cb, testResources, splitAt: _*)
+      val ser = new ParquetCachedBatchSerializer
+      val dummySchema = new StructType(
+        gpuCols.map( _ => StructField("empty", ByteType, false)))
+      ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema,
+        BYTES_ALLOWED_PER_BATCH, false)
+    } finally {
+      theTableMock.close()
+      gpuCols(0).close()
+    }
   }
 
   private def testColumnarBatchToCachedBatchIterator(
