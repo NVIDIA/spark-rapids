@@ -23,6 +23,7 @@ package org.apache.spark.sql.delta.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.internal.Logging

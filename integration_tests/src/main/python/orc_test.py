@@ -19,7 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_an
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh, is_spark_340_or_later
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -41,9 +41,26 @@ orc_timestamp_gen = get_orc_timestamp_gen()
 
 # test with original orc file reader, the multi-file parallel reader for cloud
 original_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'PERFILE'}
-multithreaded_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED'}
+multithreaded_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                                      'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '0',
+                                      'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
+multithreaded_orc_file_reader_combine_ordered_conf = {
+    'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+    'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+    'spark.rapids.sql.reader.multithreaded.read.keepOrder': True}
+multithreaded_orc_file_reader_combine_unordered_conf = {
+    'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+    'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+    'spark.rapids.sql.reader.multithreaded.read.keepOrder': False}
 coalescing_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'COALESCING'}
-reader_opt_confs = [original_orc_file_reader_conf, multithreaded_orc_file_reader_conf, coalescing_orc_file_reader_conf]
+reader_opt_confs_common = [original_orc_file_reader_conf, multithreaded_orc_file_reader_conf,
+                           coalescing_orc_file_reader_conf,
+                           multithreaded_orc_file_reader_combine_ordered_conf]
+reader_opt_confs = reader_opt_confs_common + [
+    pytest.param(multithreaded_orc_file_reader_combine_unordered_conf, marks=pytest.mark.ignore_order(local=True))]
+# The Count result can not be sorted, so local sort can not be used.
+reader_opt_confs_for_count = reader_opt_confs_common + [multithreaded_orc_file_reader_combine_unordered_conf]
+
 
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
@@ -241,7 +258,7 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/ORC_DATA'
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read.orc(data_path),
+            lambda spark: spark.read.orc(data_path),
             conf=all_confs)
 
 # Setup external table by altering column names
@@ -423,6 +440,45 @@ def test_missing_column_names(spark_tmp_table_factory, reader_confs):
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)),
         reader_confs)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_for_count, ids=idfn)
+def test_missing_column_names_count(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
+        reader_confs)
+
+# ORC checks if there are no column names by looking at the column names
+# so it is possible to have some of the names match the pattern and other not
+def setup_orc_file_partial_no_column_names(spark, table_name, location=None):
+    drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
+    create_query = "CREATE TABLE `{}` (`_col1` INT, `arr` ARRAY<STRING>, `str` STRUCT<a: INT>) USING orc".format(table_name)
+    if location:
+        create_query += f" LOCATION '{location}'"
+    insert_query = "INSERT INTO {} VALUES(13, array('155'), named_struct('a', 2020))".format(table_name)
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_partial_missing_column_names(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_partial_no_column_names(spark, table_name))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT str,arr FROM {}".format(table_name)),
+        reader_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_for_count, ids=idfn)
+def test_partial_missing_column_names_count(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_partial_no_column_names(spark, table_name))
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark : spark.sql("SELECT * FROM {}".format(table_name)),
+        reader_confs)
+
+
+
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_missing_column_names_with_schema(spark_tmp_table_factory, spark_tmp_path, reader_confs):
     table_name = spark_tmp_table_factory.get()
@@ -432,6 +488,14 @@ def test_missing_column_names_with_schema(spark_tmp_table_factory, spark_tmp_pat
         lambda spark : spark.read.schema("a int, b string, c int").orc(table_location),
         reader_confs)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_for_count, ids=idfn)
+def test_missing_column_names_count_with_schema(spark_tmp_table_factory, spark_tmp_path, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    table_location = spark_tmp_path + "/ORC_DATA"
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name, table_location))
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark : spark.read.schema("a int, b string, c int").orc(table_location),
+        reader_confs)
 
 def setup_orc_file_with_column_names(spark, table_name):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
@@ -702,3 +766,98 @@ def test_orc_read_count(spark_tmp_path):
 def test_orc_read_varchar_as_string(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))
+
+
+@pytest.mark.parametrize('gens', orc_gens_list, ids=idfn)
+@pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_order):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # 50 partitions to generate enough small files
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(data_path))
+    all_confs = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                 'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                 'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.orc(data_path), conf=all_confs)
+
+
+@pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, keep_order):
+    orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+                orc_timestamp_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1/key2=21'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/ORC_DATA/key=2/key2=22'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(third_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                 'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                 'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.orc(data_path), conf=all_confs)
+
+
+@pytest.mark.skipif(is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
+@pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
+def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
+    """
+    Test that a file containing CHAR data is readable as STRING.
+    """
+    assert_gpu_and_cpu_are_equal_collect(
+        reader(std_input_path + '/' + data_file),
+        conf={})
+
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.skipif(is_before_spark_340(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
+@pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
+def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):
+    """
+    Test that a file containing CHAR data is readable as STRING.
+    Note: This test can be removed when
+    https://github.com/NVIDIA/spark-rapids/issues/8324 is resolved.
+    """
+    assert_gpu_fallback_collect(
+        reader(std_input_path + '/' + data_file),
+        cpu_fallback_class_name="ProjectExec",
+        conf={})
+
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, orc_impl, reader_confs, col_name):
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.orc.impl': orc_impl})
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    reader = read_func(data_path)
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').orc(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).selectExpr(col_name),
+            conf=all_confs)

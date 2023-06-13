@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
 
@@ -106,7 +107,7 @@ abstract class GpuWindowExpressionMetaBase(
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
                   case ByteType | ShortType | IntegerType | LongType |
-                       DateType | TimestampType | DecimalType() => true
+                       DateType | TimestampType | StringType | DecimalType() => true
                   case _ => false
                 }
               }
@@ -785,7 +786,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  * </code>
  * which can be output.
  */
-trait BatchedRunningWindowFixer extends AutoCloseable {
+trait BatchedRunningWindowFixer extends AutoCloseable with CheckpointRestore {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -922,7 +923,7 @@ trait GpuUnboundToUnboundWindowWithFixer {
  * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
  */
 class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
-    extends BatchedUnboundedToUnboundedWindowFixer with Arm {
+    extends BatchedUnboundedToUnboundedWindowFixer {
   private var previousValue: Option[Long] = None
 
   override def reset(): Unit = {
@@ -972,8 +973,28 @@ class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
  * right thing when they see a null.
  */
 class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
-    extends BatchedRunningWindowFixer with Arm with Logging {
+    extends BatchedRunningWindowFixer with Logging {
   private var previousResult: Option[Scalar] = None
+
+  // checkpoint
+  private var checkpointPreviousResult: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    checkpointPreviousResult = previousResult
+  }
+
+  override def restore(): Unit = {
+    if (checkpointPreviousResult.isDefined) {
+      // close previous result
+      previousResult match {
+        case Some(r) if r != checkpointPreviousResult.get =>
+          r.close()
+        case _ =>
+      }
+      previousResult = checkpointPreviousResult
+      checkpointPreviousResult = None
+    }
+  }
 
   def getPreviousResult: Option[Scalar] = previousResult
 
@@ -1019,10 +1040,42 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
  * might be able to make this more generic but we need to see what the use case really is.
  */
 class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
-    extends BatchedRunningWindowFixer with Arm with Logging {
+    extends BatchedRunningWindowFixer with Logging {
   private val name = "sum"
   private var previousResult: Option[Scalar] = None
   private var previousOverflow: Option[Scalar] = None
+
+  // checkpoint
+  private var checkpointResult: Option[Scalar] = None
+  private var checkpointOverflow: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    checkpointOverflow = previousOverflow
+    checkpointResult = previousResult
+  }
+
+  override def restore(): Unit = {
+    if (checkpointOverflow.isDefined) {
+      // close previous result
+      previousOverflow match {
+        case Some(r) if r != checkpointOverflow.get =>
+          r.close()
+        case _ =>
+      }
+      previousOverflow = checkpointOverflow
+      checkpointOverflow = None
+    }
+    if (checkpointResult.isDefined) {
+      // close previous result
+      previousResult match {
+        case Some(r) if r != checkpointResult.get =>
+          r.close()
+        case _ =>
+      }
+      previousResult = checkpointResult
+      checkpointResult = None
+    }
+  }
 
   def updateState(finalOutputColumn: cudf.ColumnVector,
       wasOverflow: Option[cudf.ColumnVector]): Unit = {
@@ -1243,7 +1296,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
  * happens in the `scanCombine` method for GpuRank.  It is a little ugly but it works to maintain
  * the requirement that the input to the fixer is a single column.
  */
-class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
+class RankFixer extends BatchedRunningWindowFixer with Logging {
   import RankFixer._
 
   // We have to look at row number as well as rank.  This fixer is the same one that `GpuRowNumber`
@@ -1253,6 +1306,28 @@ class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
   private[this] def previousRow: Option[Scalar] = rowNumFixer.getPreviousResult
   // The previous rank value
   private[this] var previousRank: Option[Scalar] = None
+
+  // checkpoint
+  private[this] var checkpointRank: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    rowNumFixer.checkpoint()
+    checkpointRank = previousRank
+  }
+
+  override def restore(): Unit = {
+    rowNumFixer.restore()
+    if (checkpointRank.isDefined) {
+      // close previous result
+      previousRank match {
+        case Some(r) if r != checkpointRank.get =>
+          r.close()
+        case _ =>
+      }
+      previousRank = checkpointRank
+      checkpointRank = None
+    }
+  }
 
   override def needsOrderMask: Boolean = true
 
@@ -1321,7 +1396,7 @@ class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
   }
 }
 
-object RankFixer extends Arm {
+object RankFixer {
   private def fixRankSamePartDifferentOrdering(rank: cudf.ColumnView,
       previousRow: Option[Scalar]): cudf.ColumnVector =
     rank.add(previousRow.get, rank.getType)
@@ -1347,10 +1422,30 @@ object RankFixer extends Arm {
  * If anything is outside of a continues partition by group then we just keep
  * those values unchanged.
  */
-class DenseRankFixer extends BatchedRunningWindowFixer with Arm with Logging {
+class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
   import DenseRankFixer._
 
   private var previousRank: Option[Scalar] = None
+
+  // checkpoint
+  private var checkpointRank: Option[Scalar] = None
+
+  override def checkpoint(): Unit = {
+    checkpointRank = previousRank
+  }
+
+  override def restore(): Unit = {
+    if (checkpointRank.isDefined) {
+      // close previous result
+      previousRank match {
+        case Some(r) if r != checkpointRank.get =>
+          r.close()
+        case _ =>
+      }
+      previousRank = checkpointRank
+      checkpointRank = None
+    }
+  }
 
   override def needsOrderMask: Boolean = true
 
@@ -1418,7 +1513,7 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Arm with Logging {
   }
 }
 
-object DenseRankFixer extends Arm {
+object DenseRankFixer {
   private[this] def isFirstTrue(cv: cudf.ColumnView): Boolean = {
     withResource(cv.getScalarElement(0)) { scalar =>
       scalar.getBoolean

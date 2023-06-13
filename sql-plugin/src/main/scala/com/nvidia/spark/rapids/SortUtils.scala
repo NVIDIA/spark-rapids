@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,14 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object SortUtils extends Arm {
+object SortUtils {
   @scala.annotation.tailrec
   def extractReference(exp: Expression): Option[GpuBoundReference] = exp match {
     case r: GpuBoundReference => Some(r)
@@ -64,7 +65,7 @@ object SortUtils extends Arm {
  */
 class GpuSorter(
     val sortOrder: Seq[SortOrder],
-    inputSchema: Array[Attribute]) extends Arm with Serializable {
+    inputSchema: Array[Attribute]) extends Serializable {
 
   /**
    * A class that provides convenience methods for sorting batches of data
@@ -210,9 +211,14 @@ class GpuSorter(
     }
   }
 
-  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists ( order =>
-    DataTypeUtils.isNestedType(order.child.dataType)
-  )
+  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
+    order.child.dataType match {
+      case _: BinaryType =>
+        // binary is represented in cudf as a LIST column of UINT8
+        true
+      case t => DataTypeUtils.isNestedType(t)
+    }
+  }
 
   /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
   private[this] lazy val hasUnsupportedNestedInRideColumns = {
@@ -220,7 +226,7 @@ class GpuSorter(
     val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
     rideColumnIndices.exists { idx =>
       TrampolineUtil.dataTypeExistsRecursively(projectedBatchTypes(idx),
-        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType])
+        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType] || t.isInstanceOf[BinaryType])
     }
   }
 
@@ -356,22 +362,17 @@ class GpuSorter(
    * data, and drop the added columns.
    * @param inputBatch the batch to sort
    * @param sortTime metric for the amount of time taken to sort.
-   * @param peakDevMemory metric for the peak memory usage
    * @return the sorted batch
    */
   final def fullySortBatch(
       inputBatch: ColumnarBatch,
-      sortTime: GpuMetric,
-      peakDevMemory: GpuMetric): ColumnarBatch = {
+      sortTime: GpuMetric): ColumnarBatch = {
     if (inputBatch.numCols() == 0) {
       // Special case
       return new ColumnarBatch(Array.empty, inputBatch.numRows())
     }
 
-    var peakMem = 0L
     val sortedTbl = withResource(appendProjectedColumns(inputBatch)) { toSort =>
-      // inputBatch is completely contained in toSort, so don't need to add it too
-      peakMem += GpuColumnVector.getTotalDeviceMemoryUsed(toSort)
       // We are going to skip gathering the computed columns
       // In cases where we don't need the computed columns again this can save some time
       withResource(computeSortOrder(toSort, sortTime)) { gatherMap =>
@@ -383,8 +384,6 @@ class GpuSorter(
       }
     }
     withResource(sortedTbl) { sortedTbl =>
-      peakMem += GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
-      peakDevMemory.set(Math.max(peakDevMemory.value, peakMem))
       // We don't need to remove any projected columns, because they were never gathered
       GpuColumnVector.from(sortedTbl, originalTypes)
     }

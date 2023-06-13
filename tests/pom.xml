@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.04.1</version>
+        <version>23.06.0</version>
     </parent>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
-    <version>23.04.1</version>
+    <version>23.06.0</version>
 
     <dependencies>
         <dependency>
@@ -370,6 +370,15 @@
             </activation>
         </profile>
         <profile>
+            <id>release324</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>324</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
             <id>release330</id>
             <activation>
                 <property>
@@ -393,6 +402,15 @@
                 <property>
                     <name>buildver</name>
                     <value>332</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release333</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>333</value>
                 </property>
             </activation>
         </profile>

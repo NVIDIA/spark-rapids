@@ -71,7 +71,7 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
  * to replace paths and then we have the config that specifies direct paths to replace and
  * user has to manually mount those.
  */
-object AlluxioUtils extends Logging with Arm {
+object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
   private val ALLUXIO_SCHEME = "alluxio://"
   private val mountedBuckets: scala.collection.mutable.Map[String, String] =

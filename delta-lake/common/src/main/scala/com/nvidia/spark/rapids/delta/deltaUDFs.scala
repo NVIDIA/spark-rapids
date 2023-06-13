@@ -19,13 +19,13 @@ package com.nvidia.spark.rapids.delta
 import ai.rapids.cudf.{ColumnVector, Scalar, Table}
 import ai.rapids.cudf.Table.DuplicateKeepOption
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.util.AccumulatorV2
 
 class GpuDeltaRecordTouchedFileNameUDF(accum: AccumulatorV2[String, java.util.Set[String]])
-    extends Function[String, Int] with RapidsUDF with Arm with Serializable {
+    extends Function[String, Int] with RapidsUDF with Serializable {
 
   override def apply(fileName: String): Int = {
     accum.add(fileName)
@@ -58,7 +58,7 @@ class GpuDeltaRecordTouchedFileNameUDF(accum: AccumulatorV2[String, java.util.Se
 }
 
 class GpuDeltaMetricUpdateUDF(metric: SQLMetric)
-    extends Function0[Boolean] with RapidsUDF with Arm with Serializable {
+    extends Function0[Boolean] with RapidsUDF with Serializable {
 
   override def apply(): Boolean = {
     metric += 1

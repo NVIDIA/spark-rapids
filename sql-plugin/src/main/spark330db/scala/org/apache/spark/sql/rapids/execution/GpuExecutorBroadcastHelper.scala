@@ -19,7 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -36,7 +37,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * these relations on the executor because they do the work of the join on the GPU device itself,
  * which means they require a format of the data that can be used on the GPU.
  */
-object GpuExecutorBroadcastHelper extends Arm {
+object GpuExecutorBroadcastHelper {
 
   // This reads the shuffle data that we have retrieved using `getShuffleRDD` from the shuffle
   // exchange. WARNING: Do not use this method outside of this context. This method can only be

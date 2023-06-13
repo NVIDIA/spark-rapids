@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,15 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{Arm, GatherUtils, GpuMetric, NvtxWithMetrics}
+import com.nvidia.spark.rapids.{GatherUtils, GpuMetric, NvtxWithMetrics}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.random.PoissonSampler
 
 class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
                         numOutputRows: GpuMetric, numOutputBatches: GpuMetric, opTime: GpuMetric)
-  extends PoissonSampler[ColumnarBatch](fraction, useGapSamplingIfPossible) with Arm {
+  extends PoissonSampler[ColumnarBatch](fraction, useGapSamplingIfPossible) {
 
   override def clone: PoissonSampler[ColumnarBatch] =
     new GpuPoissonSampler(fraction, useGapSamplingIfPossible,

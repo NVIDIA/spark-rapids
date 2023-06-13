@@ -24,6 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -51,7 +52,7 @@ class RebatchingRoundoffIterator(
     targetRoundoff: Int,
     inputRows: GpuMetric,
     inputBatches: GpuMetric)
-    extends Iterator[ColumnarBatch] with Arm {
+    extends Iterator[ColumnarBatch] {
   var pending: Option[SpillableColumnarBatch] = None
 
   TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
@@ -171,7 +172,7 @@ class RebatchingRoundoffIterator(
  * A simple queue that holds the pending batches that need to line up with
  * and combined with batches coming back from python
  */
-class BatchQueue extends AutoCloseable with Arm {
+class BatchQueue extends AutoCloseable {
   private val queue: mutable.Queue[SpillableColumnarBatch] =
     mutable.Queue[SpillableColumnarBatch]()
   private var isSet = false

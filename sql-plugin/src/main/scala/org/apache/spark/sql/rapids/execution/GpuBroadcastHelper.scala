@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,15 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.GpuColumnVector
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuBroadcastHelper extends Arm {
+object GpuBroadcastHelper {
   /**
    * Given a broadcast relation get a ColumnarBatch that can be used on the GPU.
    *

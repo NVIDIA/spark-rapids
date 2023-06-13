@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.{ColumnarRdd, ColumnarToRowIterator, GpuBatchUtilsSuite, GpuColumnVectorUtils, NoopMetric, RapidsHostColumnVector, SparkQueryCompareTestSuite, TestResourceFinder}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.SparkConf
@@ -109,8 +110,6 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
               assert(output.isNullAt(i))
             } else {
               if (f.dataType.isInstanceOf[DecimalType]) {
-                val l = input.get(i)
-                val r = output.get(i, f.dataType)
                 assert(input.get(i) == output.get(i, f.dataType)
                     .asInstanceOf[Decimal].toJavaBigDecimal)
               } else {

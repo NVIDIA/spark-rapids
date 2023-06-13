@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.IntUnaryOperator
 
 import ai.rapids.cudf.DeviceMemoryBuffer
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -40,9 +41,7 @@ case class ShuffleReceivedBufferId(
 
 /** Catalog for lookup of shuffle buffers by block ID */
 class ShuffleReceivedBufferCatalog(
-    catalog: RapidsBufferCatalog) extends Arm with Logging {
-
-  private val deviceStore = RapidsBufferCatalog.getDeviceStorage
+    catalog: RapidsBufferCatalog) extends Logging {
 
   /** Mapping of table ID to shuffle buffer ID */
   private[this] val tableMap = new ConcurrentHashMap[Int, ShuffleReceivedBufferId]

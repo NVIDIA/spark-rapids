@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.zorder
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.ZOrder
 import com.nvidia.spark.rapids.shims.ShimExpression
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import ai.rapids.cudf.{DecimalUtils, DType}
 
 import org.apache.spark.sql.types._
 
-object DecimalUtil extends Arm {
+object DecimalUtil {
 
   def createCudfDecimal(dt: DecimalType): DType =
     DecimalUtils.createDecimalType(dt.precision, dt.scale)

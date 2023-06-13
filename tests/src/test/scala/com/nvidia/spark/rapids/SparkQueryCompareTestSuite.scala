@@ -145,7 +145,7 @@ object SparkSessionHolder extends Logging {
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends FunSuite with Arm {
+trait SparkQueryCompareTestSuite extends FunSuite {
   import SparkSessionHolder.withSparkSession
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
@@ -1663,6 +1663,19 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (Double.NaN, 3.2d),
       (null, null)
     ).toDF("doubles", "more_doubles")
+  }
+
+  def decimals(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String, BigDecimal)](
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("11.9999999988")),
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("12.0")),
+      ("a", BigDecimal("11.9999999988")),
+      ("a", BigDecimal("11.9999999988"))
+    ).toDF("text", "number")
   }
 
   def doubleWithDifferentKindsOfNansAndZeros(session: SparkSession): DataFrame = {

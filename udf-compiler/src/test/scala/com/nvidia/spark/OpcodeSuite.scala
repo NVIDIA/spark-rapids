@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -264,9 +264,9 @@ class OpcodeSuite extends FunSuite {
 
   test("ISTORE_<n> all") {
     val myudf: () => Int = () => {
-      var myInt : Int = 1
-      var myInt3 : Int = myInt
-      var myInt4 : Int = myInt * myInt3
+      val myInt : Int = 1
+      val myInt3 : Int = myInt
+      val myInt4 : Int = myInt * myInt3
       myInt4
     }
     val dataset = List(1).toDS()
@@ -278,8 +278,8 @@ class OpcodeSuite extends FunSuite {
 
   test("DSTORE_<n> even") {
     val myudf: () => Double = () => {
-      var myDoub : Double = 0.0
-      var myDoub2 : Double = 1.0 - myDoub
+      val myDoub : Double = 0.0
+      val myDoub2 : Double = 1.0 - myDoub
       myDoub2
     }
     val dataset = List(1).toDS()
@@ -291,8 +291,8 @@ class OpcodeSuite extends FunSuite {
 
   test("DSTORE_<n> odd") {
     val myudf: (Int) => Double = (_) => {
-      var myDoub : Double = 1.0
-      var myDoub2 : Double = 1.0 * myDoub
+      val myDoub : Double = 1.0
+      val myDoub2 : Double = 1.0 * myDoub
       myDoub2
     }
     val dataset = List(1).toDS()
@@ -362,9 +362,9 @@ class OpcodeSuite extends FunSuite {
 
   test("FSTORE_1,2,3") {
     val myudf: (Float) => Float = (a) => {
-      var myFloat : Float = a
-      var myFloat2 : Float = myFloat + a
-      var myFloat3 : Float = myFloat2 + a
+      val myFloat : Float = a
+      val myFloat2 : Float = myFloat + a
+      val myFloat3 : Float = myFloat2 + a
       myFloat3
     }
     val dataset = List(5.0f).toDS()
@@ -377,7 +377,7 @@ class OpcodeSuite extends FunSuite {
 
   test("LSTORE_2") {
     val myudf: (Long) => Long = (a) => {
-      var myLong : Long = a
+      val myLong : Long = a
       myLong
     }
     val dataset = List(5L).toDS()
@@ -389,7 +389,7 @@ class OpcodeSuite extends FunSuite {
 
   test("LSTORE_3") {
     val myudf: (Int, Long) => Long = (_, b) => {
-      var myLong : Long = b
+      val myLong : Long = b
       myLong
     }
     val dataset = List((1,5L)).toDF("x","y")
@@ -401,7 +401,7 @@ class OpcodeSuite extends FunSuite {
 
   test("Boolean check") {
     val myudf: () => Boolean = () => {
-      var myBool : Boolean = true
+      val myBool : Boolean = true
       myBool
     }
     val dataset = List(true).toDS()
@@ -511,7 +511,7 @@ class OpcodeSuite extends FunSuite {
 
   test("FSTORE_0, LSTORE_1") {
     val myudf: () => Float = () => {
-      var myFloat : Float = 1.0f
+      val myFloat : Float = 1.0f
       myFloat
     }
     val dataset = List(5.0f).toDS()
@@ -523,7 +523,7 @@ class OpcodeSuite extends FunSuite {
 
   test("LSTORE_0") {
     val myudf: () => Long = () => {
-      var myLong : Long = 1L
+      val myLong : Long = 1L
       myLong
     }
     val dataset = List(1L).toDS()
@@ -757,7 +757,7 @@ class OpcodeSuite extends FunSuite {
 
   test("Cast Int to Short") {
     val myudf: () => Short = () => {
-      var myVar : Int = 1
+      val myVar : Int = 1
       val myVar2 : Short = myVar.toShort
       myVar2
     }
@@ -771,7 +771,7 @@ class OpcodeSuite extends FunSuite {
 
   test("Cast Int to Byte") {
     val myudf: () => Byte = () => {
-      var myVar : Int = 1
+      val myVar : Int = 1
       val myVar2 : Byte = myVar.toByte
       myVar2
     }
@@ -861,7 +861,6 @@ class OpcodeSuite extends FunSuite {
     val u = makeUdf(myudf)
     val dataset = List(20, 19).toDF("x")
     val result = dataset.withColumn("new", u(col("x")))
-    val ref = dataset.withColumn("new", col("x") < 20)
     assert(udfIsCompiled(result))
     assert(!result.queryExecution.analyzed.toString.contains("if"))
   }
@@ -918,7 +917,7 @@ class OpcodeSuite extends FunSuite {
       try {
         x = a
       } catch {
-        case ex: Exception => { }
+        case _: Exception => { }
       }
       x
     }
@@ -2334,7 +2333,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: capture a var outside class") {
-    var capturedArg: Int = 4
+    val capturedArg: Int = 4
     class C {
       val myudf: (String) => Int = str => {
         str.length + capturedArg
@@ -2440,7 +2439,7 @@ class OpcodeSuite extends FunSuite {
     }
     val u = makeUdf(myudf)
     val dataset = List("first,second").toDF("x").repartition(1)
-    var result = dataset.withColumn("new", explode(u(col("x"))))
+    val result = dataset.withColumn("new", explode(u(col("x"))))
     val ref = List(("first,second","first"),("first,second","second")).toDF("x","new")
     checkEquiv(result,ref)
   }

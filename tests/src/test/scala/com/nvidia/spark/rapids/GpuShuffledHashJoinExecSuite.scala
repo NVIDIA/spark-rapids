@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, JCudfSerialization, Table}
+import com.nvidia.spark.rapids.Arm._
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.scalatest.FunSuite
@@ -30,7 +31,7 @@ import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** Tests for the "prepareBuildBatchesForJoin" function. */
-class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
+class GpuShuffledHashJoinExecSuite extends FunSuite with MockitoSugar {
   private val metricMap = mock[Map[String, GpuMetric]]
   when(metricMap(any())).thenReturn(NoopMetric)
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.Scalar
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.connector.read.PartitionReader
@@ -51,7 +52,7 @@ class ColumnarPartitionReaderWithPartitionValues(
   }
 }
 
-object ColumnarPartitionReaderWithPartitionValues extends Arm {
+object ColumnarPartitionReaderWithPartitionValues {
   def newReader(partFile: PartitionedFile,
       baseReader: PartitionReader[ColumnarBatch],
       partitionSchema: StructType): PartitionReader[ColumnarBatch] = {

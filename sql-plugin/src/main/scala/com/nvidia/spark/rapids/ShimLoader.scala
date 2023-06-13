@@ -58,13 +58,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-23.04.1.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-23.04.1.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-23.04.1.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-23.04.1.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -82,7 +82,6 @@ object ShimLoader extends Logging {
   private val shimCommonURL = new URL(s"${shimRootURL.toString}spark3xx-common/")
   @volatile private var shimProviderClass: String = _
   @volatile private var shimProvider: SparkShimServiceProvider = _
-  @volatile private var sparkShims: SparkShims = _
   @volatile private var shimURL: URL = _
   @volatile private var pluginClassLoader: ClassLoader = _
   @volatile private var conventionalSingleShimJarDetected: Boolean = _
@@ -403,7 +402,7 @@ object ShimLoader extends Logging {
   def newPlanShims(): PlanShims = ShimReflectionUtils.newInstanceOf[PlanShims](
     "com.nvidia.spark.rapids.shims.PlanShimsImpl"
   )
-  
+
   def loadGpuColumnVector(): Class[_] = {
     ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }

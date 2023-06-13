@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.types.{DataType, DataTypes, Decimal, DecimalType, StructType}
+import com.nvidia.spark.rapids.Arm.withResource
+
+import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructType}
 
 abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
 
@@ -170,11 +172,6 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
       // whole number need to be within tolerance
       compare(expected.toDouble, actual.toDouble, 0.00001)
     }
-  }
-
-  def compareStringifiedDecimalsInSemantic(expected: String, actual: String): Boolean = {
-    (expected == null && actual == null) ||
-        (expected != null && actual != null && Decimal(expected) == Decimal(actual))
   }
 
   private def getAs(column: RapidsHostColumnVector, index: Int, dataType: DataType): Option[Any] = {

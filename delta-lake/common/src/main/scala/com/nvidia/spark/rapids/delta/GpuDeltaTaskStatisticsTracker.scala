@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * This file was derived from DataSkippingStatsTracker.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -23,8 +23,6 @@ package com.nvidia.spark.rapids.delta
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.ColumnView
-import com.nvidia.spark.rapids.GpuColumnVector
 import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
 import org.apache.hadoop.fs.Path
 
@@ -55,7 +53,7 @@ case class GpuDeltaFileStatistics(stats: Map[String, String]) extends WriteTaskS
 class GpuDeltaTaskStatisticsTracker(
     dataCols: Seq[Attribute],
     statsColExpr: Expression,
-    batchStatsToRow: (Array[ColumnView], InternalRow) => Unit)
+    batchStatsToRow: (ColumnarBatch, InternalRow) => Unit)
     extends ColumnarWriteTaskStatsTracker {
 
   protected[this] val submittedFiles = mutable.HashMap[String, InternalRow]()
@@ -158,10 +156,7 @@ class GpuDeltaTaskStatisticsTracker(
     val aggBuffer = submittedFiles(filePath)
     extendedRow.update(0, aggBuffer)
 
-    // filter out the partition columns from the batch
-    val columnViews = GpuColumnVector.extractBases(batch).asInstanceOf[Array[ColumnView]]
-
-    batchStatsToRow(columnViews, gpuResultsBuffer)
+    batchStatsToRow(batch, gpuResultsBuffer)
 
     extendedRow.update(1, gpuResultsBuffer)
     mergeStats.target(aggBuffer).apply(extendedRow)
@@ -187,7 +182,7 @@ class GpuDeltaTaskStatisticsTracker(
 class GpuDeltaJobStatisticsTracker(
     val dataCols: Seq[Attribute],
     val statsColExpr: Expression,
-    val batchStatsToRow: (Array[ColumnView], InternalRow) => Unit)
+    val batchStatsToRow: (ColumnarBatch, InternalRow) => Unit)
     extends ColumnarWriteJobStatsTracker {
 
   var recordedStats: Map[String, String] = _

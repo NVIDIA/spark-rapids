@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -216,14 +217,14 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
     noopCopyOutput: Seq[GpuExpression],
     deleteRowOutput: Seq[GpuExpression],
     metrics: Map[String, GpuMetric])
-    extends Iterator[ColumnarBatch] with AutoCloseable with Arm {
-
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+    extends Iterator[ColumnarBatch] with AutoCloseable {
 
   private[this] val intermediateTypes: Array[DataType] = noopCopyOutput.map(_.dataType).toArray
   private[this] var nextBatch: Option[ColumnarBatch] = None
   private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME, NoopMetric)
   private[this] val numOutputRows = metrics.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric)
+
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     nextBatch = nextBatch.orElse(processNextBatch())

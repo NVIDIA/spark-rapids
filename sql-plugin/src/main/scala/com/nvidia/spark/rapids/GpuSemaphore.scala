@@ -114,7 +114,7 @@ object GpuSemaphore {
   }
 }
 
-private final class GpuSemaphore() extends Logging with Arm {
+private final class GpuSemaphore() extends Logging {
   import GpuSemaphore._
   private val semaphore = new Semaphore(MAX_PERMITS)
 

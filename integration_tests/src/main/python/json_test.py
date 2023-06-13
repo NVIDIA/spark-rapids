@@ -367,4 +367,108 @@ def test_from_json_map():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
-        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@allow_non_gpu('ProjectExec', 'JsonToStructs')
+def test_from_json_map_fallback():
+    # The test here is working around some inconsistencies in how the keys are parsed for maps
+    # on the GPU the keys are dense, but on the CPU they are sparse
+    json_string_gen = StringGen(r'{"a": \d\d}')
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,INT>')),
+        'JsonToStructs',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<a:string>',
+                                    'struct<d:string>',
+                                    'struct<a:string,b:string>',
+                                    'struct<c:int,a:string>',
+                                    'struct<a:string,a:string>',
+                                    ])
+def test_from_json_struct(schema):
+    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1\d\d\d}').with_special_pattern('', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<teacher:string>',
+                                    'struct<student:struct<name:string,age:int>>',
+                                    'struct<teacher:string,student:struct<name:string,age:int>>'])
+def test_from_json_struct_of_struct(schema):
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}').with_special_pattern('', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<teacher:string>',
+                                    'struct<student:array<struct<name:string,class:string>>>',
+                                    'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
+def test_from_json_struct_of_list(schema):
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
+                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}').with_special_pattern('', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
+def test_from_json_struct_all_empty_string_input(schema):
+    json_string_gen = StringGen('')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema', [("dates.json", _date_schema),("dates.json", _timestamp_schema),
+                                             ("timestamps.json", _timestamp_schema)])
+def test_json_datetime_parsing_fallback_cpu_fallback(std_input_path, filename, schema):
+    data_path = std_input_path + "/" + filename
+    assert_gpu_fallback_collect(
+        lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").json(data_path),
+        'FileSourceScanExec',
+        conf=_enable_all_types_conf)
+
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema', [("ints.json", _int_schema)])
+def test_json_datetime_parsing_fallback_no_datetime(std_input_path, filename, schema):
+    data_path = std_input_path + "/" + filename
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").json(data_path),
+        conf=_enable_all_types_conf)
+
+@pytest.mark.skip(reason=str("https://github.com/NVIDIA/spark-rapids/issues/8403"))
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
+    all_confs = {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.rapids.sql.format.json.read.enabled': True,
+            'spark.rapids.sql.format.json.enabled': True}
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').json(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(gen.data_type).json(data_path).selectExpr(col_name),
+            conf=all_confs)

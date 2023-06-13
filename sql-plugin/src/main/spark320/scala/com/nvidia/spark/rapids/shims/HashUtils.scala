@@ -20,19 +20,22 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "333"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{Arm, ColumnCastUtil}
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ColumnCastUtil
 
-object HashUtils extends Arm {
+object HashUtils {
   /**
    * In Spark 3.2.0+ -0.0 is normalized to 0.0
    * @param in the input to normalize

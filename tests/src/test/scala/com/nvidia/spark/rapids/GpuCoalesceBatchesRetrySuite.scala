@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatest.mockito.MockitoSugar
@@ -28,8 +29,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesRetrySuite
   extends RmmSparkRetrySuiteBase
-    with MockitoSugar
-      with Arm {
+    with MockitoSugar {
 
   private def buildBatchesToCoalesce(): Seq[ColumnarBatch] = {
     (0 until 10).map { _ =>
@@ -264,7 +264,6 @@ class GpuCoalesceBatchesRetrySuite
       NoopMetric,
       NoopMetric,
       NoopMetric,
-      NoopMetric,
       "test",
       false)
     with CoalesceIteratorMocks {
@@ -289,7 +288,6 @@ class GpuCoalesceBatchesRetrySuite
         Seq(LongType).toArray,
         goal,
         maxDecompressBatchMemory=10240,
-        NoopMetric,
         NoopMetric,
         NoopMetric,
         NoopMetric,
@@ -322,7 +320,6 @@ class GpuCoalesceBatchesRetrySuite
         batchesToConcat.iterator,
         Seq(LongType).toArray,
         goal,
-        NoopMetric,
         NoopMetric,
         NoopMetric,
         NoopMetric,

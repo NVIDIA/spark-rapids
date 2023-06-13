@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.04.1</version>
+        <version>23.06.0</version>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>23.04.1</version>
+    <version>23.06.0</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -86,10 +86,18 @@
             </properties>
         </profile>
         <profile>
-            <id>jdk11</id>
+            <id>jdk11-test</id>
             <properties>
                 <included_buildvers>
                     ${jdk11.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>jdk17-test</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk17.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
@@ -464,6 +472,7 @@ self.log("... OK")
                                     <ac:then>
                                         <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
                                             <arg value="${project.basedir}/../docs/configs.md"/>
+                                            <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
                                             <arg value="${project.basedir}/../docs/supported_ops.md"/>

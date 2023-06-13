@@ -221,8 +221,8 @@ else
     fi
 
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
-    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
-    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
+    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC -da:ai.rapids.cudf.AssertEmptyNulls -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
+    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -da:ai.rapids.cudf.AssertEmptyNulls -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='4'
@@ -236,16 +236,40 @@ else
 
     export PYSP_TEST_spark_hadoop_hive_exec_scratchdir="$RUN_DIR/hive"
 
-    # Extract Databricks version from deployed configs. This is set automatically on Databricks
+    # Extract Databricks version from deployed configs.
+    # spark.databricks.clusterUsageTags.sparkVersion is set automatically on Databricks
     # notebooks but not when running Spark manually.
+    #
+    # At the OS level the DBR version can be obtailed via
+    # 1. DATABRICKS_RUNTIME_VERSION environment set by Databricks, e.g., 11.3
+    # 2. File at /databricks/DBR_VERSION created by Databricks, e.g., 11.3
+    # 3. The value for Spark conf in file /databricks/common/conf/deploy.conf created by Databricks,
+    #    e.g. 11.3.x-gpu-ml-scala2.12
+    #
+    # For cases 1 and 2 append '.' for version matching in 3XYdb SparkShimServiceProvider
+    #
+    DBR_VERSION=/databricks/DBR_VERSION
     DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
-    if [[ -f $DB_DEPLOY_CONF ]]; then
-      DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
-      if [[ -z $DB_VER ]]; then
-        echo >&2 "Unable to determine Databricks version"
-        exit 1
+    if [[ -n "${DATABRICKS_RUNTIME_VERSION}" ]]; then
+      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion="${DATABRICKS_RUNTIME_VERSION}."
+    elif [[ -f $DBR_VERSION || -f $DB_DEPLOY_CONF ]]; then
+      DB_VER="$(< ${DBR_VERSION})." || \
+        DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
+      # if we did not error out on reads we should have at least four characters "x.y."
+      if (( ${#DB_VER} < 4 )); then
+          echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
+          exit 1
       fi
       export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
+    else
+      cat << EOF
+This node does not define
+- DATABRICKS_RUNTIME_VERSION environment,
+- Files containing version information: $DBR_VERSION, $DB_DEPLOY_CONF
+
+Proceeding assuming a non-Databricks environment.
+EOF
+
     fi
 
     # Set spark.task.maxFailures for most schedulers.

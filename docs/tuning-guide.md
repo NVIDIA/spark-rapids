@@ -248,6 +248,12 @@ Configuration keys:
 
 Default value: `0`
 
+## Input File Caching
+
+If the Spark application accesses the same data multiple times, it may benefit from the
+RAPIDS Accelerator file cache. See the [filecache documentation](additional-functionality/filecache.md)
+for details.
+
 ## Columnar Batch Size
 Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#sql.batchSizeBytes)
 
@@ -330,7 +336,6 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 | numPartitions     | partitions                   | Number of output partitions from a file scan or shuffle exchange.                                                                                                                                                                                                      |
 | opTime            | op time                      | Time that an operator takes, exclusive of the time for executing or fetching results from child operators, and typically outside of the time it takes to acquire the GPU semaphore. <br/> Note: Sometimes contains CPU times, e.g.: concatTime                         |
 | partitionSize     | partition data size          | Total size in bytes of output partitions.                                                                                                                                                                                                                              |
-| peakDevMemory     | peak device memory           | Peak GPU memory used during execution of an operator.                                                                                                                                                                                                                  |
 | sortTime          | sort time                    | Time spent in sort operations in GpuSortExec and GpuTopN.                                                                                                                                                                                                              |                                                                                                                                                                                          |
 | streamTime        | stream time                  | Time spent reading data from a child. This generally happens for the stream side of a hash join or for columnar to row and row to columnar operations.                                                                                                                 |
 

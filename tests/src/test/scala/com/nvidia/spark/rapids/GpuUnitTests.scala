@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
 import ai.rapids.cudf.DType._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Nondeterministic}
 import org.apache.spark.sql.types._
@@ -152,7 +153,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
 
   private def checkEvaluationWithoutCodegen(gpuExpression: GpuExpression,
       expected: GpuColumnVector,
-      inputBatch: ColumnarBatch = EmptyBatch): Unit = {
+      inputBatch: ColumnarBatch): Unit = {
     try {
       withResource(evaluateWithoutCodegen(gpuExpression, inputBatch)) { actual =>
           checkResult(actual, expected, gpuExpression)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.io.Serializable
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -309,7 +310,7 @@ case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
   }
 }
 
-object GpuLogarithm extends Arm {
+object GpuLogarithm {
 
   /**
    * Replace negative values with nulls. Note that the caller is responsible for closing the
@@ -430,7 +431,7 @@ case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
   }
 }
 
-object GpuHypot extends Arm {
+object GpuHypot {
   def chooseXandY(lhs: ColumnVector, rhs: ColumnVector): Seq[ColumnVector] = {
     withResource(lhs.abs) { lhsAbs =>
       withResource(rhs.abs) { rhsAbs =>
@@ -799,7 +800,7 @@ case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-private object RoundingErrorUtil extends Arm {
+private object RoundingErrorUtil {
   /**
    * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
    *

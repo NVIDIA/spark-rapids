@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,7 +50,6 @@ import org.apache.iceberg.types.Types;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
-import org.apache.parquet.schema.DecimalMetadata;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
@@ -278,7 +277,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           }
           return DoubleType$.MODULE$;
         case DECIMAL:
-          DecimalMetadata metadata = primitiveType.getDecimalMetadata();
+          @SuppressWarnings("deprecation")
+          org.apache.parquet.schema.DecimalMetadata metadata = primitiveType.getDecimalMetadata();
           return DecimalType$.MODULE$.apply(metadata.getPrecision(), metadata.getScale());
         default:
           return SparkSchemaUtil.convert(iPrimitive);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import java.io.File
 import org.scalatest.Assertions
@@ -30,7 +31,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */
-object TestUtils extends Assertions with Arm {
+object TestUtils extends Assertions {
   // Need to set a legacy config to allow clearing the active session
   private val clearSessionConf = {
     val conf = new SQLConf

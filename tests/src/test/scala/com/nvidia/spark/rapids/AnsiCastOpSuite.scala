@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -460,13 +460,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   test("ansi_cast decimal to string") {
     val sqlCtx = SparkSession.getActiveSession.get.sqlContext
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
-    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
 
     Seq(10, 15, 18).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
           ansiMode = true,
-          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+          comparisonFunc = None)
       }
     }
   }
@@ -476,10 +475,17 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
-  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
+  private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => {
+    d match {
+      case dec: Decimal if isSpark340OrLater =>
+        Some(dec.toJavaBigDecimal.toPlainString)
+      case _ =>
+        Some(String.valueOf(d))
+    }
+  }
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
-      comparisonFunc: Option[(String, String) => Boolean] = None): Unit = {
+      comparisonFunc: Option[(String, String) => Boolean] ): Unit = {
     // AnsiCast is merged into Cast from Spark 3.4.0.
     // Use reflection to avoid shims.
     val key = Class.forName {
@@ -723,17 +729,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  ///////////////////////////////////////////////////////////////////////////
-  // Copying between Hive tables, which has special rules
-  ///////////////////////////////////////////////////////////////////////////
-  testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
-    frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
-  }
-
-  testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf) {
-    frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
-  }
-
   private def testCastTo(castTo: DataType)(frame: DataFrame): DataFrame ={
     frame.withColumn("c1", col("c0").cast(castTo))
   }
@@ -750,28 +745,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     spark.sql(s"CREATE TABLE $t2 (a $sqlDataType) USING parquet")
     assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
     spark.sql(s"SELECT a FROM $t2")
-  }
-
-  /**
-   * Copy data between two tables, causing ansi_cast() expressions to be inserted into the plan.
-   */
-  private def doTableCopy(frame: DataFrame,
-    sqlSourceType: String,
-    sqlDestType: String): DataFrame = {
-
-    val spark = frame.sparkSession
-    val now = System.currentTimeMillis()
-    val t1 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t1_$now"
-    val t2 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t2_$now"
-    val t3 = s"AnsiCastOpSuite_doTableCopy_${sqlSourceType}_${sqlDestType}_t3_$now"
-    frame.createOrReplaceTempView(t1)
-    spark.sql(s"CREATE TABLE $t2 (c0 $sqlSourceType) USING parquet")
-    spark.sql(s"CREATE TABLE $t3 (c0 $sqlDestType) USING parquet")
-    // insert into t2
-    assertContainsAnsiCast(spark.sql(s"INSERT INTO $t2 SELECT c0 AS a FROM $t1"))
-    // copy from t2 to t1, with an ansi_cast()
-    spark.sql(s"INSERT INTO $t3 SELECT c0 FROM $t2")
-    spark.sql(s"SELECT c0 FROM $t3")
   }
 
   /**
@@ -931,7 +904,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private val HIVE_INT_SQL_TYPE = "INT"
   private val HIVE_SHORT_SQL_TYPE = "SMALLINT"
   private val HIVE_BYTE_SQL_TYPE = "TINYINT"
-  private val HIVE_FLOAT_SQL_TYPE = "FLOAT"
   private val HIVE_STRING_SQL_TYPE = "STRING"
 
   private def testData(dt: DataType)(spark: SparkSession) = {

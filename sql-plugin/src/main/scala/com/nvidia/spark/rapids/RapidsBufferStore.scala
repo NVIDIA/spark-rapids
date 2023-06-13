@@ -21,6 +21,7 @@ import java.util.Comparator
 import scala.collection.mutable
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -37,7 +38,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 abstract class RapidsBufferStore(val tier: StorageTier)
-    extends AutoCloseable with Logging with Arm {
+    extends AutoCloseable with Logging {
 
   val name: String = tier.toString
 
@@ -65,14 +66,14 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       if (old != null) {
         throw new DuplicateBufferException(s"duplicate buffer registered: ${buffer.id}")
       }
-      totalBytesStored += buffer.size
+      totalBytesStored += buffer.getMemoryUsedBytes
 
       // device buffers "spillability" is handled via DeviceMemoryBuffer ref counting
       // so spillableOnAdd should be false, all other buffer tiers are spillable at
       // all times.
       if (spillableOnAdd) {
         if (spillable.offer(buffer)) {
-          totalBytesSpillable += buffer.size
+          totalBytesSpillable += buffer.getMemoryUsedBytes
         }
       }
     }
@@ -82,9 +83,9 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       spilling.remove(id)
       val obj = buffers.remove(id)
       if (obj != null) {
-        totalBytesStored -= obj.size
+        totalBytesStored -= obj.getMemoryUsedBytes
         if (spillable.remove(obj)) {
-          totalBytesSpillable -= obj.size
+          totalBytesSpillable -= obj.getMemoryUsedBytes
         }
       }
     }
@@ -118,14 +119,14 @@ abstract class RapidsBufferStore(val tier: StorageTier)
         if (!spilling.contains(buffer.id) && buffers.containsKey(buffer.id)) {
           // try to add it to the spillable collection
           if (spillable.offer(buffer)) {
-            totalBytesSpillable += buffer.size
+            totalBytesSpillable += buffer.getMemoryUsedBytes
             logDebug(s"Buffer ${buffer.id} is spillable. " +
               s"total=${totalBytesStored} spillable=${totalBytesSpillable}")
           } // else it was already there (unlikely)
         }
       } else {
         if (spillable.remove(buffer)) {
-          totalBytesSpillable -= buffer.size
+          totalBytesSpillable -= buffer.getMemoryUsedBytes
           logDebug(s"Buffer ${buffer.id} is not spillable. " +
             s"total=${totalBytesStored}, spillable=${totalBytesSpillable}")
         } // else it was already removed
@@ -137,8 +138,8 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       if (buffer != null) {
         // mark the id as "spilling" (this buffer is in the middle of a spill operation)
         spilling.add(buffer.id)
-        totalBytesSpillable -= buffer.size
-        logDebug(s"Spilling buffer ${buffer.id}. size=${buffer.size} " +
+        totalBytesSpillable -= buffer.getMemoryUsedBytes
+        logDebug(s"Spilling buffer ${buffer.id}. size=${buffer.getMemoryUsedBytes} " +
           s"total=${totalBytesStored}, new spillable=${totalBytesSpillable}")
       }
       buffer
@@ -194,17 +195,13 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
    * @param buffer data from another store
-   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. The ownership
-   *                     for `memoryBuffer` is transferred to this store. The store may close
-   *                     `memoryBuffer` if necessary.
    * @param stream CUDA stream to use for copy or null
    * @return the new buffer that was created
    */
   def copyBuffer(
       buffer: RapidsBuffer,
-      memoryBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    freeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
+    freeOnExcept(createBuffer(buffer, stream)) { newBuffer =>
       addBuffer(newBuffer)
       newBuffer
     }
@@ -226,15 +223,11 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    * @note DO NOT close the buffer unless adding a reference!
    * @note `createBuffer` impls should synchronize against `stream` before returning, if needed.
    * @param buffer data from another store
-   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. The ownership
-   *                     for `memoryBuffer` is transferred to this store. The store may close
-   *                     `memoryBuffer` if necessary.
    * @param stream CUDA stream to use or null
    * @return the new buffer that was created.
    */
   protected def createBuffer(
      buffer: RapidsBuffer,
-     memoryBuffer: MemoryBuffer,
      stream: Cuda.Stream): RapidsBufferBase
 
   /** Update bookkeeping for a new buffer */
@@ -253,11 +246,10 @@ abstract class RapidsBufferStore(val tier: StorageTier)
   /** Base class for all buffers in this store. */
   abstract class RapidsBufferBase(
       override val id: RapidsBufferId,
-      override val size: Long,
-      override val meta: TableMeta,
+      _meta: TableMeta,
       initialSpillPriority: Long,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-      extends RapidsBuffer with Arm {
+      extends RapidsBuffer {
     private val MAX_UNSPILL_ATTEMPTS = 100
 
     // isValid and refcount must be used with the `RapidsBufferBase` lock held
@@ -265,6 +257,8 @@ abstract class RapidsBufferStore(val tier: StorageTier)
     protected[this] var refcount = 0
 
     private[this] var spillPriority: Long = initialSpillPriority
+
+    def meta: TableMeta = _meta
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
@@ -343,7 +337,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
                   logDebug(s"Unspilling $this $id to $DEVICE")
                   val newBuffer = catalog.unspillBufferToDeviceStore(
                     this,
-                    materializeMemoryBuffer,
                     Cuda.DEFAULT_STREAM)
                   withResource(newBuffer) { _ =>
                     return newBuffer.getDeviceMemoryBuffer
@@ -359,8 +352,9 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           materializeMemoryBuffer match {
             case h: HostMemoryBuffer =>
               withResource(h) { _ =>
-                closeOnExcept(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
-                  logDebug(s"copying from host $h to device $deviceBuffer")
+                closeOnExcept(DeviceMemoryBuffer.allocate(h.getLength)) { deviceBuffer =>
+                  logDebug(s"copying ${h.getLength} from host $h to device $deviceBuffer " +
+                      s"of size ${deviceBuffer.getLength}")
                   deviceBuffer.copyFromHostBuffer(h)
                   deviceBuffer
                 }
@@ -402,7 +396,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           freeBuffer()
         }
       } else {
-        logWarning(s"Trying to free an invalid buffer => $id, size = $size, $this")
+        logWarning(s"Trying to free an invalid buffer => $id, size = ${getMemoryUsedBytes}, $this")
       }
     }
 
@@ -420,6 +414,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       releaseResources()
     }
 
-    override def toString: String = s"$name buffer size=$size"
+    override def toString: String = s"$name buffer size=${getMemoryUsedBytes}"
   }
 }

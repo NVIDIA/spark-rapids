@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.RapidsUDF
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.functions.col
 
@@ -54,7 +55,7 @@ class KnownNotNullSuite extends SparkQueryCompareTestSuite {
 /**
  * A Rapids UDF for test only.
  */
-trait PlusOne extends RapidsUDF with Serializable with Arm {
+trait PlusOne extends RapidsUDF with Serializable {
 
   override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
     require(args.length == 1,

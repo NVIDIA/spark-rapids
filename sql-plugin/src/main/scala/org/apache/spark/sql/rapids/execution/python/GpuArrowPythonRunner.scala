@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
@@ -35,7 +36,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
-class BufferToStreamWriter(outputStream: DataOutputStream) extends HostBufferConsumer with Arm {
+class BufferToStreamWriter(outputStream: DataOutputStream) extends HostBufferConsumer {
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
 
   override def handleBuffer(hostBuffer: HostMemoryBuffer, length: Long): Unit = {
@@ -79,7 +80,7 @@ class StreamToBufferProvider(inputStream: DataInputStream) extends HostBufferPro
  * A trait that can be mixed-in with `GpuPythonRunnerBase`. It implements the logic from
  * Python (Arrow) to GPU/JVM (ColumnarBatch).
  */
-trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
+trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
 
   /**
    * Default to `Int.MaxValue` to try to read as many as possible.

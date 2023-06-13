@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ import java.nio.ByteBuffer
 import java.util
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{Arm, MetaUtils, RapidsBuffer, ShuffleMetadata}
+import com.nvidia.spark.rapids.{MetaUtils, RapidsBuffer, ShuffleMetadata}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyLong}
@@ -29,7 +30,7 @@ import org.mockito.Mockito._
 
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
+class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
   def setupMocks(deviceBuffers: Seq[DeviceMemoryBuffer]): (RapidsShuffleRequestHandler,
       Seq[RapidsBuffer], util.HashMap[RapidsBuffer, Int]) = {
@@ -53,7 +54,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
           val stream = invocation.getArgument[Cuda.Stream](4)
           dst.copyFromMemoryBuffer(dstOffset, deviceBuffer, srcOffset, length, stream)
         }
-        when(mockBuffer.size).thenReturn(deviceBuffer.getLength)
+        when(mockBuffer.getPackedSizeBytes).thenReturn(deviceBuffer.getLength)
         when(mockBuffer.meta).thenReturn(mockMeta)
         mockBuffer
       }
@@ -229,7 +230,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
       withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
         val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
         when(rapidsBuffer.meta).thenReturn(tableMeta)
-        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(rapidsBuffer.getPackedSizeBytes).thenReturn(tableMeta.bufferMeta().size())
         when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
           .thenReturn(rapidsBuffer)
 
@@ -286,7 +287,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
       withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
         val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
         when(rapidsBuffer.meta).thenReturn(tableMeta)
-        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(rapidsBuffer.getPackedSizeBytes).thenReturn(tableMeta.bufferMeta().size())
         when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
             .thenReturn(rapidsBuffer)
 
@@ -370,7 +371,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val rapidsBuffer = mock[RapidsBuffer]
         val tableMeta = MetaUtils.buildTableMeta(tableId, 456, bb, 100)
         when(rapidsBuffer.meta).thenReturn(tableMeta)
-        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(rapidsBuffer.getPackedSizeBytes).thenReturn(tableMeta.bufferMeta().size())
         when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(tableId)))
             .thenReturn(rapidsBuffer)
         rapidsBuffer

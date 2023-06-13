@@ -22,7 +22,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_databricks104_or_later
+from spark_session import is_databricks104_or_later, is_before_spark_320
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -148,30 +148,30 @@ def test_contains():
                 f.col('a').contains(None)
                 ))
 
-def test_trim():
-    gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
+def test_trim(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'TRIM(a)',
                 'TRIM("Ab" FROM a)',
                 'TRIM("A\ud720" FROM a)',
                 'TRIM(BOTH NULL FROM a)',
                 'TRIM("" FROM a)'))
 
-def test_ltrim():
-    gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
+def test_ltrim(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'LTRIM(a)',
                 'LTRIM("Ab", a)',
                 'TRIM(LEADING "A\ud720" FROM a)',
                 'TRIM(LEADING NULL FROM a)',
                 'TRIM(LEADING "" FROM a)'))
 
-def test_rtrim():
-    gen = mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
+def test_rtrim(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'RTRIM(a)',
                 'RTRIM("Ab", a)',
                 'TRIM(TRAILING "A\ud720" FROM a)',
@@ -429,6 +429,29 @@ def test_replace():
                 'REPLACE(a, "T", NULL)',
                 'REPLACE(a, NULL, "PROD")',
                 'REPLACE(a, "T", "")'))
+
+@incompat
+def test_translate():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'translate(a, "TEST", "PROD")',
+                'translate(a, "TEST", "P")',
+                'translate(a, "T\ud720", "PROD")',
+                'translate(a, "", "PROD")',
+                'translate(a, NULL, "PROD")',
+                'translate(a, "TEST", NULL)',
+                'translate("AaBbCc", "abc", "123")',
+                'translate("AaBbCc", "abc", "1")'))
+
+@incompat
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2+ does translate() support unicode \
+    characters with code point >= U+10000. See https://issues.apache.org/jira/browse/SPARK-34094")
+def test_translate_large_codepoints():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 \U0010FFFF A]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'translate(a, "T\U0010FFFF", "PROD")'))
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')

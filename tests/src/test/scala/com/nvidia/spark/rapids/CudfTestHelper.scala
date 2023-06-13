@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnView, DType, HostColumnVector, HostColumnVectorCore}
+import com.nvidia.spark.rapids.Arm.withResource
 import org.junit.jupiter.api.Assertions.{assertArrayEquals, assertEquals}
 
 /**
  * Convenience methods for testing cuDF calls directly. This code is largely copied
  * from the cuDF Java test suite.
  */
-object CudfTestHelper extends Arm {
+object CudfTestHelper {
 
   /**
    * Checks and asserts that passed in columns match

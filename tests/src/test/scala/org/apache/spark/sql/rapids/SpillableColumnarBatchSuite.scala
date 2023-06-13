@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.UUID
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, SpillableColumnarBatchImpl, StorageTier}
+import com.nvidia.spark.rapids.{RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, SpillableColumnarBatchImpl, StorageTier}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.scalatest.FunSuite
@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.TempLocalBlockId
 
-class SpillableColumnarBatchSuite extends FunSuite with Arm {
+class SpillableColumnarBatchSuite extends FunSuite {
 
   test("close updates catalog") {
     val id = TempSpillBufferId(0, TempLocalBlockId(new UUID(1, 2)))
@@ -47,8 +47,8 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
   }
 
   class MockBuffer(override val id: RapidsBufferId) extends RapidsBuffer {
-    override val size: Long = 123
-    override val meta: TableMeta = null
+    override def getMemoryUsedBytes: Long = 123
+    override def meta: TableMeta = null
     override val storageTier: StorageTier = StorageTier.DEVICE
     override def getMemoryBuffer: MemoryBuffer = null
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,

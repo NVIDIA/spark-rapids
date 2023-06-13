@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
 
 trait PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan
+  def isAnsiCast(e: Expression): Boolean
+  def isAnsiCastOptionallyAliased(e: Expression): Boolean
 }
 
 object PlanShims {
@@ -27,5 +30,12 @@ object PlanShims {
 
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = {
     shims.extractExecutedPlan(plan)
+  }
+
+  def isAnsiCast(e: Expression): Boolean = {
+    shims.isAnsiCast(e)
+  }
+  def isAnsiCastOptionallyAliased(e: Expression): Boolean = {
+    shims.isAnsiCastOptionallyAliased(e)
   }
 }

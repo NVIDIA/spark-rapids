@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
@@ -25,7 +26,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
 
-object RmmRapidsRetryIterator extends Arm with Logging {
+object RmmRapidsRetryIterator extends Logging {
 
   /**
    * withRetry for Iterator[T]. This helper calls a function `fn` as it takes
@@ -445,8 +446,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
    */
   class RmmRapidsRetryAutoCloseableIterator[T <: AutoCloseable, K](
       attemptIter: Spliterator[K])
-      extends RmmRapidsRetryIterator[T, K](attemptIter)
-        with Arm {
+      extends RmmRapidsRetryIterator[T, K](attemptIter) {
 
     override def hasNext: Boolean = super.hasNext
 
@@ -475,8 +475,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
    * @param attemptIter an iterator of T
    */
   class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
-      extends Iterator[K]
-          with Arm {
+      extends Iterator[K] {
     // used to figure out if we should inject an OOM (only for tests)
     private val config = new RapidsConf(SQLConf.get)
 
@@ -510,7 +509,11 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       while (result.isEmpty && attemptIter.hasNext) {
         if (!firstAttempt) {
           // call thread block API
-          RmmSpark.blockThreadUntilReady()
+          try {
+            RmmSpark.blockThreadUntilReady()
+          } catch {
+            case _: SplitAndRetryOOM => doSplit = true
+          }
         }
         firstAttempt = false
         if (doSplit) {
@@ -554,7 +557,7 @@ object RmmRapidsRetryIterator extends Arm with Logging {
               // we want to throw early here, since we got an exception
               // we were not prepared to handle
               throw lastException
-            } 
+            }
             // else another exception wrapped a retry. So we are going to try again
         }
       }
@@ -609,6 +612,24 @@ object RmmRapidsRetryIterator extends Arm with Logging {
       }
     }
   }
+
+  /**
+   * A common split function for an AutoCloseableTargetSize, which just divides the target size
+   * in half, and creates a seq with just one element representing the new target size.
+   * @return a Seq[AutoCloseableTargetSize] with 1 element.
+   */
+  def splitTargetSizeInHalf: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
+    (target: AutoCloseableTargetSize) => {
+      withResource(target) { _ =>
+        val newTarget = target.targetSize / 2
+        if (newTarget < target.minSize) {
+          throw new SplitAndRetryOOM(
+            s"GPU OutOfMemory: targetSize: ${target.targetSize} cannot be split further!" +
+                s" minimum: ${target.minSize}")
+        }
+        Seq(AutoCloseableTargetSize(newTarget, target.minSize))
+      }
+  }
 }
 
 trait CheckpointRestore {
@@ -621,4 +642,15 @@ trait CheckpointRestore {
    * Restore state that was checkpointed.
    */
   def restore(): Unit
+}
+
+/**
+ * This is a wrapper that turns a target size into an autocloseable to allow it to be used
+ * in withRetry blocks.  It is intended to be used to help with cases where the split calculation
+ * happens inside the retry block, and depends on the target size.  On a SplitAndRetryOOM,
+ * a split policy like `splitTargetSizeInHalf` can be used to retry the block with a smaller target
+ * size.
+ */
+case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
+  override def close(): Unit = ()
 }
