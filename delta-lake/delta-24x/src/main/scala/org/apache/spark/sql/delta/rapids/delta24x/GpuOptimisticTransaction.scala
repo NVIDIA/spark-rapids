@@ -22,12 +22,15 @@
 package org.apache.spark.sql.delta.rapids.delta24x
 
 import java.net.URI
+
 import scala.collection.mutable.ListBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.SparkException
 import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.catalyst.InternalRow
