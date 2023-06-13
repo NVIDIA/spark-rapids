@@ -70,7 +70,7 @@ jobs:
           # jdk17
           jdk17VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":17,\"profiles\":\"individual,pre-merge,jdk17\"}" "${SPARK_SHIM_VERSIONS_JDK17[@]}")
           # jdk
-          jdkVersionArrBody=$jdk11VersionArrBody$jdk17VersionArrBody
+          jdkVersionArrBody=$jdkHeadVersionArrBody$jdk11VersionArrBody$jdk17VersionArrBody
           jdkVersionArrBody=${jdkVersionArrBody:1}
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
           echo "jdkVersions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
