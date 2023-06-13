@@ -118,6 +118,6 @@ jobs:
       - name: Build JDK
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P 'individual,pre-merge,${{ matrix.java-version }}'
+          -P "individual,pre-merge,jdk${{ matrix.java-version }}"
           -Dbuildver=${{ matrix.spark-version }}
           $COMMON_MVN_FLAGS
