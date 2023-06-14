@@ -928,7 +928,8 @@ case class GpuMergeIntoCommand(
         notMatchedConditionsMetas ++ notMatchedOutputsMetas.flatten.flatten ++
         noopCopyOutputMetas ++ deleteRowOutputMetas
       allMetas.foreach(_.tagForGpu())
-      val canReplace = allMetas.forall(_.canExprTreeBeReplaced) && rapidsConf.isOperatorEnabled(
+      val canReplace = notMatchedBySourceConditions.isEmpty &&
+          allMetas.forall(_.canExprTreeBeReplaced) && rapidsConf.isOperatorEnabled(
         "spark.rapids.sql.exec.RapidsProcessDeltaMergeJoinExec", false, false)
       if (rapidsConf.shouldExplainAll || (rapidsConf.shouldExplain && !canReplace)) {
         val exprExplains = allMetas.map(_.explain(rapidsConf.shouldExplainAll))
@@ -1242,8 +1243,8 @@ object GpuMergeIntoCommand {
       val matchedProjs = matchedOutputs.map(_.map(generateProjection))
       val notMatchedPreds = notMatchedConditions.map(generatePredicate)
       val notMatchedProjs = notMatchedOutputs.map(_.map(generateProjection))
-//      val notMatchedBySourcePreds = notMatchedBySourceConditions.map(generatePredicate)
-//      val notMatchedBySourceProjs = notMatchedBySourceOutputs.map(_.map(generateProjection))
+      val notMatchedBySourcePreds = notMatchedBySourceConditions.map(generatePredicate)
+      val notMatchedBySourceProjs = notMatchedBySourceOutputs.map(_.map(generateProjection))
       val noopCopyProj = generateProjection(noopCopyOutput)
       val deleteRowProj = generateProjection(deleteRowOutput)
       val outputProj = UnsafeProjection.create(outputRowEncoder.schema)
@@ -1258,29 +1259,27 @@ object GpuMergeIntoCommand {
       }
 
       def processRow(inputRow: InternalRow): Iterator[InternalRow] = {
-        if (targetRowHasNoMatchPred.eval(inputRow)) {
-          // Target row did not match any source row, so just copy it to the output
-          Iterator(noopCopyProj.apply(inputRow))
+        // Identify which set of clauses to execute: matched, not-matched or not-matched-by-source
+        val (predicates, projections, noopAction) = if (targetRowHasNoMatchPred.eval(inputRow)) {
+          // Target row did not match any source row, so update the target row.
+          (notMatchedBySourcePreds, notMatchedBySourceProjs, noopCopyProj)
+        } else if (sourceRowHasNoMatchPred.eval(inputRow)) {
+          // Source row did not match with any target row, so insert the new source row
+          (notMatchedPreds, notMatchedProjs, deleteRowProj)
         } else {
-          // identify which set of clauses to execute: matched or not-matched ones
-          val (predicates, projections, noopAction) = if (sourceRowHasNoMatchPred.eval(inputRow)) {
-            // Source row did not match with any target row, so insert the new source row
-            (notMatchedPreds, notMatchedProjs, deleteRowProj)
-          } else {
-            // Source row matched with target row, so update the target row
-            (matchedPreds, matchedProjs, noopCopyProj)
-          }
+          // Source row matched with target row, so update the target row
+          (matchedPreds, matchedProjs, noopCopyProj)
+        }
 
-          // find (predicate, projection) pair whose predicate satisfies inputRow
-          val pair = (predicates zip projections).find {
-            case (predicate, _) => predicate.eval(inputRow)
-          }
+        // find (predicate, projection) pair whose predicate satisfies inputRow
+        val pair = (predicates zip projections).find {
+          case (predicate, _) => predicate.eval(inputRow)
+        }
 
-          pair match {
-            case Some((_, projections)) =>
-              projections.map(_.apply(inputRow)).iterator
-            case None => Iterator(noopAction.apply(inputRow))
-          }
+        pair match {
+          case Some((_, projections)) =>
+            projections.map(_.apply(inputRow)).iterator
+          case None => Iterator(noopAction.apply(inputRow))
         }
       }
 

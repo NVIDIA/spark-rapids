@@ -37,6 +37,10 @@ class MergeIntoCommandMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      // https://github.com/NVIDIA/spark-rapids/issues/8415
+      willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
+    }
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
