@@ -704,17 +704,20 @@ case class GpuMergeIntoCommand(
     // Make UDFs that appear in the custom join processor node deterministic, as they always
     // return true and update a metric. Catalyst precludes non-deterministic UDFs that are not
     // allowed outside a very specific set of Catalyst nodes (Project, Filter, Window, Aggregate).
-    val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRowsInSecondScan")
+    val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRowsInSecondScan",
+      deterministic = true)
     val incrUpdatedCountExpr = makeMetricUpdateUDF("numTargetRowsUpdated", deterministic = true)
-    val incrUpdatedMatchedCountExpr = makeMetricUpdateUDF("numTargetRowsMatchedUpdated")
+    val incrUpdatedMatchedCountExpr = makeMetricUpdateUDF("numTargetRowsMatchedUpdated",
+      deterministic = true)
     val incrUpdatedNotMatchedBySourceCountExpr =
-      makeMetricUpdateUDF("numTargetRowsNotMatchedBySourceUpdated")
+      makeMetricUpdateUDF("numTargetRowsNotMatchedBySourceUpdated", deterministic = true)
     val incrInsertedCountExpr = makeMetricUpdateUDF("numTargetRowsInserted", deterministic = true)
     val incrNoopCountExpr = makeMetricUpdateUDF("numTargetRowsCopied", deterministic = true)
     val incrDeletedCountExpr = makeMetricUpdateUDF("numTargetRowsDeleted", deterministic = true)
-    val incrDeletedMatchedCountExpr = makeMetricUpdateUDF("numTargetRowsMatchedDeleted")
+    val incrDeletedMatchedCountExpr = makeMetricUpdateUDF("numTargetRowsMatchedDeleted",
+      deterministic = true)
     val incrDeletedNotMatchedBySourceCountExpr =
-      makeMetricUpdateUDF("numTargetRowsNotMatchedBySourceDeleted")
+      makeMetricUpdateUDF("numTargetRowsNotMatchedBySourceDeleted", deterministic = true)
 
     // Apply an outer join to find both, matches and non-matches. We are adding two boolean fields
     // with value `true`, one to each side of the join. Whether this field is null or not after
@@ -928,8 +931,7 @@ case class GpuMergeIntoCommand(
         notMatchedConditionsMetas ++ notMatchedOutputsMetas.flatten.flatten ++
         noopCopyOutputMetas ++ deleteRowOutputMetas
       allMetas.foreach(_.tagForGpu())
-      val canReplace = notMatchedBySourceConditions.isEmpty &&
-          allMetas.forall(_.canExprTreeBeReplaced) && rapidsConf.isOperatorEnabled(
+      val canReplace = allMetas.forall(_.canExprTreeBeReplaced) && rapidsConf.isOperatorEnabled(
         "spark.rapids.sql.exec.RapidsProcessDeltaMergeJoinExec", false, false)
       if (rapidsConf.shouldExplainAll || (rapidsConf.shouldExplain && !canReplace)) {
         val exprExplains = allMetas.map(_.explain(rapidsConf.shouldExplainAll))
@@ -943,6 +945,8 @@ case class GpuMergeIntoCommand(
       }
 
       if (canReplace) {
+        println(s"canReplace=true; notMatchedBySourceConditions=$notMatchedBySourceConditions" +
+          s"; notMatchedBySourceOutputs=$notMatchedBySourceOutputs")
         val processedJoinPlan = RapidsProcessDeltaMergeJoin(
           joinedPlan,
           outputRowSchema.toAttributes,
