@@ -348,9 +348,6 @@ EOF
             --driver-java-options "$driverJavaOpts" \
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
-            --packages io.delta:delta-core_2.12:2.4.0 \
-            --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-            --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
