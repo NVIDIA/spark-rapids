@@ -50,6 +50,7 @@ class MergeIntoCommandMeta(
       mergeCmd.condition,
       mergeCmd.matchedClauses,
       mergeCmd.notMatchedClauses,
+      mergeCmd.notMatchedBySourceClauses,
       mergeCmd.migratedSchema)(conf)
   }
 }
