@@ -574,7 +574,7 @@ export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 A pull request should pass all status checks before being merged.
 #### sign-off check
 Please follow the steps in the [Sign your work](#sign-your-work) section,
-and make sure at least one commit in your pull request gets signed-off.
+and make sure at least one commit in your pull request is signed-off.
 #### blossom-ci
 The check runs on NVIDIA self-hosted runner, a [project committer](.github/workflows/blossom-ci.yml#L36) can
 manually trigger it by commenting `build`. It includes the following steps,
