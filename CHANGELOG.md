@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-06-13
+Generated on 2023-06-19
 
 ## Release 23.06
 
@@ -115,6 +115,8 @@ Generated on 2023-06-13
 ### PRs
 |||
 |:---|:---|
+|[#8581](https://github.com/NVIDIA/spark-rapids/pull/8581)|Fix 321db 330db shims build errors caused by DB updates|
+|[#8570](https://github.com/NVIDIA/spark-rapids/pull/8570)|Update changelog to latest [skip ci]|
 |[#8567](https://github.com/NVIDIA/spark-rapids/pull/8567)|Fixed a link in config doc[skip ci]|
 |[#8562](https://github.com/NVIDIA/spark-rapids/pull/8562)|Update changelog to latest 230612 [skip ci]|
 |[#8560](https://github.com/NVIDIA/spark-rapids/pull/8560)|Fix relative path in config doc [skip ci]|
