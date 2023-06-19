@@ -205,7 +205,7 @@ case class GpuUpdateCommand(
           metrics("numTouchedRows").value - metrics("numUpdatedRows").value)
       }
       txn.registerSQLMetrics(sparkSession, metrics)
-      txn.commit(totalActions, DeltaOperations.Update(condition.map(_.toString)))
+      txn.commit(totalActions, DeltaOperations.Update(condition))
       // This is needed to make the SQL metrics visible in the Spark UI
       val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
       SQLMetrics.postDriverMetricUpdates(
