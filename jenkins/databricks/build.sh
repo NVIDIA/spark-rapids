@@ -182,7 +182,7 @@ set_sw_versions()
             sw_versions[JSON4S_AST]="3.7.0-M11"
             sw_versions[JSON4S_CORE]="3.7.0-M11"
             sw_versions[KRYO]="4.0.2"
-            sw_versions[ORC]="1.6.13"
+            sw_versions[ORC]="1.6.14"
             sw_versions[PARQUET]="1.12.0"
             sw_versions[PROTOBUF]="2.6.1"
             ;;
