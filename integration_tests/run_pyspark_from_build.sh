@@ -33,6 +33,10 @@ else
             python -c 'import pyspark; print(pyspark.__version__)'
     )
     VERSION_STRING="${VERSION_STRING/-SNAPSHOT/}"
+    # PySpark uses ".dev0" instead of "-SNAPSHOT"
+    # https://github.com/apache/spark/blob/66f25e314032d562567620806057fcecc8b71f08/dev/create-release/release-build.sh#L267
+    VERSION_STRING="${VERSION_STRING/.dev0/}"
+
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
     [[ -z $SPARK_SHIM_VER ]] && { SPARK_SHIM_VER="spark${VERSION_STRING//./}"; }
 
