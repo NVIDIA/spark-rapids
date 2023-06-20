@@ -320,12 +320,14 @@ class GpuParquetWriter(
     }
   }
 
-  override def transform(batch: ColumnarBatch): Option[ColumnarBatch] = {
-    val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
-      new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
-        .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+  override def transformAndClose(batch: ColumnarBatch): ColumnarBatch = {
+    withResource(batch) { _ =>
+      val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
+        new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
+            .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+      }
+      new ColumnarBatch(transformedCols)
     }
-    Some(new ColumnarBatch(transformedCols))
   }
 
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {

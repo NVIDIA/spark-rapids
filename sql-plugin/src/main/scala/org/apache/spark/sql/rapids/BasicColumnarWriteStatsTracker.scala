@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.SpillableColumnarBatch
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
@@ -30,7 +31,6 @@ import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -153,8 +153,8 @@ class BasicColumnarWriteTaskStatsTracker(
     }
   }
 
-  override def newBatch(filePath: String, batch: ColumnarBatch): Unit = {
-    numRows += batch.numRows
+  override def newBatch(filePath: String, spillableBatch: SpillableColumnarBatch): Unit = {
+    numRows += spillableBatch.numRows
   }
 
   override def getFinalStats(taskCommitTime: Long): WriteTaskStats = {

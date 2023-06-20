@@ -906,9 +906,9 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
     compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
   }
 
-  def testExpectedGpuException[T <: Throwable](
+  def testExpectedGpuException(
     testName: String,
-    exceptionClass: Class[T],
+    exceptionClass: Class[_],
     df: SparkSession => DataFrame,
     conf: SparkConf = new SparkConf(),
     repart: Integer = 1,
@@ -934,10 +934,21 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
         }, testConf)
       })
       t match {
-        case Failure(e) if e.getClass == exceptionClass => // Good
-        case Failure(e) => throw e
+        case Failure(e) => assertResult(exceptionClass)(getRootCause(e).getClass)
         case _ => fail("Expected an exception")
       }
+    }
+  }
+
+  private def getRootCause(t: Throwable): Throwable = {
+    if (t == null) {
+      t
+    } else {
+      var current = t
+      while (current.getCause != null) {
+        current = current.getCause
+      }
+      current
     }
   }
 

@@ -23,7 +23,9 @@ package com.nvidia.spark.rapids.delta
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
+import com.nvidia.spark.rapids.SpillableColumnarBatch
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -152,11 +154,13 @@ class GpuDeltaTaskStatisticsTracker(
     })
   }
 
-  override def newBatch(filePath: String, batch: ColumnarBatch): Unit = {
+  override def newBatch(filePath: String, spillableBatch: SpillableColumnarBatch): Unit = {
     val aggBuffer = submittedFiles(filePath)
     extendedRow.update(0, aggBuffer)
 
-    batchStatsToRow(batch, gpuResultsBuffer)
+    withResource(spillableBatch.getColumnarBatch()) { batch =>
+      batchStatsToRow(batch, gpuResultsBuffer)
+    }
 
     extendedRow.update(1, gpuResultsBuffer)
     mergeStats.target(aggBuffer).apply(extendedRow)
