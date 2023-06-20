@@ -37,7 +37,7 @@ import java.nio.channels.SeekableByteChannel
 
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.{GpuMetric, HostMemoryOutputStream, NoopMetric}
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.filecache.FileCache
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataInputStream
@@ -112,15 +112,17 @@ abstract class GpuOrcDataReaderBase(
     val tailBuf = ByteBuffer.allocate(tailLength)
     val cacheChannel = FileCache.get.getDataRangeChannel(filePathString, offset, tailLength, conf)
     if (cacheChannel.isDefined) {
-      hitMetric += 1
-      hitSizeMetric += tailLength
-      readTimeMetric.ns {
-        while (tailBuf.hasRemaining) {
-          if (cacheChannel.get.read(tailBuf) < 0) {
-            throw new EOFException("Unexpected EOF while reading stripe footer")
+      withResource(cacheChannel.get) { channel =>
+        hitMetric += 1
+        hitSizeMetric += tailLength
+        readTimeMetric.ns {
+          while (tailBuf.hasRemaining) {
+            if (channel.read(tailBuf) < 0) {
+              throw new EOFException("Unexpected EOF while reading stripe footer")
+            }
           }
+          tailBuf.flip()
         }
-        tailBuf.flip()
       }
     } else {
       missMetric += 1
@@ -173,12 +175,14 @@ abstract class GpuOrcDataReaderBase(
       val size = current.getLength
       val cacheChannel = FileCache.get.getDataRangeChannel(filePathString, offset, size, conf)
       if (cacheChannel.isDefined) {
-        hitMetric += 1
-        hitSizeMetric += size
-        readTimeMetric.ns {
-          current = loader.loadCachedBlock(current, cacheChannel.get)
+        withResource(cacheChannel.get) { channel =>
+          hitMetric += 1
+          hitSizeMetric += size
+          readTimeMetric.ns {
+            current = loader.loadCachedBlock(current, channel)
+          }
+          current = current.next
         }
-        current = current.next
       } else {
         current = remoteReadSingle(current, baseOffset, loader)
       }
