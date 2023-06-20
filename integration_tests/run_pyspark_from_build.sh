@@ -26,12 +26,7 @@ then
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
     [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }
-    PY4J_TMP=(${SPARK_HOME}/python/lib/py4j-*-src.zip)
-    PY4J_FILE=${PY4J_TMP[0]}
-    VERSION_STRING=$(
-        PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} \
-            python -c 'import pyspark; print(pyspark.__version__)'
-    )
+    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep -v Scala|awk '/version\ [0-9.]+/{print $NF}'`
     VERSION_STRING="${VERSION_STRING/-SNAPSHOT/}"
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
     [[ -z $SPARK_SHIM_VER ]] && { SPARK_SHIM_VER="spark${VERSION_STRING//./}"; }
