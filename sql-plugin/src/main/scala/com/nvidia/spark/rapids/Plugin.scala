@@ -228,7 +228,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def receive(msg: Any): AnyRef = {
     msg match {
       case m: FileCacheLocalityMsg =>
-        FileCacheLocalityManager.get.handleMsg(m)
+        // Returns immediately, runs in background thread pool
+        FileCacheLocalityManager.get.asyncHandleMsg(m)
         null
       case RapidsExecutorStartupMsg(id) =>
         if (rapidsShuffleHeartbeatManager == null) {
