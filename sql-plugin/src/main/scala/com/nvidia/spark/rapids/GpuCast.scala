@@ -1260,7 +1260,7 @@ object GpuCast {
           ansiMode,
           legacyCastToString, stringToDateAnsiModeEnabled)
       }
-      withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
+      withResource(ColumnView.makeStructView(childColumns.toSeq: _*)) { casted =>
         if (input.getNullCount == 0) {
           casted.copyToColumnVector()
         } else {

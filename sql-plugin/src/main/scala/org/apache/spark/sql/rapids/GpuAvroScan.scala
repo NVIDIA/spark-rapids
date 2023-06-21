@@ -918,7 +918,7 @@ class GpuMultiFileAvroPartitionReader(
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], batchContext: BatchContext): Long = {
+      blocks: collection.Seq[DataBlockBase], batchContext: BatchContext): Long = {
     // In 'calculateEstimatedBlocksOutputSize', we have got the true size for
     // Header + All Blocks.
     footerOffset

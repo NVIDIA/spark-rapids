@@ -2019,7 +2019,7 @@ class MultiFileParquetPartitionReader(
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], bContext: BatchContext): Long = {
+      blocks: collection.Seq[DataBlockBase], bContext: BatchContext): Long = {
 
     val actualFooterSize = calculateParquetFooterSize(blocks, bContext.schema)
     // 4 + 4 is for writing size and the ending PARQUET_MAGIC.

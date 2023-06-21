@@ -460,7 +460,7 @@ object GpuWindowExec {
             .asInstanceOf[NamedExpression]
       }
     }
-    (preProject, windowOps, postProject)
+    (preProject.toSeq, windowOps.toSeq, postProject.toSeq)
   }
 
   def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
@@ -522,7 +522,7 @@ object GpuWindowExec {
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
-    BatchedOps(running, doublePass, passThrough)
+    BatchedOps(running.toSeq, doublePass.toSeq, passThrough.toSeq)
   }
 }
 
@@ -942,7 +942,7 @@ class GroupedAggregations {
                     replacePolicy.map(scanned.replaceNulls).getOrElse(scanned.incRefCount())
                 }
           }
-          func.scanCombine(isRunningBatched, replacedCols)
+          func.scanCombine(isRunningBatched, replacedCols.toSeq)
         }
 
         withResource(combined) { combined =>
@@ -1052,7 +1052,7 @@ class GroupedAggregations {
         // Don't bother to do the replace if none of them want anything replaced
         withResource(tabFromScan
             .groupBy(sortedGroupingOpts, partByPositions.indices: _*)
-            .replaceNulls(allReplace: _*)) { replaced =>
+            .replaceNulls(allReplace.toSeq: _*)) { replaced =>
           copyFromReplace.foreach { case (from, to) =>
             columns(to) = replaced.getColumn(from).incRefCount()
           }
@@ -1231,7 +1231,7 @@ trait BasicWindowCalc {
   def computeBasicWindow(cb: ColumnarBatch): Array[cudf.ColumnVector] = {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
 
-      withResource(GpuProjectExec.project(cb, initialProjections)) { proj =>
+      withResource(GpuProjectExec.project(cb, initialProjections.toSeq)) { proj =>
         aggregations.doAggs(
           isRunningBatched,
           boundOrderSpec,
@@ -1730,7 +1730,7 @@ class GpuCachedDoublePassWindowIterator(
                 newColumns += column.incRefCount()
             }
           }
-          makeBatch(newColumns)
+          makeBatch(newColumns.toSeq)
         }
       }
     }

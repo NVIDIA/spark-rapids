@@ -991,7 +991,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param batchContext the batch building context
    * @return the output size
    */
-  def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: Seq[DataBlockBase],
+  def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: collection.Seq[DataBlockBase],
       batchContext: BatchContext): Long
 
   /**
@@ -1237,7 +1237,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           }
 
           // Fourth, calculate the final buffer size
-          val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks,
+          val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks.toSeq,
             batchContext)
 
           (hmb, finalBufferSize, offset, allOutputBlocks)
@@ -1376,7 +1376,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     logDebug(s"Loaded $numRows rows from ${getFileFormatShortName}. " +
       s"${getFileFormatShortName} bytes read: $numChunkBytes. Estimated GPU bytes: $numBytes. " +
       s"Number of different partitions: ${allPartValues.size}")
-    CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk,
+    CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk.toSeq,
       numRows, rowsPerPartition.toArray, allPartValues.toArray, extraInfo)
   }
 }

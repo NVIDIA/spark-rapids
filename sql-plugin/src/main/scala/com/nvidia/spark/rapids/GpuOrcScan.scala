@@ -2398,7 +2398,7 @@ class MultiFileOrcPartitionReader(
    */
   override def calculateFinalBlocksOutputSize(
       footerOffset: Long,
-      stripes: Seq[DataBlockBase],
+      stripes: collection.Seq[DataBlockBase],
       batchContext: BatchContext): Long = {
 
     // In calculateEstimatedBlocksOutputSize, we have got the true size for
@@ -2501,7 +2501,7 @@ class MultiFileOrcPartitionReader(
       buffer: HostMemoryBuffer,
       bufferSize: Long,
       footerOffset: Long,
-      stripes: Seq[DataBlockBase],
+      stripes: collection.Seq[DataBlockBase],
       batchContext: BatchContext): (HostMemoryBuffer, Long) = {
     closeOnExcept(buffer) { _ =>
       withResource(new HostMemoryOutputStream(buffer)) { rawOut =>

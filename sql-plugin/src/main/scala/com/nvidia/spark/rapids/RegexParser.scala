@@ -854,7 +854,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def negateCharacterClass(components: Seq[RegexCharacterClassComponent]): RegexAST = {
+  private def negateCharacterClass(components: ListBuffer[RegexCharacterClassComponent]): RegexAST = {
     // There are differences between cuDF and Java handling of `\r`
     // in negated character classes. The expression `[^a]` will match
     // `\r` in Java but not in cuDF, so we replace `[^a]` with
@@ -1274,7 +1274,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               "Nested character classes are not supported", r.position)
           case _ =>
         }
-        val components: Seq[RegexCharacterClassComponent] = characters
+        val components = ListBuffer(characters
           .map {
             case r @ RegexChar(ch) if "^$.".contains(ch) => r
             case ch => rewrite(ch, replacement, None, flags) match {
@@ -1286,12 +1286,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   "characters that cannot be transpiled to supported character-class components",
                   ch.position)
             }
-          }
+          }: _*)
 
         if (negated) {
           negateCharacterClass(components)
         } else {
-          RegexCharacterClass(negated, ListBuffer(components: _*))
+          RegexCharacterClass(negated, components)
         }
 
       case sequence @ RegexSequence(parts) =>
