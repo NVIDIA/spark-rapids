@@ -28,14 +28,11 @@ else
     [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }
     PY4J_TMP=("${SPARK_HOME}"/python/lib/py4j-*-src.zip)
     PY4J_FILE=${PY4J_TMP[0]}
-    VERSION_STRING=$(
-        PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} \
-            python -c 'import pyspark; print(pyspark.__version__)'
-    )
-    VERSION_STRING="${VERSION_STRING/-SNAPSHOT/}"
     # PySpark uses ".dev0" instead of "-SNAPSHOT"
     # https://github.com/apache/spark/blob/66f25e314032d562567620806057fcecc8b71f08/dev/create-release/release-build.sh#L267
-    VERSION_STRING="${VERSION_STRING/.dev0/}"
+    VERSION_STRING=$(PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} python -c \
+        "import pyspark, re; print(re.sub('\.dev0$', '', pyspark.__version__))"
+    )
 
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
     [[ -z $SPARK_SHIM_VER ]] && { SPARK_SHIM_VER="spark${VERSION_STRING//./}"; }
