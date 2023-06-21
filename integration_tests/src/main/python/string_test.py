@@ -476,7 +476,7 @@ def test_initcap():
     # see if there are issues with spaces
     gen = mk_str_gen('([aAbB1357ȺéŸ_@%-]{0,15}[ \r\n\t]{1,2}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).select(
+            lambda spark: unary_op_df(spark, gen, seed=2).select(
                 f.initcap(f.col('a'))))
 
 @incompat

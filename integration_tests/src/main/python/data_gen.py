@@ -176,13 +176,13 @@ class ConvertGen(DataGen):
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
     """Generate strings that match a pattern"""
-    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
+    def __init__(self, pattern=None, flags=0, charset=sre_yield.CHARSET, nullable=True):
         super().__init__(StringType(), nullable=nullable)
-        self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
-        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
+        self.stringrepr = str(pattern) + ',' + str(flags) + ',' + charsetrepr
         self.pattern = pattern
+        self.flags = flags
         self.charset = charset
     
     def _cache_repr(self):
@@ -195,23 +195,19 @@ class StringGen(DataGen):
         """
         strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         length = strs.__len__()
-        def gen_str(rand):
-            index = rand.random() * length
-            return strs[int(index)]
-        return self.with_special_case(lambda rand : gen_str(rand), weight=weight)
+        return self.with_special_case(lambda rand : strs[rand.randrange(0, length)], weight=weight)
 
     def start(self, rand):
-        if self.pattern == "(.|\n){1,30}" and self.charset == sre_yield.CHARSET:
+        if self.pattern == None and self.charset == sre_yield.CHARSET:
             def gen_default_str():
+                # generate "(.|\n){1,30}"
                 return ''.join(rand.choice(sre_yield.CHARSET + ['\n']) for _ in range(30))
             self._start(rand, gen_default_str)
         else:
-            strs = self.base_strs
+            strs = sre_yield.AllStrings(self.pattern, flags=self.flags, charset=self.charset, max_count=_MAX_CHOICES)
+            # strs = self.base_strs
             length = strs.__len__()
-            def gen_str():
-                index = rand.random() * length
-                return strs[int(index)]
-            self._start(rand, gen_str)
+            self._start(rand, lambda : strs[int(rand.randrange(0, length))])
 
 BYTE_MIN = -(1 << 7)
 BYTE_MAX = (1 << 7) - 1
@@ -277,14 +273,14 @@ class DecimalGen(DataGen):
         self.scale = scale
         self.precision = precision
         self.avoid_positive_values = avoid_positive_values
-        negative_pattern = "-" if avoid_positive_values else "-?"
-        self.pattern = negative_pattern + "[0-9]{" + str(precision) + "}e" + str(-scale)
+        # negative_pattern = "-" if avoid_positive_values else "-?"
+        # self.pattern = negative_pattern + "[0-9]{" + str(precision) + "}e" + str(-scale)
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self.pattern + ')'
+        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ',' + str(self.avoid_positive_values) + ')'
 
     def start(self, rand):
         def random_decimal(rand):
@@ -955,7 +951,8 @@ def get_null_lit_string(spark_type):
 
 def _convert_to_sql(spark_type, data):
     if isinstance(data, str):
-        d = "'" + data.replace("'", "\\'") + "'"
+        d = "'" + data.replace("\\", "\\\\").replace("\'", "\\\'") + "'"
+        # d = "'" + data.replace("'", "\\'") + "'"
     elif isinstance(data, datetime):
         d = "'" + data.strftime('%Y-%m-%d T%H:%M:%S.%f').zfill(26) + "'"
     elif isinstance(data, date):
