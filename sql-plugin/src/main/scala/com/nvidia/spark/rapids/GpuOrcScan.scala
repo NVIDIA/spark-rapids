@@ -1743,7 +1743,7 @@ private object GpuOrcFileFilterHandler {
       // footer was not cached, so try to cache it
       // If we get a filecache token then we can complete the caching by providing the data.
       // If we do not get a token then we should not cache this data.
-      val cacheToken = FileCache.get.startFooterCache(filePathStr)
+      val cacheToken = FileCache.get.startFooterCache(filePathStr, conf)
       cacheToken.foreach { t =>
         val hmb = closeOnExcept(HostMemoryBuffer.allocate(bbSize, false)) { hmb =>
           hmb.setBytes(0, bb.array(), 0, bbSize)
