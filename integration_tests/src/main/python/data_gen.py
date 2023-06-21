@@ -143,7 +143,7 @@ class DataGen:
                 raise RuntimeError('Random did not pick something we expected')
             self._gen_func = choose_one
 
-    # @lru_cache(maxsize=None)
+    @lru_cache(maxsize=None)
     def gen_cache(self, step, force_no_nulls=False):
         if not self._gen_func:
             raise RuntimeError('start must be called before generating any data')
@@ -586,15 +586,6 @@ class StructGen(DataGen):
     def _cache_repr(self):
         return super()._cache_repr() + '(' + ','.join([name + child._cache_repr() for name, child in self.children]) + str(self.seed) + ')'
 
-    def gen_cache(self, step, force_no_nulls=False):
-        if not self._gen_func:
-            raise RuntimeError('start must be called before generating any data')
-        v = self._gen_func()
-        if force_no_nulls:
-            while v is None:
-                v = self._gen_func()
-        return v
-
     def start(self):
         self.rand = random.Random(self.seed)
         self.i = 0
@@ -886,7 +877,7 @@ def skip_if_not_utc():
 
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
-# @lru_cache(maxsize=128, typed=True)
+@lru_cache(maxsize=128, typed=True)
 def gen_df_help(data_gen, length):
     # rand = random.Random(seed)
     # data_gen.rand = random.Random(seed)
@@ -896,7 +887,7 @@ def gen_df_help(data_gen, length):
     # data = [data_gen.gen_cache() for index in range(0, length)]
     return data
 
-# @lru_cache(maxsize=128, typed=True)
+@lru_cache(maxsize=128, typed=True)
 def gen_df_help_df(spark, data_gen, length, num_slices=None):
     # rand = random.Random(seed)
     # data_gen.rand = random.Random(seed)
