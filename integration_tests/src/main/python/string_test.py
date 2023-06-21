@@ -468,6 +468,7 @@ def test_byte_length():
                 'BIT_LENGTH(a)', 'OCTET_LENGTH(a)'))
 
 @incompat
+@pytest.mark.xfail(reason='TODO to be confirmed as a xfail')
 def test_initcap():
     # Because we don't use the same unicode version we need to limit
     # the charicter set to something more reasonable

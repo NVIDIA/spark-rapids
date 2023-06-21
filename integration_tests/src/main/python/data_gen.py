@@ -182,6 +182,8 @@ class StringGen(DataGen):
         # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
         self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
+        self.pattern = pattern
+        self.charset = charset
     
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self.stringrepr + ')'
@@ -192,19 +194,24 @@ class StringGen(DataGen):
         instead of a hard coded string value.
         """
         strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
-        try:
-            length = int(len(strs))
-        except OverflowError:
-            length = _MAX_CHOICES
-        return self.with_special_case(lambda rand : strs[rand.randrange(0, length)], weight=weight)
+        length = strs.__len__()
+        def gen_str(rand):
+            index = rand.random() * length
+            return strs[int(index)]
+        return self.with_special_case(lambda rand : gen_str(rand), weight=weight)
 
     def start(self, rand):
-        strs = self.base_strs
-        try:
-            length = int(len(strs))
-        except OverflowError:
-            length = _MAX_CHOICES
-        self._start(rand, lambda : strs[rand.randrange(0, length)])
+        if self.pattern == "(.|\n){1,30}" and self.charset == sre_yield.CHARSET:
+            def gen_default_str():
+                return ''.join(rand.choice(sre_yield.CHARSET + ['\n']) for _ in range(30))
+            self._start(rand, gen_default_str)
+        else:
+            strs = self.base_strs
+            length = strs.__len__()
+            def gen_str():
+                index = rand.random() * length
+                return strs[int(index)]
+            self._start(rand, gen_str)
 
 BYTE_MIN = -(1 << 7)
 BYTE_MAX = (1 << 7) - 1
@@ -269,9 +276,9 @@ class DecimalGen(DataGen):
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self.scale = scale
         self.precision = precision
+        self.avoid_positive_values = avoid_positive_values
         negative_pattern = "-" if avoid_positive_values else "-?"
-        self.pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
-        self.base_strs = sre_yield.AllStrings(self.pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+        self.pattern = negative_pattern + "[0-9]{" + str(precision) + "}e" + str(-scale)
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
@@ -280,12 +287,16 @@ class DecimalGen(DataGen):
         return super()._cache_repr() + '(' + self.pattern + ')'
 
     def start(self, rand):
-        strs = self.base_strs
-        try:
-            length = int(strs.length)
-        except OverflowError:
-            length = _MAX_CHOICES
-        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
+        def random_decimal(rand):
+            if self.avoid_positive_values:
+                sign = "-"
+            else:
+                sign = rand.choice(["-", ""])
+            int_part = "".join([rand.choice("0123456789") for _ in range(self.precision)]) 
+            result = f"{sign}{int_part}e{str(-self.scale)}" 
+            return Decimal(result)
+
+        self._start(rand, lambda : random_decimal(rand))
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
@@ -317,7 +328,7 @@ class UniqueLongGen(DataGen):
         return self._current_val
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._current_val) + ')'
+        return super()._cache_repr()
 
     def start(self, rand):
         self._current_val = 0
@@ -337,7 +348,7 @@ class RepeatSeqGen(DataGen):
         return super().__repr__() + '(' + str(self._child) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + str(self._index) + ')'
+        return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
