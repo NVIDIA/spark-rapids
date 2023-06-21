@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -550,3 +550,60 @@ def test_csv_read_count(spark_tmp_path):
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path))
+
+@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
+def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
+    # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
+    data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.option("inferSchema", "true").csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path))
+
+@allow_non_gpu('FileSourceScanExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema',[("date.csv", _date_schema), ("date.csv", _ts_schema,),
+                                            ("ts.csv", _ts_schema)])
+def test_csv_datetime_parsing_fallback_cpu_fallback(std_input_path, filename, schema):
+    data_path = std_input_path + "/" + filename
+    assert_gpu_fallback_collect(
+        lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").csv(data_path),
+        'FileSourceScanExec',
+        conf=_enable_all_types_conf)
+
+@pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
+@pytest.mark.parametrize('filename,schema', [("simple_int_values.csv", _int_schema), ("str.csv", _good_str_schema)])
+def test_csv_datetime_parsing_fallback_no_datetime(std_input_path, filename, schema):
+    data_path = std_input_path + "/" + filename
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").csv(data_path),
+        conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
+@ignore_order
+def test_read_case_col_name(spark_tmp_path, spark_tmp_table_factory, read_func, v1_enabled_list, col_name):
+    all_confs = {'spark.sql.sources.useV1SourceList': v1_enabled_list}
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+            ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
+            ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
+            ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
+            ('v0', LongGen()),
+            ('v1', LongGen()),
+            ('v2', LongGen()),
+            ('v3', LongGen())]
+ 
+    gen = StructGen(gen_list, nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    reader = read_func(data_path, gen.data_type, spark_tmp_table_factory)
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.partitionBy('k0', 'k1', 'k2', 'k3').csv(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : reader(spark).selectExpr(col_name),
+            conf=all_confs)

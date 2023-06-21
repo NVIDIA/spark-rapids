@@ -33,7 +33,6 @@ import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
-import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -303,7 +302,7 @@ class GpuParquetWriter(
     timestampRebaseException: Boolean,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet", false) {
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
@@ -319,6 +318,14 @@ class GpuParquetWriter(
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
+  }
+
+  override def transform(batch: ColumnarBatch): Option[ColumnarBatch] = {
+    val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
+      new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
+        .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+    }
+    Some(new ColumnarBatch(transformedCols))
   }
 
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
@@ -366,8 +373,7 @@ class GpuParquetWriter(
 
       // Decimal types are checked and transformed only for the top level column because we don't
       // have access to Spark's data type of the nested column.
-      case (cv, dtOpt) if dtOpt.isDefined && dtOpt.get == DecimalType =>
-        val d = dtOpt.get.asInstanceOf[DecimalType]
+      case (cv, Some(d: DecimalType)) =>
         // There is a bug in Spark that causes a problem if we write Decimals with
         // precision < 10 as Decimal64.
         // https://issues.apache.org/jira/browse/SPARK-34167
@@ -380,23 +386,6 @@ class GpuParquetWriter(
           cv.copyToColumnVector()
         }
     }
-  }
-
-  /**
-   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
-   * partitioned tables, dynamic partition columns are not included in columns to be written.
-   * NOTE: It is the writer's responsibility to close the batch.
-   */
-  override def writeAndClose(batch: ColumnarBatch,
-                             statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
-    val newBatch = withResource(batch) { batch =>
-      val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
-        new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
-          .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
-      }
-      new ColumnarBatch(transformedCols)
-    }
-    super.writeAndClose(newBatch, statsTrackers)
   }
 
   override val tableWriter: TableWriter = {

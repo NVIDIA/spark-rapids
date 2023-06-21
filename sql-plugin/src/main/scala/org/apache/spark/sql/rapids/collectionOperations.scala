@@ -94,7 +94,7 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
     case (dt, 0) => GpuColumnVector.fromNull(batch.numRows(), dt)
     // For single column concat, we pass the result of child node to avoid extra cuDF call.
     case (_, 1) => children.head.columnarEval(batch)
-    case (dt, _) => {
+    case (_, _) => {
       withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
         withResource(cudf.ColumnVector.listConcatenateByRow(cols: _*)) {structs =>
           GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, structs)
@@ -513,8 +513,8 @@ object GpuArrayMin {
   }
 }
 
-abstract class GpuArrayMin(child: Expression) extends GpuUnaryExpression 
-  with ImplicitCastInputTypes 
+abstract class GpuArrayMin(child: Expression) extends GpuUnaryExpression
+  with ImplicitCastInputTypes
   with Serializable {
 
   override def nullable: Boolean = true
@@ -948,7 +948,7 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
   }
 }
 
-// Base class for GpuArrayExcept, GpuArrayUnion, GpuArrayIntersect 
+// Base class for GpuArrayExcept, GpuArrayUnion, GpuArrayIntersect
 trait GpuArrayBinaryLike extends GpuComplexTypeMergingExpression with NullIntolerant {
   val left: Expression
   val right: Expression
@@ -1210,7 +1210,7 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
     }
   }
 
-  private def constructBooleanMask(lhs: ColumnView, rhs: ColumnView, 
+  private def constructBooleanMask(lhs: ColumnView, rhs: ColumnView,
                                    offSets: ColumnView, rowCount: Long): ColumnVector = {
     withResource(lhs) { lhs =>
       withResource(rhs) { rhs =>

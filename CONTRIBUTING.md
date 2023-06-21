@@ -38,8 +38,8 @@ building at least running to the `verify` phase, e.g.:
 mvn verify
 ```
 
-After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
-This will build the plugin for a single version of Spark.  By default this is Apache Spark
+After a successful build, the RAPIDS Accelerator jar will be in the `dist/target/` directory.
+This will build the plugin for a single version of Spark.  By default, this is Apache Spark
 3.1.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
 to Maven. For instance to build Spark 3.1.1 you would use:
 
@@ -70,8 +70,13 @@ passed in the `MAVEN_OPTS` environment variable.
 
 ### Building a Distribution for Multiple Versions of Spark
 
-By default the distribution jar only includes code for a single version of Spark. If you want
-to create a jar with multiple versions we have the following options.
+By default, the distribution jar only includes code for a single version of Spark, albeit the jar file
+layout will be such that it can be accessed only using the Shim loading logic for
+[multiple Spark versions](./docs/dev/shims.md#run-time-issues). See
+[below](#building-a-distribution-for-a-single-spark-release) for dist jar creation without
+the need for a special shim class loader.
+
+If you want to create a jar with multiple versions we have the following options.
 
 1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
 2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
@@ -94,10 +99,27 @@ mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
 mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
+
+Verify that shim-specific classes are hidden from a conventional classloader.
+
+```bash
+$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
+```
+
+However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
+
+```bash
+$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+Compiled from "SparkShims.scala"
+public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
+```
+
 #### Building with buildall script
 
 There is a build script `build/buildall` that automates the local build process. Use
-`./buid/buildall --help` for up-to-date use information.
+`./build/buildall --help` for up-to-date use information.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots` that includes all released (noSnapshots) and snapshots Spark versions except for Databricks
@@ -112,28 +134,42 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 
 ### Building against different CUDA Toolkit versions
 
-You can build against different versions of the CUDA Toolkit by using qone of the following profiles:
+You can build against different versions of the CUDA Toolkit by using one of the following profiles:
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
-### Building and Testing with JDK9+
-We support JDK8 as our main JDK version, and test JDK8 and JDK11. It is possible to build and run
-with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
-the environment to your JDK root directory.
+### Building a Distribution for a Single Spark Release
 
-At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
-a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
+In many situations the user knows that the Plugin jar will be deployed for a single specific Spark
+release. It is most commonly the case when a container image for a cloud or local deployment includes
+Spark binaries as well. In such a case it is advantageous to create a jar with
+a conventional class directory structure avoiding complications such as
+[#3704](https://github.com/NVIDIA/spark-rapids/issues/3704). To this end add
+`-DallowConventionalDistJar=true` when invoking Maven.
+
+```bash
+mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
+```
+
+Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
+
+```bash
+$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Compiled from "SparkShims.scala"
+public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
+```
+
+### Building and Testing with JDK9+
+
+We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
+with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
+the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
 
 Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or later to correctly process
 [maven.compiler.release](https://github.com/davidB/scala-maven-plugin/blob/4.6.1/src/main/java/scala_maven/ScalaMojoSupport.java#L161)
 flag if cross-compilation is required.
 
 ```bash
-mvn clean verify -Dbuildver=321 \
-  -Dmaven.compiler.release=11 \
-  -Dmaven.compiler.source=11 \
-  -Dmaven.compiler.target=11 \
-  -Dscala.plugin.version=4.6.1 \
-  -DallowConventionalDistJar=true
+mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
 ```
 
 ### Iterative development during local testing
@@ -142,7 +178,7 @@ When iterating on changes impacting the `dist` module artifact directly or via
 dependencies you might find the jar creation step unacceptably slow. Due to the
 current size of the artifact `rapids-4-spark_2.12` Maven Jar Plugin spends the
 bulk of the time compressing the artifact content.
-Since the JAR file specification focusses on the file entry layout in a ZIP
+Since the JAR file specification focuses on the file entry layout in a ZIP
 archive without requiring file entries to be compressed it is possible to skip
 compression, and increase the speed of creating `rapids-4-spark_2.12` jar ~3x
 for a single Spark version Shim alone.
@@ -206,27 +242,56 @@ This may require some modifications to IDEs' standard Maven import functionality
 
 #### IntelliJ IDEA
 
-Last tested with IntelliJ IDEA 2022.3.1 (Community Edition)
+Last tested with IntelliJ IDEA 2023.1.2 (Community Edition)
+
+##### Manual Maven Install for a target Spark build
+
+Before proceeding with importing spark-rapids into IDEA or switching to a different Spark release
+profile, execute the install phase with the corresponding `buildver`, e.g. for Spark 3.4.0:
+
+```bash
+ mvn clean install -Dbuildver=340 -Dskip -DskipTests
+```
+
+##### Importing the project
+
+Our build relies on [symlink generation](./docs/dev/shimplify.md#symlinks--ide) for Spark
+release-specific sources. It is recommended to install
+the IDEA Resolve Symlinks plugin via `Marketplace` tab.
 
 To start working with the project in IDEA is as easy as
 [opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent)
 [pom.xml](pom.xml).
 
-In the most recent versions of IDEA [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
-"Import using the new IntelliJ Workspace Model API (experimental)".
+In IDEA 2022.3.1 [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
+"Import using the new IntelliJ Workspace Model API (experimental)". After 2023.1.2 the default
+"Enable fast import" can be used.
+
 In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
 [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html) "Keep source and test folders on reimport".
 
 If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
 Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2022.3/maven-projects-tool-window.html) and
 select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0.
+Make sure [Manual Maven Install](#manual-maven-install-for-a-target-spark-build) for that profile
+has been executed.
 
 Go to `File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing` and make sure
 that `Generated sources folders` is set to `Detect automatically` and `Phase to be used for folders update`
-is changed to `process-test-resources`. In the Maven tool window hit `Reload all projects` and
-`Generate Sources and Update Folders For all Projects`.
+is changed to `process-test-resources`.
+
+In the Maven tool window hit
+
+1. `Reload all projects`
+1. `Generate Sources and Update Folders For all Projects`.
 
 Known Issues:
+
+* With the old "slow" Maven importer it might be necessary to bump up maximum Java Heap size `-Xmx`
+via
+`File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing | VM options for importer`
+
+* When IDEA is upgraded, it might be necessary to remove `.idea` from the local git repository root.
 
 * There is a known issue that the test sources added via the `build-helper-maven-plugin` are not handled
 [properly](https://youtrack.jetbrains.com/issue/IDEA-100532). The workaround is to `mark` the affected
@@ -261,7 +326,6 @@ mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -pl aggregator -am \
   -Dbuildver=320 \
   -DskipTests \
   -Dskip \
-  -Dmaven.javadoc.skip \
   -Dmaven.scalastyle.skip=true \
   -Dmaven.updateconfig.skip=true
 ```
@@ -320,7 +384,7 @@ to avoid stale class files.
 Now you should be able to see Scala class members in the Explorer's Outline view and in the
 Breadcrumbs view at the top of the Editor with a Scala file open.
 
-Check Metals logs, "Run Doctor", etc if something is not working as expected. You can also verify
+Check Metals logs, "Run Doctor" etc. if something is not working as expected. You can also verify
 that the Bloop build server and the Metals language server are running by executing `jps` in the
 Terminal window:
 ```shell script
@@ -345,7 +409,7 @@ it by making sure Metals Server (Bloop client) and Bloop Server are both running
       mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
       -DdownloadSources=true \
       -Dbuildver=331 \
-      -Dskip -DskipTests -Dmaven.javadoc.skip
+      -Dskip -DskipTests
     ```
 
 1. Add [`metals.javaHome`][2] to VSCode preferences to point to Java 11+.
@@ -354,7 +418,7 @@ it by making sure Metals Server (Bloop client) and Bloop Server are both running
 
 [2]: https://github.com/scalameta/metals-vscode/pull/644/files#diff-04bba6a35cad1c794cbbe677678a51de13441b7a6ee8592b7b50be1f05c6f626R132
 #### Other IDEs
-We welcome pull requests with tips how to setup your favorite IDE!
+We welcome pull requests with tips on how to setup your favorite IDE!
 
 ### Your first issue
 
@@ -395,7 +459,7 @@ and the Scala conventions detailed above, preferring the latter.
 
 ### Sign your work
 
-We require that all contributors sign-off on their commits. This certifies that the contribution is your original work, or you have rights to submit it under the same license, or a compatible license.
+We require that all contributors sign-off on their commits. This certifies that the contribution is your original work, or you have the rights to submit it under the same license, or a compatible license.
 
 Any contribution which contains commits that are not signed off will not be accepted.
 
@@ -414,7 +478,7 @@ Signed-off-by: Your Name <your@email.com>
 The sign-off is a simple line at the end of the explanation for the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. Use your real name, no pseudonyms or anonymous contributions.  If you set your `user.name` and `user.email` git configs, you can sign your commit automatically with `git commit -s`.
 
 
-The signoff means you certify the below (from [developercertificate.org](https://developercertificate.org)):
+The sign-off means you certify the below (from [developercertificate.org](https://developercertificate.org)):
 
 ```
 Developer Certificate of Origin
@@ -492,8 +556,8 @@ Update copyright year....................................................Failed
 - duration: 0.01s
 - files were modified by this hook
 ```
-You can confirm that the update actually has happened by either inspecting its effect with
-`git diff` first or simply reexecuting `git commit` right away. The second time no file
+You can confirm that the update has actually happened by either inspecting its effect with
+`git diff` first or simply re-executing `git commit` right away. The second time no file
 modification should be triggered by the copyright year update hook and the commit should succeed.
 
 There is a known issue for macOS users if they use the default version of `sed`. The copyright update
@@ -507,13 +571,13 @@ export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 ```
 
 ### Pull request status checks
-A pull request should pass all status checks before merged.
-#### signoff check
+A pull request should pass all status checks before being merged.
+#### sign-off check
 Please follow the steps in the [Sign your work](#sign-your-work) section,
-and make sure at least one commit in your pull request get signed-off.
+and make sure at least one commit in your pull request is signed-off.
 #### blossom-ci
 The check runs on NVIDIA self-hosted runner, a [project committer](.github/workflows/blossom-ci.yml#L36) can
-manually trigger it by commenting `build`. It includes following steps,
+manually trigger it by commenting `build`. It includes the following steps,
 1. Mergeable check
 2. Blackduck vulnerability scan
 3. Fetch merged code (merge the pull request HEAD into BASE branch, e.g. fea-001 into branch-x)

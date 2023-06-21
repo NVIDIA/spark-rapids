@@ -110,8 +110,6 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
               assert(output.isNullAt(i))
             } else {
               if (f.dataType.isInstanceOf[DecimalType]) {
-                val l = input.get(i)
-                val r = output.get(i, f.dataType)
                 assert(input.get(i) == output.get(i, f.dataType)
                     .asInstanceOf[Decimal].toJavaBigDecimal)
               } else {

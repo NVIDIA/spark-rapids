@@ -509,7 +509,11 @@ object RmmRapidsRetryIterator extends Logging {
       while (result.isEmpty && attemptIter.hasNext) {
         if (!firstAttempt) {
           // call thread block API
-          RmmSpark.blockThreadUntilReady()
+          try {
+            RmmSpark.blockThreadUntilReady()
+          } catch {
+            case _: SplitAndRetryOOM => doSplit = true
+          }
         }
         firstAttempt = false
         if (doSplit) {
@@ -553,7 +557,7 @@ object RmmRapidsRetryIterator extends Logging {
               // we want to throw early here, since we got an exception
               // we were not prepared to handle
               throw lastException
-            } 
+            }
             // else another exception wrapped a retry. So we are going to try again
         }
       }
@@ -608,6 +612,24 @@ object RmmRapidsRetryIterator extends Logging {
       }
     }
   }
+
+  /**
+   * A common split function for an AutoCloseableTargetSize, which just divides the target size
+   * in half, and creates a seq with just one element representing the new target size.
+   * @return a Seq[AutoCloseableTargetSize] with 1 element.
+   */
+  def splitTargetSizeInHalf: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
+    (target: AutoCloseableTargetSize) => {
+      withResource(target) { _ =>
+        val newTarget = target.targetSize / 2
+        if (newTarget < target.minSize) {
+          throw new SplitAndRetryOOM(
+            s"GPU OutOfMemory: targetSize: ${target.targetSize} cannot be split further!" +
+                s" minimum: ${target.minSize}")
+        }
+        Seq(AutoCloseableTargetSize(newTarget, target.minSize))
+      }
+  }
 }
 
 trait CheckpointRestore {
@@ -620,4 +642,15 @@ trait CheckpointRestore {
    * Restore state that was checkpointed.
    */
   def restore(): Unit
+}
+
+/**
+ * This is a wrapper that turns a target size into an autocloseable to allow it to be used
+ * in withRetry blocks.  It is intended to be used to help with cases where the split calculation
+ * happens inside the retry block, and depends on the target size.  On a SplitAndRetryOOM,
+ * a split policy like `splitTargetSizeInHalf` can be used to retry the block with a smaller target
+ * size.
+ */
+case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
+  override def close(): Unit = ()
 }

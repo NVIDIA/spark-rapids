@@ -100,6 +100,14 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
         -DskipTests=$SKIP_TESTS \
         -Dbuildver="${buildver}"
+    if [[ $SKIP_TESTS == "false" ]]; then
+      # Run filecache tests
+      SPARK_CONF=spark.rapids.filecache.enabled=true \
+          $MVN -B test -rf tests $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+              -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
+              -Dbuildver="${buildver}" \
+              -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
+    fi
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
         $MVN -B deploy -pl '!dist' $MVN_URM_MIRROR \

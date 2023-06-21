@@ -24,6 +24,7 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
@@ -39,7 +40,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.rapids.{GpuDataSource, GpuOrcFileFormat}
+import org.apache.spark.sql.rapids.{GpuDataSourceBase, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 
@@ -62,8 +63,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     }
 
     val spark = SparkSession.active
-    origProvider =
-      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
+    origProvider = GpuDataSourceBase.lookupDataSourceWithFallback(
+      cmd.table.provider.get, spark.sessionState.conf)
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
     gpuProvider = origProvider.getConstructor().newInstance() match {

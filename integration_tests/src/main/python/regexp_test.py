@@ -226,6 +226,21 @@ def test_split_regexp_disabled_fallback():
             'split(a, "[o]", 5) from string_split_table',
             conf)
 
+def test_split_escaped_chars_in_character_class():
+    data_gen = mk_str_gen(r'([0-9][\\\.\[\]\^\-\+]){1,4}')
+    assert_gpu_and_cpu_are_equal_collect(
+        # note that regexp patterns are double-escaped to support
+        # passing from Python to Java
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            r'split(a, "[\\.]", 2)',
+            r'split(a, "[\\[]", 2)',
+            r'split(a, "[\\]]", 2)',
+            r'split(a, "[\\^]", 2)',
+            r'split(a, "[\\-]", 2)',
+            r'split(a, "[\\+]", 2)',
+            r'split(a, "[\\\\]", 2)',
+        ))
+
 
 def test_re_replace():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
@@ -941,3 +956,13 @@ def test_regexp_memory_ok():
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
     )
+
+def test_re_replace_all():
+    """
+    regression test for https://github.com/NVIDIA/spark-rapids/issues/8323
+    """
+    gen = mk_str_gen('[a-z]{0,2}\n{0,2}[a-z]{0,2}\n{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, ".*$", "PROD", 1)'),
+        conf=_regexp_conf)

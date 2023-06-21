@@ -22,11 +22,11 @@ import java.util.concurrent._
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
+import scala.ref.WeakReference
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
-import com.google.common.collect.MapMaker
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -117,31 +117,29 @@ class SerializeConcatHostBuffersDeserializeBatch(
       }
       assert(headers.length <= 1 && buffers.length <= 1)
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
-        try {
-          val res = if (headers.isEmpty) {
-            SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
+        val res = if (headers.isEmpty) {
+          SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
             SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          } else {
-            withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
-              tableInfo =>
-                val table = tableInfo.getContiguousTable
-                if (table == null) {
-                  val numRows = tableInfo.getNumRows
-                  SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
-                    SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-                } else {
-                  SpillableColumnarBatch(table, dataTypes, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-                }
-            }
+        } else {
+          withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
+            tableInfo =>
+              val table = tableInfo.getContiguousTable
+              if (table == null) {
+                val numRows = tableInfo.getNumRows
+                SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
+                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              } else {
+                SpillableColumnarBatch(table, dataTypes, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+              }
           }
-          batchInternal = res
-          res
-        } finally {
-          // At this point we no longer need the host data and should not need to touch it again.
-          buffers.safeClose()
-          headers = null
-          buffers = null
         }
+        batchInternal = res
+        // We don't need them any more, and we don't want to close it on an exception
+        // in case we need to retry it
+        buffers.safeClose()
+        headers = null
+        buffers = null
+        res
       }
     }
   }
@@ -575,19 +573,23 @@ case class GpuBroadcastExchangeExec(
 
 /** Caches the mappings from canonical CPU exchanges to the GPU exchanges that replaced them */
 object ExchangeMappingCache extends Logging {
-  import scala.collection.JavaConverters._
-  private val cache = new MapMaker().weakValues().makeMap[Exchange, Exchange]().asScala
+  // Cache is a mapping from CPU broadcast plan to GPU broadcast plan. The cache should not
+  // artificially hold onto unused plans, so we make both the keys and values weak. The values
+  // point to their corresponding keys, so the keys will not be collected unless the value
+  // can be collected. The values will be held during normal Catalyst planning until those
+  // plans are no longer referenced, allowing both the key and value to be reaped at that point.
+  private val cache = new mutable.WeakHashMap[Exchange, WeakReference[Exchange]]
 
   /** Try to find a recent GPU exchange that has replaced the specified CPU canonical plan. */
   def findGpuExchangeReplacement(cpuCanonical: Exchange): Option[Exchange] = {
-    cache.get(cpuCanonical)
+    cache.get(cpuCanonical).flatMap(_.get)
   }
 
   /** Add a GPU exchange to the exchange cache */
   def trackExchangeMapping(cpuCanonical: Exchange, gpuExchange: Exchange): Unit = {
     val old = findGpuExchangeReplacement(cpuCanonical)
     if (!old.exists(_.asInstanceOf[GpuBroadcastExchangeExec].isGpuPlanningComplete)) {
-      cache.put(cpuCanonical, gpuExchange)
+      cache.put(cpuCanonical, WeakReference(gpuExchange))
     }
   }
 }

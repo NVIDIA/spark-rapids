@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "330db"}
+{"spark": "332db"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -26,9 +27,11 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -70,7 +73,7 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 
     if (outputType.isInstanceOf[DecimalType]) {
       (leftInputType, rightInputType) match {
-        case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
+        case (DecimalType.Fixed(_, _), DecimalType.Fixed(_, _)) =>
           val resultType = outputType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
             // SPARK-39316 https://github.com/apache/spark/commit/301a139638
@@ -199,6 +202,40 @@ case class GpuSubtract(
 
 case class GpuRemainder(left: Expression, right: Expression)
     extends GpuRemainderBase(left, right) {
+  assert(!left.dataType.isInstanceOf[DecimalType] ||
+         !right.dataType.isInstanceOf[DecimalType],
+    "DecimalType remainder need to be handled by GpuDecimalRemainder")
+}
+
+object DecimalRemainderChecks {
+  def neededScale(lhs: DecimalType, rhs: DecimalType): Int =
+    math.max(lhs.scale, rhs.scale)
+
+  // For Remainder, the operands need to have the same precision (for CUDF to the do the 
+  // computation) *and* the same scale (to account for the part of the remainder < 1 in the output).
+  // This means that first start with the needed scale (in this case the max of the scales between 
+  // the 2 operands), and then account for enough space (precision) to store the resulting value 
+  // without overflow
+  def neededPrecision(lhs: DecimalType, rhs: DecimalType): Int =
+    math.max(lhs.precision - lhs.scale, rhs.precision - rhs.scale) + neededScale(lhs, rhs)
+
+  def intermediateArgPrecision(lhs: DecimalType, rhs: DecimalType): Int =
+    math.min(
+      neededPrecision(lhs, rhs),
+      DType.DECIMAL128_MAX_PRECISION)
+
+  def intermediateLhsRhsType(
+      lhs: DecimalType,
+      rhs: DecimalType): DecimalType = {
+    val precision = intermediateArgPrecision(lhs, rhs)
+    val scale = neededScale(lhs, rhs)
+    DecimalType(precision, scale)
+  }
+}
+
+case class GpuDecimalRemainder(left: Expression, right: Expression)
+  extends GpuRemainderBase(left, right) with Logging {
+
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
   // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
@@ -213,6 +250,112 @@ case class GpuRemainder(left: Expression, right: Expression)
       DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
     } else {
       DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+
+  def decimalType: DecimalType = dataType match {
+    case DecimalType.Fixed(_, _) => dataType.asInstanceOf[DecimalType]
+    case LongType => DecimalType.LongDecimal
+  }
+
+  private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
+  private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
+
+  // We should only use the long remainder algorithm when 
+  // the intermedite precision required will overflow one of the operands
+  private[this] lazy val useLongDivision: Boolean = {
+    DecimalRemainderChecks.neededPrecision(lhsType, rhsType) > DType.DECIMAL128_MAX_PRECISION
+  }
+
+  // This is the type that the LHS will be cast to. The precision will match the precision of
+  // the intermediate rhs (to make CUDF happy doing the divide), but the scale will be shifted
+  // enough so CUDF produces the desired output scale
+  private[this] lazy val intermediateLhsType =
+    DecimalRemainderChecks.intermediateLhsRhsType(lhsType, rhsType)
+
+  // This is the type that the RHS will be cast to. The precision will match the precision of the
+  // intermediate lhs (to make CUDF happy doing the divide), but the scale will be the same
+  // as the input RHS scale.
+  private[this] lazy val intermediateRhsType =
+    DecimalRemainderChecks.intermediateLhsRhsType(lhsType, rhsType)
+
+  private[this] def divByZeroFixes(rhs: ColumnVector): ColumnVector = {
+    if (failOnError) {
+      withResource(GpuDivModLike.makeZeroScalar(rhs.getType)) { zeroScalar =>
+        if (rhs.contains(zeroScalar)) {
+          throw RapidsErrorUtils.divByZeroError(origin)
+        }
+      }
+      rhs.incRefCount()
+    } else {
+      GpuDivModLike.replaceZeroWithNull(rhs)
+    }
+  }
+
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (useLongDivision) {
+      longRemainder(batch)
+    } else {
+      regularRemainder(batch)
+    }
+  }
+
+  private def longRemainder(batch: ColumnarBatch): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
+    }
+    val retTab = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        withResource(divByZeroFixes(rhs.getBase)) { fixed =>
+          fixed.castTo(DType.create(DType.DTypeEnum.DECIMAL128, fixed.getType.getScale))
+        }
+      }
+      withResource(castRhs) { castRhs =>
+        com.nvidia.spark.rapids.jni.DecimalUtils.remainder128(castLhs, castRhs, -decimalType.scale)
+      }
+    }
+    val retCol = withResource(retTab) { retTab =>
+      val overflowed = retTab.getColumn(0)
+      val remainder = retTab.getColumn(1)
+      if (failOnError) {
+        withResource(overflowed.any()) { anyOverflow =>
+          if (anyOverflow.isValid && anyOverflow.getBoolean) {
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        remainder.incRefCount()
+      } else {
+        // With remainder, the return type can actually be a lower precision type than 
+        // DECIMAL128, the output of DecimalUtils.remainder128, so we need to cast it here.
+        val castRemainder = remainder.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        withResource(castRemainder) { castRemainder =>
+          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+            overflowed.ifElse(nullVal, castRemainder)
+          }
+        }
+      }
+    }
+    GpuColumnVector.from(retCol, dataType)
+  }
+
+  private def regularRemainder(batch: ColumnarBatch): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
+        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+    }
+    withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        withResource(divByZeroFixes(rhs.getBase)) { fixed =>
+          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
+            legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+        }
+      }
+      withResource(castRhs) { castRhs =>
+        GpuColumnVector.from(
+          castLhs.mod(castRhs, GpuColumnVector.getNonNestedRapidsType(dataType)),
+          dataType)
+      }
     }
   }
 }
@@ -310,7 +453,8 @@ case class GpuDecimalMultiply(
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression) extends GpuIntegralDivideParent(left, right) {
-  assert(!left.dataType.isInstanceOf[DecimalType],
+  assert(!left.dataType.isInstanceOf[DecimalType] ||
+         !right.dataType.isInstanceOf[DecimalType],
     "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")
 }
 
@@ -343,7 +487,3 @@ case class GpuIntegralDecimalDivide(
     DecimalType.bounded(intDig, 0)
   }
 }
-
-
-
-

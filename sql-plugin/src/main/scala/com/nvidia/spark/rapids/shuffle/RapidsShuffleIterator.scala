@@ -141,8 +141,6 @@ class RapidsShuffleIterator(
 
   private val localHost = localBlockManagerId.host
 
-  private val localExecutorId = localBlockManagerId.executorId.toLong
-
   private var started: Boolean = false
 
   // NOTE: `mapIndex` is utilized by the `FetchFailedException` to reference
@@ -362,7 +360,7 @@ class RapidsShuffleIterator(
         try {
           sb = catalog.acquireBuffer(handle)
           cb = sb.getColumnarBatch(sparkTypes)
-          metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
+          metricsUpdater.update(blockedTime, 1, sb.getMemoryUsedBytes, cb.numRows())
         } finally {
           nvtxRangeAfterGettingBatch.close()
           range.close()

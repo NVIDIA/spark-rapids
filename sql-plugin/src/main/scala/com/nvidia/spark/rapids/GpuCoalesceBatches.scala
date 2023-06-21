@@ -633,7 +633,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     collectTime: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
-    peakDevMemory: GpuMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -648,8 +647,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   protected val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
 
-  protected var maxDeviceMemory: Long = 0
-
   override def initNewBatch(batch: ColumnarBatch): Unit = {
     batches.safeClose()
     batches.clear()
@@ -660,10 +657,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
     val wip = batches.safeMap(_.getColumnarBatch())
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
-    // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
-    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
-    ret
+    ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
@@ -683,7 +677,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def cleanupConcatIsDone(): Unit = {
-    peakDevMemory.set(maxDeviceMemory)
     batches.clear()
   }
 
@@ -705,7 +698,9 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override protected def popOnDeck(): ColumnarBatch = {
-    val ret = onDeck.get.getColumnarBatch()
+    val ret = withRetryNoSplit[ColumnarBatch] {
+      onDeck.get.getColumnarBatch()
+    }
     clearOnDeck()
     ret
   }
@@ -728,7 +723,6 @@ class GpuCompressionAwareCoalesceIterator(
     collectTime: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
-    peakDevMemory: GpuMetric,
     opName: String,
     codecConfigs: TableCompressionCodecConfig)
   extends GpuCoalesceIterator(
@@ -740,7 +734,6 @@ class GpuCompressionAwareCoalesceIterator(
     collectTime = collectTime,
     concatTime = concatTime,
     opTime = opTime,
-    peakDevMemory = peakDevMemory,
     opName) {
 
   private[this] var codec: TableCompressionCodec = _
@@ -786,9 +779,7 @@ class GpuCompressionAwareCoalesceIterator(
       }
       wip
     }
-    val onGPU = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(toConcat, sparkTypes)
-    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(onGPU) * 2
-    onGPU
+    ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(toConcat, sparkTypes)
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
@@ -823,8 +814,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
   )
 
   override protected def doExecute(): RDD[InternalRow] = {
@@ -858,7 +848,6 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
-    val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema
@@ -880,14 +869,14 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
             new GpuCompressionAwareCoalesceIterator(
               iter, dataTypes, sizeGoal, decompressMemoryTarget,
               numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
-              concatTime, opTime, peakDevMemory, "GpuCoalesceBatches",
+              concatTime, opTime, "GpuCoalesceBatches",
               localCodecConfigs)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-            concatTime, opTime, peakDevMemory)
+            concatTime, opTime)
           batches.mapPartitions { iter =>
             f(iter)
           }

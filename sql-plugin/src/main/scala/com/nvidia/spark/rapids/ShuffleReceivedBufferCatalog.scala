@@ -43,8 +43,6 @@ case class ShuffleReceivedBufferId(
 class ShuffleReceivedBufferCatalog(
     catalog: RapidsBufferCatalog) extends Logging {
 
-  private val deviceStore = RapidsBufferCatalog.getDeviceStorage
-
   /** Mapping of table ID to shuffle buffer ID */
   private[this] val tableMap = new ConcurrentHashMap[Int, ShuffleReceivedBufferId]
 

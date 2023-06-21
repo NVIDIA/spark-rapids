@@ -32,4 +32,8 @@ object PartitionedFileUtilsShim {
       start: Long,
       length: Long): PartitionedFile = PartitionedFile(partitionValues,
     SparkPath.fromPathString(filePath), start, length)
+
+  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
+    pf.copy(locations = locations.toArray)
+  }
 }

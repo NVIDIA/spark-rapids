@@ -18,6 +18,7 @@
 {"spark": "321"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "331"}
 {"spark": "332"}
@@ -53,7 +54,7 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
     "Write encrypted ORC fallback",
     "DataWritingCommandExec",
     intsDf,
-    execsAllowedNonGpu = Seq("ShuffleExchangeExec", "DataWritingCommandExec")) {
+    execsAllowedNonGpu = Seq("ShuffleExchangeExec", "DataWritingCommandExec", "WriteFilesExec")) {
     frame =>
       // ORC encryption is only allowed in 3.2+
       val isValidTestForSparkVersion = ShimLoader.getShimVersion match {

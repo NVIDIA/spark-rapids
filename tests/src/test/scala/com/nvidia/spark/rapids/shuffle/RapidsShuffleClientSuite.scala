@@ -132,7 +132,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
 
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
-    val contigBuffSize = 100000
 
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 

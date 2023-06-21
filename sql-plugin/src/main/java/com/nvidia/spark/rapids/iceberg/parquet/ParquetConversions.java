@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,8 @@ public class ParquetConversions {
           // decode to CharSequence to avoid copying into a new String
           return binary -> StandardCharsets.UTF_8.decode(((Binary) binary).toByteBuffer());
         case DECIMAL:
+          // TODO undo suppress warnings after dropping Spark 3.1.x/Parquet 1.10
+          @SuppressWarnings("deprecation")
           int scale = type.getDecimalMetadata().getScale();
           switch (type.getPrimitiveTypeName()) {
             case INT32:

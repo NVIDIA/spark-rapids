@@ -41,7 +41,7 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y \
-    openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk python3.8 python3.8-distutils python3-setuptools tzdata git wget
+    openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk tzdata git wget
 
 # Install maven 3.8+ to be compatible with JDK17 on Ubuntu
 ARG MAVEN_VERSION=3.8.4
@@ -49,10 +49,6 @@ RUN wget https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/a
     tar xf apache-maven-$MAVEN_VERSION-bin.tar.gz -C /usr/local/ && \
     rm -rf apache-maven-$MAVEN_VERSION-bin.tar.gz && \
     ln -sf /usr/local/apache-maven-$MAVEN_VERSION/bin/mvn /usr/bin/mvn
-# apt python3-pip would install pip for OS default python3 version only
-# like for ubuntu 18.04, it would only install pip for python3.6
-# so we install pip for specific python version explicitly
-RUN wget https://bootstrap.pypa.io/get-pip.py && python3.8 get-pip.py
 
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
@@ -64,7 +60,7 @@ ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     conda install -c conda-forge mamba && \
-    mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.8 cudatoolkit=${CUDA_VER} && \
+    mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.9 cudatoolkit=${CUDA_VER} && \
     mamba install -y spacy && python -m spacy download en_core_web_sm && \
     mamba install -y -c anaconda pytest requests && \
     mamba install -y -c conda-forge sre_yield && \

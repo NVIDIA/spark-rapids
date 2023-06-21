@@ -153,7 +153,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
 
   private def checkEvaluationWithoutCodegen(gpuExpression: GpuExpression,
       expected: GpuColumnVector,
-      inputBatch: ColumnarBatch = EmptyBatch): Unit = {
+      inputBatch: ColumnarBatch): Unit = {
     try {
       withResource(evaluateWithoutCodegen(gpuExpression, inputBatch)) { actual =>
           checkResult(actual, expected, gpuExpression)

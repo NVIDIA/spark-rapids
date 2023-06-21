@@ -92,7 +92,7 @@ object SchemaUtils {
       tableSchema: StructType,
       readSchema: StructType,
       isCaseSensitive: Boolean,
-      castFunc: Option[(ColumnView, DataType) => ColumnView] = None,
+      castFunc: Option[(ColumnView, DataType, DataType) => ColumnView] = None,
       needCast: Boolean = false): Table = {
     // Schema evolution is needed when
     //   1) there are columns with precision can be stored in an int, or
@@ -138,7 +138,7 @@ object SchemaUtils {
   private def evolveColumnRecursively(
       col: ColumnView, colType: DataType, targetType: DataType,
       isCaseSensitive: Boolean, toClose: ArrayBuffer[ColumnView],
-      castFunc: Option[(ColumnView, DataType) => ColumnView],
+      castFunc: Option[(ColumnView, DataType, DataType) => ColumnView],
       needCast: Boolean): ColumnView = {
     // An util function to add a view to the buffer "toClose".
     val addToClose = (v: ColumnView) => {
@@ -217,8 +217,12 @@ object SchemaUtils {
       case (fromDec: DecimalType, toDec: DecimalType) if fromDec == toDec &&
           !GpuColumnVector.getNonNestedRapidsType(fromDec).equals(col.getType) =>
         col.castTo(DecimalUtil.createCudfDecimal(fromDec))
+      case (fromChar: CharType, toStringType: StringType) =>
+        castFunc.map(f => f(col, toStringType, fromChar))
+          .getOrElse(throw new QueryExecutionException("Casting function is missing for " +
+            s"type conversion from $colType to $targetType"))
       case _ if !GpuColumnVector.getNonNestedRapidsType(targetType).equals(col.getType) =>
-        castFunc.map(f => f(col, targetType))
+        castFunc.map(f => f(col, targetType, colType))
           .getOrElse(throw new QueryExecutionException("Casting function is missing for " +
             s"type conversion from $colType to $targetType"))
       case _ => col

@@ -52,8 +52,6 @@ class ShuffleBufferCatalog(
     catalog: RapidsBufferCatalog,
     diskBlockManager: RapidsDiskBlockManager) extends Logging {
 
-  private val deviceStore = RapidsBufferCatalog.getDeviceStorage
-
   private val bufferIdToHandle = new ConcurrentHashMap[RapidsBufferId, RapidsBufferHandle]()
 
   private def trackCachedHandle(
@@ -253,7 +251,7 @@ class ShuffleBufferCatalog(
     }
 
     // associate this new buffer with the shuffle block
-    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ => 
+    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ =>
       new ArrayBuffer[ShuffleBufferId])
     blockBufferIds.synchronized {
       blockBufferIds.append(id)

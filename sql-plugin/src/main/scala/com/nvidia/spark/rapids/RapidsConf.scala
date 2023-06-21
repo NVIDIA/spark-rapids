@@ -117,8 +117,8 @@ object ConfHelper {
   }
 }
 
-abstract class ConfEntry[T](val key: String, val converter: String => T,
-    val doc: String, val isInternal: Boolean, val isStartUpOnly: Boolean) {
+abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String, 
+    val isInternal: Boolean, val isStartUpOnly: Boolean, val isCommonlyUsed: Boolean) {
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
@@ -127,9 +127,10 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
   override def toString: String = key
 }
 
-class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
-    isInternal: Boolean, isStartupOnly: Boolean, val defaultValue: T)
-  extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly) {
+class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String, 
+    isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false,
+    val defaultValue: T)
+  extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
@@ -162,8 +163,9 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 }
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
-    isInternal: Boolean, isStartupOnly: Boolean)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, isStartupOnly) {
+    isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, 
+  isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
@@ -235,7 +237,7 @@ class TypedConfBuilder[T](
     // then 'converter' will throw an exception
     val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, parent.isStartupOnly, transformedValue)
+      parent.doc, parent.isInternal, parent.isStartupOnly, parent.isCommonlyUsed, transformedValue)
     parent.register(ret)
     ret
   }
@@ -248,7 +250,7 @@ class TypedConfBuilder[T](
 
   def createOptional: OptionalConfEntry[T] = {
     val ret = new OptionalConfEntry[T](parent.key, converter,
-      parent.doc, parent.isInternal, parent.isStartupOnly)
+      parent.doc, parent.isInternal, parent.isStartupOnly, parent.isCommonlyUsed)
     parent.register(ret)
     ret
   }
@@ -261,6 +263,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   var doc: String = null
   var isInternal: Boolean = false
   var isStartupOnly: Boolean = false
+  var isCommonlyUsed: Boolean = false
 
   def doc(data: String): ConfBuilder = {
     this.doc = data
@@ -274,6 +277,11 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   def startupOnly(): ConfBuilder = {
     this.isStartupOnly = true
+    this
+  }
+
+  def commonlyUsed(): ConfBuilder = {
+    this.isCommonlyUsed = true
     this
   }
 
@@ -325,6 +333,7 @@ object RapidsConf {
     .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
     .startupOnly()
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
@@ -410,6 +419,7 @@ object RapidsConf {
         "Note that this limit will be reduced by the reserve memory configured in " +
         s"$RMM_ALLOC_RESERVE_KEY.")
     .startupOnly()
+    .commonlyUsed()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -418,6 +428,7 @@ object RapidsConf {
     .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
       s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
     .startupOnly()
+    .commonlyUsed()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.25)
@@ -434,6 +445,7 @@ object RapidsConf {
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
         "memory pools.")
     .startupOnly()
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
@@ -488,11 +500,13 @@ object RapidsConf {
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
+      .commonlyUsed()
       .integerConf
-      .createWithDefault(1)
+      .createWithDefault(2)
 
   val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
     .doc("Number of threads used to spill shuffle data to disk in the background.")
+    .commonlyUsed()
     .integerConf
     .createWithDefault(6)
 
@@ -500,15 +514,17 @@ object RapidsConf {
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
       "cudf row count limit of a column.")
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
       s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
-    .createWithDefault(Integer.MAX_VALUE)
+    .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
     .doc("Soft limit on the maximum number of rows the reader will read per batch. " +
       "The orc and parquet readers will read row groups until this limit is met or exceeded. " +
       "The limit is respected by the csv reader.")
+    .commonlyUsed()
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
@@ -524,6 +540,7 @@ object RapidsConf {
       "The readers will read chunks of data until this limit is met or exceeded. " +
       "Note that the reader may estimate the number of bytes that will be used on the GPU " +
       "in some cases based on the schema and number of rows in each batch.")
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
@@ -595,6 +612,7 @@ object RapidsConf {
           "query is taking and how much data is going to each part of the query. " +
           "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
           "report or their equivalents.")
+      .commonlyUsed()
       .stringConf
       .transform(_.toUpperCase(java.util.Locale.ROOT))
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
@@ -611,6 +629,7 @@ object RapidsConf {
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
+    .commonlyUsed()
     .booleanConf
     .createWithDefault(true)
 
@@ -632,6 +651,7 @@ object RapidsConf {
 
   val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
     .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
+    .commonlyUsed()
     .booleanConf
     .createWithDefault(false)
 
@@ -738,14 +758,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
-  val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
-      .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
-        "does NOT produce exact same string as spark produces, but producing strings which are " +
-        "semantically equal. For instance, given input BigDecimal(123, -2), the GPU produces " +
-        "\"12300\", which spark produces \"1.23E+4\".")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
       .booleanConf
@@ -811,6 +823,7 @@ object RapidsConf {
         s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
         ".")
       .startupOnly()
+      .commonlyUsed()
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
@@ -880,6 +893,36 @@ object RapidsConf {
     .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
+  val READER_MULTITHREADED_COMBINE_THRESHOLD =
+    conf("spark.rapids.sql.reader.multithreaded.combine.sizeBytes")
+      .doc("The target size in bytes to combine multiple small files together when using the " +
+        "MULTITHREADED parquet or orc reader. With combine disabled, the MULTITHREADED reader " +
+        "reads the files in parallel and sends individual files down to the GPU, but that can " +
+        "be inefficient for small files. When combine is enabled, files that are ready within " +
+        "spark.rapids.sql.reader.multithreaded.combine.waitTime together, up to this " +
+        "threshold size, are combined before sending down to GPU. This can be disabled by " +
+        "setting it to 0. Note that combine also will not go over the " +
+        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes limits.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024 * 1024) // 64M
+
+  val READER_MULTITHREADED_COMBINE_WAIT_TIME =
+    conf("spark.rapids.sql.reader.multithreaded.combine.waitTime")
+      .doc("When using the multithreaded parquet or orc reader with combine mode, how long " +
+        "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
+        "Note that this will wait this amount of time from when the last file was available, " +
+        "so total wait time could be larger then this.")
+      .integerConf
+      .createWithDefault(200) // ms
+
+  val READER_MULTITHREADED_READ_KEEP_ORDER =
+    conf("spark.rapids.sql.reader.multithreaded.read.keepOrder")
+      .doc("When using the MULTITHREADED reader, if this is set to true we read " +
+        "the files in the same order Spark does, otherwise the order may not be the same. " +
+        "Now it is supported only for parquet and orc.")
+      .booleanConf
+      .createWithDefault(true)
+
   val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
     conf("spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes")
       .doc("The target size in bytes to combine multiple small files together when using the " +
@@ -889,29 +932,32 @@ object RapidsConf {
         "spark.rapids.sql.format.parquet.multithreaded.combine.waitTime together, up to this " +
         "threshold size, are combined before sending down to GPU. This can be disabled by " +
         "setting it to 0. Note that combine also will not go over the " +
-        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes limits.")
+        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes " +
+        s"limits. DEPRECATED: use $READER_MULTITHREADED_COMBINE_THRESHOLD instead.")
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(64 * 1024 * 1024) // 64M
+      .createOptional
 
   val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
     conf("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
       .doc("When using the multithreaded parquet reader with combine mode, how long " +
         "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
         "Note that this will wait this amount of time from when the last file was available, " +
-        "so total wait time could be larger then this.")
+        "so total wait time could be larger then this. " +
+        s"DEPRECATED: use $READER_MULTITHREADED_COMBINE_WAIT_TIME instead.")
       .integerConf
-      .createWithDefault(200) // ms
+      .createOptional
 
   val PARQUET_MULTITHREADED_READ_KEEP_ORDER =
     conf("spark.rapids.sql.format.parquet.multithreaded.read.keepOrder")
       .doc("When using the MULTITHREADED reader, if this is set to true we read " +
-        "the files in the same order Spark does, otherwise the order may not be the same.")
+        "the files in the same order Spark does, otherwise the order may not be the same. " +
+        s"DEPRECATED: use $READER_MULTITHREADED_READ_KEEP_ORDER instead.")
       .booleanConf
-      .createWithDefault(true)
+      .createOptional
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
-    Seq("abfs", "abfss", "dbfs", "gs", "s3", "s3a", "s3n", "wasbs")
+    Seq("abfs", "abfss", "dbfs", "gs", "s3", "s3a", "s3n", "wasbs", "cosn")
 
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
@@ -920,6 +966,7 @@ object RapidsConf {
       "higher I/O read cost. Many times the cloud filesystems also get better throughput when " +
       "you have multiple readers in parallel. This is used with " +
       "spark.rapids.sql.format.parquet.reader.type")
+    .commonlyUsed()
     .stringConf
     .toSequence
     .createOptional
@@ -1651,6 +1698,7 @@ object RapidsConf {
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
       "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of " +
       "a query that did not go on the GPU")
+    .commonlyUsed()
     .stringConf
     .createWithDefault("NOT_ON_GPU")
 
@@ -1856,6 +1904,26 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val CHUNKED_PACK_POOL_SIZE = conf("spark.rapids.sql.chunkedPack.poolSize")
+      .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
+           "scratch space, needed during spill from GPU to host memory. As a rule of thumb, each " +
+           "column should see around 200B that will be allocated from this pool. " +
+           "With the default of 10MB, a table of ~60,000 columns can be spilled using only this " +
+           "pool. If this config is 0B, or if allocations fail, the plugin will retry with " +
+           "the regular GPU memory resource.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(10L*1024*1024)
+
+  val CHUNKED_PACK_BOUNCE_BUFFER_SIZE = conf("spark.rapids.sql.chunkedPack.bounceBufferSize")
+      .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
+          "bounce buffer, needed during spill from GPU to host memory. ")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v >= 1L*1024*1024,
+        "The chunked pack bounce buffer must be at least 1MB in size")
+      .createWithDefault(128L * 1024 * 1024)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1872,6 +1940,11 @@ object RapidsConf {
   }
 
   def help(asTable: Boolean = false): Unit = {
+    helpCommon(asTable)
+    helpAdvanced(asTable)
+  }
+
+  def helpCommon(asTable: Boolean = false): Unit = {
     if (asTable) {
       println("---")
       println("layout: page")
@@ -1886,7 +1959,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.08.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -1903,16 +1976,57 @@ object RapidsConf {
         | valid on both startup and runtime.
         |""".stripMargin)
       // scalastyle:on line.size.limit
-
       println("\n## General Configuration\n")
       println("Name | Description | Default Value | Applicable at")
       println("-----|-------------|--------------|--------------")
     } else {
-      println("Rapids Configs:")
+      println("Commonly Used Rapids Configs:")
     }
     val allConfs = registeredConfs.clone()
     allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
-    allConfs.sortBy(_.key).foreach(_.help(asTable))
+    val outputConfs = allConfs.filter(_.isCommonlyUsed)
+    outputConfs.sortBy(_.key).foreach(_.help(asTable))
+    if (asTable) {
+      // scalastyle:off line.size.limit
+      println("""
+        |For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
+        |""".stripMargin)
+      // scalastyle:on line.size.limit
+    }
+  }
+
+  def helpAdvanced(asTable: Boolean = false): Unit = {
+    if (asTable) {
+      println("---")
+      println("layout: page")
+      // print advanced configuration
+      println("title: Advanced Configuration")
+      println("parent: Additional Functionality")
+      println("nav_order: 10")
+      println("---")
+      println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
+      // scalastyle:off line.size.limit
+      println("""# RAPIDS Accelerator for Apache Spark Advanced Configuration
+        |Most users will not need to modify the configuration options listed below. 
+        |They are documented here for completeness and advanced usage.
+        |
+        |The following configuration options are supported by the RAPIDS Accelerator for Apache Spark.
+        |
+        |For commonly used configurations and examples of setting options, please refer to the 
+        |[RAPIDS Accelerator for Configuration](../configs.md) page.
+        |""".stripMargin)
+      // scalastyle:on line.size.limit
+      println("\n## Advanced Configuration\n")
+
+      println("Name | Description | Default Value | Applicable at")
+      println("-----|-------------|--------------|--------------")
+    } else {
+      println("Advanced Rapids Configs:")
+    }
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    val outputConfs = allConfs.filterNot(_.isCommonlyUsed)
+    outputConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
@@ -1961,10 +2075,16 @@ object RapidsConf {
   def main(args: Array[String]): Unit = {
     // Include the configs in PythonConfEntries
     com.nvidia.spark.rapids.python.PythonConfEntries.init()
-    val out = new FileOutputStream(new File(args(0)))
-    Console.withOut(out) {
-      Console.withErr(out) {
-        RapidsConf.help(true)
+    val configs = new FileOutputStream(new File(args(0)))
+    Console.withOut(configs) {
+      Console.withErr(configs) {
+        RapidsConf.helpCommon(true)
+      }
+    }
+    val advanced = new FileOutputStream(new File(args(1)))
+    Console.withOut(advanced) {
+      Console.withErr(advanced) {
+        RapidsConf.helpAdvanced(true)
       }
     }
   }
@@ -2146,8 +2266,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
-  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
-
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
@@ -2202,14 +2320,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
-  lazy val getParquetMultithreadedCombineThreshold: Long =
-    get(PARQUET_MULTITHREADED_COMBINE_THRESHOLD)
+  lazy val getMultithreadedCombineThreshold: Long =
+    get(READER_MULTITHREADED_COMBINE_THRESHOLD)
 
-  lazy val getParquetMultithreadedCombineWaitTime: Int =
-    get(PARQUET_MULTITHREADED_COMBINE_WAIT_TIME)
+  lazy val getMultithreadedCombineWaitTime: Int =
+    get(READER_MULTITHREADED_COMBINE_WAIT_TIME)
 
-  lazy val getParquetMultithreadedReaderKeepOrder: Boolean =
-    get(PARQUET_MULTITHREADED_READ_KEEP_ORDER)
+  lazy val getMultithreadedReaderKeepOrder: Boolean =
+    get(READER_MULTITHREADED_READ_KEEP_ORDER)
 
   lazy val isParquetWriteEnabled: Boolean = get(ENABLE_PARQUET_WRITE)
 
@@ -2461,6 +2579,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
+
+  lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
+
+  lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

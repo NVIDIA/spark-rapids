@@ -20,11 +20,13 @@
 {"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 spark-rapids-shim-json-lines ***/

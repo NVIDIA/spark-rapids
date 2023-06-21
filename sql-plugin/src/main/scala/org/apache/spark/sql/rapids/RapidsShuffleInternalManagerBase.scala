@@ -547,10 +547,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
   }
 
-  Option(TaskContext.get()).foreach {_.addTaskCompletionListener[Unit]( _ => {
+  context.addTaskCompletionListener[Unit]( _ => {
     // should not be needed, but just in case
     closeShuffleReadRange()
-  })}
+  })
 
   private def fetchContinuousBlocksInBatch: Boolean = {
     val conf = SparkEnv.get.conf
@@ -635,6 +635,14 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     } else {
       null
     }
+
+    // Register a completion handler to close any queued cbs.
+    context.addTaskCompletionListener[Unit]( _ => {
+      queued.forEach {
+        case (_, cb:ColumnarBatch) => cb.close()
+      }
+      queued.clear()
+    })
 
     override def hasNext: Boolean = {
       if (fallbackIter != null) {
@@ -1308,7 +1316,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
         //   would need to be made to deal with missing metrics, for example, for a regular
         //   Exchange node.
         baseHandle.dependency match {
-          case gpuDep: GpuShuffleDependency[K, C, C] =>
+          case gpuDep: GpuShuffleDependency[K, C, C] if gpuDep.useMultiThreadedShuffle =>
             // We want to use batch fetch in the non-push shuffle case. Spark
             // checks for a config to see if batch fetch is enabled (this check), and
             // it also checks when getting (potentially merged) map status from

@@ -254,13 +254,17 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
 
-def function_to_test_on_cached_df(with_x_session, func, data_gen, test_conf):
+def generate_data_and_test_func_on_cached_df(with_x_session, func, data_gen, test_conf):
+    df = lambda spark: unary_op_df(spark, data_gen)
+    function_to_test_on_df(with_x_session, df, func, test_conf)
+
+def function_to_test_on_df(with_x_session, df_gen, func_on_df, test_conf):
     def with_cache(cached):
         def helper(spark):
-            df = unary_op_df(spark, data_gen)
+            _df = df_gen(spark)
             if cached:
-                df.cache().count()
-            return func(df)
+                _df.cache().count()
+            return func_on_df(_df)
         return helper
 
     reg_result = with_x_session(with_cache(False), test_conf)
@@ -275,7 +279,7 @@ def function_to_test_on_cached_df(with_x_session, func, data_gen, test_conf):
 @ignore_order
 def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_size):
     test_conf = copy_and_update(enable_vectorized_conf, batch_size)
-    function_to_test_on_cached_df(with_x_session, lambda df: df.count(), data_gen, test_conf)
+    generate_data_and_test_func_on_cached_df(with_x_session, lambda df: df.count(), data_gen, test_conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('with_x_session', [with_cpu_session, with_gpu_session])
@@ -290,7 +294,7 @@ def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_siz
 @allow_non_gpu('ColumnarToRowExec')
 def test_cache_multi_batch(data_gen, with_x_session, enable_vectorized_conf, batch_size):
     test_conf = copy_and_update(enable_vectorized_conf, batch_size)
-    function_to_test_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, test_conf)
+    generate_data_and_test_func_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, test_conf)
 
 @pytest.mark.parametrize('data_gen', all_basic_map_gens + _cache_single_array_gens_no_null, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized', enable_vectorized_confs, ids=idfn)
@@ -339,3 +343,16 @@ def test_aqe_cache_join(data_gen):
         df2 = df1.alias('df2')
         return df1.join(df2, df1.a == df2.a, 'Outer')
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+
+# TODO: remove this test after timezone support is added.
+# This test is testing cache when InMemoryTableScanExec fallsback to the CPU which causes the HostColumnarToGPU
+# to be pushed to the query plan which can cause ArrayIndexOutOfBoundsException
+@ignore_order
+@allow_non_gpu("InMemoryTableScanExec", "ProjectExec", "ColumnarToRowExec")
+def test_inmem_cache_count():
+    conf={"spark.sql.session.timeZone": "America/Los_Angeles"}
+    function_to_test_on_df(with_gpu_session, lambda spark: unary_op_df(spark, int_gen).selectExpr("cast(a as timestamp)"), lambda df: df.count(), test_conf=conf)
+
+@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
+def test_batch_no_cols(with_x_session):
+    function_to_test_on_df(with_x_session, lambda spark: unary_op_df(spark, int_gen).drop("a"), lambda df: df.count(), test_conf={})

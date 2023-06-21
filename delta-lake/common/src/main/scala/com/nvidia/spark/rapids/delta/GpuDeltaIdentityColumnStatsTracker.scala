@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.delta
 import scala.collection.mutable
 
 import ai.rapids.cudf.ColumnView
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuScalar
 import com.nvidia.spark.rapids.delta.shims.ShimJsonUtils
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, BindReferences, Bou
 import org.apache.spark.sql.catalyst.expressions.aggregate.DeclarativeAggregate
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
 import org.apache.spark.sql.types.NullType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuDeltaIdentityColumnStatsTracker(
     val dataSchema: Seq[Attribute],
@@ -61,7 +62,7 @@ object GpuDeltaIdentityColumnStatsTracker {
   def batchStatsToRow(
       dataCols: Seq[Attribute],
       identityStatsExpr: Expression,
-      identityInfo: Seq[(String, Boolean)]): (Array[ColumnView], InternalRow) => Unit = {
+      identityInfo: Seq[(String, Boolean)]): (ColumnarBatch, InternalRow) => Unit = {
     val aggregates = identityStatsExpr.collect {
       case ae: DeclarativeAggregate => ae
     }
@@ -73,7 +74,8 @@ object GpuDeltaIdentityColumnStatsTracker {
     assert(identityInfo.size == boundRefs.size,
       s"expected ${identityInfo.size} refs found ${boundRefs.size}")
     val zipped = identityInfo.map(_._2).zip(boundRefs).zipWithIndex
-    (columnViews: Array[ColumnView], row: InternalRow) => {
+    (batch: ColumnarBatch, row: InternalRow) => {
+      val columnViews = GpuColumnVector.extractBases(batch).asInstanceOf[Array[ColumnView]]
       zipped.foreach { case ((useMax, ref), i) =>
         val cview = columnViews(ref.ordinal)
         val gpuScalar = if (useMax) {

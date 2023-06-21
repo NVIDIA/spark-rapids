@@ -21,7 +21,7 @@ from data_gen import *
 from marks import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later
 
 # Databricks changes the number of files being written, so we cannot compare logs
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
@@ -112,6 +112,7 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
                           delta_writes_enabled_conf  # Test disabled by default
                          ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, disable_conf):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
@@ -122,6 +123,29 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
                          use_cdf=False,
                          src_table_func=lambda spark: unary_op_df(spark, SetValuesGen(IntegerType(), range(100))),
                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                         merge_sql=merge_sql,
+                         check_func=checker)
+
+@allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
+def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
+    def checker(data_path, do_merge):
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec")
+    merge_sql = "MERGE INTO {dest_table} " \
+                "USING {src_table} " \
+                "ON {src_table}.a == {dest_table}.a " \
+                "WHEN MATCHED THEN " \
+                "  UPDATE SET {dest_table}.b = {src_table}.b " \
+                "WHEN NOT MATCHED THEN " \
+                "  INSERT (a, b) VALUES ({src_table}.a, {src_table}.b) " \
+                "WHEN NOT MATCHED BY SOURCE AND {dest_table}.b > 0 THEN " \
+                "  UPDATE SET {dest_table}.b = 0"
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
+                         use_cdf=False,
+                         src_table_func=lambda spark: binary_op_df(spark, SetValuesGen(IntegerType(), range(10))),
+                         dest_table_func=lambda spark: binary_op_df(spark, SetValuesGen(IntegerType(), range(20, 30))),
                          merge_sql=merge_sql,
                          check_func=checker)
 

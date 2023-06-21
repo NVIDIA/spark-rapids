@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -528,8 +528,6 @@ class GpuHashAggregateIterator(
       boundFinalProjections: Option[Seq[GpuExpression]],
       boundResultReferences: Seq[Expression])
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val boundExpressions = setupReferences()
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
@@ -541,6 +539,8 @@ class GpuHashAggregateIterator(
 
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
+
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
     sortFallbackIter.map(_.hasNext).getOrElse {
@@ -751,8 +751,7 @@ class GpuHashAggregateIterator(
       opTime = metrics.opTime,
       sortTime = metrics.sortTime,
       outputBatches = NoopMetric,
-      outputRows = NoopMetric,
-      peakDevMemory = NoopMetric))
+      outputRows = NoopMetric))
 
     // The out of core sort iterator does not guarantee that a batch contains all of the values
     // for a particular key, so add a key batching iterator to enforce this. That allows each batch
@@ -768,8 +767,7 @@ class GpuHashAggregateIterator(
       numOutputRows = NoopMetric,
       numOutputBatches = NoopMetric,
       concatTime = metrics.concatTime,
-      opTime = metrics.opTime,
-      peakDevMemory = NoopMetric)
+      opTime = metrics.opTime)
 
     // Finally wrap the key batching iterator with a merge aggregation on the output batches.
     new Iterator[ColumnarBatch] {
@@ -851,7 +849,7 @@ class GpuHashAggregateIterator(
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      val finalProjections = groupingExpressions ++
+      val finalProjections = groupingAttributes ++
           aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
       Some(GpuBindReferences.bindGpuReferences(finalProjections, aggBufferAttributes))
     } else {
@@ -932,11 +930,12 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def tagPlanForGpu(): Unit = {
     // We don't support Maps as GroupBy keys yet, even if they are nested in Structs. So,
     // we need to run recursive type check on the structs.
-    val mapGroupings = agg.groupingExpressions.exists(e =>
+    val mapOrBinaryGroupings = agg.groupingExpressions.exists(e =>
       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[MapType]))
-    if (mapGroupings) {
-      willNotWorkOnGpu("MapTypes in grouping expressions are not supported")
+        dt => dt.isInstanceOf[MapType] || dt.isInstanceOf[BinaryType]))
+    if (mapOrBinaryGroupings) {
+      willNotWorkOnGpu("MapType, or BinaryType " +
+        "in grouping expressions are not supported")
     }
 
     // We support Arrays as grouping expression but not if the child is a struct. So we need to

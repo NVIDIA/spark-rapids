@@ -235,7 +235,7 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, GpuEvalMode.ANSI, conf = conf,
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = false))
   }
 
@@ -244,7 +244,7 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          AnsiCastShim.getEvalMode(cast), conf, p, r,
           doFloatToIntCheck = true, stringToAnsiDate = false)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",

@@ -1019,7 +1019,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
         }
       },
         // disable timestampNTZ for parquet for 3.4+ tests to pass
-        new SparkConf().set("spark.sql.parquet.timestampNTZ.enabled", "false")
+        new SparkConf().set("spark.sql.parquet.inferTimestampNTZ.enabled", "false")
             .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
 
@@ -1052,7 +1052,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             LocalDateTime.parse("1970-01-01T00:00:00.000002"))), data)
         }
       },
-        new SparkConf().set("spark.sql.parquet.timestampNTZ.enabled", "true")
+        new SparkConf().set("spark.sql.parquet.inferTimestampNTZ.enabled", "true")
             .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
     // INTERVAL is not supported by Spark
@@ -1106,7 +1106,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6967
-    ignore(s"NO GROUP LIST $parserType") {
+    test(s"NO GROUP LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
@@ -1140,7 +1140,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6967
-    ignore(s"SINGLE GROUP LIST $parserType") {
+    test(s"SINGLE GROUP LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message avro_style {
@@ -1176,7 +1176,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // https://github.com/NVIDIA/spark-rapids/issues/6967
-    ignore(s"SINGLE GROUP TUPLE LIST $parserType") {
+    test(s"SINGLE GROUP TUPLE LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message test {
