@@ -239,7 +239,7 @@ def test_iceberg_read_appended_table(spark_tmp_table_factory):
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -258,7 +258,7 @@ def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -281,7 +281,7 @@ def test_iceberg_read_metadata_count(spark_tmp_table_factory):
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -304,7 +304,7 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -328,11 +328,11 @@ def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
-        df = binary_op_df(spark, long_gen, seed=2)
+        df = binary_op_df(spark, LongGen(seed=2))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -359,7 +359,7 @@ def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} ALTER COLUMN b FIRST".format(table))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -380,7 +380,7 @@ def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
                   "AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} RENAME COLUMN a TO c".format(table))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))
@@ -403,7 +403,7 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
         spark.sql("ALTER TABLE {} RENAME COLUMN a TO c".format(table))
         spark.sql("ALTER TABLE {} RENAME COLUMN b TO a".format(table))
         spark.sql("ALTER TABLE {} RENAME COLUMN c TO b".format(table))
-        df = binary_op_df(spark, long_gen, seed=1)
+        df = binary_op_df(spark, LongGen(seed=1))
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(table) + \
                   "SELECT * FROM {}".format(tmpview))

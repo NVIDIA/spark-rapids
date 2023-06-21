@@ -95,7 +95,7 @@ def test_cache_expand_exec(data_gen, enable_vectorized_conf):
     def op_df(spark, length=2048, seed=0):
         cached = gen_df(spark, StructGen([
             ('a', data_gen),
-            ('b', IntegerGen())], nullable=False), length=length, seed=seed).cache()
+            ('b', IntegerGen())], nullable=False, seed=seed), length=length).cache()
         cached.count() # populate the cache
         return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
@@ -232,7 +232,7 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
                                           ('min', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
                                           ('d', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
                                           ('s', IntegerGen(min_val=-10000, max_val=10000, nullable=False))],
-                                         nullable=False), seed=1)
+                                         seed=1, nullable=False))
             duration_df = df.selectExpr(select_expr_df)
             if (cache):
                 duration_df.cache()

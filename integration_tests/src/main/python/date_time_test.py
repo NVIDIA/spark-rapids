@@ -29,7 +29,7 @@ def test_timesub(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         # We are starting at year 0015 to make sure we don't go before year 0001 while doing TimeSub
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc), seed=1))
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
@@ -38,7 +38,7 @@ def test_timeadd(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # We are starting at year 0005 to make sure we don't go before year 0001
         # and beyond year 10000 while doing TimeAdd
-        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc), seed=1))
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
@@ -55,7 +55,7 @@ def test_timeadd_daytime_column():
 def test_timeadd_from_subquery(data_gen):
 
     def fun(spark):
-        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc), seed=1))
         df.createOrReplaceTempView("testTime")
         spark.sql("select a, ((select max(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where datePlus > current_timestamp")
@@ -66,7 +66,7 @@ def test_timeadd_from_subquery(data_gen):
 def test_timesub_from_subquery(data_gen):
 
     def fun(spark):
-        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
+        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc), seed=1))
         df.createOrReplaceTempView("testTime")
         spark.sql("select a, ((select min(a) from testTime) - interval 1 day) as dateMinus from testTime").createOrReplaceTempView("testTime2")
         return spark.sql("select * from testTime2 where dateMinus < current_timestamp")
@@ -81,7 +81,7 @@ def test_timesub_from_subquery(data_gen):
 def test_dateaddinterval(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
+        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1), seed=1))
             .selectExpr('a + (interval {} days {} seconds)'.format(days, seconds),
             'a - (interval {} days {} seconds)'.format(days, seconds)),
         legacy_interval_enabled_conf)
@@ -92,7 +92,7 @@ def test_dateaddinterval_ansi(data_gen):
     days, _ = data_gen
     # only specify the `days`
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
+        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1), seed=1))
             .selectExpr('a + (interval {} days)'.format(days)),
         conf=copy_and_update(ansi_enabled_conf, legacy_interval_enabled_conf))
 
@@ -100,7 +100,7 @@ def test_dateaddinterval_ansi(data_gen):
 def test_dateaddinterval_ansi_exception():
     assert_gpu_and_cpu_error(
         # specify the `seconds`
-        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
+        lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1), seed=1))
             .selectExpr('a + (interval {} days {} seconds)'.format(1, 5)).collect(),
         conf=copy_and_update(ansi_enabled_conf, legacy_interval_enabled_conf),
         error_message="IllegalArgumentException")
@@ -336,7 +336,7 @@ def invalid_date_string_df(spark):
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_to_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 def test_string_to_unix_timestamp_ansi_exception():
@@ -349,7 +349,7 @@ def test_string_to_unix_timestamp_ansi_exception():
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
 def test_string_unix_timestamp(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),
+        lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'), date_form)),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 def test_string_unix_timestamp_ansi_exception():

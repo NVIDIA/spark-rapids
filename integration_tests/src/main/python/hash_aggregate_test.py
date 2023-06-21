@@ -1162,9 +1162,11 @@ def test_collect_empty():
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_groupby_first_last(data_gen):
-    gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
+    gen_fn = [('a', RepeatSeqGen(LongGen(seed=23), length=20, seed=12)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
         f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
+    # assert_gpu_and_cpu_are_equal_collect(
+    #     lambda spark: gen_df(spark, gen_fn, length=4, num_slices=1))
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism 1 to prevent nondeterministic results because of distributed setup.

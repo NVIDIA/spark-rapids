@@ -884,7 +884,7 @@ def test_log10(data_gen):
 @pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/89')
 def test_logarithm():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a log
-    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
+    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda : float(random.randint(-16, 16)), weight=100.0))]
     string_type = 'DOUBLE'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
@@ -897,7 +897,7 @@ def test_logarithm():
 @approximate_float
 def test_scalar_pow():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a pow
-    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
+    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda : float(random.randint(-16, 16)), weight=100.0))]
     string_type = 'DOUBLE'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(

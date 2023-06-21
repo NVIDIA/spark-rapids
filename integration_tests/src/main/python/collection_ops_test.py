@@ -240,8 +240,8 @@ def test_sequence_without_step(start_gen, stop_gen):
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get a step scalar from the 'step_gen' which follows the rules.
-    step_gen.start(random.Random(0))
-    step_lit = step_gen.gen()
+    step_gen.start()
+    step_lit = step_gen.gen_cache(0)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
             "sequence(a, b, c)",
@@ -309,12 +309,12 @@ def get_sequence_cases_mixed_df(spark, length=2048):
     #     (step == num.zero && start == stop)
     data_gen = IntegerGen(nullable=False, min_val=-10, max_val=10, special_cases=[])
     def get_sequence_data(gen, len):
-        gen.start(random.Random(0))
+        gen.start()
         list = []
         for index in range(len):
-            start = gen.gen()
-            stop = gen.gen()
-            step = gen.gen()
+            start = gen.gen_cache(index)
+            stop = gen.gen_cache(index)
+            step = gen.gen_cache(index)
             # decide the direction of step
             if start < stop:
                 step = abs(step) + 1

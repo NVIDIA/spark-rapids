@@ -201,8 +201,9 @@ def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
 
 def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
-        def start(self, rand):
-            self._start(rand, lambda : None)
+        def start(self):
+            self.rand = random.Random(0)
+            self._start(lambda : None)
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_gpu_and_cpu_writes_are_equal_collect(

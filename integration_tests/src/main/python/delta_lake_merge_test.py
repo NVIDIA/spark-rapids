@@ -232,7 +232,7 @@ def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, 
 def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
+    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
     # Non-deterministic input for each task means we can only reliably compare record counts when using only one task
@@ -260,7 +260,7 @@ def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, us
 def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, merge_sql, num_slices):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, seed=1, num_slices=num_slices)
+    dest_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices)
     # Non-deterministic input for each task means we can only reliably compare record counts when using only one task
     compare_logs = num_slices == 1
     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
@@ -275,7 +275,7 @@ def test_delta_merge_upsert_with_condition(spark_tmp_path, spark_tmp_table_facto
 def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices):
     # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
     src_table_func = lambda spark: two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))
-    dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), range(100)), string_gen, seed=1, num_slices=num_slices)
+    dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), range(100)), string_gen, num_slices=num_slices)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED AND {dest_table}.a > 100 THEN UPDATE SET *"
     # Non-deterministic input for each task means we can only reliably compare record counts when using only one task
@@ -312,7 +312,7 @@ def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_fac
 def test_delta_merge_dataframe_api(spark_tmp_path, use_cdf, num_slices):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"
-    dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), [None] + list(range(100))), string_gen, seed=1, num_slices=num_slices)
+    dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), [None] + list(range(100))), string_gen, num_slices=num_slices)
     with_cpu_session(lambda spark: setup_dest_tables(spark, data_path, dest_table_func, use_cdf))
     def do_merge(spark, path):
         # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous

@@ -103,6 +103,9 @@ def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""
     try:
       _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
+    #   print("CPU OUTPUT: %s" % cpu)
+    #   print("GPU OUTPUT: %s" % gpu)
+    #   raise
     except:
       print("CPU OUTPUT: %s" % cpu)
       print("GPU OUTPUT: %s" % gpu)

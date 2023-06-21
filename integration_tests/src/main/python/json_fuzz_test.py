@@ -22,7 +22,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from marks import approximate_float
 
 _name_gen = StringGen(pattern= "[a-zA-Z]{1,30}",nullable= False)
-_name_gen.start(random.Random(0))
+_name_gen.start()
 
 def gen_top_schema(depth):
     return gen_object_type(depth)
@@ -67,8 +67,11 @@ def gen_number_type():
 def gen_bool_type():
     return BooleanType()
 
+name_step = 0
 def gen_name():
-    return _name_gen.gen()
+    global name_step
+    name_step += 1
+    return _name_gen.gen_cache(name_step)
 
 # This is just a simple prototype of JSON generator.
 # You need to generate a JSON schema before using it.

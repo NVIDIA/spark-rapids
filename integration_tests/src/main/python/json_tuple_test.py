@@ -33,6 +33,9 @@ def test_json_tuple(json_str_pattern):
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "a", "email", "owner", "b", "b$", "b$$")'),
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})
+    # assert_gpu_and_cpu_are_equal_collect(
+    #     lambda spark: unary_op_df(spark, gen, length=10),
+    #     conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 def test_json_tuple_select_non_generator_col():
     gen = StringGen(pattern="{\"Zipcode\":\"abc\",\"ZipCodeType\":\"STANDARD\",\"City\":\"PARC PARQUE\",\"State\":\"PR\"}")

@@ -29,6 +29,7 @@ import time
 import os
 from functools import lru_cache
 import hashlib
+import warnings
 
 # set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
 # refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
@@ -44,10 +45,10 @@ class DataGen:
         return self.__class__.__name__[:-3]
 
     def __hash__(self):
-        return hash(str(self))
+        return int(hashlib.blake2b(self._cache_key.encode('utf-16', 'surrogatepass'), digest_size=8).hexdigest(), 16)
 
     def __eq__(self, other):
-        return isinstance(other, self.__class__) and self._cache_repr() == other._cache_repr()
+        return isinstance(other, self.__class__) and self._cache_key == other._cache_key
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -64,7 +65,7 @@ class DataGen:
             weight = 5.0
         if self.nullable:
             self.with_special_case(None, weight)
-
+        
         # Special cases can be a value or a tuple of (value, weight). If the
         # special_case itself is a tuple as in the case of StructGen, it MUST be added with a
         # weight like : ((special_case_tuple_v1, special_case_tuple_v2), weight).
@@ -86,6 +87,11 @@ class DataGen:
             specialcases += str(case) + ', ' + str(weight) + ', '
         specialcases = hashlib.blake2b(specialcases.encode('utf-8'), digest_size=8).hexdigest()
         return self.__class__.__name__[:-3] + notnull + ', ' + datatype + ', ' + str(specialcases)
+    
+    def set_seed(self, seed):
+        self.seed = seed
+        #  update the cache key
+        self._cache_key = self._cache_repr()
 
     def copy_special_case(self, special_case, weight=1.0):
         # it would be good to do a deepcopy, but sre_yield is not happy with that.
@@ -105,7 +111,7 @@ class DataGen:
         if callable(special_case):
             sc = special_case
         else:
-            sc = lambda rand: special_case
+            sc = lambda : special_case
         self._special_cases.append((weight, sc))
         return self
 
@@ -113,29 +119,39 @@ class DataGen:
         return 'DataType: {}, nullable: {}, special_cases: {}'.format(self.data_type,
           self.nullable, self.list_of_special_cases)
 
-    def start(self, rand):
+    def start(self):
         """Start data generation using the given rand"""
         raise TypeError('Children should implement this method and call _start')
 
-    def _start(self, rand, gen_func):
+    def _start(self, gen_func):
         """Start internally, but use the given gen_func as the base"""
         if not self._special_cases:
             self._gen_func = gen_func
         else:
-            weighted_choices = [(100.0, lambda rand: gen_func())]
+            weighted_choices = [(100.0, lambda : gen_func())]
             weighted_choices.extend(self._special_cases)
             total = float(sum(weight for weight,gen in weighted_choices))
             normalized_choices = [(weight/total, gen) for weight,gen in weighted_choices]
 
             def choose_one():
-                pick = rand.random()
+                pick = self.rand.random()
                 total = 0
                 for (weight, gen) in normalized_choices:
                     total += weight
                     if total >= pick:
-                        return gen(rand)
+                        return gen()
                 raise RuntimeError('Random did not pick something we expected')
             self._gen_func = choose_one
+
+    # @lru_cache(maxsize=None)
+    def gen_cache(self, step, force_no_nulls=False):
+        if not self._gen_func:
+            raise RuntimeError('start must be called before generating any data')
+        v = self._gen_func()
+        if force_no_nulls:
+            while v is None:
+                v = self._gen_func()
+        return v
 
     def gen(self, force_no_nulls=False):
         """generate the next line"""
@@ -153,38 +169,46 @@ class DataGen:
 
 class ConvertGen(DataGen):
     """Provides a way to modify the data before it is returned"""
-    def __init__(self, child_gen, func, data_type=None, nullable=True):
+    def __init__(self, child_gen, func, data_type=None, nullable=True, seed=0):
         if data_type is None:
             data_type = child_gen.data_type
         super().__init__(data_type, nullable=nullable)
         self._child_gen = child_gen
         self._func = func
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._child_gen.start(rand)
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self.i = 0
+        self._child_gen.start()
         def modify():
-            return self._func(self._child_gen.gen())
+            x = self.i
+            self.i += 1
+            return self._func(self._child_gen.gen_cache(x))
 
-        self._start(rand, modify)
+        self._start(modify)
 
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
     """Generate strings that match a pattern"""
-    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
+    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True, seed=0):
         super().__init__(StringType(), nullable=nullable)
         self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
         # save pattern and charset for cache repr
-        charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
-        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
+        charsetrepr = ', [' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else ''
+        self.stringrepr = pattern + ',' + str(flags)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
     
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self.stringrepr + ')'
+        return super()._cache_repr() + '(' + self.stringrepr + ',' + str(self.seed) + ')'
 
     def with_special_pattern(self, pattern, flags=0, charset=sre_yield.CHARSET, weight=1.0):
         """
@@ -196,66 +220,76 @@ class StringGen(DataGen):
             length = int(len(strs))
         except OverflowError:
             length = _MAX_CHOICES
-        return self.with_special_case(lambda rand : strs[rand.randrange(0, length)], weight=weight)
+        return self.with_special_case(lambda : strs[self.rand.randrange(0, length)], weight=weight)
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         strs = self.base_strs
         try:
             length = int(len(strs))
         except OverflowError:
             length = _MAX_CHOICES
-        self._start(rand, lambda : strs[rand.randrange(0, length)])
+        self._start(lambda : strs[self.rand.randrange(0, length)])
 
 BYTE_MIN = -(1 << 7)
 BYTE_MAX = (1 << 7) - 1
 class ByteGen(DataGen):
     """Generate Bytes"""
-    def __init__(self, nullable=True, min_val = BYTE_MIN, max_val = BYTE_MAX, special_cases=[]):
+    def __init__(self, nullable=True, min_val = BYTE_MIN, max_val = BYTE_MAX, special_cases=[], seed=0):
         super().__init__(ByteType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
-    def start(self, rand):
-        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._start(lambda : self.rand.randint(self._min_val, self._max_val))
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + str(self.seed) + ')'
 
 SHORT_MIN = -(1 << 15)
 SHORT_MAX = (1 << 15) - 1
 class ShortGen(DataGen):
     """Generate Shorts, which some built in corner cases."""
     def __init__(self, nullable=True, min_val = SHORT_MIN, max_val = SHORT_MAX,
-                 special_cases = [SHORT_MIN, SHORT_MAX, 0, 1, -1]):
+                 special_cases = [SHORT_MIN, SHORT_MAX, 0, 1, -1], seed=0):
         super().__init__(ShortType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._start(lambda : self.rand.randint(self._min_val, self._max_val))
 
 INT_MIN = -(1 << 31)
 INT_MAX = (1 << 31) - 1
 class IntegerGen(DataGen):
     """Generate Ints, which some built in corner cases."""
     def __init__(self, nullable=True, min_val = INT_MIN, max_val = INT_MAX,
-                 special_cases = [INT_MIN, INT_MAX, 0, 1, -1]):
+                 special_cases = [INT_MIN, INT_MAX, 0, 1, -1], seed=0):
         super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._start(lambda : self.rand.randint(self._min_val, self._max_val))
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False):
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False, seed=0):
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
@@ -270,44 +304,64 @@ class DecimalGen(DataGen):
         self.scale = scale
         self.precision = precision
         negative_pattern = "-" if avoid_positive_values else "-?"
-        self.pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.pattern = negative_pattern + "[0-9]{" + str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(self.pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self.pattern + ')'
+        return super()._cache_repr() + '(' + self.pattern + str(self.seed) + ')'
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         strs = self.base_strs
         try:
             length = int(strs.length)
         except OverflowError:
             length = _MAX_CHOICES
-        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
+        self._start(lambda : Decimal(strs[self.rand.randrange(0, length)]))
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = []):
+    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = [], seed=0):
         _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
         super().__init__(LongType(), nullable=nullable, special_cases=_special_cases)
         self._min_val = min_val
         self._max_val = max_val
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + ')'
+        return super()._cache_repr() + '(' + str(self._min_val) + ',' + str(self._max_val) + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._start(lambda : self.rand.randint(self._min_val, self._max_val))
 
 class UniqueLongGen(DataGen):
     """Generates a sequence of longs with no repeating values except nulls."""
-    def __init__(self, nullable=False):
+    def __init__(self, nullable=False, seed=0):
         super().__init__(LongType(), nullable=nullable)
         self._current_val = 0
+        self.seed = seed
+        self._cache_key = self._cache_repr()
+
+    def _cache_repr(self):
+        return super()._cache_repr() + str(self.seed)
+    
+    def gen_cache(self, step, force_no_nulls=False):
+        if not self._gen_func:
+            raise RuntimeError('start must be called before generating any data')
+        v = self._gen_func()
+        if force_no_nulls:
+            while v is None:
+                v = self._gen_func()
+        return v
 
     def next_val(self):
         if self._current_val < 0:
@@ -316,57 +370,70 @@ class UniqueLongGen(DataGen):
             self._current_val = -self._current_val - 1
         return self._current_val
 
-    def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._current_val) + ')'
-
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         self._current_val = 0
-        self._start(rand, lambda: self.next_val())
+        self._start(lambda : self.next_val())
 
 class RepeatSeqGen(DataGen):
     """Generate Repeated seq of `length` random items"""
-    def __init__(self, child, length):
+    def __init__(self, child, length, seed=12):
         super().__init__(child.data_type, nullable=False)
         self.nullable = child.nullable
         self._child = child
         self._vals = []
         self._length = length
         self._index = 0
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + str(self._index) + ')'
+        return super()._cache_repr() + '(' + self._child._cache_repr() + ',' + str(self._length) + str(self.seed) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
         self._index = (self._index + 1) % self._length
         return ret
+    
+    def gen_cache(self, step, force_no_nulls=False):
+        if not self._gen_func:
+            raise RuntimeError('start must be called before generating any data')
+        v = self._gen_func()
+        if force_no_nulls:
+            while v is None:
+                v = self._gen_func()
+        return v
 
-    def start(self, rand):
-        self._index = 0
-        self._child.start(rand)
-        self._start(rand, self._loop_values)
-        self._vals = [self._child.gen() for _ in range(0, self._length)]
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._child.set_seed(self.seed+1)
+        self._child.start()
+        self._start(self._loop_values)
+        self._vals = [self._child.gen_cache(i) for i in range(0, self._length)]
 
 class SetValuesGen(DataGen):
     """A set of values that are randomly selected"""
-    def __init__(self, data_type, data):
+    def __init__(self, data_type, data, seed=0):
         super().__init__(data_type, nullable=False)
         self.nullable = any(x is None for x in data)
         self._vals = data
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
+        return super()._cache_repr() +'(' + str(self.data_type) + ',' + str(self._vals) + str(self.seed) + ')'
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         data = self._vals
         length = len(data)
-        self._start(rand, lambda : data[rand.randrange(0, length)])
+        self._start(lambda : data[self.rand.randrange(0, length)])
 
 FLOAT_MIN = -3.4028235E38
 FLOAT_MAX = 3.4028235E38
@@ -377,7 +444,7 @@ POS_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0x7fffffff))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
     def __init__(self, nullable=True,
-            no_nans=False, special_cases=None):
+            no_nans=False, special_cases=None, seed=0):
         self._no_nans = no_nans
         if special_cases is None:
             special_cases = [FLOAT_MIN, FLOAT_MAX, 0.0, -0.0, 1.0, -1.0]
@@ -387,6 +454,8 @@ class FloatGen(DataGen):
                 special_cases.append(float('nan'))
                 special_cases.append(NEG_FLOAT_NAN_MAX_VALUE)
         super().__init__(FloatType(), nullable=nullable, special_cases=special_cases)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _fixup_nans(self, v):
         if self._no_nans and (math.isnan(v) or v == math.inf or v == -math.inf):
@@ -394,14 +463,15 @@ class FloatGen(DataGen):
         return v
     
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._no_nans) + ')'
+        return super()._cache_repr() + '(' + str(self._no_nans) + str(self.seed) + ')'
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         def gen_float():
-            i = rand.randint(INT_MIN, INT_MAX)
+            i = self.rand.randint(INT_MIN, INT_MAX)
             p = struct.pack('i', i)
             return self._fixup_nans(struct.unpack('f', p)[0])
-        self._start(rand, gen_float)
+        self._start(gen_float)
 
 DOUBLE_MIN_EXP = -1022
 DOUBLE_MAX_EXP = 1023
@@ -415,7 +485,7 @@ POS_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0x7ffffffffffffff
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
     def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False,
-            nullable=True, special_cases = None):
+            nullable=True, special_cases = None, seed=0):
         self._min_exp = min_exp
         self._max_exp = max_exp
         self._no_nans = no_nans
@@ -439,9 +509,11 @@ class DoubleGen(DataGen):
                 special_cases.append(float('nan'))
                 special_cases.append(NEG_DOUBLE_NAN_MAX_VALUE)
         super().__init__(DoubleType(), nullable=nullable, special_cases=special_cases)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_exp) + ',' + str(self._max_exp) + ',' + str(self._no_nans) + ')'
+        return super()._cache_repr() + '(' + str(self._min_exp) + ',' + str(self._max_exp) + ',' + str(self._no_nans) + str(self.seed) + ')'
 
     @staticmethod
     def make_from(sign, exp, fraction):
@@ -458,32 +530,39 @@ class DoubleGen(DataGen):
             v = None if self.nullable else 0.0
         return v
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         if self._use_full_range:
             def gen_double():
-                i = rand.randint(LONG_MIN, LONG_MAX)
+                i = self.rand.randint(LONG_MIN, LONG_MAX)
                 p = struct.pack('l', i)
                 return self._fixup_nans(struct.unpack('d', p)[0])
-            self._start(rand, gen_double)
+            self._start(gen_double)
         else:
             def gen_part_double():
-                sign = rand.getrandbits(1)
-                exp = rand.randint(self._min_exp, self._max_exp)
-                fraction = rand.getrandbits(52)
+                sign = self.rand.getrandbits(1)
+                exp = self.rand.randint(self._min_exp, self._max_exp)
+                fraction = self.rand.getrandbits(52)
                 return self._fixup_nans(self.make_from(sign, exp, fraction))
-            self._start(rand, gen_part_double)
+            self._start(gen_part_double)
 
 class BooleanGen(DataGen):
     """Generate Bools (True/False)"""
-    def __init__(self, nullable=True):
+    def __init__(self, nullable=True, seed=0):
         super().__init__(BooleanType(), nullable=nullable)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
-    def start(self, rand):
-        self._start(rand, lambda : bool(rand.getrandbits(1)))
+    def _cache_repr(self):
+        return super()._cache_repr() + '(' + str(self.seed) + ')'
+
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._start(lambda : bool(self.rand.getrandbits(1)))
 
 class StructGen(DataGen):
     """Generate a Struct"""
-    def __init__(self, children, nullable=True, special_cases=[]):
+    def __init__(self, children, seed=11, nullable=True, special_cases=[]):
         """
         Initialize the struct with children.  The children should be of the form:
         [('name', Gen),('name_2', Gen2)]
@@ -493,27 +572,46 @@ class StructGen(DataGen):
         tmp = [StructField(name, child.data_type, nullable=child.nullable) for name, child in children]
         super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
         self.children = children
+        self.seed = seed
+        child_len = len(self.children)
+        seeds = [self.seed+i+1 for i in range(child_len)]
+        for i in range(child_len):
+            if self.children[i][1].seed == 0:
+                self.children[i][1].set_seed(seeds[i])
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() + '(' + ','.join([str(i) for i in self.children]) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + ','.join([name + child._cache_repr() for name, child in self.children]) + ')'
+        return super()._cache_repr() + '(' + ','.join([name + child._cache_repr() for name, child in self.children]) + str(self.seed) + ')'
 
-    def start(self, rand):
+    def gen_cache(self, step, force_no_nulls=False):
+        if not self._gen_func:
+            raise RuntimeError('start must be called before generating any data')
+        v = self._gen_func()
+        if force_no_nulls:
+            while v is None:
+                v = self._gen_func()
+        return v
+
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self.i = 0
         for name, child in self.children:
-            child.start(rand)
+            child.start()
         def make_tuple():
-            data = [child.gen() for name, child in self.children]
+            data = [self.children[i][1].gen_cache(self.i) for i in range(len(self.children))]
+            self.i += 1
             return tuple(data)
-        self._start(rand, make_tuple)
+        self._start(make_tuple)
 
     def contains_ts(self):
         return any(child[1].contains_ts() for child in self.children)
 
 class DateGen(DataGen):
     """Generate Dates in a given range"""
-    def __init__(self, start=None, end=None, nullable=True):
+    def __init__(self, start=None, end=None, nullable=True, seed=0):
         super().__init__(DateType(), nullable=nullable)
         if start is None:
             # Spark supports times starting at
@@ -549,8 +647,11 @@ class DateGen(DataGen):
                 if (next_day > start and next_day < end):
                     self.with_special_case(next_day)
 
+        self.seed = seed
+        self._cache_key = self._cache_repr()
+
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._start_day) + ',' + str(self._end_day) + ')'
+        return super()._cache_repr() + '(' + str(self._start_day) + ',' + str(self._end_day) + str(self.seed) + ')'
 
     @staticmethod
     def _guess_leap_year(t):
@@ -569,14 +670,15 @@ class DateGen(DataGen):
     def _from_days_since_epoch(self, days):
         return self._epoch + timedelta(days=days)
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         start = self._start_day
         end = self._end_day
-        self._start(rand, lambda : self._from_days_since_epoch(rand.randint(start, end)))
+        self._start(lambda : self._from_days_since_epoch(self.rand.randint(start, end)))
 
 class TimestampGen(DataGen):
     """Generate Timestamps in a given range. All timezones are UTC by default."""
-    def __init__(self, start=None, end=None, nullable=True):
+    def __init__(self, start=None, end=None, nullable=True, seed=0):
         super().__init__(TimestampType(), nullable=nullable)
         if start is None:
             # Spark supports times starting at
@@ -601,9 +703,12 @@ class TimestampGen(DataGen):
         self._end_time = self._to_us_since_epoch(end)
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
+        
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + ')'
+        return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + str(self.seed) + ')'
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _us = timedelta(microseconds=1)
@@ -614,65 +719,82 @@ class TimestampGen(DataGen):
     def _from_us_since_epoch(self, us):
         return self._epoch + timedelta(microseconds=us)
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         start = self._start_time
         end = self._end_time
-        self._start(rand, lambda : self._from_us_since_epoch(rand.randint(start, end)))
+        self._start(lambda : self._from_us_since_epoch(self.rand.randint(start, end)))
 
     def contains_ts(self):
         return True
 
 class ArrayGen(DataGen):
     """Generate Arrays of data."""
-    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False):
+    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False, seed=0):
+        # nullable = False
         super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
         self._child_gen = child_gen
         self.all_null = all_null
+        self.seed = seed
+        self._child_gen.set_seed(self.seed+1)
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + str(self._min_length) + ',' + str(self._max_length) + ',' + str(self.all_null) + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._child_gen.start(rand)
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self.i = 0
+        self._child_gen.start()
         def gen_array():
             if self.all_null:
                 return None
-            length = rand.randint(self._min_length, self._max_length)
-            return [self._child_gen.gen() for _ in range(0, length)]
-        self._start(rand, gen_array)
+            length = self.rand.randint(self._min_length, self._max_length)
+            x = self.i
+            self.i += length
+            return [self._child_gen.gen_cache(x+i) for i in range(0, length)]
+        self._start(gen_array)
 
     def contains_ts(self):
         return self._child_gen.contains_ts()
 
 class MapGen(DataGen):
     """Generate a Map"""
-    def __init__(self, key_gen, value_gen, min_length=0, max_length=20, nullable=True, special_cases=[]):
+    def __init__(self, key_gen, value_gen, min_length=0, max_length=20, nullable=True, special_cases=[], seed=0):
         # keys cannot be nullable
         assert not key_gen.nullable
         self._min_length = min_length
         self._max_length = max_length
+        self.seed = seed
+        key_gen.set_seed(seed+1)
+        value_gen.set_seed(seed+2)
         self._key_gen = key_gen
         self._value_gen = value_gen
         super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
+        self._cache_key = self._cache_repr()
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
+        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._key_gen.start(rand)
-        self._value_gen.start(rand)
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self.i = 0
+        self._key_gen.start()
+        self._value_gen.start()
         def make_dict():
-            length = rand.randint(self._min_length, self._max_length)
-            return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
-        self._start(rand, make_dict)
+            length = self.rand.randint(self._min_length, self._max_length)
+            x = self.i
+            self.i += length
+            return {self._key_gen.gen_cache(x+idx): self._value_gen.gen_cache(x+idx) for idx in range(0, length)}
+        self._start(make_dict)
 
     def contains_ts(self):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()
@@ -680,13 +802,19 @@ class MapGen(DataGen):
 
 class NullGen(DataGen):
     """Generate NullType values"""
-    def __init__(self):
+    def __init__(self, seed=0):
         super().__init__(NullType(), nullable=True)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
-    def start(self, rand):
+    def _cache_repr(self):
+        return super()._cache_repr() + str(self.seed)
+
+    def start(self):
+        self.rand = random.Random(self.seed)
         def make_null():
             return None
-        self._start(rand, make_null)
+        self._start(make_null)
 
 # DayTimeIntervalGen is for Spark 3.3.0+
 # DayTimeIntervalType(startField, endField):
@@ -705,7 +833,7 @@ MAX_DAY_TIME_INTERVAL = timedelta(microseconds=(pow(2, 63) - 1))
 class DayTimeIntervalGen(DataGen):
     """Generate DayTimeIntervalType values"""
     def __init__(self, min_value=MIN_DAY_TIME_INTERVAL, max_value=MAX_DAY_TIME_INTERVAL, start_field="day", end_field="second",
-                 nullable=True, special_cases=[timedelta(seconds=0)]):
+                 nullable=True, special_cases=[timedelta(seconds=0)], seed=0):
         # Note the nano seconds are truncated for min_value and max_value
         self._min_micros = (math.floor(min_value.total_seconds()) * 1000000) + min_value.microseconds
         self._max_micros = (math.floor(max_value.total_seconds()) * 1000000) + max_value.microseconds
@@ -716,35 +844,41 @@ class DayTimeIntervalGen(DataGen):
             raise RuntimeError('Start field {}, end field {}, valid fields is {}, start field index should <= end '
                                'field index'.format(start_field, end_field, fields))
         super().__init__(DayTimeIntervalType(start_index, end_index), nullable=nullable, special_cases=special_cases)
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
-    def _gen_random(self, rand):
-        micros = rand.randint(self._min_micros, self._max_micros)
+    def _gen_random(self):
+        micros = self.rand.randint(self._min_micros, self._max_micros)
         # issue: Interval types are not truncated to the expected endField when creating a DataFrame via Duration
         # https://issues.apache.org/jira/browse/SPARK-38577
         # If above issue is fixed, should update this DayTimeIntervalGen.
         return timedelta(microseconds=micros)
     
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + ')'
+        return super()._cache_repr() + '(' + str(self._min_micros) + ',' + str(self._max_micros) + str(self.seed) + ')'
 
-    def start(self, rand):
-        self._start(rand, lambda: self._gen_random(rand))
+    def start(self):
+        self.rand = random.Random(self.seed)
+        self._start(lambda : self._gen_random())
 
 class BinaryGen(DataGen):
     """Generate BinaryType values"""
-    def __init__(self, min_length=0, max_length=20, nullable=True):
+    def __init__(self, min_length=0, max_length=20, nullable=True, seed=0):
         super().__init__(BinaryType(), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
+        self.seed = seed
+        self._cache_key = self._cache_repr()
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._min_length) + ',' + str(self._max_length) + ')'
+        return super()._cache_repr() + '(' + str(self._min_length) + ',' + str(self._max_length) + str(self.seed) + ')'
 
-    def start(self, rand):
+    def start(self):
+        self.rand = random.Random(self.seed)
         def gen_bytes():
-            length = rand.randint(self._min_length, self._max_length)
-            return bytes([ rand.randint(0, 255) for _ in range(length) ])
-        self._start(rand, gen_bytes)
+            length = self.rand.randint(self._min_length, self._max_length)
+            return bytes([ self.rand.randint(0, 255) for _ in range(length) ])
+        self._start(gen_bytes)
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
@@ -752,14 +886,30 @@ def skip_if_not_utc():
 
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
-@lru_cache(maxsize=128, typed=True)
-def gen_df_help(data_gen, length, seed):
-    rand = random.Random(seed)
-    data_gen.start(rand)
-    data = [data_gen.gen() for index in range(0, length)]
+# @lru_cache(maxsize=128, typed=True)
+def gen_df_help(data_gen, length):
+    # rand = random.Random(seed)
+    # data_gen.rand = random.Random(seed)
+    data_gen.start()
+    # hashkey = hash(data_gen)
+    data = [data_gen.gen_cache(step=index) for index in range(0, length)]
+    # data = [data_gen.gen_cache() for index in range(0, length)]
     return data
 
-def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
+# @lru_cache(maxsize=128, typed=True)
+def gen_df_help_df(spark, data_gen, length, num_slices=None):
+    # rand = random.Random(seed)
+    # data_gen.rand = random.Random(seed)
+    data_gen.start()
+    # hashkey = hash(data_gen)
+    data = [data_gen.gen_cache(step=index) for index in range(0, length)]
+    # data = [data_gen.gen_cache() for index in range(0, length)]
+    
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
+        data_gen.data_type)
+
+def gen_df(spark, data_gen, length=2048, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
@@ -772,10 +922,17 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     if src.contains_ts():
         skip_if_not_utc()
 
-    data = gen_df_help(src, length, seed)
+    # data = gen_df_help_df(spark, src, length, num_slices)
+    # return data
+
+    data = gen_df_help(src, length)
+
+    # warnings.warn(','.join([str(x) for x in data]))
+    # warnings.warn(str(DataGen.gen_cache.cache_info()))
 
     # We use `numSlices` to create an RDD with the specific number of partitions,
     # which is then turned into a dataframe. If not specified, it is `None` (default spark value)
+
     return spark.createDataFrame(
         SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
         src.data_type)
@@ -815,16 +972,16 @@ def _mark_as_lit(data, data_type):
 
 def _gen_scalars_common(data_gen, count, seed=0):
     if isinstance(data_gen, list):
-        src = StructGen(data_gen, nullable=False)
+        src = StructGen(data_gen, seed=seed, nullable=False)
     else:
         src = data_gen
+        src.set_seed(seed)
 
     # Before we get too far we need to verify that we can run with timestamps
     if src.contains_ts():
         skip_if_not_utc()
 
-    rand = random.Random(seed)
-    src.start(rand)
+    src.start()
     return src
 
 def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
@@ -833,7 +990,7 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
         assert(not isinstance(data_gen, NullGen))
     src = _gen_scalars_common(data_gen, count, seed=seed)
     data_type = src.data_type
-    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
+    return (_mark_as_lit(src.gen_cache(i, force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
@@ -843,7 +1000,7 @@ def gen_scalar(data_gen, seed=0, force_no_nulls=False):
 def gen_scalar_values(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values."""
     src = _gen_scalars_common(data_gen, count, seed=seed)
-    return (src.gen(force_no_nulls=force_no_nulls) for i in range(0, count))
+    return (src.gen_cache(i, force_no_nulls=force_no_nulls) for i in range(0, count))
 
 def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
@@ -887,20 +1044,20 @@ def meta_idfn(meta):
         return meta + idfn(something)
     return tmp
 
-def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
+def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
+    return gen_df(spark, gen, length=length, num_slices=num_slices)
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, num_slices=None):
+def two_col_df(spark, a_gen, b_gen, length=2048, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
+    return gen_df(spark, gen, length=length, num_slices=num_slices)
 
-def binary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
-    return two_col_df(spark, gen, gen, length=length, seed=seed, num_slices=num_slices)
+def binary_op_df(spark, gen, length=2048, num_slices=None):
+    return two_col_df(spark, gen, gen, length=length, num_slices=num_slices)
 
-def unary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
-    return gen_df(spark, StructGen([('a', gen)], nullable=False),
-        length=length, seed=seed, num_slices=num_slices)
+def unary_op_df(spark, gen, length=2048, num_slices=None):
+    gen = StructGen([('a', gen)], nullable=False)
+    return gen_df(spark, gen, length=length, num_slices=num_slices)
 
 def to_cast_string(spark_type):
     if isinstance(spark_type, ByteType):
@@ -978,7 +1135,7 @@ def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
         assert not force_no_nulls
         return ('null' for i in range(0, count))
     spark_type = data_gen.data_type
-    return (_convert_to_sql(spark_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+    return (_convert_to_sql(spark_type, src.gen_cache(i, force_no_nulls=force_no_nulls)) for i in range(0, count))
 
 byte_gen = ByteGen()
 short_gen = ShortGen()

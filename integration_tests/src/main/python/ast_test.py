@@ -343,7 +343,7 @@ def test_multiplication(data_descr):
 @approximate_float
 def test_scalar_pow():
     # For the 'b' field include a lot more values that we would expect customers to use as a part of a pow
-    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
+    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda : float(random.randint(-16, 16)), weight=100.0))]
     assert_gpu_ast(is_supported=True,
         func=lambda spark: gen_df(spark, data_gen).selectExpr(
             'pow(a, 7.0)',
