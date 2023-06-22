@@ -945,8 +945,6 @@ case class GpuMergeIntoCommand(
       }
 
       if (canReplace) {
-        println(s"canReplace=true; notMatchedBySourceConditions=$notMatchedBySourceConditions" +
-          s"; notMatchedBySourceOutputs=$notMatchedBySourceOutputs")
         val processedJoinPlan = RapidsProcessDeltaMergeJoin(
           joinedPlan,
           outputRowSchema.toAttributes,
