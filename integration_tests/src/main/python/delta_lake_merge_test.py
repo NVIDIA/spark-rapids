@@ -130,10 +130,10 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and spark_version() < "3.3.2", reason="NOT MATCHED BY SOURCE added in DBR 12.2")
-@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_340(), reason="NOT MATCHED BY SOURCE added in Delta Lake 2.4")
+@pytest.mark.skipif((not is_databricks_runtime()) and is_before_spark_340(), reason="NOT MATCHED BY SOURCE added in Delta Lake 2.4")
 def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
     def checker(data_path, do_merge):
-        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec")
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec", conf = delta_merge_enabled_conf)
     merge_sql = "MERGE INTO {dest_table} " \
                 "USING {src_table} " \
                 "ON {src_table}.a == {dest_table}.a " \
