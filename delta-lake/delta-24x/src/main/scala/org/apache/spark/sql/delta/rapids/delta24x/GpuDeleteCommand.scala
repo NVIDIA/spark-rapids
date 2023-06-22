@@ -22,6 +22,7 @@
 package org.apache.spark.sql.delta.rapids.delta24x
 
 import com.nvidia.spark.rapids.delta.GpuDeltaMetricUpdateUDF
+
 import org.apache.spark.sql.{Column, DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, EqualNullSafe, Expression, If, Literal, Not}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
@@ -29,7 +30,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOperations, DeltaTableUtils, DeltaUDF, OptimisticTransaction}
 import org.apache.spark.sql.delta.actions.{Action, AddCDCFile, FileAction}
 import org.apache.spark.sql.delta.commands.{DeleteCommandMetrics, DeleteMetric, DeleteWithDeletionVectorsHelper, DeletionVectorUtils, DeltaCommand}
-import org.apache.spark.sql.delta.commands.DeleteCommand.{FINDING_TOUCHED_FILES_MSG, rewritingFilesMsg}
+import org.apache.spark.sql.delta.commands.DeleteCommand.{rewritingFilesMsg, FINDING_TOUCHED_FILES_MSG}
 import org.apache.spark.sql.delta.commands.MergeIntoCommand.totalBytesAndDistinctPartitionValues
 import org.apache.spark.sql.delta.files.TahoeBatchFileIndex
 import org.apache.spark.sql.delta.rapids.GpuDeltaLog
