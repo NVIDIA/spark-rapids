@@ -21,8 +21,8 @@ import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.concurrent.{TimeLimitedTests, TimeLimits}
 import org.scalatest.funsuite.AnyFunSuite
-import org.scalatestplus.mockito.MockitoSugar
 import org.scalatest.time.{Seconds, Span}
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.SparkSession
