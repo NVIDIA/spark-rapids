@@ -34,7 +34,8 @@ import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuColumnVector, Noo
 import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers.{eq => meq}
 import org.mockito.Mockito.{mock, when}
-import org.scalatest.{BeforeAndAfterAll, FunSuite}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark._
 import org.apache.spark.internal.config
