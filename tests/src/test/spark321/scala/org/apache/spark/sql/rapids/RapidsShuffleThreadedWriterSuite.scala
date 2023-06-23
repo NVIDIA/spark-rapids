@@ -40,7 +40,7 @@ import org.mockito.Answers.RETURNS_SMART_NULLS
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
 import org.mockito.Mockito._
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FunSuite}
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.{HashPartitioner, SparkConf, SparkException, TaskContext}
 import org.apache.spark.executor.{ShuffleWriteMetrics, TaskMetrics}
@@ -143,7 +143,7 @@ class TestIndexShuffleBlockResolver(
   override def createTempFile(file: File): File = { null }
 }
 
-class RapidsShuffleThreadedWriterSuite extends FunSuite
+class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
     with MockitoSugar

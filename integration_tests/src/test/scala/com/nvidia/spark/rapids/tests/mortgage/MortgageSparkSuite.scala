@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids.tests.mortgage
 
 import com.nvidia.spark.rapids.ShimLoader
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 
-class MortgageSparkSuite extends FunSuite {
+class MortgageSparkSuite extends AnyFunSuite {
 
   /**
    * This is intentionally a def rather than a val so that scalatest uses the correct value (from

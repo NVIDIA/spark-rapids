@@ -72,7 +72,7 @@ class RecordingManagedBuffer(underlyingBuffer: NioManagedBuffer) extends Managed
 }
 
 class RapidsShuffleThreadedReaderSuite
-    extends FunSuite with BeforeAndAfterAll {
+    extends AnyFunSuite with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     RapidsShuffleInternalManagerBase.stopThreadPool()

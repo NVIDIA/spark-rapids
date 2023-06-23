@@ -22,7 +22,7 @@ import ai.rapids.cudf.{CudfException, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.{CudfAggregate, CudfSum}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
