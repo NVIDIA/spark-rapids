@@ -1989,8 +1989,7 @@ object RapidsConf {
     if (asTable) {
       // scalastyle:off line.size.limit
       println("""
-        |For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced 
-        |Configuration](https://nvidia.github.io/spark-rapids/docs/additional-functionality/advanced_configs.html) page.
+        |For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
         |""".stripMargin)
       // scalastyle:on line.size.limit
     }
@@ -2014,7 +2013,7 @@ object RapidsConf {
         |The following configuration options are supported by the RAPIDS Accelerator for Apache Spark.
         |
         |For commonly used configurations and examples of setting options, please refer to the 
-        |[RAPIDS Accelerator for Configuration](https://nvidia.github.io/spark-rapids/docs/configs.html) page.
+        |[RAPIDS Accelerator for Configuration](../configs.md) page.
         |""".stripMargin)
       // scalastyle:on line.size.limit
       println("\n## Advanced Configuration\n")

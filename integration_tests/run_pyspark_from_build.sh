@@ -26,11 +26,6 @@ then
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
     [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }
-    # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
-    # which helps with spurious task failures as observed in our tests. If you are running
-    # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
-    # more lineant configuration, else it will set them to 1 as spurious task failures are not expected
-    # for Spark 3.1.1+
     VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep -v Scala|awk '/version\ [0-9.]+/{print $NF}'`
     VERSION_STRING="${VERSION_STRING/-SNAPSHOT/}"
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
@@ -209,7 +204,6 @@ else
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
 
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
-    [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
     if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ]]; then
         # If specified shuffle manager, set `extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796

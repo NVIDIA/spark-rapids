@@ -19,6 +19,7 @@ import java.util
 import java.util.Properties
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.TaskContext
 import org.apache.spark.executor.TaskMetrics
@@ -30,11 +31,16 @@ import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailure
 
 class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext {
 
+  val listeners = new ListBuffer[TaskCompletionListener]
+
   override def isCompleted(): Boolean = false
 
   override def isInterrupted(): Boolean = false
 
-  override def addTaskCompletionListener(listener: TaskCompletionListener): TaskContext = this
+  override def addTaskCompletionListener(listener: TaskCompletionListener): TaskContext = {
+    listeners += listener
+    this
+  }
 
   override def addTaskFailureListener(listener: TaskFailureListener): TaskContext = this
 
@@ -83,4 +89,11 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
   def numPartitions(): Int = 2
 
   def taskLocality(): TaskLocality.TaskLocality = TaskLocality.ANY
+
+  /**
+   * This is exposed to invoke the listeners onTaskCompletion
+   */
+  def markTaskComplete(): Unit = {
+    listeners.foreach(_.onTaskCompletion(this))
+  }
 }
