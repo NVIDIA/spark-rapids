@@ -81,7 +81,7 @@ pipeline {
         } // end of Init githubHelper
 
         stage('Databricks') {
-            failFast false // keep running if one branch failed
+            failFast true // Abort running if one branch failed
             matrix {
                 axes {
                     axis {
