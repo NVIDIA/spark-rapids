@@ -241,7 +241,7 @@ def test_str_to_map_expr_fixed_pattern_input():
     data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
                                 nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, seed=1).selectExpr(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',
             'str_to_map(a, ",") as m2',
             'str_to_map(a, ",", ":") as m3'))
