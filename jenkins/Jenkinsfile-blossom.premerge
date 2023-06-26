@@ -260,20 +260,17 @@ pipeline {
                 stage('Databricks') {
                     steps {
                         script {
-                            try {
-                                build(job: 'tim-rapids-databricks_premerge-github1',
-                                    propagate: true, wait: true,
-                                    parameters: [
-                                            string(name: 'REF', value: params.REF),
-                                            string(name: 'GITHUB_DATA', value: params.GITHUB_DATA)
-                                    ])
-                            } catch (e){
-                                // 'JOB_NAME #ID completed with status FAILURE xxx' --> 'JOB_NAME/ID'
-                                def dbJobId = e.getCauses()[0].getShortDescription().split('completed with status FAILURE')[0].replace(' #', '/').trim()
-                                def jobLogUrl = "$JENKINS_URL" + 'job/' + dbJobId + '/consoleText'
-                                // Output Databricks failure log
-                                sh "curl $jobLogUrl"
-                                throw e
+                            def DBJob = build(job: 'rapids-databricks_premerge-github',
+                                propagate: false, wait: true,
+                                parameters: [
+                                        string(name: 'REF', value: params.REF),
+                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA)
+                                ])
+                            if ( DBJob.result != 'SUCCESS' ) {
+                                // Output Databricks failure logs to uploaded onto the pre-merge PR
+                                print(DBJob.getRawBuild().getLog())
+                                // Fail the pipeline
+                                error "Databricks build result : " + DBJob.result
                             }
                         }
                     }
