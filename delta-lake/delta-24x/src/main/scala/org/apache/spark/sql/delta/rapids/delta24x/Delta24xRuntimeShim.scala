@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.delta.delta24x.Delta24xProvider
 
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
+import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
@@ -42,4 +43,8 @@ class Delta24xRuntimeShim extends DeltaRuntimeShim {
   override def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot = {
     deltaLog.unsafeVolatileSnapshot
   }
+
+  override def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
+    deltaLog.fileFormat(deltaLog.unsafeVolatileSnapshot.protocol,
+      deltaLog.unsafeVolatileSnapshot.metadata)
 }

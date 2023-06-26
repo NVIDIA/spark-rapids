@@ -22,15 +22,11 @@
 package org.apache.spark.sql.delta.rapids.delta24x
 
 import java.util.concurrent.TimeUnit
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import com.nvidia.spark.rapids.{BaseExprMeta, GpuOverrides, RapidsConf}
 import com.nvidia.spark.rapids.delta._
-import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
-
 import org.apache.spark.SparkContext
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.InternalRow
@@ -44,7 +40,7 @@ import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddCDCFile, AddFile, FileAction}
 import org.apache.spark.sql.delta.commands.DeltaCommand
 import org.apache.spark.sql.delta.commands.merge.MergeIntoMaterializeSource
-import org.apache.spark.sql.delta.rapids.GpuDeltaLog
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuDeltaLog}
 import org.apache.spark.sql.delta.schema.{ImplicitMetadataOperation, SchemaUtils}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.util.{AnalysisHelper, SetAccumulator}
@@ -1085,7 +1081,7 @@ case class GpuMergeIntoCommand(
       // because under column mapping, the reference schema within DeltaParquetFileFormat
       // that is used to populate metadata needs to be updated
       if (deltaTxn.metadata.columnMappingMode != NoMapping) {
-        val updatedFileFormat = DeltaLogShim.fileFormat(deltaTxn.deltaLog)
+        val updatedFileFormat = DeltaRuntimeShim.fileFormatFromLog(deltaTxn.deltaLog)
         DeltaTableUtils.replaceFileFormat(transformed, updatedFileFormat)
       } else {
         transformed

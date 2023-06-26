@@ -27,7 +27,6 @@ import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
-import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
@@ -39,7 +38,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
-import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.InvariantViolationException
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.SQLExecution
@@ -219,7 +218,7 @@ class GpuOptimisticTransaction
           }.toMap
       }
 
-      val gpuFileFormat = DeltaLogShim.fileFormat(deltaLog) match {
+      val gpuFileFormat = DeltaRuntimeShim.fileFormatFromLog(deltaLog) match {
         case _: DeltaParquetFileFormat => new GpuParquetFileFormat
         case f => throw new IllegalStateException(s"file format $f is not supported")
       }
