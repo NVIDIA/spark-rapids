@@ -28,8 +28,9 @@ import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, when}
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.BeforeAndAfterEach
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
 import org.apache.spark.sql.types.IntegerType
@@ -51,7 +52,7 @@ class TestShuffleMetricsUpdater extends ShuffleMetricsUpdater {
   }
 }
 
-class RapidsShuffleTestHelper extends FunSuite
+class RapidsShuffleTestHelper extends AnyFunSuite
     with BeforeAndAfterEach
     with MockitoSugar {
   var mockTransaction: Transaction = _

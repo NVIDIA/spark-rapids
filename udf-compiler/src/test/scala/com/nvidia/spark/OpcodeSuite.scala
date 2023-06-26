@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.RapidsConf
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkException
@@ -31,7 +31,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.functions.{udf => makeUdf}
 import org.apache.spark.sql.functions.{log => logalias}
 
-class OpcodeSuite extends FunSuite {
+class OpcodeSuite extends AnyFunSuite {
 
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")

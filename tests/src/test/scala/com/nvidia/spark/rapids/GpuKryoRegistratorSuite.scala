@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.BeforeAndAfter
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.serializer.KryoSerializer
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-class GpuKryoRegistratorSuite extends FunSuite with BeforeAndAfter {
+class GpuKryoRegistratorSuite extends AnyFunSuite with BeforeAndAfter {
 
   before {
     TrampolineUtil.cleanupAnyExistingSession()

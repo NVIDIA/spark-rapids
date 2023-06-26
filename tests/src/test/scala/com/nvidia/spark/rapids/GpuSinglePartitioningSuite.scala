@@ -20,14 +20,14 @@ import java.math.RoundingMode
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuSinglePartitioningSuite extends FunSuite {
+class GpuSinglePartitioningSuite extends AnyFunSuite {
   private def buildBatch(): ColumnarBatch = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
