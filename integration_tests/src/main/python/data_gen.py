@@ -948,7 +948,6 @@ def get_null_lit_string(spark_type):
 def _convert_to_sql(spark_type, data):
     if isinstance(data, str):
         d = "'" + data.replace("\\", "\\\\").replace("\'", "\\\'") + "'"
-        # d = "'" + data.replace("'", "\\'") + "'"
     elif isinstance(data, datetime):
         d = "'" + data.strftime('%Y-%m-%d T%H:%M:%S.%f').zfill(26) + "'"
     elif isinstance(data, date):
