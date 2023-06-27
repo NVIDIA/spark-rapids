@@ -304,8 +304,7 @@ class SerializationSuite extends AnyFunSuite
         // spill first thing (we didn't materialize it in the executor)
         val baos = new ByteArrayOutputStream()
         SerializationUtils.serialize(broadcast, baos)
-        val data = baos.toByteArray
-        val inputStream = new ByteArrayInputStream(data)
+        val inputStream = new ByteArrayInputStream(baos.toByteArray)
         withBroadcast(SerializationUtils
           .deserialize[SerializeConcatHostBuffersDeserializeBatch](
             inputStream)) { materialized =>
