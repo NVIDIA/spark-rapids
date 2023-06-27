@@ -16,12 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.commons.lang3.SerializationUtils
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
@@ -257,7 +256,8 @@ class SerializationSuite extends AnyFunSuite
         val oos = new ObjectOutputStream(baos)
         broadcast.doWriteObject(oos)
 
-        val inputStream = new ObjectInputStream(baos.toInputStream)
+        val inputStream =
+          new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray))
         broadcast.doReadObject(inputStream)
 
         // use it now
@@ -282,7 +282,8 @@ class SerializationSuite extends AnyFunSuite
         val oos = new ObjectOutputStream(baos)
         broadcast.doWriteObject(oos)
 
-        val inputStream = new ObjectInputStream(baos.toInputStream)
+        val inputStream =
+          new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray))
         val before = broadcast.batch
         // this is a noop, because `broadcast` has spillable already.
         broadcast.doReadObject(inputStream)
@@ -303,10 +304,11 @@ class SerializationSuite extends AnyFunSuite
         // spill first thing (we didn't materialize it in the executor)
         val baos = new ByteArrayOutputStream()
         SerializationUtils.serialize(broadcast, baos)
-
+        val data = baos.toByteArray
+        val inputStream = new ByteArrayInputStream(data)
         withBroadcast(SerializationUtils
           .deserialize[SerializeConcatHostBuffersDeserializeBatch](
-            baos.toInputStream)) { materialized =>
+            inputStream)) { materialized =>
           // this materializes a new batch from what was deserialized
           withResource(materialized.batch.getColumnarBatch()) { gpuBatch =>
             TestUtils.compareBatches(gpuExpected, gpuBatch)
