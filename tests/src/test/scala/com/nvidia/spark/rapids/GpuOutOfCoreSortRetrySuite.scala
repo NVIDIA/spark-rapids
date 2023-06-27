@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
