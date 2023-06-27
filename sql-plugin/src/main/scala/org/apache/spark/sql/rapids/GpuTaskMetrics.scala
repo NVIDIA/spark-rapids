@@ -84,6 +84,7 @@ class GpuTaskMetrics extends Serializable {
   private val retryCount = new LongAccumulator
   private val splitAndRetryCount = new LongAccumulator
   private val retryBlockTime = new NanoSecondAccumulator
+  private val retryComputationTime = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
@@ -91,7 +92,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuReadSpillTime" -> readSpillTimeNs,
     "gpuRetryCount" -> retryCount,
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
-    "gpuRetryBlockTime" -> retryBlockTime)
+    "gpuRetryBlockTime" -> retryBlockTime,
+    "gpuRetryComputationTime" -> retryComputationTime)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -147,6 +149,11 @@ class GpuTaskMetrics extends Serializable {
     val timeNs = RmmSpark.getAndResetBlockTimeNs(taskAttemptId)
     if (timeNs > 0) {
       retryBlockTime.add(timeNs)
+    }
+
+    val compNs = RmmSpark.getAndResetComputeTimeLostToRetryNs(taskAttemptId)
+    if (compNs > 0) {
+      retryComputationTime.add(compNs)
     }
   }
 }
