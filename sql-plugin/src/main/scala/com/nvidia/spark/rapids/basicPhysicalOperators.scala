@@ -21,10 +21,10 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -210,6 +210,99 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
   override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
+abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
+    schema: Array[DataType],
+    opTime: GpuMetric,
+    numSplitsMetric: GpuMetric) extends Iterator[ColumnarBatch] {
+  private[this] val pending = new scala.collection.mutable.Queue[SpillableColumnarBatch]()
+
+  override def hasNext: Boolean = pending.nonEmpty || iter.hasNext
+
+  def calcNumSplits(cb: ColumnarBatch): Int
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    } else if (pending.nonEmpty) {
+      withResource(new MetricRange(opTime)) { _ =>
+        withRetryNoSplit(pending.dequeue()) { sb =>
+          sb.getColumnarBatch()
+        }
+      }
+    } else {
+      val cb = iter.next()
+      withResource(new MetricRange(opTime)) { _ =>
+        val numSplits = closeOnExcept(cb) { cb =>
+          calcNumSplits(cb)
+        }
+        if (numSplits <= 1) {
+          cb
+        } else {
+          numSplitsMetric += numSplits - 1
+          val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          val tables = withRetryNoSplit(sb) { sb =>
+            withResource(sb.getColumnarBatch()) { cb =>
+              withResource(GpuColumnVector.from(cb)) { table =>
+                val rows = table.getRowCount.toInt
+                val rowsPerSplit = math.ceil(rows.toDouble / numSplits).toInt
+                val splitIndexes = rowsPerSplit until rows by rowsPerSplit
+                table.contiguousSplit(splitIndexes: _*)
+              }
+            }
+          }
+          withResource(tables) { tables =>
+            val ret = tables.head.getTable
+            tables.tail.foreach { ct =>
+              pending.enqueue(
+                SpillableColumnarBatch(ct, schema, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+            }
+            GpuColumnVector.from(ret, schema)
+          }
+        }
+      }
+    }
+  }
+}
+
+object PreProjectSplitIterator {
+  def clacMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
+    val numRows = cb.numRows()
+    boundExprs.outputTypes.zipWithIndex.map {
+      case (dataType, index) =>
+        if (GpuBatchUtils.isFixedWidth(dataType)) {
+          GpuBatchUtils.minGpuMemory(dataType, true, numRows)
+        } else {
+          boundExprs.getPassThroughIndex(index).map { inputIndex =>
+            cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize
+          }.getOrElse {
+            GpuBatchUtils.minGpuMemory(dataType, true, numRows)
+          }
+        }
+    }.sum
+  }
+
+  def estimateMaxTargetInputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
+    val minOutputSize = clacMinOutputSize(cb, boundExprs)
+    val growth = minOutputSize.toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+    math.min(Long.MaxValue, (GpuDeviceManager.getSplitUntilSize / growth).toLong)
+  }
+}
+
+class PreProjectSplitIterator(
+    iter: Iterator[ColumnarBatch],
+    schema: Array[DataType],
+    boundExprs: GpuTieredProject,
+    opTime: GpuMetric,
+    numSplits: GpuMetric) extends AbstractProjectSplitIterator(iter, schema, opTime, numSplits) {
+
+  override def calcNumSplits(cb: ColumnarBatch): Int = {
+    val minOutputSize = PreProjectSplitIterator.clacMinOutputSize(cb, boundExprs)
+    // If the minimum size is too large we will split before doing the project, to help avoid
+    // extreme cases where the output size is so large that we cannot split it afterwards.
+    math.max(1, math.ceil(minOutputSize / GpuDeviceManager.getSplitUntilSize.toDouble).toInt)
+  }
+}
+
 case class GpuProjectExec(
    // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
    // into a deep recursion during serde of lazy lists. See
@@ -362,6 +455,38 @@ case class GpuProjectAstExec(
     tier.exists { expr =>
       !expr.deterministic
     }
+  }
+
+  lazy val outputTypes = exprTiers.last.map(_.dataType).toArray
+
+  private[this] def getPassThroughIndex(tierIndex: Int,
+      expr: Expression,
+      exprIndex: Int): Option[Int] = expr match {
+    case GpuAlias(child, _) =>
+      getPassThroughIndex(tierIndex, child, exprIndex)
+    case GpuBoundReference(index, _, _) =>
+      if (tierIndex <= 0) {
+        // We are at the input tier so the bound attribute is good!!!
+        Some(index)
+      } else {
+        // Not at the input yet
+        val newTier = tierIndex - 1
+        val newExpr = exprTiers(newTier)(index)
+        getPassThroughIndex(newTier, newExpr, index)
+      }
+    case _ =>
+      None
+  }
+
+  /**
+   * Given an output index check to see if this is just going to be a pass through to a
+   * specific input column index.
+   * @param index the output column index to check
+   * @return the index of the input column that it passes through to or else None
+   */
+  def getPassThroughIndex(index: Int): Option[Int] = {
+    val startTier = exprTiers.length - 1
+    getPassThroughIndex(startTier, exprTiers.last(index), index)
   }
 
   private [this] def projectWithRetrySingleBatchInternal(sb: SpillableColumnarBatch,

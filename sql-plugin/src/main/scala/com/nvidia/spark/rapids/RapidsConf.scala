@@ -1273,6 +1273,23 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
+    .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
+        "indicates it would be good we pre-sort the data before a partial agg and then " +
+        "do the agg in a single pass with no merge, so there is no spilling")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val FORCE_PARTIAL_AGG: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.agg.forceSinglePassPartial")
+        .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
+            "no matter what the heuristic says. This is really just for testing.")
+        .internal()
+        .booleanConf
+        .createWithDefault(false)
+
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
       "Unsupported expressions will fall back to CPU. However, there are some known edge cases " +
@@ -2553,6 +2570,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val allowPartialSortAgg: Boolean = get(ENABLE_PARTIAL_SORT_AGG)
+
+  lazy val forcePartialAgg: Boolean = get(FORCE_PARTIAL_AGG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 

@@ -55,7 +55,7 @@ class HashAggregateRetrySuite
     val mockMetrics = mock[GpuHashAggregateMetrics]
     when(mockMetrics.opTime).thenReturn(NoopMetric)
     when(mockMetrics.concatTime).thenReturn(NoopMetric)
-    val aggHelper = spy(new GpuHashAggregateIterator.AggHelper(
+    val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
       forceMerge = false, isSorted = false))
 
@@ -69,13 +69,13 @@ class HashAggregateRetrySuite
 
     // attempt a cuDF reduction
     withResource(input) { _ =>
-      GpuHashAggregateIterator.aggregate(
+      GpuAggregateIterator.aggregate(
         aggHelper, input, mockMetrics)
     }
   }
 
-  def makeGroupByAggHelper(forceMerge: Boolean): GpuHashAggregateIterator.AggHelper = {
-    val aggHelper = spy(new GpuHashAggregateIterator.AggHelper(
+  def makeGroupByAggHelper(forceMerge: Boolean): AggHelper = {
+    val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
       forceMerge = forceMerge, isSorted = false))
 
@@ -106,7 +106,7 @@ class HashAggregateRetrySuite
     when(mockMetrics.concatTime).thenReturn(NoopMetric)
 
     // attempt a cuDF group by
-    GpuHashAggregateIterator.aggregate(
+    GpuAggregateIterator.aggregate(
       makeGroupByAggHelper(forceMerge = false),
       input,
       mockMetrics)
