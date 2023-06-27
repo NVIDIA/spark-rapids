@@ -83,6 +83,28 @@ def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
                               "ExecutedCommandExec", disable_conf)
 
+@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_deletion_vector_fallback(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_dest_tables(spark, data_path,
+                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                          use_cdf=False, enable_deletion_vectors=True)
+    def write_func(spark, path):
+        delete_sql="DELETE FROM delta.`{}`".format(path)
+        spark.sql(delete_sql)
+    with_cpu_session(setup_tables)
+    disable_conf = copy_and_update(delta_writes_enabled_conf,
+            {"spark.rapids.sql.command.DeleteCommand": "true",
+             "spark.rapids.sql.command.DeleteCommandEdge": "true",
+             "spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+
+    assert_gpu_fallback_write(write_func, read_delta_path, data_path,
+                              "ExecutedCommandExec", disable_conf)
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order

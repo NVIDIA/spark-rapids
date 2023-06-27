@@ -45,7 +45,7 @@ def make_df(spark, gen, num_slices):
     return three_col_df(spark, gen, SetValuesGen(StringType(), string.ascii_lowercase),
                         SetValuesGen(StringType(), string.ascii_uppercase), num_slices=num_slices)
 
-def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None):
+def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         dest_df = dest_table_func(spark)
@@ -57,6 +57,8 @@ def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_colu
                 sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
             sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true)"
             spark.sql(sql_text)
+            if enable_deletion_vectors:
+                spark.sql("ALTER TABLE delta.`{path}` SET TBLPROPERTIES ('delta.enableDeletionVectors' = true)".format(path=path))
             writer = writer.mode("append")
         elif partition_columns:
             writer = writer.partitionBy(*partition_columns)

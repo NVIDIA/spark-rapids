@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOperations, DeltaTableUtils, DeltaUDF, OptimisticTransaction}
 import org.apache.spark.sql.delta.actions.{Action, AddCDCFile, FileAction}
-import org.apache.spark.sql.delta.commands.{DeleteCommandMetrics, DeleteMetric, DeleteWithDeletionVectorsHelper, DeletionVectorUtils, DeltaCommand}
+import org.apache.spark.sql.delta.commands.{DeleteCommandMetrics, DeleteMetric, DeletionVectorUtils, DeltaCommand}
 import org.apache.spark.sql.delta.commands.DeleteCommand.{rewritingFilesMsg, FINDING_TOUCHED_FILES_MSG}
 import org.apache.spark.sql.delta.commands.MergeIntoCommand.totalBytesAndDistinctPartitionValues
 import org.apache.spark.sql.delta.files.TahoeBatchFileIndex
@@ -201,35 +201,11 @@ case class GpuDeleteCommand(
             sparkSession, "delete", candidateFiles, deltaLog, deltaLog.dataPath, txn.snapshot)
 
           if (shouldWriteDVs) {
-            val targetDf = DeleteWithDeletionVectorsHelper.createTargetDfForScanningForMatches(
-              sparkSession,
-              target,
-              fileIndex)
+            // this should be unreachable because we fall back to CPU
+            // if deletion vectors are enabled. The tracking issue for adding deletion vector
+            // support is https://github.com/NVIDIA/spark-rapids/issues/8554
+            throw new IllegalStateException("Deletion vectors are not supported on GPU")
 
-            // Does the target table already has DVs enabled? If so, we need to read the table
-            // with deletion vectors.
-            val mustReadDeletionVectors = DeletionVectorUtils.deletionVectorsReadable(txn.snapshot)
-
-            val touchedFiles = DeleteWithDeletionVectorsHelper.findTouchedFiles(
-              sparkSession,
-              txn,
-              mustReadDeletionVectors,
-              deltaLog,
-              targetDf,
-              fileIndex,
-              cond)
-
-            if (touchedFiles.nonEmpty) {
-              val (actions, metricMap) = DeleteWithDeletionVectorsHelper.processUnmodifiedData(
-                sparkSession,
-                touchedFiles,
-                txn.snapshot)
-              metrics("numDeletedRows").set(metricMap("numDeletedRows"))
-              numRemovedFiles = metricMap("numRemovedFiles")
-              actions
-            } else {
-              Nil // Nothing to update
-            }
           } else {
             // Keep everything from the resolved target except a new TahoeFileIndex
             // that only involves the affected files instead of all files.
