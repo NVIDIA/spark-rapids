@@ -85,7 +85,7 @@ class GpuOptimizeExecutor(
       val addedFiles = updates.collect { case a: AddFile => a }
       val removedFiles = updates.collect { case r: RemoveFile => r }
       if (addedFiles.nonEmpty) {
-        val operation = DeltaOperations.Optimize(partitionPredicate.map(_.sql), zOrderByColumns)
+        val operation = DeltaOperations.Optimize(partitionPredicate, zOrderByColumns)
         val metrics = createMetrics(sparkSession.sparkContext, addedFiles, removedFiles)
         commitAndRetry(txn, operation, updates, metrics) { newTxn =>
           val newPartitionSchema = newTxn.metadata.partitionSchema

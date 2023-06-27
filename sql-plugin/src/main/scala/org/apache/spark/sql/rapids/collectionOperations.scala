@@ -1276,6 +1276,15 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
   }
 }
 
+case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with NullIntolerant {
+  private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
+  override def nullable: Boolean = child.nullable || childDataType.containsNull
+  override def dataType: DataType = childDataType.elementType
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    input.getBase.flattenLists
+  }
+}
+
 class GpuSequenceMeta(
     expr: Sequence,
     conf: RapidsConf,

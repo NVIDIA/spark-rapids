@@ -668,7 +668,7 @@ object RapidsConf {
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
          "at [parsing strings as dates or timestamps]" +
-         "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
+         "(../compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
 
@@ -1377,7 +1377,7 @@ object RapidsConf {
 
   val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
     .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
-      "The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must " +
+      "The [RAPIDS Shuffle Manager](rapids-shuffle.md) must " +
       "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
     .booleanConf
     .createWithDefault(true)

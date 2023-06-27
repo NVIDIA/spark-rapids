@@ -20,7 +20,7 @@ import scala.collection.mutable
 import scala.util.Random
 
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, GenericRow
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
-class GpuBatchUtilsSuite extends FunSuite {
+class GpuBatchUtilsSuite extends AnyFunSuite {
 
   val intSchema = new StructType(Array(
     StructField("c0", DataTypes.IntegerType, nullable = true),

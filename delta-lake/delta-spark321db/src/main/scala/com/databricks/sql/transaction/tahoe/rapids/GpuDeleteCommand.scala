@@ -101,7 +101,7 @@ case class GpuDeleteCommand(
       gpuDeltaLog.withNewTransaction { txn =>
         val deleteActions = performDelete(sparkSession, deltaLog, txn)
         if (deleteActions.nonEmpty) {
-          txn.commit(deleteActions, DeltaOperations.Delete(condition.map(_.sql).toSeq))
+          txn.commit(deleteActions, DeltaOperations.Delete(condition.toSeq))
         }
       }
       // Re-cache all cached plans(including this relation itself, if it's cached) that refer to

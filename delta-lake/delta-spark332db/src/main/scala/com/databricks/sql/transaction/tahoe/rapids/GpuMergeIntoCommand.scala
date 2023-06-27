@@ -343,7 +343,7 @@ case class GpuMergeIntoCommand(
         deltaTxn.commit(
           deltaActions,
           DeltaOperations.Merge(
-            Option(condition.sql),
+            Option(condition),
             matchedClauses.map(DeltaOperations.MergePredicate(_)),
             notMatchedClauses.map(DeltaOperations.MergePredicate(_)),
             // We do not support notMatchedBySourcePredicates yet and fall back to CPU

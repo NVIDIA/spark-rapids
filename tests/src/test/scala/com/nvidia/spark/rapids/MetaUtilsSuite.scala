@@ -23,12 +23,12 @@ import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, DType, HostColumnVec
 import ai.rapids.cudf.HostColumnVector.{BasicType, StructData}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.CodecType
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, DoubleType, IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class MetaUtilsSuite extends FunSuite {
+class MetaUtilsSuite extends AnyFunSuite {
   private val contiguousTableSparkTypes: Array[DataType] = Array(
     IntegerType,
     StringType,
