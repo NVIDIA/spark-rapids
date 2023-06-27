@@ -231,6 +231,7 @@ pipeline {
                                         ])
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
+                                        common.printJVMCoreDumps(this)
                                     }
                                 }
                             }
@@ -259,8 +260,14 @@ pipeline {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
                                         sh "$PREMERGE_SCRIPT ci_2"
+                                        // DRAFT: test code
+                                        def folder = "$WORKSPACE/integration_tests/target/rundir"
+                                        sh "mkdir -p ${folder} && touch ${folder}/hs_err_pid909.log"
+                                        sh "echo 'this is a test core dump' > $WORKSPACE/integration_tests/target/rundir/hs_err_pid909.log"
+                                        error "let error out"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
+                                        common.printJVMCoreDumps(this)
                                     }
                                 }
                             }
