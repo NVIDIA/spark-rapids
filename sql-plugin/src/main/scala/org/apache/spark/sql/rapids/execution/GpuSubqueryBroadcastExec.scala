@@ -260,13 +260,13 @@ case class GpuSubqueryBroadcastExec(
       hostBatch.rowIterator().asScala.map { row =>
         val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
         rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
-      }
+      }.toArray // force evaluation so we don't close hostBatch too soon
     }
 
     gpuLongMetric("dataSize") += serBatch.dataSize
     gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
 
-    result.toArray
+    result
   }
 
   protected override def doExecute(): RDD[InternalRow] = {

@@ -110,7 +110,7 @@ case class GpuBroadcastToRowExec(
               BoundReference(idx, buildKeys(idx).dataType, buildKeys(idx).nullable))
             rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
         }
-      }.toArray
+      }.toArray // force evaluation so we don't close hostBatch too soon
     }
 
     gpuLongMetric("dataSize") += serBatch.dataSize
