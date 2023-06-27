@@ -28,6 +28,13 @@ There are two types of branches in this repository:
   is held here. `main` will change with new releases, but otherwise it should not change with
   every pull request merged, making it a more stable branch.
 
+## Git Submodules
+
+This repository uses git submodules. The submodules may need to be updated after the repository
+is cloned or after moving to a new commit via `git submodule update --init`. See the
+[Git documentation on submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) for more
+information.
+
 ## Building From Source
 
 We use [Maven](https://maven.apache.org) for most aspects of the build. Some important parts

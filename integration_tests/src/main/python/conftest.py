@@ -117,6 +117,10 @@ def _get_limit_from_mark(mark):
     else:
         return mark.kwargs.get('num_rows', 100000)
 
+_std_input_path = None
+def get_std_input_path():
+    return _std_input_path
+
 def pytest_runtest_setup(item):
     global _sort_on_spark
     global _sort_locally
@@ -209,6 +213,8 @@ def pytest_runtest_setup(item):
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
+    global _std_input_path
+    _std_input_path = config.getoption("std_input_path")
     global _is_nightly_run
     global _is_precommit_run
     test_type = config.getoption('test_type').lower()
