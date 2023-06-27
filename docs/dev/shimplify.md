@@ -29,7 +29,7 @@ time of this writing) have a new set of special sibling directories
 
 Previous `src/(main|test)/${buildver}` and
 version-range-with-exceptions directories such as `src/main/311until340-non330db` are deprecated and
-will be removed soon as a result of the conversion to the new structure.
+are being removed as a result of the conversion to the new structure.
 
 `shimplify` changes the way the source code is shared among shims by using an explicit
 lexicographically sorted list of `buildver` property values
