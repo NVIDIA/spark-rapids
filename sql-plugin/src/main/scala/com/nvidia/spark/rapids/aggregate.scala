@@ -1231,8 +1231,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       }
     }
 
-    val allowSinglePassAgg = (conf.forcePartialAgg ||
-        (conf.allowPartialSortAgg &&
+    val allowSinglePassAgg = (conf.forceSinglePassPartialSortAgg ||
+        (conf.allowSinglePassPartialSortAgg &&
             hasSingleBasicGroupingKey &&
             estimatedPreProcessGrowth > 1.1)) &&
         canUsePartialSortAgg &&
@@ -1248,7 +1248,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       conf.gpuTargetBatchSizeBytes,
       useTiered,
       estimatedPreProcessGrowth,
-      conf.forcePartialAgg,
+      conf.forceSinglePassPartialSortAgg,
       allowSinglePassAgg)
   }
 }
@@ -1925,7 +1925,7 @@ class DynamicGpuPartialSortAggregateIterator(
       lazy val estimatedGrowthAfterAgg: Double = closeOnExcept(cb) { cb =>
         val numRows = cb.numRows()
         val cardinality = estimateCardinality(cb)
-        val minPreGrowth = PreProjectSplitIterator.clacMinOutputSize(cb,
+        val minPreGrowth = PreProjectSplitIterator.calcMinOutputSize(cb,
           helper.preStepBound).toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
         (math.max(minPreGrowth, estimatedPreGrowth) * cardinality) / numRows
       }

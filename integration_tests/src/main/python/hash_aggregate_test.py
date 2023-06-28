@@ -1893,5 +1893,5 @@ def test_hash_agg_force_pre_sort(cast_key_to):
         df = gen_df(spark, gen)
         return df.selectExpr("CAST((key div 10) as " + cast_key_to + ") as key", "value").groupBy("key").sum("value")
     assert_gpu_and_cpu_are_equal_collect(do_it,
-        conf={'spark.rapids.sql.agg.forceSinglePassPartial': True,
+        conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
             'spark.rapids.sql.agg.singlePassPartialSortEnabled': True})

@@ -55,6 +55,7 @@ class HashAggregateRetrySuite
     val mockMetrics = mock[GpuHashAggregateMetrics]
     when(mockMetrics.opTime).thenReturn(NoopMetric)
     when(mockMetrics.concatTime).thenReturn(NoopMetric)
+    when(mockMetrics.numAggOps).thenReturn(NoopMetric)
     val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
       forceMerge = false, isSorted = false))
@@ -104,6 +105,7 @@ class HashAggregateRetrySuite
     val mockMetrics = mock[GpuHashAggregateMetrics]
     when(mockMetrics.opTime).thenReturn(NoopMetric)
     when(mockMetrics.concatTime).thenReturn(NoopMetric)
+    when(mockMetrics.numAggOps).thenReturn(NoopMetric)
 
     // attempt a cuDF group by
     GpuAggregateIterator.aggregate(

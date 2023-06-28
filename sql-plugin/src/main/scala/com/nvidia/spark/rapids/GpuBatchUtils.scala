@@ -75,7 +75,9 @@ object GpuBatchUtils {
 
     val dataSize = dataType match {
       case DataTypes.BinaryType | DataTypes.StringType | _: MapType | _: ArrayType=>
-        // No data, just offsets
+        // For nested types (like list or string) the smallest possible size is when
+        // each row is empty (length 0). In that case there is no data, just offsets
+        // and all of the offsets are 0.
         calculateOffsetBufferSize(rowCount)
       case dt: StructType =>
         dt.fields.map { f =>

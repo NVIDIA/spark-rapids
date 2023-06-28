@@ -210,6 +210,16 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
   override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
+/**
+ * An iterator that is intended to split the input to or output of a project on rows.
+ * In practice this is only used for splitting the input prior to a project in some
+ * very special cases. If the projected size of the output is so large that it would
+ * risk us not being able to split it later on if we ran into trouble.
+ * @param iter the input iterator of columnar batches.
+ * @param schema the schema of that input so we can make things spillable if needed
+ * @param opTime metric for how long this took
+ * @param numSplitsMetric metric for the number of splits that happened.
+ */
 abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
     schema: Array[DataType],
     opTime: GpuMetric,
@@ -218,20 +228,20 @@ abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
 
   override def hasNext: Boolean = pending.nonEmpty || iter.hasNext
 
-  def calcNumSplits(cb: ColumnarBatch): Int
+  protected def calcNumSplits(cb: ColumnarBatch): Int
 
   override def next(): ColumnarBatch = {
     if (!hasNext) {
       throw new NoSuchElementException()
     } else if (pending.nonEmpty) {
-      withResource(new MetricRange(opTime)) { _ =>
+      opTime.ns {
         withRetryNoSplit(pending.dequeue()) { sb =>
           sb.getColumnarBatch()
         }
       }
     } else {
       val cb = iter.next()
-      withResource(new MetricRange(opTime)) { _ =>
+      opTime.ns {
         val numSplits = closeOnExcept(cb) { cb =>
           calcNumSplits(cb)
         }
@@ -265,7 +275,7 @@ abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
 }
 
 object PreProjectSplitIterator {
-  def clacMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
+  def calcMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
     val numRows = cb.numRows()
     boundExprs.outputTypes.zipWithIndex.map {
       case (dataType, index) =>
@@ -280,14 +290,21 @@ object PreProjectSplitIterator {
         }
     }.sum
   }
-
-  def estimateMaxTargetInputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
-    val minOutputSize = clacMinOutputSize(cb, boundExprs)
-    val growth = minOutputSize.toDouble / GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-    math.min(Long.MaxValue, (GpuDeviceManager.getSplitUntilSize / growth).toLong)
-  }
 }
 
+/**
+ * An iterator that can be used to split the input of a project before it happens to prevent
+ * situations where the output could not be split later on. In testing we tried to see what
+ * would happen if we split it to the target batch size, but there was a very significant
+ * performance degradation when that happened. For now this is only used in a few specific
+ * places and not everywhere.  In the future this could be extended, but if we do that there
+ * are some places where we don't want a split, like a project before a window operation.
+ * @param iter the input iterator of columnar batches.
+ * @param schema the schema of that input so we can make things spillable if needed
+ * @param boundExprs the bound project so we can get a good idea of the output size.
+ * @param opTime metric for how long this took
+ * @param numSplits the number of splits that happened.
+ */
 class PreProjectSplitIterator(
     iter: Iterator[ColumnarBatch],
     schema: Array[DataType],
@@ -296,7 +313,7 @@ class PreProjectSplitIterator(
     numSplits: GpuMetric) extends AbstractProjectSplitIterator(iter, schema, opTime, numSplits) {
 
   override def calcNumSplits(cb: ColumnarBatch): Int = {
-    val minOutputSize = PreProjectSplitIterator.clacMinOutputSize(cb, boundExprs)
+    val minOutputSize = PreProjectSplitIterator.calcMinOutputSize(cb, boundExprs)
     // If the minimum size is too large we will split before doing the project, to help avoid
     // extreme cases where the output size is so large that we cannot split it afterwards.
     math.max(1, math.ceil(minOutputSize / GpuDeviceManager.getSplitUntilSize.toDouble).toInt)
