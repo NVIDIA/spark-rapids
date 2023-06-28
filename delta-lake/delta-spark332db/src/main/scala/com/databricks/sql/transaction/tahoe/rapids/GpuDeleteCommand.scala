@@ -248,7 +248,6 @@ case class GpuDeleteCommand(
           }
         }
     }
-
     metrics("numRemovedFiles").set(numRemovedFiles)
     metrics("numAddedFiles").set(numAddedFiles)
     val executionTimeMs = (System.nanoTime() - startTime) / 1000 / 1000
