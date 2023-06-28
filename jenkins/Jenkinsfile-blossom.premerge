@@ -231,6 +231,7 @@ pipeline {
                                         ])
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
+                                        common.printJVMCoreDumps(this)
                                     }
                                 }
                             }
@@ -261,6 +262,7 @@ pipeline {
                                         sh "$PREMERGE_SCRIPT ci_2"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
+                                        common.printJVMCoreDumps(this)
                                     }
                                 }
                             }

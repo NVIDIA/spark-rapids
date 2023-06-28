@@ -303,57 +303,63 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             val writeTimeStart: Long = System.nanoTime()
             val recordWriteTime: AtomicLong = new AtomicLong(0L)
             var computeTime: Long = 0L
-            while (records.hasNext) {
-              // get the record
-              val computeStartTime = System.nanoTime()
-              val record = records.next()
-              computeTime += System.nanoTime() - computeStartTime
-              val key = record._1
-              val value = record._2
-              val reducePartitionId: Int = partitioner.getPartition(key)
-              val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
+            try {
+              while (records.hasNext) {
+                // get the record
+                val computeStartTime = System.nanoTime()
+                val record = records.next()
+                computeTime += System.nanoTime() - computeStartTime
+                val key = record._1
+                val value = record._2
+                val reducePartitionId: Int = partitioner.getPartition(key)
+                val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
 
-              if (numWriterThreads == 1) {
-                val recordWriteTimeStart = System.nanoTime()
-                myWriter.write(key, value)
-                recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
-              } else {
-                // we close batches actively in the `records` iterator as we get the next batch
-                // this makes sure it is kept alive while a task is able to handle it.
-                val cb = value match {
-                  case columnarBatch: ColumnarBatch =>
-                    SlicedGpuColumnVector.incRefCount(columnarBatch)
-                  case _ =>
-                    null
-                }
-                writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
-                  withResource(cb) { _ =>
-                    val recordWriteTimeStart = System.nanoTime()
-                    myWriter.write(key, value)
-                    recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                if (numWriterThreads == 1) {
+                  val recordWriteTimeStart = System.nanoTime()
+                  myWriter.write(key, value)
+                  recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                } else {
+                  // we close batches actively in the `records` iterator as we get the next batch
+                  // this makes sure it is kept alive while a task is able to handle it.
+                  val cb = value match {
+                    case columnarBatch: ColumnarBatch =>
+                      SlicedGpuColumnVector.incRefCount(columnarBatch)
+                    case _ =>
+                      null
                   }
-                })
+                  writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
+                    withResource(cb) { _ =>
+                      val recordWriteTimeStart = System.nanoTime()
+                      myWriter.write(key, value)
+                      recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                    }
+                  })
+                }
+              }
+            } finally {
+              // This is in a finally block so that if there is an exception queueing
+              // futures, that we will have waited for any queued write future before we call
+              // .abort on the map output writer (we had test failures otherwise)
+              withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
+                try {
+                  while (writeFutures.nonEmpty) {
+                    try {
+                      writeFutures.dequeue().get()
+                    } catch {
+                      case ee: ExecutionException =>
+                        // this exception is a wrapper for the underlying exception
+                        // i.e. `IOException`. The ShuffleWriter.write interface says
+                        // it can throw these.
+                        throw ee.getCause
+                    }
+                  }
+                } finally {
+                  // cancel all pending futures (only in case of error will we cancel)
+                  writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
+                }
               }
             }
 
-            withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
-              try {
-                while (writeFutures.nonEmpty) {
-                  try {
-                    writeFutures.dequeue().get()
-                  } catch {
-                    case ee: ExecutionException =>
-                      // this exception is a wrapper for the underlying exception
-                      // i.e. `IOException`. The ShuffleWriter.write interface says
-                      // it can throw these.
-                      throw ee.getCause
-                  }
-                }
-              } finally {
-                // cancel all pending futures (only in case of error will we cancel)
-                writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
-              }
-            }
             // writeTime is the amount of time it took to push bytes through the stream
             // minus the amount of time it took to get the batch from the upstream execs
             val writeTimeNs = (System.nanoTime() - writeTimeStart) - computeTime
