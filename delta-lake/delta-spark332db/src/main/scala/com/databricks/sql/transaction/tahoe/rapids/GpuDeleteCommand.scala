@@ -248,6 +248,11 @@ case class GpuDeleteCommand(
           }
         }
     }
+
+    metrics.foreach {
+      case (k, v) => println(s"$k = $v")
+    }
+
     metrics("numRemovedFiles").set(numRemovedFiles)
     metrics("numAddedFiles").set(numAddedFiles)
     val executionTimeMs = (System.nanoTime() - startTime) / 1000 / 1000
@@ -256,12 +261,14 @@ case class GpuDeleteCommand(
     metrics("rewriteTimeMs").set(rewriteTimeMs)
     metrics("numAddedChangeFiles").set(numAddedChangeFiles)
     metrics("changeFileBytes").set(changeFileBytes)
-    metrics("numBytesAdded").set(numBytesAdded)
-    metrics("numBytesRemoved").set(numBytesRemoved)
+    metrics("numAddedBytes").set(numBytesAdded)
+    metrics("numRemovedBytes").set(numBytesRemoved)
     metrics("numFilesBeforeSkipping").set(numFilesBeforeSkipping)
     metrics("numBytesBeforeSkipping").set(numBytesBeforeSkipping)
     metrics("numFilesAfterSkipping").set(numFilesAfterSkipping)
     metrics("numBytesAfterSkipping").set(numBytesAfterSkipping)
+    metrics.get("numDeletionVectorsAdded").foreach(_.set(0))
+    metrics.get("numDeletionVectorsRemoved").foreach(_.set(0))
     numPartitionsAfterSkipping.foreach(metrics("numPartitionsAfterSkipping").set)
     numPartitionsAddedTo.foreach(metrics("numPartitionsAddedTo").set)
     numPartitionsRemovedFrom.foreach(metrics("numPartitionsRemovedFrom").set)
