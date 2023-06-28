@@ -908,7 +908,6 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
