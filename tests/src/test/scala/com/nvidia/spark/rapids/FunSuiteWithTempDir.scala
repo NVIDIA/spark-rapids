@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.BeforeAndAfterEach
+import org.scalatest.funsuite.AnyFunSuite
 
 // creates temp dir before test and deletes after test
-trait FunSuiteWithTempDir extends FunSuite with BeforeAndAfterEach {
+trait FunSuiteWithTempDir extends AnyFunSuite with BeforeAndAfterEach {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
 
   protected override def beforeEach(): Unit = {

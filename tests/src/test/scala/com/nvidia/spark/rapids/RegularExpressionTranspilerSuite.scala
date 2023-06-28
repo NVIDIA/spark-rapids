@@ -24,12 +24,12 @@ import scala.util.{Random, Try}
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, CudfException, RegexProgram}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RegexParser.toReadableString
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
-class RegularExpressionTranspilerSuite extends FunSuite {
+class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   test("transpiler detects invalid cuDF patterns that cuDF now supports") {
     // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged

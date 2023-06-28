@@ -33,12 +33,40 @@ case class GpuJsonToStructs(
     timeZoneId: Option[String] = None)
     extends GpuUnaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
         with NullIntolerant {
-  
-  private def cleanAndConcat(input: cudf.ColumnVector): (cudf.ColumnVector, cudf.ColumnVector) ={
-    withResource(cudf.Scalar.fromString("{}")) { emptyRow =>
-      val stripped = withResource(cudf.Scalar.fromString(" ")) { space =>
-        input.strip(space)
+
+  private def constructEmptyRow(schema: DataType): String = {
+    schema match {
+      case struct: StructType if (struct.fields.length > 0) => {
+        val jsonFields: Array[String] = struct.fields.map { field => 
+          field.dataType match {
+            case IntegerType => s""""${field.name}": 0"""
+            case StringType => s""""${field.name}": """""
+            case s: StructType => s""""${field.name}": ${constructEmptyRow(s)}"""
+            case a: ArrayType => s""""${field.name}": ${constructEmptyRow(a)}"""
+            case t => throw new IllegalArgumentException("GpuJsonToStructs currently" +
+              s"does not support input schema with type $t.")
+          }
+        }
+        jsonFields.mkString("{", ", ", "}")
       }
+      case array: ArrayType => s"[${constructEmptyRow(array.elementType)}]"
+      case _ => "{}"
+    }
+  }
+
+  lazy val emptyRowStr = constructEmptyRow(schema)
+  
+  private def cleanAndConcat(input: cudf.ColumnVector): (cudf.ColumnVector, cudf.ColumnVector) = {
+    withResource(cudf.Scalar.fromString(emptyRowStr)) { emptyRow =>
+
+      val stripped = if (input.getData == null) {
+        input.incRefCount
+      } else {
+        withResource(cudf.Scalar.fromString(" ")) { space =>
+          input.strip(space)
+        }
+      }
+
       withResource(stripped) { stripped =>
         val isNullOrEmptyInput = withResource(input.isNull) { isNull =>
           val isEmpty = withResource(stripped.getCharLengths) { lengths =>
@@ -86,14 +114,14 @@ case class GpuJsonToStructs(
   // Output = [(null, StringType), ("b", StringType), ("a", IntegerType)]
   private def processFieldNames(names: Seq[(String, DataType)]): Seq[(String, DataType)] = {
     val zero = (Set.empty[String], Seq.empty[(String, DataType)])
-    val (_, res) = names.foldRight(zero) { case ((name, dtype), (existingNames, acc)) =>
+    val (_, resultFields) = names.foldRight (zero) { case ((name, dtype), (existingNames, acc)) =>
       if (existingNames(name)) {
         (existingNames, (null, dtype) +: acc)
       } else {
         (existingNames + name, (name, dtype) +: acc)
       }
     }
-    res
+    resultFields
   }
 
   // Given a cudf column, return its Spark type
@@ -151,8 +179,7 @@ case class GpuJsonToStructs(
           }
 
           // process duplicated field names in input struct schema
-          val fieldNames = processFieldNames(struct.fields.map { field => 
-              (field.name, field.dataType)})
+          val fieldNames = processFieldNames(struct.fields.map (f => (f.name, f.dataType)))
 
           withResource(rawTable) { rawTable =>
             // Step 5: verify that the data looks correct

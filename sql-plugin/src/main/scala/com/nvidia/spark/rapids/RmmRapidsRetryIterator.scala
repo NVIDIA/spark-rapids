@@ -360,7 +360,12 @@ object RmmRapidsRetryIterator extends Logging {
     }
 
     override def next(): K = {
-      val res = fn
+      RmmSpark.currentThreadStartRetryBlock()
+      val res = try {
+        fn
+      } finally {
+        RmmSpark.currentThreadEndRetryBlock()
+      }
       wasCalledSuccessfully = true
       res
     }
@@ -421,7 +426,12 @@ object RmmRapidsRetryIterator extends Logging {
         attemptStack.push(input.next())
       }
       val popped = attemptStack.head
-      val res = fn(popped)
+      RmmSpark.currentThreadStartRetryBlock()
+      val res = try {
+        fn(popped)
+      } finally {
+        RmmSpark.currentThreadEndRetryBlock()
+      }
       attemptStack.pop().close()
       res
     }
