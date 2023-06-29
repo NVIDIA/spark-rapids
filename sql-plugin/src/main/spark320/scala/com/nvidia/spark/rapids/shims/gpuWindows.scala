@@ -33,7 +33,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuLiteral, GpuSpecifiedWindowFrameMetaBase, GpuWindowExpressionMetaBase, ParsedBoundary, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuLiteral, GpuSpecifiedWindowFrameMetaBase, GpuWindowExpressionMetaBase, ParsedBoundary, RangeBoundaryValue, RapidsConf, RapidsMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecifiedWindowFrame, WindowExpression}
 import org.apache.spark.sql.rapids.shims.Spark32XShimsUtils
@@ -85,7 +85,7 @@ object GpuWindowUtil {
     case GpuLiteral(value, _: DayTimeIntervalType) =>
       var x = value.asInstanceOf[Long]
       if (x == Long.MinValue) x = Long.MaxValue
-      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.long(Math.abs(x)))
     case anything => throw new UnsupportedOperationException("Unsupported window frame" +
       s" expression $anything")
   }

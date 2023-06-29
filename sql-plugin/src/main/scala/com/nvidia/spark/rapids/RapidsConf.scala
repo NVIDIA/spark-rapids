@@ -1266,6 +1266,20 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_RANGE_WINDOW_FLOAT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.float.enabled")
+      .doc("When set to false, this disables the range window acceleration for the " +
+        "FLOAT type order-by column")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_RANGE_WINDOW_DOUBLE: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.double.enabled")
+      .doc("When set to false, this disables the range window acceleration for the " +
+        "double type order-by column")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_RANGE_WINDOW_DECIMAL: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.window.range.decimal.enabled")
     .doc("When set to false, this disables the range window acceleration for the " +
@@ -2568,6 +2582,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isRangeWindowFloatEnabled: Boolean = get(ENABLE_RANGE_WINDOW_FLOAT)
+
+  lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
 

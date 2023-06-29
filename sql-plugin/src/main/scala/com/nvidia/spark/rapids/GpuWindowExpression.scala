@@ -101,12 +101,12 @@ abstract class GpuWindowExpressionMetaBase(
               val orderSpec = wrapped.windowSpec.orderSpec
               if (orderSpec.length > 1) {
                 // We only support a single order by column
-                willNotWorkOnGpu("only a single date/time or integral (Boolean exclusive)" +
+                willNotWorkOnGpu("only a single date/time or numeric (Boolean exclusive) " +
                   "based column in window range functions is supported")
               }
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
-                  case ByteType | ShortType | IntegerType | LongType |
+                  case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType |
                        DateType | TimestampType | StringType | DecimalType() => true
                   case _ => false
                 }
@@ -134,6 +134,14 @@ abstract class GpuWindowExpressionMetaBase(
                     s"Range window frame is not 100% compatible when the order by type is " +
                       s"long and the range value calculated has overflow. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
+                  case FloatType => if (!conf.isRangeWindowFloatEnabled) willNotWorkOnGpu(
+                    s"Range window frame is not 100% compatible when the order by type is " +
+                      s"float and the range value calculated has overflow. " +
+                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_FLOAT} to true.")
+                  case DoubleType => if (!conf.isRangeWindowDoubleEnabled) willNotWorkOnGpu(
+                    s"Range window frame is not 100% compatible when the order by type is " +
+                      s"double and the range value calculated has overflow. " +
+                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_DOUBLE} to true.")
                   case DecimalType() => if (!conf.isRangeWindowDecimalEnabled) willNotWorkOnGpu(
                       s"To enable DECIMAL order by columns with Range window frames, " +
                       s"please set ${RapidsConf.ENABLE_RANGE_WINDOW_DECIMAL} to true.")
@@ -144,7 +152,7 @@ abstract class GpuWindowExpressionMetaBase(
               // check whether the boundaries are supported or not.
               Seq(spec.lower, spec.upper).foreach {
                 case l @ Literal(_, ByteType | ShortType | IntegerType |
-                                    LongType | DecimalType()) =>
+                                    LongType | FloatType | DoubleType | DecimalType()) =>
                   checkRangeBoundaryConfig(l.dataType)
                 case Literal(ci: CalendarInterval, CalendarIntervalType) =>
                   // interval is only working for TimeStampType
@@ -356,7 +364,7 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
    * Tag RangeFrame for other types and get the value
    */
   def getAndTagOtherTypesForRangeFrame(bounds : Expression, isLower : Boolean): Long = {
-    willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
+    willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in numeric" +
       s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
     if (isLower) -1 else 1 // not check again
   }
@@ -377,36 +385,58 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
           return None
         }
 
-        val value: BigInt = bounds match {
-          case Literal(value, ByteType) => value.asInstanceOf[Byte].toLong
-          case Literal(value, ShortType) => value.asInstanceOf[Short].toLong
-          case Literal(value, IntegerType) => value.asInstanceOf[Int].toLong
-          case Literal(value, LongType) => value.asInstanceOf[Long]
-          case Literal(value: Decimal, DecimalType()) => value.toJavaBigDecimal.unscaledValue()
+        /**
+         * Check bounds value relative to current row:
+         *  1. lower-bound should not be ahead of the current row.
+         *  2. upper-bound should not be behind the current row.
+         */
+        def checkBounds[T](boundsValue: T)
+                          (implicit ev: Numeric[T]): Option[String] = {
+          if (isLower && ev.compare(boundsValue, ev.zero) > 0) {
+            Some(s"Lower-bounds ahead of current row is not supported. Found: $boundsValue")
+          }
+          else if (!isLower && ev.compare(boundsValue, ev.zero) < 0) {
+            Some(s"Upper-bounds behind current row is not supported. Found: $boundsValue")
+          }
+          else {
+            None
+          }
+        }
+
+        bounds match {
+          case Literal(value, ByteType) =>
+            checkBounds(value.asInstanceOf[Byte].toLong)
+          case Literal(value, ShortType) =>
+            checkBounds(value.asInstanceOf[Short].toLong)
+          case Literal(value, IntegerType) =>
+            checkBounds(value.asInstanceOf[Int].toLong)
+          case Literal(value, LongType) =>
+            checkBounds(value.asInstanceOf[Long])
+          case Literal(value, FloatType) =>
+            checkBounds(value.asInstanceOf[Float])
+          case Literal(value, DoubleType) =>
+            checkBounds(value.asInstanceOf[Double])
+          case Literal(value: Decimal, DecimalType()) =>
+            checkBounds(BigInt(value.toJavaBigDecimal.unscaledValue()))
           case Literal(ci: CalendarInterval, CalendarIntervalType) =>
             if (ci.months != 0) {
               willNotWorkOnGpu("interval months isn't supported")
             }
             // return the total microseconds
             try {
-              Math.addExact(
-                Math.multiplyExact(ci.days.toLong, TimeUnit.DAYS.toMicros(1)),
-                ci.microseconds)
+              checkBounds(
+                  Math.addExact(
+                    Math.multiplyExact(ci.days.toLong, TimeUnit.DAYS.toMicros(1)),
+                    ci.microseconds))
             } catch {
               case _: ArithmeticException =>
                 willNotWorkOnGpu("windows over timestamps are converted to microseconds " +
                   s"and $ci is too large to fit")
-                if (isLower) -1 else 1 // not check again
+                None
             }
-          case _ => getAndTagOtherTypesForRangeFrame(bounds, isLower)
-        }
-
-        if (isLower && value > 0) {
-          Some(s"Lower-bounds ahead of current row is not supported. Found: $value")
-        } else if (!isLower && value < 0) {
-          Some(s"Upper-bounds behind current row is not supported. Found: $value")
-        } else {
-          None
+          case _ =>
+            getAndTagOtherTypesForRangeFrame(bounds, isLower)
+            None
         }
       }
 
