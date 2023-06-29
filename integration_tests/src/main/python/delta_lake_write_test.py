@@ -59,15 +59,7 @@ def del_keys(key_list, c_val, g_val):
 
 def fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""
-    # note that we remove many byte metrics because number of bytes can vary
-    # between CPU and GPU.
-    # we remove deletion vector metrics because we do not support those yet
-    # see https://github.com/NVIDIA/spark-rapids/issues/8554
-    metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
-                         "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
-                         "numTargetBytesUpdated", "numTargetBytesRemoved",
-                         "numDeletionVectorsAdded", "numDeletionVectorsRemoved"]
-    for k in metrics_to_remove:
+    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
         opm.pop(k, None)
 
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
