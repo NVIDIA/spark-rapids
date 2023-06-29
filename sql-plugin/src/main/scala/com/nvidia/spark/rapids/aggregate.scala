@@ -558,21 +558,18 @@ object GpuAggFirstPassIterator {
 }
 
 // Partial mode:
-//  1. boundInputReferences: picks column from raw input
-//  2. boundFinalProjections: is a pass-through of the agg buffer
-//  3. boundResultReferences: is a pass-through of the merged aggregate
+//  * boundFinalProjections: is a pass-through of the agg buffer
+//  * boundResultReferences: is a pass-through of the merged aggregate
 //
 // Final mode:
-//  1. boundInputReferences: is a pass-through of the merged aggregate
-//  2. boundFinalProjections: on merged batches, finalize aggregates
+//  * boundFinalProjections: on merged batches, finalize aggregates
 //     (GpuAverage => CudfSum/CudfCount)
-//  3. boundResultReferences: project the result expressions Spark expects in the output.
+//  * boundResultReferences: project the result expressions Spark expects in the output.
 //
 // Complete mode:
-//  1. boundInputReferences: picks column from raw input
-//  2. boundFinalProjections: on merged batches, finalize aggregates
+//  * boundFinalProjections: on merged batches, finalize aggregates
 //     (GpuAverage => CudfSum/CudfCount)
-//  3. boundResultReferences: project the result expressions Spark expects in the output.
+//  * boundResultReferences: project the result expressions Spark expects in the output.
 case class BoundExpressionsModeAggregates(
     boundFinalProjections: Option[Seq[GpuExpression]],
     boundResultReferences: Seq[Expression])
@@ -1959,6 +1956,10 @@ class DynamicGpuPartialSortAggregateIterator(
 
     val firstPassIter = GpuAggFirstPassIterator(sortedSplitIter, preProcessAggHelper, metrics)
 
+    // Technically on a partial-agg, which this only works for, this last iterator should
+    // be a noop except for some metrics. But for consistency between all of the
+    // agg paths and to be more resilient in the future with code changes we include a final pass
+    // iterator here.
     GpuAggFinalPassIterator.makeIterFromSpillable(firstPassIter, postBoundReferences, metrics)
   }
 

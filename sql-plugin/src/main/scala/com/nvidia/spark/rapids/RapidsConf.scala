@@ -1284,11 +1284,11 @@ object RapidsConf {
 
   val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
-        .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
-            "no matter what the heuristic says. This is really just for testing.")
-        .internal()
-        .booleanConf
-        .createWithDefault(false)
+    .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
+        "no matter what the heuristic says. This is really just for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
