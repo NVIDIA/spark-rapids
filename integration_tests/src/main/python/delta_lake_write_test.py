@@ -418,12 +418,11 @@ def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_opti
     finally:
         with_cpu_session(reset_hadoop_confs)
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize('codec', ['gzip'])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_compression_fallback(spark_tmp_path, codec):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.compression.codec": codec})
@@ -434,11 +433,10 @@ def test_delta_write_compression_fallback(spark_tmp_path, codec):
         delta_write_fallback_check,
         conf=confs)
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_legacy_format_fallback(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.writeLegacyFormat": "true"})
@@ -446,7 +444,7 @@ def test_delta_write_legacy_format_fallback(spark_tmp_path):
         lambda spark, path: unary_op_df(spark, int_gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=confs)
 
 @allow_non_gpu(*delta_meta_allow)
