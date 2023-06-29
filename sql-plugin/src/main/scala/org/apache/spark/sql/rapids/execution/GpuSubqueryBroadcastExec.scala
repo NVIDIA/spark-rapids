@@ -256,13 +256,11 @@ case class GpuSubqueryBroadcastExec(
 
     // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
     // projection. We should NOT run any device operation on the driver node.
-    val result = withResource(serBatch.hostBatches) { hostBatches =>
-      hostBatches.flatMap { cb =>
-        cb.rowIterator().asScala.map { row =>
-          val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
-          rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
-        }
-      }
+    val result = withResource(serBatch.hostBatch) { hostBatch =>
+      hostBatch.rowIterator().asScala.map { row =>
+        val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
+        rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
+      }.toArray // force evaluation so we don't close hostBatch too soon
     }
 
     gpuLongMetric("dataSize") += serBatch.dataSize
