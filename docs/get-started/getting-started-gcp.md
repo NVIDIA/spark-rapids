@@ -5,7 +5,7 @@ nav_order: 4
 parent: Getting-Started
 ---
 
-# Getting Started with RAPIDS Accelerator on GCP Dataproc
+# Getting Started with the RAPIDS Accelerator on GCP Dataproc
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache
  Spark and Hadoop service. The quick start guide will go through:
  
@@ -14,8 +14,8 @@ parent: Getting-Started
   * [Build custom Dataproc image to reduce cluster initialization time](#build-a-custom-dataproc-image-to-reduce-cluster-init-time)
   * [Create a Dataproc Cluster using MIG with A100's](#create-a-dataproc-cluster-using-mig-with-a100s)
   * [Cluster creation troubleshooting](#cluster-creation-troubleshooting)
-* [Run PySpark or Scala ETL and XGBoost training Notebook on a Dataproc Cluster Accelerated by
-  GPUs](#run-pyspark-or-scala-notebook-on-a-dataproc-cluster-accelerated-by-gpus)
+* [Run Python or Scala Spark ETL and XGBoost training Notebook on a Dataproc Cluster Accelerated by
+  GPUs](#run-python-or-scala-spark-notebook-on-a-dataproc-cluster-accelerated-by-gpus)
 * [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by
   GPUs](#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
 
@@ -59,27 +59,29 @@ number of GPU based on your needs.
 
 The script below will initialize with the following:
 
-* [GPU Driver and RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids) through
-  initialization actions (please note it takes up to 1 week for the latest init script to be merged
-  into the GCP Dataproc public GCS bucket)
+* [GPU Driver and RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids)
+throughinitialization actions (please note it takes up to 1 week for the latest init script to be
+merged into the GCP Dataproc public GCS bucket)
 
   To make changes to example configuration, make a copy of `spark-rapids.sh` and add the RAPIDS
   Accelerator related parameters according to [tuning guide](../tuning-guide.md) and modify the
   `--initialization-actions` parameter to point to the updated version.
 * Configuration for [GPU scheduling and isolation](yarn-gpu.md)
-* [Local SSD](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds) is
+* [Local SSDs](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds) are
   recommended for Spark scratch space to improve IO
 * Component gateway enabled for accessing Web UIs hosted on the cluster
 
 ### Create a Dataproc Cluster Using T4's
 * One 16-core master node and 5 32-core worker nodes
 * Two NVIDIA T4 for each worker node
-Note that with image-version 2.1 Secure Boot is enabled by default and not all operating systems currently have
-support for installing GPU drivers that are properly signed.  Please follow 
-[this document](https://cloud.google.com/compute/docs/gpus/install-drivers-gpu#secure-boot) for more details on how
-to set up supported operating systems with secure boot and signed GPU drivers.  For unsupported operating
-systems you can disable secure boot by adding the `--no-shielded-secure-boot` configuration while creating the cluster. This
-should allow the cluster to boot correctly with unsigned GPU drivers.
+Note that with image-version 2.1 Secure Boot is enabled by default and not all operating systems
+currently have
+support for installing GPU drivers that are properly signed.  Please follow
+[this document](https://cloud.google.com/compute/docs/gpus/install-drivers-gpu#secure-boot) for
+more details on how to set up supported operating systems with secure boot and signed GPU drivers.
+For unsupported operating systems you can disable secure boot by adding the
+`--no-shielded-secure-boot` configuration while creating the cluster. This should allow the cluster
+to boot correctly with unsigned GPU drivers.
 
 ```bash
     export REGION=[Your Preferred GCP Region]
@@ -106,8 +108,9 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --subnet=default
 ```
 
-This takes around 10-15 minutes to complete.  You can navigate to the [Dataproc clusters tab](https://console.cloud.google.com/dataproc/clusters) in the
-Google Cloud Console to see the progress.
+This takes around 10-15 minutes to complete. You can navigate to the
+[Dataproc clusters tab](https://console.cloud.google.com/dataproc/clusters) in the Google Cloud
+Console to see the progress.
 
 ![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
 
@@ -115,11 +118,15 @@ To reduce initialization time to 4-5 minutes, create a custom Dataproc image usi
 [this guide](#build-a-custom-dataproc-image-to-reduce-cluster-init-time).
 
 ### Build a Custom Dataproc Image to Reduce Cluster Init Time
-Building a custom Dataproc image that already has NVIDIA drivers, the CUDA toolkit, and the RAPIDS Accelerator for Apache Spark preinstalled and preconfigured will reduce cluster initialization time to 3-4 minutes. The custom image
-can also be used in an air gap environment. In this example, we will utilize [these instructions
-from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a custom image.
+Building a custom Dataproc image that already has NVIDIA drivers, the CUDA toolkit, and the RAPIDS
+Accelerator for Apache Spark preinstalled and preconfigured will reduce cluster initialization
+time to 3-4 minutes. The custom image can also be used in air gap environments. In this example,
+we adapt [these instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images)
+to create a RAPIDS Accelerator custom Dataproc image.
 
-Google provides the `generate_custom_image.py` [script](https://github.com/GoogleCloudDataproc/custom-images/blob/master/generate_custom_image.py) that:
+Google provides the `generate_custom_image.py`
+[script](https://github.com/GoogleCloudDataproc/custom-images/blob/master/generate_custom_image.py)
+that:
 - Launches a temporary Compute Engine VM instance with the specified Dataproc base image.
 - Then runs the customization script inside the VM instance to install custom packages and/or
 update configurations.
@@ -129,7 +136,13 @@ update configurations.
 - The custom image is saved and can be used to create Dataproc clusters.
 
 
-The following example clones the [Dataproc custom-images](https://github.com/GoogleCloudDataproc/custom-images) repository, downloads the [`spark-rapids.sh`](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids) script locally, and then creates a custom Dataproc image with Spark RAPIDS resources using the downlaoded resources. The `spark-rapids.sh` script is passed as the customization script and installs the RAPIDS Accelerator for Apache Spark along with NVIDIA drivers and other depencies. Custom image generation may take 20-25 minutes to complete.
+The following example clones the
+[Dataproc custom-images](https://github.com/GoogleCloudDataproc/custom-images) repository, downloads the
+[`spark-rapids.sh`](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids)
+script locally, and then creates a custom Dataproc image with RAPIDS Accelerator resources using
+the downloaded scripts. The `spark-rapids.sh` script is passed as the customization script and
+installs the RAPIDS Accelerator for Apache Spark, NVIDIA drivers, and other dependencies.
+Custom image generation may take 20-25 minutes to complete.
 
 ```bash
 git clone https://github.com/GoogleCloudDataproc/custom-images
@@ -190,11 +203,13 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --subnet=default 
 ```
 
-There are no initiailization actions that need to be configured because NVIDIA drivers and Spark RAPIDS resources are already installed in the custom image. The new cluster should be up and running within 3-4 minutes!
+There are no initialization actions that need to be configured because NVIDIA drivers and
+RAPIDS Accelerator resources are already installed in the custom image. The new cluster
+should be up and running within 3-4 minutes!
 
 ### Create a Dataproc Cluster using MIG with A100's
-* 1x 16-core master node and 5 12-core worker nodes
-* 1x NVIDIA A100 for each worker node, split into 2 MIG instances using
+* One 16-core master node and five 12-core worker nodes
+* One NVIDIA A100 for each worker node, split into two MIG instances using
 [instance profile 3g.20gb](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/#a100-profiles).
 
 ```bash
@@ -247,9 +262,9 @@ go to this page for updating your quotas: [Quotas and limits](https://cloud.goog
 If you encounter an error related to GPUs not available in the specific region or zone, you will
 need to update the REGION or ZONE parameter in the cluster creation command.
 
-## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
+## Run Python or Scala Spark Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab
-and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the JupyterLab or
+and navigate to the `Web Interfaces` tab.  Under `Web Interfaces`, click on the JupyterLab or
 Jupyter link. Download the sample [Mortgage ETL on GPU Jupyter
 Notebook](../demo/GCP/Mortgage-ETL.ipynb) and upload it to Jupyter.
 
@@ -263,17 +278,17 @@ The sample notebook will transcode the CSV files into Parquet files before runni
 that prepares the dataset for training.  The ETL query splits the data, saving 20% of the data in
 a separate GCS location training for evaluation.  Using the default notebook configuration the
 first stage should take ~110 seconds (1/3 of CPU execution time with same config) and the second
-stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook depends on
-the pre-compiled [RAPIDS plugin for Apache Spark](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark) which is pre-downloaded and pre-configured by
-the GCP Dataproc [Spark RAPIDS init
-script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids).
+stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook depends on the
+[RAPIDS Accelerator for Apache Spark](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark),
+which is pre-downloaded and pre-configured by the GCP Dataproc
+[RAPIDS Accelerator init script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids).
 
-Once the data is prepared, we use the [Mortgage XGBoost4j Scala
-Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's Jupyter notebook to execute
-the training job on GPUs. Scala based XGBoost examples use [DLMC
-XGBoost](https://github.com/dmlc/xgboost). For a PySpark based XGBoost example, please refer to
-[Spark-RAPIDS-examples](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/on-prem-cluster/yarn-python.md) that
-makes sure the required libraries are installed.
+Once the data is prepared, we use the
+[Mortgage XGBoost4j Scala Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's
+Jupyter notebook to execute the training job on GPUs. Scala based XGBoost examples use
+[DLMC XGBoost](https://github.com/dmlc/xgboost). For a PySpark based XGBoost example, please refer to
+[RAPIDS Accelerator-examples](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/on-prem-cluster/yarn-python.md)
+that makes sure the required libraries are installed.
 
 The training time should be around 680 seconds (1/7 of CPU execution time with same config). This
 is shown under cell:
@@ -446,7 +461,8 @@ and [Spark Configuration](https://spark.apache.org/docs/latest/configuration.htm
 
 ## Qualify CPU Workloads for GPU Acceleration
 
-The [qualification tool](https://pypi.org/project/spark-rapids-user-tools/) is launched on a Dataproc cluster that has applications that have already run.
+The [qualification tool](https://pypi.org/project/spark-rapids-user-tools/) is launched on a
+Dataproc cluster that has applications that have already run.
 The tool will output the applications recommended for acceleration along with estimated speed-up
 and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-
 accelerated cluster to take advantage of the speed-up and cost savings.
@@ -479,13 +495,15 @@ To launch a GPU-accelerated cluster with Spark RAPIDS, add the following to your
         --cuda-version=11.5
 ```
 
-Please refer [Qualification Tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) guide for running qualification tool on more environment.
+Please refer [Qualification Tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html)
+guide for running qualification tool on more environment.
 
 ## Tune Applications on GPU Cluster
 
-Once Spark applications have been run on the GPU cluster, the [profiling tool](https://nvidia.github.io/spark-rapids/docs/spark-profiling-tool.html) can be run to 
-analyze the event logs of the applications to determine if more optimal settings should be
-configured.  The tool will output a per-application set of config settings to be adjusted for
+Once Spark applications have been run on the GPU cluster, the
+[profiling tool](https://nvidia.github.io/spark-rapids/docs/spark-profiling-tool.html) can be run
+to analyze the event logs of the applications to determine if more optimal settings should be
+configured. The tool will output a per-application set of config settings to be adjusted for
 enhanced performance.
 
 Usage: `spark_rapids_dataproc profiling --cluster <cluster-name> --region <region>`
