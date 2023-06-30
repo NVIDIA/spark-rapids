@@ -149,7 +149,6 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns):
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"

@@ -378,7 +378,6 @@ def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -395,7 +394,6 @@ def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_opt
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_hadoop_confs(spark):
