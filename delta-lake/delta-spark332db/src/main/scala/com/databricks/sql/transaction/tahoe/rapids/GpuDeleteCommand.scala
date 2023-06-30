@@ -61,12 +61,7 @@ case class GpuDeleteCommand(
 
   override val output: Seq[Attribute] = Seq(AttributeReference("num_affected_rows", LongType)())
 
-  // DeleteCommandMetrics does not include deletion vector metrics, so try adding them here because
-  // the commit command needs to collect these metrics for inclusion in the delta log event
-  override lazy val metrics = createMetrics ++ Map(
-    "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
-    "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed.")
-  )
+  override lazy val metrics = createMetrics
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {
     val deltaLog = gpuDeltaLog.deltaLog
@@ -267,13 +262,22 @@ case class GpuDeleteCommand(
     metrics("numBytesBeforeSkipping").set(numBytesBeforeSkipping)
     metrics("numFilesAfterSkipping").set(numFilesAfterSkipping)
     metrics("numBytesAfterSkipping").set(numBytesAfterSkipping)
-    metrics("numDeletionVectorsAdded").set(0)
-    metrics("numDeletionVectorsRemoved").set(0)
     numPartitionsAfterSkipping.foreach(metrics("numPartitionsAfterSkipping").set)
     numPartitionsAddedTo.foreach(metrics("numPartitionsAddedTo").set)
     numPartitionsRemovedFrom.foreach(metrics("numPartitionsRemovedFrom").set)
     numCopiedRows.foreach(metrics("numCopiedRows").set)
-    txn.registerSQLMetrics(sparkSession, metrics)
+
+    // DeleteCommandMetrics does not include deletion vector metrics, so try adding them here because
+    // the commit command needs to collect these metrics for inclusion in the delta log event
+    val sc = sparkSession.sparkContext
+    val metricsWithDv = metrics ++ Map(
+      "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
+      "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed.")
+    )
+    metricsWithDv("numDeletionVectorsAdded").set(0)
+    metricsWithDv("numDeletionVectorsRemoved").set(0)
+
+    txn.registerSQLMetrics(sparkSession, metricsWithDv)
     // This is needed to make the SQL metrics visible in the Spark UI
     val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(
