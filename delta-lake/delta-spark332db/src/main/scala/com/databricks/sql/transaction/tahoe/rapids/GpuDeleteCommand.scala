@@ -296,7 +296,11 @@ case class GpuDeleteCommand(
         numBytesRemoved,
         changeFileBytes = changeFileBytes,
         scanTimeMs,
-        rewriteTimeMs)
+        rewriteTimeMs,
+        persistentDeletionVectorsUsed = true,
+        numDeletionVectorsAdded = Some(0),
+        numDeletionVectorsRemoved = Some(0)
+      )
     )
 
     deleteActions
