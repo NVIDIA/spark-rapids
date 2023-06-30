@@ -25,6 +25,9 @@ delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
                                              "spark.rapids.sql.command.UpdateCommandEdge": "true"})
 
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+
 def delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql,
                           check_func, partition_columns=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -60,7 +63,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
     delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql, checker,
                           partition_columns)
 
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("disable_conf",
@@ -70,7 +73,6 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
                           delta_writes_enabled_conf  # Test disabled by default
                           ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
@@ -82,7 +84,7 @@ def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
         spark.sql(update_sql)
     with_cpu_session(setup_tables)
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
-                              "ExecutedCommandExec", disable_conf)
+                              delta_write_fallback_check, disable_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

@@ -30,6 +30,9 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
                                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true"})
 
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+
 def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
 
@@ -101,7 +104,7 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                          src_table_func, dest_table_func, merge_sql, checker, partition_columns)
 
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("disable_conf",
@@ -112,11 +115,10 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
                           delta_writes_enabled_conf  # Test disabled by default
                          ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, disable_conf):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
-                                  "ExecutedCommandExec", conf=disable_conf)
+                                  delta_write_fallback_check, conf=disable_conf)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN NOT MATCHED THEN INSERT *"
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
@@ -129,7 +131,7 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
 @allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
+@pytest.mark.skipif(not is_databricks122_or_later(), reason="NOT MATCHED BY SOURCE only since DBR 12.2")
 def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec")
