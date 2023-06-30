@@ -275,7 +275,7 @@ case class GpuDeleteCommand(
     numCopiedRows.foreach(metrics("numCopiedRows").set)
     metrics("numDeletionVectorsAdded").set(0)
     metrics("numDeletionVectorsRemoved").set(0)
-    txn.registerSQLMetrics(sparkSession, metricsWithDv)
+    txn.registerSQLMetrics(sparkSession, metrics)
     // This is needed to make the SQL metrics visible in the Spark UI
     val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(
