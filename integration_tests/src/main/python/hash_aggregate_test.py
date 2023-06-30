@@ -1883,3 +1883,15 @@ def test_hash_aggregate_complete_with_grouping_expressions():
         lambda spark : spark.range(10).withColumn("id2", f.col("id")),
         "hash_agg_complete_table",
         "select id, avg(id) from hash_agg_complete_table group by id, id2 + 1")
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('cast_key_to', ["byte", "short", "int",
+    "long", "string", "DECIMAL(38,5)"], ids=idfn)
+def test_hash_agg_force_pre_sort(cast_key_to):
+    def do_it(spark):
+        gen = StructGen([("key", UniqueLongGen()), ("value", long_gen)], nullable=False)
+        df = gen_df(spark, gen)
+        return df.selectExpr("CAST((key div 10) as " + cast_key_to + ") as key", "value").groupBy("key").sum("value")
+    assert_gpu_and_cpu_are_equal_collect(do_it,
+        conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
+            'spark.rapids.sql.agg.singlePassPartialSortEnabled': True})
