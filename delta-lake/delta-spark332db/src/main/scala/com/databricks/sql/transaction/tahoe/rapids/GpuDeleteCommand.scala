@@ -271,8 +271,8 @@ case class GpuDeleteCommand(
     // the commit command needs to collect these metrics for inclusion in the delta log event
     val sc = sparkSession.sparkContext
     val metricsWithDv = metrics ++ Map(
-      "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
-      "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed.")
+      "numDeletionVectorsAdded" -> SQLMetrics.createMetric(sc, "number of deletion vectors added."),
+      "numDeletionVectorsRemoved" -> SQLMetrics.createMetric(sc, "number of deletion vectors removed.")
     )
     metricsWithDv("numDeletionVectorsAdded").set(0)
     metricsWithDv("numDeletionVectorsRemoved").set(0)
