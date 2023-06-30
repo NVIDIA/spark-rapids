@@ -34,7 +34,7 @@ The Prerequisites of the RAPIDS tools including:
 
 You can use [Cloud Shell](https://cloud.google.com/shell) to execute shell commands that will
 create a Dataproc cluster. Cloud Shell contains command line tools for interacting with Google
-Cloud Platform, including gcloud and gsutil. Alternatively, you can install
+Cloud Platform, including `gcloud` and `gsutil`. Alternatively, you can install
 [GCloud SDK](https://cloud.google.com/sdk/install) on your machine. From the Cloud Shell, users
 will need to enable services within your project. Enable the Compute and Dataproc APIs in order to
 access Dataproc, and enable the Storage API as you’ll need a Google Cloud Storage bucket to house
@@ -59,8 +59,8 @@ number of GPU based on your needs.
 
 The script below will initialize with the following:
 
-* [GPU Driver and RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids)
-throughinitialization actions (please note it takes up to 1 week for the latest init script to be
+* [GPU Driver and RAPIDS Accelerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids)
+through initialization actions (please note it takes up to 1 week for the latest init script to be
 merged into the GCP Dataproc public GCS bucket)
 
   To make changes to example configuration, make a copy of `spark-rapids.sh` and add the RAPIDS
@@ -73,8 +73,9 @@ recommended for Spark scratch space to improve IO
 
 > NOTE: Dataproc `2.1` enables Secure Boot by default, causing issues with cluster creation on
 > all operating systems due to GPU drivers that are not properly signed. Proper GPU driver signing
-> is not supported on all operating systems and cluster creation failures occur on all
-> Dataproc `2.1` clusters that use the [RAPIDS Accelerator initialization script]().
+> is not currently supported on all operating systems and will cause cluster creation failures
+> occur on all Dataproc `2.1` clusters that use the
+> [RAPIDS Accelerator initialization script](https://github.com/GoogleCloudDataproc/initialization-actions/blob/master/spark-rapids/spark-rapids.sh).
 >
 > Add `--no-shielded-secure-boot` to `gcloud` cluster creation commands allow the cluster to boot
 > correctly with unsigned GPU drivers.
@@ -290,7 +291,7 @@ which is pre-downloaded and pre-configured by the GCP Dataproc
 Once the data is prepared, we use the
 [Mortgage XGBoost4j Scala Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's
 Jupyter notebook to execute the training job on GPUs. Scala based XGBoost examples use
-[DLMC XGBoost](https://github.com/dmlc/xgboost). For a PySpark based XGBoost example, please refer to
+[DMLC XGBoost](https://github.com/dmlc/xgboost). For a PySpark based XGBoost example, please refer to
 [RAPIDS Accelerator-examples](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/on-prem-cluster/yarn-python.md)
 that makes sure the required libraries are installed.
 
