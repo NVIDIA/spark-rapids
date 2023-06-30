@@ -19,10 +19,9 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
-import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -44,7 +43,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 1024)
     withResource(outCoreIter) { _ =>
       withResource(outCoreIter.next()) { cb =>
@@ -59,7 +57,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 1024,
       firstPassSortExp = new RetryOOM())
     withResource(outCoreIter) { _ =>
@@ -75,7 +72,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 1024,
       firstPassSortExp = new SplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
@@ -91,7 +87,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 1024,
       firstPassSplitExp = new RetryOOM())
     withResource(outCoreIter) { _ =>
@@ -107,7 +102,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 1024,
       firstPassSplitExp = new SplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
@@ -121,7 +115,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 400,
       mergeSortExp = new RetryOOM())
     withResource(outCoreIter) { _ =>
@@ -139,7 +132,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 400,
       mergeSortExp = new SplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
@@ -153,7 +145,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 400,
       concatOutExp = new RetryOOM())
     withResource(outCoreIter) { _ =>
@@ -171,7 +162,6 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     val outCoreIter = new GpuOutOfCoreSortIteratorThatThrows(
       Iterator(buildBatch, buildBatch),
       gpuSorter,
-      new LazilyGeneratedOrdering(gpuSorter.cpuOrdering),
       targetSize = 400,
       concatOutExp = new SplitAndRetryOOM())
     withResource(outCoreIter) { _ =>
@@ -184,14 +174,13 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
   private class GpuOutOfCoreSortIteratorThatThrows(
       iter: Iterator[ColumnarBatch],
       sorter: GpuSorter,
-      cpuOrd: LazilyGeneratedOrdering,
       targetSize: Long,
       firstPassSortExp: Throwable = null,
       firstPassSplitExp: Throwable = null,
       mergeSortExp: Throwable = null,
       concatOutExp: Throwable = null,
       expMaxCount: Int = 1)
-    extends GpuOutOfCoreSortIterator(iter, sorter, cpuOrd, targetSize,
+    extends GpuOutOfCoreSortIterator(iter, sorter, targetSize,
       NoopMetric, NoopMetric, NoopMetric, NoopMetric){
 
     private var expCnt = expMaxCount

@@ -1418,7 +1418,8 @@ final class RuleNotFoundExprMeta[INPUT <: Expression](
     willNotWorkOnGpu(s"GPU does not currently support the operator ${expr.getClass}")
 
   override def convertToGpu(): GpuExpression =
-    throw new IllegalStateException("Cannot be converted to GPU")
+    throw new IllegalStateException(s"Cannot be converted to GPU ${expr.getClass} " +
+        s"${expr.dataType} $expr")
 }
 
 /** Base class for metadata around `RunnableCommand`. */

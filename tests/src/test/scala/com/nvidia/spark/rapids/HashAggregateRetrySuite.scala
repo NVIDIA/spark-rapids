@@ -22,7 +22,7 @@ import ai.rapids.cudf.{CudfException, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.{CudfAggregate, CudfSum}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
@@ -55,7 +55,8 @@ class HashAggregateRetrySuite
     val mockMetrics = mock[GpuHashAggregateMetrics]
     when(mockMetrics.opTime).thenReturn(NoopMetric)
     when(mockMetrics.concatTime).thenReturn(NoopMetric)
-    val aggHelper = spy(new GpuHashAggregateIterator.AggHelper(
+    when(mockMetrics.numAggOps).thenReturn(NoopMetric)
+    val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
       forceMerge = false, isSorted = false))
 
@@ -69,13 +70,13 @@ class HashAggregateRetrySuite
 
     // attempt a cuDF reduction
     withResource(input) { _ =>
-      GpuHashAggregateIterator.aggregate(
+      GpuAggregateIterator.aggregate(
         aggHelper, input, mockMetrics)
     }
   }
 
-  def makeGroupByAggHelper(forceMerge: Boolean): GpuHashAggregateIterator.AggHelper = {
-    val aggHelper = spy(new GpuHashAggregateIterator.AggHelper(
+  def makeGroupByAggHelper(forceMerge: Boolean): AggHelper = {
+    val aggHelper = spy(new AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
       forceMerge = forceMerge, isSorted = false))
 
@@ -104,9 +105,10 @@ class HashAggregateRetrySuite
     val mockMetrics = mock[GpuHashAggregateMetrics]
     when(mockMetrics.opTime).thenReturn(NoopMetric)
     when(mockMetrics.concatTime).thenReturn(NoopMetric)
+    when(mockMetrics.numAggOps).thenReturn(NoopMetric)
 
     // attempt a cuDF group by
-    GpuHashAggregateIterator.aggregate(
+    GpuAggregateIterator.aggregate(
       makeGroupByAggHelper(forceMerge = false),
       input,
       mockMetrics)

@@ -286,7 +286,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
   override def sql: String = aggregateFunction.sql(isDistinct)
 }
 
-trait CudfAggregate {
+trait CudfAggregate extends Serializable {
   // we use this to get the ordinal of the bound reference, s.t. we can ask cudf to perform
   // the aggregate on that column
   val reductionAggregate: cudf.ColumnVector => cudf.Scalar
@@ -325,7 +325,7 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate {
   // sum(shorts): bigint
   // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
   //
-  @transient val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+  @transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
   override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum(rapidsSumType)

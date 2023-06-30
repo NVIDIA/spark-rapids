@@ -22,14 +22,14 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, wi
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.{DataType, LongType}
 
 class WithRetrySuite
-    extends FunSuite
+    extends AnyFunSuite
         with BeforeAndAfterEach with MockitoSugar {
 
   private def buildBatch: SpillableColumnarBatch = {
