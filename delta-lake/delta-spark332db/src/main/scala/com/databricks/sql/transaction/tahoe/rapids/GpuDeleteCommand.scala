@@ -267,7 +267,7 @@ case class GpuDeleteCommand(
     numPartitionsRemovedFrom.foreach(metrics("numPartitionsRemovedFrom").set)
     numCopiedRows.foreach(metrics("numCopiedRows").set)
 
-    // DeleteCommandMetrics does not include deletion vector metrics, so try adding them here because
+    // DeleteCommandMetrics does not include deletion vector metrics, so add them here because
     // the commit command needs to collect these metrics for inclusion in the delta log event
     val sc = sparkSession.sparkContext
     val metricsWithDv = metrics ++ Map(
