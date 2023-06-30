@@ -61,7 +61,12 @@ case class GpuDeleteCommand(
 
   override val output: Seq[Attribute] = Seq(AttributeReference("num_affected_rows", LongType)())
 
-  override lazy val metrics = createMetrics
+  // DeleteCommandMetrics does not include deletion vector metrics, so try adding them here because
+  // the commit command needs to collect these metrics for inclusion in the delta log event
+  override lazy val metrics = createMetrics ++ Map(
+    "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
+    "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed.")
+  )
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {
     val deltaLog = gpuDeltaLog.deltaLog
@@ -262,6 +267,8 @@ case class GpuDeleteCommand(
     metrics("numBytesBeforeSkipping").set(numBytesBeforeSkipping)
     metrics("numFilesAfterSkipping").set(numFilesAfterSkipping)
     metrics("numBytesAfterSkipping").set(numBytesAfterSkipping)
+    metrics("numDeletionVectorsAdded").set(0)
+    metrics("numDeletionVectorsRemoved").set(0)
     numPartitionsAfterSkipping.foreach(metrics("numPartitionsAfterSkipping").set)
     numPartitionsAddedTo.foreach(metrics("numPartitionsAddedTo").set)
     numPartitionsRemovedFrom.foreach(metrics("numPartitionsRemovedFrom").set)
@@ -296,11 +303,7 @@ case class GpuDeleteCommand(
         numBytesRemoved,
         changeFileBytes = changeFileBytes,
         scanTimeMs,
-        rewriteTimeMs,
-        persistentDeletionVectorsUsed = true,
-        numDeletionVectorsAdded = Some(0),
-        numDeletionVectorsRemoved = Some(0)
-      )
+        rewriteTimeMs)
     )
 
     deleteActions
