@@ -68,7 +68,8 @@ case class GpuDeleteCommand(
   // the commit command needs to collect these metrics for inclusion in the delta log event
   override lazy val metrics = createMetrics ++ Map(
     "numDeletionVectorsAdded" -> SQLMetrics.createMetric(sc, "number of deletion vectors added."),
-    "numDeletionVectorsRemoved" -> SQLMetrics.createMetric(sc, "number of deletion vectors removed.")
+    "numDeletionVectorsRemoved" ->
+      SQLMetrics.createMetric(sc, "number of deletion vectors removed.")
   )
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {

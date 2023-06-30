@@ -70,8 +70,8 @@ case class GpuUpdateCommand(
     "numAddedChangeFiles" -> createMetric(sc, "number of change data capture files generated"),
     "changeFileBytes" -> createMetric(sc, "total size of change data capture files generated"),
     "numTouchedRows" -> createMetric(sc, "number of rows touched (copied + updated)"),
-    "numDeletionVectorsAdded" -> SQLMetrics.createMetric(sc, "number of deletion vectors added."),
-    "numDeletionVectorsRemoved" -> SQLMetrics.createMetric(sc, "number of deletion vectors removed.")
+    "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
+    "numDeletionVectorsRemoved" -> .createMetric(sc, "number of deletion vectors removed.")
   )
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {
