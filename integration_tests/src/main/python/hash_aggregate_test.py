@@ -292,12 +292,12 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [
 
 _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
     _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals,
     _grpkey_short_very_big_neg_scale_decimals]
 
 _init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_nans + [
     _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals,
     _grpkey_short_very_big_neg_scale_decimals]
 
 
@@ -387,7 +387,7 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, 
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals,
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_sum_full_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
@@ -684,7 +684,7 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
         # to ObjectHashAggregateExec
         return spark.createDataFrame(df.rdd, schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
-        
+
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
@@ -724,7 +724,7 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
         # to ObjectHashAggregateExec
         return spark.createDataFrame(df.rdd, schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
-        
+
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 @ignore_order(local=True)
@@ -1819,7 +1819,7 @@ def test_std_variance_partial_replace_fallback(data_gen,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
-    
+
     exist_clz = ['StddevSamp',
                  'GpuStddevSamp']
     assert_cpu_and_gpu_are_equal_collect_with_capture(
@@ -1833,7 +1833,7 @@ def test_std_variance_partial_replace_fallback(data_gen,
         conf=local_conf)
 
 #
-# test min max on single level structure
+# test min/max aggregations for structs
 #
 gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     float_gen, double_gen,
@@ -1841,7 +1841,7 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),
     DecimalGen(precision=36, scale=5),
-    null_gen]
+    null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
 def test_min_max_for_single_level_struct(data_gen):
