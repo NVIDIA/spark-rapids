@@ -54,7 +54,12 @@ def del_keys(key_list, c_val, g_val):
 
 def fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""
-    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
+    # note that we remove many byte metrics because number of bytes can vary
+    # between CPU and GPU.
+    metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
+                         "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
+                         "numTargetBytesUpdated", "numTargetBytesRemoved"]
+    for k in metrics_to_remove:
         opm.pop(k, None)
 
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
