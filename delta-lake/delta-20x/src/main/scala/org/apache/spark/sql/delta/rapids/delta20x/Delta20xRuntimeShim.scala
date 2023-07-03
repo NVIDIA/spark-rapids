@@ -50,5 +50,5 @@ class Delta20xRuntimeShim extends DeltaRuntimeShim {
   }
 
   override def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
-    deltaLog.fileFormat(deltaLog.snapshot.metadata)
+    deltaLog.fileFormat()
 }
