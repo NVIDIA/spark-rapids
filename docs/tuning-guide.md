@@ -368,14 +368,15 @@ or even a different stage or job in the plan.  The spill read time metric is how
 long it took to read back in the data it needed to complete the task. This does not
 correspond to the data that was spilled by this task.
 
-| Name              | Description                                                                                                                                                                   |
-|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| gpuSemaphoreWait  | The time the task spent waiting on the GPU semaphore.                                                                                                                         |
-| gpuSpillBlockTime | The time that this task was blocked spilling data from the GPU.                                                                                                               |
-| gpuSpillReadTime  | The time that this task was blocked reading data to the GPU that was spilled previously.                                                                                      |
-| gpuRetryCount | The number of times that a retry exception was thrown in an attempt to roll back processing to free memory.                                                                   |
-| gpuSplitAndRetryCount | The number of times that a split and retry exception was thrown in an attempt to roll back processing to free memory, and split the input to make more room.                  |
+| Name              | Description                                                                                                                                                                  |
+|-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| gpuSemaphoreWait  | The time the task spent waiting on the GPU semaphore.                                                                                                                        |
+| gpuSpillBlockTime | The time that this task was blocked spilling data from the GPU.                                                                                                              |
+| gpuSpillReadTime  | The time that this task was blocked reading data to the GPU that was spilled previously.                                                                                     |
+| gpuRetryCount | The number of times that a retry exception was thrown in an attempt to roll back processing to free memory.                                                                  |
+| gpuSplitAndRetryCount | The number of times that a split and retry exception was thrown in an attempt to roll back processing to free memory, and split the input to make more room.                 |
 | gpuRetryBlockTime | The amount of time that this task was blocked either hoping that other tasks will free up more memory or after a retry exception was thrown to wait until the task can go on. |
+| gpuRetryComputationTime | The amount of time that this task spent doing computation that arguably was lost when a retry happened. This does not include time that the task was blocked on retry.|
 
 The spill data sizes going to host/CPU memory and disk are the same as used by Spark task level
 metrics.

@@ -380,6 +380,7 @@ def test_from_json_map_fallback():
         'JsonToStructs',
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<a:string>',
                                     'struct<d:string>',
                                     'struct<a:string,b:string>',
@@ -393,6 +394,7 @@ def test_from_json_struct(schema):
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:struct<name:string,age:int>>',
                                     'struct<teacher:string,student:struct<name:string,age:int>>'])
@@ -404,6 +406,7 @@ def test_from_json_struct_of_struct(schema):
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:array<struct<name:string,class:string>>>',
                                     'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
@@ -416,6 +419,7 @@ def test_from_json_struct_of_list(schema):
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
 def test_from_json_struct_all_empty_string_input(schema):
     json_string_gen = StringGen('')

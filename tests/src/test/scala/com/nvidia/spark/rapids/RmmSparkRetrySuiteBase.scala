@@ -18,11 +18,12 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler}
 import com.nvidia.spark.rapids.jni.RmmSpark
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.BeforeAndAfterEach
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.SparkSession
 
-class RmmSparkRetrySuiteBase extends FunSuite with BeforeAndAfterEach {
+class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {

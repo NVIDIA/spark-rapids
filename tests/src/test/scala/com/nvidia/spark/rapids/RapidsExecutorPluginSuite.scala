@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class RapidsExecutorPluginSuite extends FunSuite {
+class RapidsExecutorPluginSuite extends AnyFunSuite {
   test("cudf version check") {
     assert(RapidsExecutorPlugin.cudfVersionSatisfied("7", "7"))
     assert(!RapidsExecutorPlugin.cudfVersionSatisfied("7", "8"))

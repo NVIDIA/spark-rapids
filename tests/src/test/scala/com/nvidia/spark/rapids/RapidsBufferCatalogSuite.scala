@@ -24,14 +24,14 @@ import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
+class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
   test("lookup unknown buffer") {
     val catalog = new RapidsBufferCatalog
     val bufferId = new RapidsBufferId {
