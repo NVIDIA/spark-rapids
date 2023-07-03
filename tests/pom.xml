@@ -428,6 +428,15 @@
                 </property>
             </activation>
         </profile>
+        <profile>
+            <id>release341</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341</value>
+                </property>
+            </activation>
+        </profile>
     </profiles>
 
     <build>
