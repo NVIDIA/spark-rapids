@@ -274,7 +274,7 @@ pipeline {
                             }
                         }
                     }
-                }// end of Databricks
+                } // end of Databricks
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
