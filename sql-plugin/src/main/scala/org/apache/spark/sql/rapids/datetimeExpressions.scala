@@ -392,13 +392,13 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
 }
 
 trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
+  
   override def dataType: DataType = TimestampType
   override def outputTypeOverride: DType = DType.TIMESTAMP_MICROSECONDS
 
   /**
-   * Test whether if a * b will cause Long-overflow.
-   * In Math.multiplyExact, if there is an integer-overflow, then it will throw an
-   * ArithmeticException.
+   * Test whether if input * multiplier will cause Long-overflow. In Math.multiplyExact, 
+   * if there is an integer-overflow, then it will throw an ArithmeticException "long overflow"
    */
   def checkLongMultiplicationOverflow(input: ColumnVector, multiplier: Long): Unit = {
       withResource(input.max()) { maxValue =>
@@ -441,6 +441,7 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
     case dt: DecimalType =>
       (input: GpuColumnVector) => {
         if (dt.scale > 6) {
+          // Match the behavior of `BigDecimal.longValueExact()`:
           throw new ArithmeticException("Rounding necessary")
         }
         val multiplier = DateTimeConstants.MICROS_PER_SECOND
@@ -450,6 +451,7 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
             decimal128.mul(scalar, decimal128Type)
           }
         }
+        // Match the behavior of `BigDecimal.longValueExact()`:
         if (dt.precision - 13 > dt.scale) {
           throw new java.lang.ArithmeticException("Overflow")
         } else if (dt.precision - 13 == dt.scale) {
@@ -472,6 +474,7 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
     case _ =>
       (input: GpuColumnVector) =>
         withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          // Not possible to overflow for Int, Short and Byte
           longs.asTimestampSeconds()
         }
 }
