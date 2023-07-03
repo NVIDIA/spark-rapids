@@ -438,3 +438,53 @@ def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
             .withColumnRenamed("filename", "r_filename")
         return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
     assert_gpu_and_cpu_are_equal_collect(do_join_cast)
+
+# (-62135510400, 253402214400) is the range of seconds that can be represented 
+# by timestamp_seconds considering the influence of time zone.
+seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(), 
+                DoubleGen(min_exp=0, max_exp=32), DecimalGen(16, 6), DecimalGen(13, 3), DecimalGen(10, 0), DecimalGen(6, 6)]
+@pytest.mark.parametrize('data_gen', seconds_gens, ids=idfn)
+def test_timestamp_seconds(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)"))
+
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+def test_timestamp_seconds_long_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
+        conf=copy_and_update(ansi_enabled_conf),
+        error_message='long overflow')
+    
+@pytest.mark.parametrize('data_gen', [DecimalGen(7, 7), DecimalGen(20, 7)], ids=idfn)
+def test_timestamp_seconds_rounding_necessary(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
+        conf=copy_and_update(ansi_enabled_conf),
+        error_message='Rounding necessary')
+    
+@pytest.mark.parametrize('data_gen', [DecimalGen(19, 6), DecimalGen(20, 6)], ids=idfn)
+def test_timestamp_seconds_decimal_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
+        conf=copy_and_update(ansi_enabled_conf),
+        error_message='Overflow')
+
+millis_gens = [LongGen(min_val=-62135510400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
+@pytest.mark.parametrize('data_gen', millis_gens, ids=idfn)
+def test_timestamp_millis(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_millis(a)"))
+    
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+def test_timestamp_millis_long_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_millis(a)").collect(),
+        conf=copy_and_update(ansi_enabled_conf),
+        error_message='long overflow')
+
+micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
+@pytest.mark.parametrize('data_gen', micros_gens, ids=idfn)
+def test_timestamp_micros(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))
+    

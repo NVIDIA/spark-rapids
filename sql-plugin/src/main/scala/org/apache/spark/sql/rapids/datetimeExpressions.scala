@@ -20,13 +20,14 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, FloatUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -387,6 +388,136 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
           willNotWorkOnGpu("format has to be a string literal")
       }
     }
+  }
+}
+
+trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
+  override def dataType: DataType = TimestampType
+  override def outputTypeOverride: DType = DType.TIMESTAMP_MICROSECONDS
+
+  /**
+   * Test whether if a * b will cause Long-overflow.
+   * In Math.multiplyExact, if there is an integer-overflow, then it will throw an
+   * ArithmeticException.
+   */
+  def checkLongMultiplicationOverflow(input: ColumnVector, multiplier: Long): Unit = {
+      withResource(input.max()) { maxValue =>
+        Math.multiplyExact(maxValue.getLong, multiplier)
+      }
+      withResource(input.min()) { minValue =>
+        Math.multiplyExact(minValue.getLong, multiplier)
+      }
+  }
+}
+
+case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
+
+  private def replaceNanInfWithNulls(input: GpuColumnVector): ColumnVector = {
+    withResource(FloatUtils.infinityToNulls(input.getBase)) { noInf =>
+      FloatUtils.nanToNulls(noInf)
+    }
+  }
+
+  private lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
+    case LongType =>
+      (input: GpuColumnVector) => {
+        checkLongMultiplicationOverflow(input.getBase, DateTimeConstants.MICROS_PER_SECOND)
+        withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
+          input.getBase.mul(scalar).asTimestampMicroseconds()
+        }
+      }
+    case FloatType | DoubleType =>
+      (input: GpuColumnVector) => { 
+        val longs = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
+          input.getBase.mul(scalar).asLongs()
+        } 
+        val isNull = withResource(replaceNanInfWithNulls(input)) { replaced =>
+          replaced.isNull()
+        }
+        withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
+          isNull.ifElse(nullScalar, longs.asTimestampMicroseconds())
+        }
+      }
+    case dt: DecimalType =>
+      (input: GpuColumnVector) => {
+        if (dt.scale > 6) {
+          throw new ArithmeticException("Rounding necessary")
+        }
+        val multiplier = DateTimeConstants.MICROS_PER_SECOND
+        val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+        val mul = withResource(input.getBase.castTo(decimal128Type)) { decimal128 =>
+          withResource(Scalar.fromLong(multiplier)) { scalar =>
+            decimal128.mul(scalar, decimal128Type)
+          }
+        }
+        if (dt.precision - 13 > dt.scale) {
+          throw new java.lang.ArithmeticException("Overflow")
+        } else if (dt.precision - 13 == dt.scale) {
+          val largerThanLongMax: Boolean = 
+              withResource(mul.greaterThan(Scalar.fromLong(Long.MaxValue))) { greaterThan =>
+            greaterThan.any().getBoolean()
+          }
+          lazy val smallerThanLongMin: Boolean = 
+              withResource(mul.lessThan(Scalar.fromLong(Long.MinValue))) { lessThan =>
+            lessThan.any().getBoolean()
+          }
+          if (largerThanLongMax || smallerThanLongMin) {
+            throw new java.lang.ArithmeticException("Overflow")
+          }
+        }
+        withResource(mul.castTo(DType.INT64)) { longs =>
+          longs.asTimestampMicroseconds()
+        }
+      }
+    case _ =>
+      (input: GpuColumnVector) =>
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          longs.asTimestampSeconds()
+        }
+}
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    convertTo(input)
+  } 
+}
+
+case class GpuMillisToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
+  private lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
+    case LongType => 
+      (input: GpuColumnVector) => {
+        checkLongMultiplicationOverflow(input.getBase, DateTimeConstants.MICROS_PER_MILLIS)
+        input.getBase.asTimestampMilliseconds()
+      }
+    case _ =>
+      (input: GpuColumnVector) => {
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          checkLongMultiplicationOverflow(longs, DateTimeConstants.MICROS_PER_MILLIS)
+          longs.asTimestampMilliseconds()
+        }
+      }
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    convertTo(input)
+  }
+}
+
+case class GpuMicrosToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
+  private lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
+    case LongType =>
+      (input: GpuColumnVector) => {
+        input.getBase.asTimestampMicroseconds()
+      }
+    case _ =>
+      (input: GpuColumnVector) => {
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          longs.asTimestampMicroseconds()
+        }
+      }
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    convertTo(input)
   }
 }
 

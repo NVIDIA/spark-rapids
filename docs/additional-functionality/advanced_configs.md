@@ -282,6 +282,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
 <a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|
 <a name="sql.expression.Md5"></a>spark.rapids.sql.expression.Md5|`md5`|MD5 hash operator|true|None|
+<a name="sql.expression.MicrosToTimestamp"></a>spark.rapids.sql.expression.MicrosToTimestamp|`timestamp_micros`|Converts the number of microseconds from unix epoch to a timestamp|true|None|
+<a name="sql.expression.MillisToTimestamp"></a>spark.rapids.sql.expression.MillisToTimestamp|`timestamp_millis`|Converts the number of milliseconds from unix epoch to a timestamp|true|None|
 <a name="sql.expression.Minute"></a>spark.rapids.sql.expression.Minute|`minute`|Returns the minute component of the string/timestamp|true|None|
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|`monotonically_increasing_id`|Returns monotonically increasing 64-bit integers|true|None|
 <a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|`month`|Returns the month from a date or timestamp|true|None|
@@ -316,6 +318,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
 <a name="sql.expression.ScalaUDF"></a>spark.rapids.sql.expression.ScalaUDF| |User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface to get better performance.|true|None|
 <a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|`second`|Returns the second component of the string/timestamp|true|None|
+<a name="sql.expression.SecondsToTimestamp"></a>spark.rapids.sql.expression.SecondsToTimestamp|`timestamp_seconds`|Converts the number of seconds from unix epoch to a timestamp|true|None|
 <a name="sql.expression.Sequence"></a>spark.rapids.sql.expression.Sequence|`sequence`|Sequence|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|`shiftleft`|Bitwise shift left (<<)|true|None|
 <a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|`shiftright`|Bitwise shift right (>>)|true|None|

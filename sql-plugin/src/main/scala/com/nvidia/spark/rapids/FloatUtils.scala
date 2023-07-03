@@ -38,6 +38,17 @@ object FloatUtils {
     }
   }
 
+  def nanToNulls(cv: ColumnVector): ColumnVector = {
+    if (cv.getType() != DType.FLOAT32 && cv.getType() != DType.FLOAT64) {
+      throw new IllegalArgumentException("Only Floats and Doubles allowed")
+    }
+    withResource(cv.isNan()) { isNan =>
+      withResource(Scalar.fromNull(cv.getType)) {
+        nul => isNan.ifElse(nul, cv)
+      }
+    }
+  }
+
   def getNanScalar(dType: DType): Scalar = {
     if (dType == DType.FLOAT64) {
       Scalar.fromDouble(Double.NaN)
