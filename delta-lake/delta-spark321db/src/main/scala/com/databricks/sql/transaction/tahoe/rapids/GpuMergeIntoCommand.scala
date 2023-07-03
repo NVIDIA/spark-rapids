@@ -876,6 +876,8 @@ case class GpuMergeIntoCommand(
         matchedOutputs = matchedOutputs,
         notMatchedConditions = notMatchedConditions,
         notMatchedOutputs = notMatchedOutputs,
+        notMatchedBySourceConditions = notMatchedBySourceConditions,
+        notMatchedBySourceOutputs = notMatchedBySourceOutputs,
         noopCopyOutput = noopCopyOutput,
         deleteRowOutput = deleteRowOutput)
       Dataset.ofRows(spark, processedJoinPlan)
