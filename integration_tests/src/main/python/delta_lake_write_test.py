@@ -59,7 +59,12 @@ def del_keys(key_list, c_val, g_val):
 
 def fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""
-    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
+    # note that we remove many byte metrics because number of bytes can vary
+    # between CPU and GPU.
+    metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
+                         "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
+                         "numTargetBytesUpdated", "numTargetBytesRemoved"]
+    for k in metrics_to_remove:
         opm.pop(k, None)
 
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
@@ -373,7 +378,6 @@ def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -390,7 +394,6 @@ def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_opt
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_hadoop_confs(spark):
@@ -899,7 +902,6 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8423")
 def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
     gen_list = [("a", int_gen),
                 ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
