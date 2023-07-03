@@ -43,7 +43,7 @@ import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BasePredicate, Expression, Literal, NamedExpression, PredicateHelper, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
-import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeIntoClause, DeltaMergeIntoDeleteClause, DeltaMergeIntoInsertClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoUpdateClause, LogicalPlan, Project}
+import org.apache.spark.sql.catalyst.plans.logical.{DeltaMergeIntoClause, DeltaMergeIntoDeleteClause, DeltaMergeIntoInsertClause, DeltaMergeIntoMatchedClause, DeltaMergeIntoNotMatchedBySourceClause, DeltaMergeIntoUpdateClause, LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
@@ -218,6 +218,7 @@ case class GpuMergeIntoCommand(
     condition: Expression,
     matchedClauses: Seq[DeltaMergeIntoMatchedClause],
     notMatchedClauses: Seq[DeltaMergeIntoInsertClause],
+    notMatchedBySourceClauses: Seq[DeltaMergeIntoNotMatchedBySourceClause],
     migratedSchema: Option[StructType])(
     @transient val rapidsConf: RapidsConf)
     extends LeafRunnableCommand
@@ -762,6 +763,9 @@ case class GpuMergeIntoCommand(
     val matchedOutputs = matchedClauses.map(matchedClauseOutput)
     val notMatchedConditions = notMatchedClauses.map(clauseCondition)
     val notMatchedOutputs = notMatchedClauses.map(notMatchedClauseOutput)
+    // notMatchedBySourceClauses is new in DBR 12.2
+    val notMatchedBySourceConditions = Seq.empty
+    val notMatchedBySourceOutputs = Seq.empty
     val noopCopyOutput =
       resolveOnJoinedPlan(targetOutputCols :+ FalseLiteral :+ incrNoopCountExpr :+
           CDC_TYPE_NOT_CDC_LITERAL)
@@ -775,6 +779,8 @@ case class GpuMergeIntoCommand(
       matchedOutputs = matchedOutputs,
       notMatchedConditions = notMatchedConditions,
       notMatchedOutputs = notMatchedOutputs,
+      notMatchedBySourceConditions = notMatchedBySourceConditions,
+      notMatchedBySourceOutputs = notMatchedBySourceOutputs,
       noopCopyOutput = noopCopyOutput,
       deleteRowOutput = deleteRowOutput)
 
@@ -834,6 +840,8 @@ case class GpuMergeIntoCommand(
       matchedOutputs: Seq[Seq[Seq[Expression]]],
       notMatchedConditions: Seq[Expression],
       notMatchedOutputs: Seq[Seq[Seq[Expression]]],
+      notMatchedBySourceConditions: Seq[Expression],
+      notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
       noopCopyOutput: Seq[Expression],
       deleteRowOutput: Seq[Expression]): Dataset[Row] = {
     def wrap(e: Expression): BaseExprMeta[Expression] = {
@@ -846,11 +854,14 @@ case class GpuMergeIntoCommand(
     val matchedOutputsMetas = matchedOutputs.map(_.map(_.map(wrap)))
     val notMatchedConditionsMetas = notMatchedConditions.map(wrap)
     val notMatchedOutputsMetas = notMatchedOutputs.map(_.map(_.map(wrap)))
+    val notMatchedBySourceConditionsMetas = notMatchedBySourceConditions.map(wrap)
+    val notMatchedBySourceOutputsMetas = notMatchedBySourceOutputs.map(_.map(_.map(wrap)))
     val noopCopyOutputMetas = noopCopyOutput.map(wrap)
     val deleteRowOutputMetas = deleteRowOutput.map(wrap)
     val allMetas = Seq(targetRowHasNoMatchMeta, sourceRowHasNoMatchMeta) ++
         matchedConditionsMetas ++ matchedOutputsMetas.flatten.flatten ++
         notMatchedConditionsMetas ++ notMatchedOutputsMetas.flatten.flatten ++
+        notMatchedBySourceConditionsMetas ++ notMatchedBySourceOutputsMetas.flatten.flatten ++
         noopCopyOutputMetas ++ deleteRowOutputMetas
     allMetas.foreach(_.tagForGpu())
     val canReplace = allMetas.forall(_.canExprTreeBeReplaced) && rapidsConf.isOperatorEnabled(

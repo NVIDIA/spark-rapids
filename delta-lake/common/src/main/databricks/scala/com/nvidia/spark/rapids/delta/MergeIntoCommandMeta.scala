@@ -50,6 +50,9 @@ class MergeIntoCommandMeta(
       mergeCmd.condition,
       mergeCmd.matchedClauses,
       mergeCmd.notMatchedClauses,
+      // TODO introduce shim for notMatchedBySourceClauses which is new in DBR 12.2
+      // https://github.com/NVIDIA/spark-rapids/issues/8415
+      notMatchedBySourceClauses = Seq.empty,
       mergeCmd.migratedSchema)(conf)
   }
 }
@@ -80,6 +83,9 @@ class MergeIntoCommandEdgeMeta(
       mergeCmd.condition,
       mergeCmd.matchedClauses,
       mergeCmd.notMatchedClauses,
+      // TODO introduce shim for notMatchedBySourceClauses which is new in DBR 12.2
+      // https://github.com/NVIDIA/spark-rapids/issues/8415
+      notMatchedBySourceClauses = Seq.empty,
       mergeCmd.migratedSchema)(conf)
   }
 }

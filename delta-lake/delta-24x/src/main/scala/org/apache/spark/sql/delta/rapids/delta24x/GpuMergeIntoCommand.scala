@@ -920,11 +920,14 @@ case class GpuMergeIntoCommand(
       val matchedOutputsMetas = matchedOutputs.map(_.map(_.map(wrap)))
       val notMatchedConditionsMetas = notMatchedConditions.map(wrap)
       val notMatchedOutputsMetas = notMatchedOutputs.map(_.map(_.map(wrap)))
+      val notMatchedBySourceConditionsMetas = notMatchedBySourceConditions.map(wrap)
+      val notMatchedBySourceOutputsMetas = notMatchedBySourceOutputs.map(_.map(_.map(wrap)))
       val noopCopyOutputMetas = noopCopyOutput.map(wrap)
       val deleteRowOutputMetas = deleteRowOutput.map(wrap)
       val allMetas = Seq(targetRowHasNoMatchMeta, sourceRowHasNoMatchMeta) ++
         matchedConditionsMetas ++ matchedOutputsMetas.flatten.flatten ++
         notMatchedConditionsMetas ++ notMatchedOutputsMetas.flatten.flatten ++
+        notMatchedBySourceConditionsMetas ++ notMatchedBySourceOutputsMetas.flatten.flatten ++
         noopCopyOutputMetas ++ deleteRowOutputMetas
       allMetas.foreach(_.tagForGpu())
       val canReplace = allMetas.forall(_.canExprTreeBeReplaced) && rapidsConf.isOperatorEnabled(
