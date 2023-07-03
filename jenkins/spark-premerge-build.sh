@@ -17,6 +17,7 @@
 
 set -ex
 
+echo '123'
 BUILD_TYPE=all
 
 if [[ $# -eq 1 ]]; then
