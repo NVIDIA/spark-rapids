@@ -1294,6 +1294,52 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
     ).toDF("dates")
   }
 
+  def doubleTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    // some cases out of the range (-62135510400, 253402214400), which are not covered by IT
+    Seq[Double](
+      253402214400.000001d,
+      269999999999.999999d,
+      -62135510400.000001d,
+      -79999999999.999999d
+    ).toDF("doubles")
+  }
+
+  def floatTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[Float](
+      0.0f,
+      -0.0f,
+      1.0f,
+      -1.0f,
+      1.234567f,
+      -1.234567f
+      // Float.PositiveInfinity,
+      // Float.NegativeInfinity,
+      // Float.NaN
+    ).toDF("floats")
+  }
+
+  def decimalTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[BigDecimal](
+      BigDecimal("253402214400.000001"),
+      BigDecimal("269999999999.999999"),
+      BigDecimal("-62135510400.000001"),
+      BigDecimal("-79999999999.999999")
+    ).toDF("decimals")
+  }
+
+  def longTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401L,
+      269999999999L,
+      -62135510401L,
+      -79999999999L
+    ).toDF("longs")
+  }
+
   def datesPostEpochDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(

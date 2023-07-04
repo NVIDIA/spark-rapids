@@ -34,4 +34,24 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(from_unixtime(col("dates"),"dd/LL/yy HH:mm:ss.SSSSSS"))
   }
 
+  // some cases for timestamp_seconds not covered by integration tests
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from Large Double type", doubleTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("doubles")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from Float type", floatTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("floats")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from Large Decimal type", decimalTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("decimals")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from large Long type", longTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("longs")))
+  }
 }

@@ -412,9 +412,30 @@ trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
 
 case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
 
-  private def replaceNanInfWithNulls(input: GpuColumnVector): ColumnVector = {
-    withResource(FloatUtils.infinityToNulls(input.getBase)) { noInf =>
+  private def replaceNanInfWithNulls(input: ColumnVector): ColumnVector = {
+    withResource(FloatUtils.infinityToNulls(input)) { noInf =>
       FloatUtils.nanToNulls(noInf)
+    }
+  }
+
+  private def convertDouble(input: ColumnVector): ColumnVector = {
+    val isNull = withResource(replaceNanInfWithNulls(input)) { replaced =>
+      replaced.isNull()
+    }
+    val tsMicros = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { 
+        scalar =>
+        withResource(input.mul(scalar)) { mul =>
+          withResource(mul.asLongs()) { mulLongs =>
+            mulLongs.asTimestampMicroseconds()
+          }
+        }
+    } 
+    withResource(tsMicros) { longs =>
+      withResource(isNull) { isNull =>
+        withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
+          isNull.ifElse(nullScalar, tsMicros)
+        }
+      }
     }
   }
 
@@ -422,53 +443,77 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
     case LongType =>
       (input: GpuColumnVector) => {
         checkLongMultiplicationOverflow(input.getBase, DateTimeConstants.MICROS_PER_SECOND)
-        withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
-          input.getBase.mul(scalar).asTimestampMicroseconds()
+        val mul = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
+          input.getBase.mul(scalar)
+        }
+        withResource(mul) { mul =>
+          mul.asTimestampMicroseconds()
         }
       }
-    case FloatType | DoubleType =>
-      (input: GpuColumnVector) => { 
-        val longs = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
-          input.getBase.mul(scalar).asLongs()
-        } 
-        val isNull = withResource(replaceNanInfWithNulls(input)) { replaced =>
-          replaced.isNull()
+    case FloatType =>
+      (input: GpuColumnVector) => {
+        withResource(input.getBase.castTo(DType.FLOAT64)) { doubleInput =>
+          convertDouble(doubleInput)
         }
-        withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
-          isNull.ifElse(nullScalar, longs.asTimestampMicroseconds())
-        }
+      }
+    case DoubleType =>
+      (input: GpuColumnVector) => {
+        convertDouble(input.getBase)
       }
     case dt: DecimalType =>
       (input: GpuColumnVector) => {
-        if (dt.scale > 6) {
-          // Match the behavior of `BigDecimal.longValueExact()`:
+        println("DecimalType " + dt.precision + " " + dt.scale)
+        val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+        val decimal128TypeAllScale = DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
+        // Match the behavior of `BigDecimal.longValueExact()`, if decimal is equal to the value
+        // casted to decimal128 with scale 6, then no rounding is necessary.
+        val isEqual = withResource(input.getBase.castTo(decimal128Type)) { casted =>
+          withResource(casted.castTo(decimal128TypeAllScale)) { castedAllScale =>
+            withResource(input.getBase.castTo(decimal128TypeAllScale)) { original =>
+              original.equalTo(castedAllScale)
+            }
+          }
+        }
+        val roundUnnecessity = withResource(isEqual) { isEqual =>
+          withResource(isEqual.all()) { all =>
+            all.getBoolean()
+          }
+        }
+        if (!roundUnnecessity) {
           throw new ArithmeticException("Rounding necessary")
         }
-        val multiplier = DateTimeConstants.MICROS_PER_SECOND
-        val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, -6)
         val mul = withResource(input.getBase.castTo(decimal128Type)) { decimal128 =>
-          withResource(Scalar.fromLong(multiplier)) { scalar =>
+          withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
             decimal128.mul(scalar, decimal128Type)
           }
         }
         // Match the behavior of `BigDecimal.longValueExact()`:
-        if (dt.precision - 13 > dt.scale) {
-          throw new java.lang.ArithmeticException("Overflow")
-        } else if (dt.precision - 13 == dt.scale) {
-          val largerThanLongMax: Boolean = 
-              withResource(mul.greaterThan(Scalar.fromLong(Long.MaxValue))) { greaterThan =>
-            greaterThan.any().getBoolean()
-          }
-          lazy val smallerThanLongMin: Boolean = 
-              withResource(mul.lessThan(Scalar.fromLong(Long.MinValue))) { lessThan =>
-            lessThan.any().getBoolean()
-          }
-          if (largerThanLongMax || smallerThanLongMin) {
-            throw new java.lang.ArithmeticException("Overflow")
+        val greaterThanMax = withResource(Scalar.fromLong(Long.MaxValue)) { longMax =>
+            mul.greaterThan(longMax)
+        }
+        val largerThanLongMax = withResource(greaterThanMax) { greaterThanMax =>
+          withResource(greaterThanMax.any()) { any =>
+            any.getBoolean()
           }
         }
-        withResource(mul.castTo(DType.INT64)) { longs =>
-          longs.asTimestampMicroseconds()
+        lazy val smallerThanLongMin: Boolean = {
+          val lessThanMin = withResource(Scalar.fromLong(Long.MinValue)) { longMin =>
+              mul.lessThan(longMin)
+          }
+          withResource(lessThanMin) { lessThanMin =>
+            withResource(lessThanMin.any()) { any =>
+              any.getBoolean()
+            }
+          }
+        }
+        if (largerThanLongMax || smallerThanLongMin) {
+          mul.close()
+          throw new java.lang.ArithmeticException("Overflow")
+        }
+        withResource(mul) { mul =>
+          withResource(mul.castTo(DType.INT64)) { longs =>
+            longs.asTimestampMicroseconds()
+          }
         }
       }
     case _ =>
