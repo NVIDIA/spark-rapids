@@ -61,6 +61,11 @@ object GpuDeviceManager extends Logging {
    */
   def getDeviceId(): Option[Int] = deviceId
 
+  @volatile private var poolSizeLimit = 0L
+
+  // Never split below 100 MiB (but this is really just for testing)
+  def getSplitUntilSize: Long = Math.max(poolSizeLimit / 8, 100 * 1024 * 1024)
+
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
     try {
@@ -149,6 +154,7 @@ object GpuDeviceManager extends Logging {
 
     chunkedPackMemoryResource.foreach(_.close)
     chunkedPackMemoryResource = None
+    poolSizeLimit = 0L
 
     RapidsBufferCatalog.close()
     GpuShuffleEnv.shutdown()
@@ -338,6 +344,7 @@ object GpuDeviceManager extends Logging {
 
       Cuda.setDevice(gpuId)
       try {
+        poolSizeLimit = poolAllocation
         Rmm.initialize(init, logConf, poolAllocation)
       } catch {
         case firstEx: CudfException if ((init & RmmAllocationMode.CUDA_ASYNC) != 0) => {
@@ -351,6 +358,7 @@ object GpuDeviceManager extends Logging {
               logError(
                 "Failed to initialize RMM with either ASYNC or ARENA allocators. Exiting...")
               secondEx.addSuppressed(firstEx)
+              poolSizeLimit = 0L
               throw secondEx
             }
           }

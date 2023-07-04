@@ -479,6 +479,33 @@
             </modules>
         </profile>
         <profile>
+            <id>release341</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>341</buildver>
+                <spark.version>${spark341.version}</spark.version>
+                <spark.test.version>${spark341.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.6</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release330cdh</id>
             <activation>
                 <property>
@@ -704,6 +731,7 @@
         <spark332.version>3.3.2</spark332.version>
         <spark333.version>3.3.3-SNAPSHOT</spark333.version>
         <spark340.version>3.4.0</spark340.version>
+        <spark341.version>3.4.1</spark341.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
@@ -747,7 +775,8 @@
             331,
             332,
             330cdh,
-            340
+            340,
+            341
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             333
@@ -1119,7 +1148,7 @@
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls ${extraJavaTestArgs}</argLine>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
