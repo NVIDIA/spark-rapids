@@ -38,7 +38,7 @@ object MergeIntoCommandMetaShim {
     }
   }
 
-  def convertToGpu(mergeCmd: MergeIntoCommand, comf: RapidsConf): RunnableCommand = {
+  def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
     GpuMergeIntoCommand(
       mergeCmd.source,
       mergeCmd.target,
@@ -50,7 +50,7 @@ object MergeIntoCommandMetaShim {
       mergeCmd.migratedSchema)(conf)
   }
 
-  def convertToGpu(mergeCmd: MergeIntoCommandEdge, comf: RapidsConf): RunnableCommand = {
+  def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
     GpuMergeIntoCommand(
       mergeCmd.source,
       mergeCmd.target,
