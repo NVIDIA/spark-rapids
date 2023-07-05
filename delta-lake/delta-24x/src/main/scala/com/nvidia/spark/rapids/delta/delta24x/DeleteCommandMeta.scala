@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.delta.delta24x
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
 import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.commands.DeleteCommand
 import org.apache.spark.sql.delta.rapids.GpuDeltaLog
