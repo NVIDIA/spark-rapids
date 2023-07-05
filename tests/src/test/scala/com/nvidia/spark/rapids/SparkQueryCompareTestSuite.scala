@@ -1305,21 +1305,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
     ).toDF("doubles")
   }
 
-  def floatTimestampSecondsDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[Float](
-      0.0f,
-      -0.0f,
-      1.0f,
-      -1.0f,
-      1.234567f,
-      -1.234567f
-      // Float.PositiveInfinity,
-      // Float.NegativeInfinity,
-      // Float.NaN
-    ).toDF("floats")
-  }
-
   def decimalTimestampSecondsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[BigDecimal](

@@ -412,33 +412,6 @@ trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
 
 case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
 
-  private def replaceNanInfWithNulls(input: ColumnVector): ColumnVector = {
-    withResource(FloatUtils.infinityToNulls(input)) { noInf =>
-      FloatUtils.nanToNulls(noInf)
-    }
-  }
-
-  private def convertDouble(input: ColumnVector): ColumnVector = {
-    val isNull = withResource(replaceNanInfWithNulls(input)) { replaced =>
-      replaced.isNull()
-    }
-    val tsMicros = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { 
-        scalar =>
-        withResource(input.mul(scalar)) { mul =>
-          withResource(mul.asLongs()) { mulLongs =>
-            mulLongs.asTimestampMicroseconds()
-          }
-        }
-    } 
-    withResource(tsMicros) { longs =>
-      withResource(isNull) { isNull =>
-        withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
-          isNull.ifElse(nullScalar, tsMicros)
-        }
-      }
-    }
-  }
-
   private lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
     case LongType =>
       (input: GpuColumnVector) => {
@@ -450,15 +423,29 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
           mul.asTimestampMicroseconds()
         }
       }
-    case FloatType =>
+    case DoubleType | FloatType =>
       (input: GpuColumnVector) => {
-        withResource(input.getBase.castTo(DType.FLOAT64)) { doubleInput =>
-          convertDouble(doubleInput)
+        // basicly copied from GpuCast
+        withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { microsPerSec =>
+          withResource(input.getBase.nansToNulls()) { inputWithNansToNull =>
+            withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
+              inputWithoutNanAndInfinity =>
+                if (child.dataType == FloatType) {
+                  withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
+                    withResource(doubles.mul(microsPerSec, DType.INT64)) {
+                      inputTimesMicrosCv =>
+                        inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
+                    }
+                  }
+                } else {
+                  withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
+                    inputTimesMicrosCv =>
+                      inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
+                  }
+                }
+            }
+          }
         }
-      }
-    case DoubleType =>
-      (input: GpuColumnVector) => {
-        convertDouble(input.getBase)
       }
     case dt: DecimalType =>
       (input: GpuColumnVector) => {

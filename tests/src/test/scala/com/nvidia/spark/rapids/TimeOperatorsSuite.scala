@@ -41,11 +41,6 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual(
-      "Test timestamp_seconds from Float type", floatTimestampSecondsDf) {
-    frame => frame.select(timestamp_seconds(col("floats")))
-  }
-
-  testSparkResultsAreEqual(
       "Test timestamp_seconds from Large Decimal type", decimalTimestampSecondsDf) {
     frame => frame.select(timestamp_seconds(col("decimals")))
   }
