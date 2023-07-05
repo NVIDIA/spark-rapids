@@ -83,7 +83,7 @@ def locate_parquet_testing_files():
         if files:
             return files
     if is_at_least_precommit_run():
-        raise AssertionError("Cannot find parquet_testing data in any of: " +
+        raise AssertionError("Cannot find parquet-testing data in any of: " +
                              ", ".join([ p.joinpath(g).as_posix()
                                          for p in places
                                          for g in glob_patterns]))
