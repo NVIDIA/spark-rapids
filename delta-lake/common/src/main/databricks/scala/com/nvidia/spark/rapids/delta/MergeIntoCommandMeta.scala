@@ -41,7 +41,8 @@ class MergeIntoCommandMeta(
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand = MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
+  override def convertToGpu(): RunnableCommand =
+    MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
 }
 
 class MergeIntoCommandEdgeMeta(
@@ -62,5 +63,6 @@ class MergeIntoCommandEdgeMeta(
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand = MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
+  override def convertToGpu(): RunnableCommand =
+    MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
 }
