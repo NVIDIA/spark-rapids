@@ -49,7 +49,7 @@ class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream 
 
   def write(data: ByteBuffer): Unit = {
     val numBytes = data.remaining()
-    val outBuffer = buffer.asByteBuffer(pos, data.remaining())
+    val outBuffer = buffer.asByteBuffer(pos, numBytes)
     outBuffer.put(data)
     pos += numBytes
   }
