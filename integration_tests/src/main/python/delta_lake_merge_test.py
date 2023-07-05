@@ -58,10 +58,11 @@ def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_colu
             sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
             if partition_columns:
                 sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
-            sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true)"
-            spark.sql(sql_text)
             if enable_deletion_vectors:
-                spark.sql("ALTER TABLE delta.`{path}` SET TBLPROPERTIES ('delta.enableDeletionVectors' = true)".format(path=path))
+                sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true, delta.enableDeletionVectors = true)"
+            else:
+                sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true)"
+            spark.sql(sql_text)
             writer = writer.mode("append")
         elif partition_columns:
             writer = writer.partitionBy(*partition_columns)

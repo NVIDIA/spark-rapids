@@ -93,7 +93,7 @@ def test_delta_deletion_vector_fallback(spark_tmp_path):
     def setup_tables(spark):
         setup_dest_tables(spark, data_path,
                           dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                          use_cdf=False, enable_deletion_vectors=True)
+                          use_cdf=True, enable_deletion_vectors=True)
     def write_func(spark, path):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
