@@ -157,27 +157,6 @@ pipeline {
             }
         } // end of Build docker image
 
-        stage('Init DB') {
-            when {
-                beforeAgent true
-                expression {
-                    db_build
-                }
-            }
-            agent {
-                kubernetes {
-                    label "premerge-ci-db-init-${BUILD_NUMBER}"
-                    cloud 'sc-ipp-blossom-prod'
-                    yaml "${IMAGE_DB}"
-                }
-            }
-            steps {
-                script {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
-                }
-            }
-        }
-
         stage('Premerge Test') {
             when {
                 beforeAgent true
@@ -260,8 +239,12 @@ pipeline {
                 } // end of Unit Test stage
 
                 stage('Databricks') {
+                    when {
+                        expression { db_build }
+                    }
                     steps {
                         script {
+                            githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
