@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
 import com.nvidia.spark.rapids.delta.shims.MergeIntoCommandMetaShim
 
@@ -42,19 +41,7 @@ class MergeIntoCommandMeta(
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      // TODO introduce shim for notMatchedBySourceClauses which is new in DBR 12.2
-      // https://github.com/NVIDIA/spark-rapids/issues/8415
-      notMatchedBySourceClauses = Seq.empty,
-      mergeCmd.migratedSchema)(conf)
-  }
+  override def convertToGpu(): RunnableCommand = MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
 }
 
 class MergeIntoCommandEdgeMeta(
@@ -75,17 +62,5 @@ class MergeIntoCommandEdgeMeta(
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      // TODO introduce shim for notMatchedBySourceClauses which is new in DBR 12.2
-      // https://github.com/NVIDIA/spark-rapids/issues/8415
-      notMatchedBySourceClauses = Seq.empty,
-      mergeCmd.migratedSchema)(conf)
-  }
+  override def convertToGpu(): RunnableCommand = MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
 }

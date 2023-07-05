@@ -22,4 +22,15 @@ import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommand
 object MergeIntoCommandMetaShim {
   def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {}
   def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {}
+
+  def convertToGpu(): RunnableCommand = {
+    GpuMergeIntoCommand(
+      mergeCmd.source,
+      mergeCmd.target,
+      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+      mergeCmd.condition,
+      mergeCmd.matchedClauses,
+      mergeCmd.notMatchedClauses,
+      mergeCmd.migratedSchema)(conf)
+  }
 }
