@@ -60,7 +60,8 @@ if [[ "$TEST_TAGS" == "iceberg" ]]; then
     # Set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
     # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
     case "$SPARK_VER" in
-        "3.3.0")
+        # TODO: Will put shared scripts together for test.sh and run_it.sh
+        "3.3.0" | "3.3.2")
             ICEBERG_VERSION=${ICEBERG_VERSION:-0.14.1}
             ;;
         "3.2.1")
