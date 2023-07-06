@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, FloatUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuCast, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -422,6 +422,11 @@ trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
 
 case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
 
+  override def nullable: Boolean = child.dataType match {
+    case _: FloatType | _: DoubleType => true
+    case _ => child.nullable
+  }
+
   protected lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
     case LongType =>
       (input: GpuColumnVector) => {
@@ -435,40 +440,20 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
       }
     case DoubleType | FloatType =>
       (input: GpuColumnVector) => {
-        // basicly copied from GpuCast
-        withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { microsPerSec =>
-          withResource(input.getBase.nansToNulls()) { inputWithNansToNull =>
-            withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
-              inputWithoutNanAndInfinity =>
-                if (child.dataType == FloatType) {
-                  withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
-                    withResource(doubles.mul(microsPerSec, DType.INT64)) {
-                      inputTimesMicrosCv =>
-                        inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
-                    }
-                  }
-                } else {
-                  withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
-                    inputTimesMicrosCv =>
-                      inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
-                  }
-                }
-            }
-          }
-        }
+        GpuCast.doCast(input.getBase, input.dataType, TimestampType, false, false, false)
       }
     case dt: DecimalType =>
       (input: GpuColumnVector) => {
-        // SecondsToTimestamp only supports decimals with a scale of 6 or less, which can be 
-        // represented as microseconds without rounding necessary.
-        val decimal128Type = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+        // SecondsToTimestamp supports decimals with a scale of 6 or less, which can be represented
+        // as microseconds. An exception will be thrown if the scale is more than 6.
+        val decimalTypeSupported = DType.create(DType.DTypeEnum.DECIMAL128, -6)
         if (dt.scale > 6) {
           // Match the behavior of `BigDecimal.longValueExact()`, if decimal is equal to the value
           // casted to decimal128 with scale 6, then no rounding is necessary.
-          val decimal128TypeAllScale = DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
-          val isEqual = withResource(input.getBase.castTo(decimal128Type)) { casted =>
-            withResource(casted.castTo(decimal128TypeAllScale)) { castedAllScale =>
-              withResource(input.getBase.castTo(decimal128TypeAllScale)) { original =>
+          val decimalTypeAllScale = DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
+          val isEqual = withResource(input.getBase.castTo(decimalTypeSupported)) { casted =>
+            withResource(casted.castTo(decimalTypeAllScale)) { castedAllScale =>
+              withResource(input.getBase.castTo(decimalTypeAllScale)) { original =>
                 original.equalTo(castedAllScale)
               }
             }
@@ -483,9 +468,9 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
           }
         }
         // Cast to decimal128 to avoid overflow
-        val mul = withResource(input.getBase.castTo(decimal128Type)) { decimal128 =>
+        val mul = withResource(input.getBase.castTo(decimalTypeSupported)) { decimal =>
           withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
-            decimal128.mul(scalar, decimal128Type)
+            decimal.mul(scalar, decimalTypeSupported)
           }
         }
         // Match the behavior of `BigDecimal.longValueExact()`:
