@@ -1212,7 +1212,9 @@ def test_agg_count(data_gen, count_func):
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
                'HashPartitioning', 'ShuffleExchangeExec', 'Count')
-@pytest.mark.parametrize('data_gen', array_gens_sample + [binary_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))
+                         , binary_gen], ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 def test_groupby_list_types_fallback(data_gen, count_func):
     assert_gpu_fallback_collect(
