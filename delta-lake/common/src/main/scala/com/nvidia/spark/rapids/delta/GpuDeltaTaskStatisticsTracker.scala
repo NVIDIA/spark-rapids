@@ -26,6 +26,7 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.SpillableColumnarBatch
 import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -158,7 +159,16 @@ class GpuDeltaTaskStatisticsTracker(
     val aggBuffer = submittedFiles(filePath)
     extendedRow.update(0, aggBuffer)
 
-    withResource(spillableBatch.getColumnarBatch()) { batch =>
+    val batch = withRetryNoSplit(spillableBatch) { sb =>
+      sb.getColumnarBatch()
+    }
+
+    // batchStatsToRow computes basic reduction-style statistics, but it does
+    // allocate GPU memory so it could, in theory, fail.
+    // We are not putting it in a `withRetryNoSplit` because it does have side effects
+    // and we should make sure they don't have undesired effects on retry.
+    // Follow on: https://github.com/NVIDIA/spark-rapids/issues/8670
+    withResource(batch) { _ =>
       batchStatsToRow(batch, gpuResultsBuffer)
     }
 
