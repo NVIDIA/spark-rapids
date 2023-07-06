@@ -427,6 +427,34 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
     case _ => child.nullable
   }
 
+  private def checkRoundingNecessary(input: ColumnVector, dt: DecimalType): Unit = {
+    // SecondsToTimestamp supports decimals with a scale of 6 or less, which can be represented
+    // as microseconds. An exception will be thrown if the scale is more than 6.
+    val decimalTypeSupported = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+    if (dt.scale > 6) {
+      // Match the behavior of `BigDecimal.longValueExact()`, if decimal is equal to the value
+      // casted to decimal128 with scale 6, then no rounding is necessary.
+      val decimalTypeAllScale = DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
+      val castedAllScale = withResource(input.castTo(decimalTypeSupported)) { casted =>
+        casted.castTo(decimalTypeAllScale)
+      }
+      val isEqual = withResource(castedAllScale) { _ =>
+        withResource(input.castTo(decimalTypeAllScale)) { original =>
+          original.equalTo(castedAllScale)
+        }
+      }
+      val roundUnnecessity = withResource(isEqual) { _ =>
+        withResource(isEqual.all()) { all =>
+          all.isValid && all.getBoolean()
+        }
+      }
+      if (!roundUnnecessity) {
+        throw new ArithmeticException("Rounding necessary")
+      }
+    }
+  }
+
+  @transient
   protected lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
     case LongType =>
       (input: GpuColumnVector) => {
@@ -434,7 +462,7 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
         val mul = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
           input.getBase.mul(scalar)
         }
-        withResource(mul) { mul =>
+        withResource(mul) { _ =>
           mul.asTimestampMicroseconds()
         }
       }
@@ -444,59 +472,39 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
       }
     case dt: DecimalType =>
       (input: GpuColumnVector) => {
-        // SecondsToTimestamp supports decimals with a scale of 6 or less, which can be represented
-        // as microseconds. An exception will be thrown if the scale is more than 6.
+        checkRoundingNecessary(input.getBase, dt)
+        // Cast to decimal128 to avoid overflow, scala of 6 is enough after rounding check.
         val decimalTypeSupported = DType.create(DType.DTypeEnum.DECIMAL128, -6)
-        if (dt.scale > 6) {
-          // Match the behavior of `BigDecimal.longValueExact()`, if decimal is equal to the value
-          // casted to decimal128 with scale 6, then no rounding is necessary.
-          val decimalTypeAllScale = DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
-          val isEqual = withResource(input.getBase.castTo(decimalTypeSupported)) { casted =>
-            withResource(casted.castTo(decimalTypeAllScale)) { castedAllScale =>
-              withResource(input.getBase.castTo(decimalTypeAllScale)) { original =>
-                original.equalTo(castedAllScale)
-              }
-            }
-          }
-          val roundUnnecessity = withResource(isEqual) { isEqual =>
-            withResource(isEqual.all()) { all =>
-              all.isValid && all.getBoolean()
-            }
-          }
-          if (!roundUnnecessity) {
-            throw new ArithmeticException("Rounding necessary")
-          }
-        }
-        // Cast to decimal128 to avoid overflow
         val mul = withResource(input.getBase.castTo(decimalTypeSupported)) { decimal =>
           withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
             decimal.mul(scalar, decimalTypeSupported)
           }
         }
         // Match the behavior of `BigDecimal.longValueExact()`:
-        val greaterThanMax = withResource(Scalar.fromLong(Long.MaxValue)) { longMax =>
-            mul.greaterThan(longMax)
-        }
-        val largerThanLongMax = withResource(greaterThanMax) { greaterThanMax =>
-          withResource(greaterThanMax.any()) { any =>
-            any.getBoolean()
+        closeOnExcept(mul) { _ =>
+          val greaterThanMax = withResource(Scalar.fromLong(Long.MaxValue)) { longMax =>
+              mul.greaterThan(longMax)
           }
-        }
-        lazy val smallerThanLongMin: Boolean = {
-          val lessThanMin = withResource(Scalar.fromLong(Long.MinValue)) { longMin =>
-              mul.lessThan(longMin)
-          }
-          withResource(lessThanMin) { lessThanMin =>
-            withResource(lessThanMin.any()) { any =>
-              any.getBoolean()
+          val largerThanLongMax = withResource(greaterThanMax) { greaterThanMax =>
+            withResource(greaterThanMax.any()) { any =>
+              any.isValid && any.getBoolean()
             }
           }
+          lazy val smallerThanLongMin: Boolean = {
+            val lessThanMin = withResource(Scalar.fromLong(Long.MinValue)) { longMin =>
+                mul.lessThan(longMin)
+            }
+            withResource(lessThanMin) { lessThanMin =>
+              withResource(lessThanMin.any()) { any =>
+                any.isValid && any.getBoolean()
+              }
+            }
+          }
+          if (largerThanLongMax || smallerThanLongMin) {
+            throw new java.lang.ArithmeticException("Overflow")
+          }
         }
-        if (largerThanLongMax || smallerThanLongMin) {
-          mul.close()
-          throw new java.lang.ArithmeticException("Overflow")
-        }
-        withResource(mul) { mul =>
+        withResource(mul) { _ =>
           withResource(mul.castTo(DType.INT64)) { longs =>
             longs.asTimestampMicroseconds()
           }

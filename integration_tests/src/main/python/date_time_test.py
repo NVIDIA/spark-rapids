@@ -449,10 +449,9 @@ def test_timestamp_seconds(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)"))
 
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
-def test_timestamp_seconds_long_overflow(data_gen):
+def test_timestamp_seconds_long_overflow():
     assert_gpu_and_cpu_error(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
+        lambda spark : unary_op_df(spark, long_gen).selectExpr("timestamp_seconds(a)").collect(),
         conf={},
         error_message='long overflow')
     
@@ -476,10 +475,9 @@ def test_timestamp_millis(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_millis(a)"))
     
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
-def test_timestamp_millis_long_overflow(data_gen):
+def test_timestamp_millis_long_overflow():
     assert_gpu_and_cpu_error(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_millis(a)").collect(),
+        lambda spark : unary_op_df(spark, long_gen).selectExpr("timestamp_millis(a)").collect(),
         conf={},
         error_message='long overflow')
 
