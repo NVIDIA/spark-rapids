@@ -135,12 +135,10 @@ abstract class GpuWindowExpressionMetaBase(
                       s"long and the range value calculated has overflow. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
                   case FloatType => if (!conf.isRangeWindowFloatEnabled) willNotWorkOnGpu(
-                    s"Range window frame is not 100% compatible when the order by type is " +
-                      s"float and the range value calculated has overflow. " +
+                    s"Range window frame is currently disabled when the order by type is float. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_FLOAT} to true.")
                   case DoubleType => if (!conf.isRangeWindowDoubleEnabled) willNotWorkOnGpu(
-                    s"Range window frame is not 100% compatible when the order by type is " +
-                      s"double and the range value calculated has overflow. " +
+                    s"Range window frame is currently disabled when the order by type is double. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_DOUBLE} to true.")
                   case DecimalType() => if (!conf.isRangeWindowDecimalEnabled) willNotWorkOnGpu(
                       s"To enable DECIMAL order by columns with Range window frames, " +
