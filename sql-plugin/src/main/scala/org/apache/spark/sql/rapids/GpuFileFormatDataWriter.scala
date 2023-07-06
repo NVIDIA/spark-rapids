@@ -506,9 +506,7 @@ class GpuDynamicPartitionDataSingleWriter(
     }
     val splits = closeOnExcept(cbKeys) { _ =>
       withResource(outputColumnsTbl) { _ =>
-        withRetryNoSplit {
-          outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
-        }
+        outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
       }
     }
     val paths = closeOnExcept(splits) { _ =>
