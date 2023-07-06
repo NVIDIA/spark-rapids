@@ -40,8 +40,8 @@ class DeleteCommandMeta(
     }
     val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(
       deleteCmd.deltaLog.unsafeVolatileSnapshot)
-    if (dvFeatureEnabled && "true".equals(deleteCmd.conf.getConfString(
-        DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS.key))) {
+    if (dvFeatureEnabled && deleteCmd.conf.getConf(
+        DeltaSQLConf.DELETE_USE_PERSISTENT_DELETION_VECTORS)) {
       // https://github.com/NVIDIA/spark-rapids/issues/8554
       willNotWorkOnGpu("Deletion vectors are not supported on GPU")
     }
