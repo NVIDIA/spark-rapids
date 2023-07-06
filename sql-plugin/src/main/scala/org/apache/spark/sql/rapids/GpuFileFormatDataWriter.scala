@@ -891,10 +891,12 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     // 1. combine partition columns and `cb` columns into a column array
     val columnsWithPartition = ArrayBuffer[ColumnVector]()
-    val partitionColumnsBatch = getPartitionColumnsAsBatch(cb)
 
-    val cudfCols = GpuColumnVector.extractBases(partitionColumnsBatch)
-    columnsWithPartition.appendAll(cudfCols)
+    // this withResource is here to decrement the refcount of the partition columns
+    // that are projected out of `cb`
+    withResource(getPartitionColumnsAsBatch(cb)) { partitionColumnsBatch =>
+      columnsWithPartition.appendAll(GpuColumnVector.extractBases(partitionColumnsBatch))
+    }
 
     val cols = GpuColumnVector.extractBases(cb)
     columnsWithPartition ++= cols
