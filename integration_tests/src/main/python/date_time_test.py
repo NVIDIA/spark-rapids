@@ -441,7 +441,7 @@ def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
 
 # (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds 
 # considering the influence of time zone.
-ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, float('inf'), float('-inf'), float('nan')])
+ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, 16777215.0, float('inf'), float('-inf'), float('nan')])
 seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(), 
                 DoubleGen(min_exp=0, max_exp=32), ts_float_gen, DecimalGen(16, 6), DecimalGen(13, 3), DecimalGen(10, 0), DecimalGen(7, -3), DecimalGen(6, 6)]
 @pytest.mark.parametrize('data_gen', seconds_gens, ids=idfn)
