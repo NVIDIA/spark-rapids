@@ -236,7 +236,7 @@ class GpuSingleDirectoryDataWriter(
     statsTrackers.foreach(_.newFile(currentPath))
   }
 
-  private def doWriteAndClose(scb: SpillableColumnarBatch): Unit = {
+  private def writeUpdateMetricsAndClose(scb: SpillableColumnarBatch): Unit = {
     closeOnExcept(scb) { _ =>
       statsTrackers.foreach(_.newBatch(currentWriter.path(), scb))
       recordsInFile += scb.numRows
@@ -248,7 +248,8 @@ class GpuSingleDirectoryDataWriter(
     val maxRecordsPerFile = description.maxRecordsPerFile
     if (!shouldSplitToFitMaxRecordsPerFile(
         maxRecordsPerFile, recordsInFile, batch.numRows())) {
-      doWriteAndClose(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      writeUpdateMetricsAndClose(
+        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     } else {
       val partBatches = splitToFitMaxRecordsAndClose(
         batch, maxRecordsPerFile, recordsInFile)
@@ -263,7 +264,7 @@ class GpuSingleDirectoryDataWriter(
           }
           // null out the entry so that we don't double close
           partBatches(partIx) = null
-          doWriteAndClose(partBatch)
+          writeUpdateMetricsAndClose(partBatch)
           needNewWriter = true
         }
       }
@@ -336,26 +337,22 @@ class GpuDynamicPartitionDataSingleWriter(
      """.stripMargin)
 
   /** Extracts the partition values out of an input batch. */
-  protected lazy val getPartitionColumnsAsTable: ColumnarBatch => Table = {
+  protected lazy val getPartitionColumnsAsBatch: ColumnarBatch => ColumnarBatch = {
     val expressions = GpuBindReferences.bindGpuReferences(
       description.partitionColumns,
       description.allColumns)
     cb => {
-      withResource(GpuProjectExec.project(cb, expressions)) { batch =>
-        GpuColumnVector.from(batch)
-      }
+      GpuProjectExec.project(cb, expressions)
     }
   }
 
   /** Extracts the output values of an input batch. */
-  private lazy val getOutputColumnsAsTable: ColumnarBatch => Table = {
+  private lazy val getOutputColumnsAsBatch: ColumnarBatch => ColumnarBatch= {
     val expressions = GpuBindReferences.bindGpuReferences(
       description.dataColumns,
       description.allColumns)
     cb => {
-      withResource(GpuProjectExec.project(cb, expressions)) { batch =>
-        GpuColumnVector.from(batch)
-      }
+      GpuProjectExec.project(cb, expressions)
     }
   }
 
@@ -488,14 +485,17 @@ class GpuDynamicPartitionDataSingleWriter(
   private def splitBatchByKeyAndClose(
       batch: ColumnarBatch,
       partDataTypes: Array[DataType]): Array[SplitAndPath] = {
-    val (outputColumnsTbl, partitionColumnsTbl) = withResource(batch) { _ =>
-      closeOnExcept(getOutputColumnsAsTable(batch)) { outputColumnsTbl =>
-        closeOnExcept(getPartitionColumnsAsTable(batch)) { partitionColumnsTbl =>
-          (outputColumnsTbl, partitionColumnsTbl)
+    val (outputColumnsBatch, partitionColumnsBatch) = withResource(batch) { _ =>
+      closeOnExcept(getOutputColumnsAsBatch(batch)) { outputColumnsBatch =>
+        closeOnExcept(getPartitionColumnsAsBatch(batch)) { partitionColumnsBatch =>
+          (outputColumnsBatch, partitionColumnsBatch)
         }
       }
     }
-    val (cbKeys, partitionIndexes) = closeOnExcept(outputColumnsTbl) { _ =>
+    val (cbKeys, partitionIndexes) = closeOnExcept(outputColumnsBatch) { _ =>
+      val partitionColumnsTbl = withResource(partitionColumnsBatch) { _ =>
+        GpuColumnVector.from(partitionColumnsBatch)
+      }
       withResource(partitionColumnsTbl) { _ =>
         withResource(distinctAndSort(partitionColumnsTbl)) { distinctKeysTbl =>
           val partitionIndexes = splitIndexes(partitionColumnsTbl, distinctKeysTbl)
@@ -504,11 +504,21 @@ class GpuDynamicPartitionDataSingleWriter(
         }
       }
     }
+
     val splits = closeOnExcept(cbKeys) { _ =>
-      withResource(outputColumnsTbl) { _ =>
-        outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
+      val spillableOutputColumnsBatch =
+        SpillableColumnarBatch(outputColumnsBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      withRetryNoSplit(spillableOutputColumnsBatch) { spillable =>
+        withResource(spillable.getColumnarBatch()) { outCb =>
+          withResource(GpuColumnVector.from(outCb)) { outputColumnsTbl =>
+            withResource(outputColumnsTbl) { _ =>
+              outputColumnsTbl.contiguousSplit(partitionIndexes: _*)
+            }
+          }
+        }
       }
     }
+
     val paths = closeOnExcept(splits) { _ =>
       withResource(cbKeys) { _ =>
         // Use the existing code to convert each row into a path. It would be nice to do this
@@ -608,7 +618,7 @@ class GpuDynamicPartitionDataSingleWriter(
         // if the batch fits, write it as is, else split and write it.
         if (!shouldSplitToFitMaxRecordsPerFile(maxRecordsPerFile,
           currentWriterStatus.recordsInFile, batchToWrite.numRows())) {
-          doWriteAndClose(currentWriterStatus, batchToWrite)
+          writeUpdateMetricsAndClose(currentWriterStatus, batchToWrite)
         } else {
           // materialize an actual batch since we are going to split it
           // on the GPU
@@ -698,13 +708,13 @@ class GpuDynamicPartitionDataSingleWriter(
           currentWriterStatus.recordsInFile = 0
         }
         spillableBatches(partIx) = null
-        doWriteAndClose(currentWriterStatus, part)
+        writeUpdateMetricsAndClose(currentWriterStatus, part)
         needNewWriter = true
       }
     }
   }
 
-  protected def doWriteAndClose(
+  protected def writeUpdateMetricsAndClose(
       writerStatus: WriterStatus,
       spillableBatch: SpillableColumnarBatch): Unit = {
     closeOnExcept(spillableBatch) { _ =>
@@ -881,12 +891,11 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     // 1. combine partition columns and `cb` columns into a column array
     val columnsWithPartition = ArrayBuffer[ColumnVector]()
-    withResource(getPartitionColumnsAsTable(cb)) { partitionColumnsTable =>
-      for (i <- 0 until partitionColumnsTable.getNumberOfColumns) {
-        // append partition column
-        columnsWithPartition += partitionColumnsTable.getColumn(i)
-      }
-    }
+    val partitionColumnsBatch = getPartitionColumnsAsBatch(cb)
+
+    val cudfCols = GpuColumnVector.extractBases(partitionColumnsBatch)
+    columnsWithPartition.appendAll(cudfCols)
+
     val cols = GpuColumnVector.extractBases(cb)
     columnsWithPartition ++= cols
 
@@ -1022,7 +1031,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     val maxRecordsPerFile = description.maxRecordsPerFile
     if (!shouldSplitToFitMaxRecordsPerFile(
       maxRecordsPerFile, status.writerStatus.recordsInFile, spillableToWrite.numRows())) {
-      doWriteAndClose(status.writerStatus, spillableToWrite)
+      writeUpdateMetricsAndClose(status.writerStatus, spillableToWrite)
     } else {
       val batchToSplit = withRetryNoSplit(spillableToWrite) { _ =>
         spillableToWrite.getColumnarBatch()
@@ -1046,7 +1055,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
             status.writerStatus.recordsInFile = 0L
           }
           splits(partIndex) = null
-          doWriteAndClose(status.writerStatus, split)
+          writeUpdateMetricsAndClose(status.writerStatus, split)
           needNewWriter = true
         }
       }
