@@ -39,7 +39,6 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
   private val TARGET_SIZE_SMALL = 10L
   private val TARGET_SIZE_BIG = 1024L
   private val attrs = Array(AttributeReference("a1", IntegerType, nullable=false)())
-  private val buildGoals = Seq(RequireSingleBatch, RequireSingleBatchWithFilter(GpuLiteral(true)))
 
   private def newOneIntColumnTable(): Table = {
     withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
@@ -49,7 +48,6 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
 
   private def testJoinPreparation(
       buildIter: Iterator[ColumnarBatch],
-      buildGoal: CoalesceSizeGoal,
       buildAttrs: Seq[Attribute] = attrs,
       targetSize: Long = TARGET_SIZE_BIG,
       optimalCase: Boolean = false)
@@ -63,7 +61,7 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
       mockStreamIter,
       targetSize,
       buildAttrs,
-      buildGoal, None, metricMap)
+      RequireSingleBatch, None, metricMap)
 
     verifyBuiltData(builtData)
     // build iterator should be drained
@@ -85,80 +83,70 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
   }
 
   test("test empty build iterator") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        testJoinPreparation(Iterator.empty, goal) { builtData =>
-          assert(builtData.isLeft)
-          // we get an empty batch
-          assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
-        }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      testJoinPreparation(Iterator.empty) { builtData =>
+        assert(builtData.isLeft)
+        // we get an empty batch
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
       }
     }
   }
 
   test("test a batch of 0 cols and 0 rows") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = Iterator(GpuColumnVector.emptyBatchFromTypes(Array.empty))
-        testJoinPreparation(buildIter, goal, Seq.empty) { builtData =>
-          assert(builtData.isLeft)
-          assertBatchColsAndRowsAndClose(builtData.left.get, 0, 0)
-        }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = Iterator(GpuColumnVector.emptyBatchFromTypes(Array.empty))
+      testJoinPreparation(buildIter, Seq.empty) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 0, 0)
       }
     }
   }
 
   test("test a batch of 1 col and 0 rows") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = Iterator(GpuColumnVector.emptyBatchFromTypes(attrs.map(_.dataType)))
-        testJoinPreparation(buildIter, goal) { builtData =>
-          assert(builtData.isLeft)
-          assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = Iterator(GpuColumnVector.emptyBatchFromTypes(attrs.map(_.dataType)))
+      testJoinPreparation(buildIter) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
 
-        }
       }
     }
   }
 
   test("test a nonempty batch going over the limit") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = withResource(newOneIntColumnTable()) { testTable =>
-          Iterator(GpuColumnVector.from(testTable, attrs.map(_.dataType)))
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = withResource(newOneIntColumnTable()) { testTable =>
+        Iterator(GpuColumnVector.from(testTable, attrs.map(_.dataType)))
+      }
+      testJoinPreparation(buildIter, targetSize = TARGET_SIZE_SMALL) { builtData =>
+        assert(builtData.isRight)
+        var batchCount = 0
+        val builtIt = builtData.right.get
+        builtIt.foreach { builtBatch =>
+          batchCount += 1
+          assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
         }
-        testJoinPreparation(buildIter, goal, targetSize = TARGET_SIZE_SMALL) { builtData =>
-          assert(builtData.isRight)
-          var batchCount = 0
-          val builtIt = builtData.right.get
-          builtIt.foreach { builtBatch =>
-            batchCount += 1
-            assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
-          }
-          assert(batchCount == 1)
-        }
+        assert(batchCount == 1)
       }
     }
   }
 
   test("test two batches going over the limit") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = withResource(newOneIntColumnTable()) { testTable =>
-          closeOnExcept(GpuColumnVector.from(testTable, attrs.map(_.dataType))) { batch1 =>
-            Iterator(batch1, GpuColumnVector.from(testTable, attrs.map(_.dataType)))
-          }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = withResource(newOneIntColumnTable()) { testTable =>
+        closeOnExcept(GpuColumnVector.from(testTable, attrs.map(_.dataType))) { batch1 =>
+          Iterator(batch1, GpuColumnVector.from(testTable, attrs.map(_.dataType)))
         }
-        testJoinPreparation(buildIter, goal, targetSize = TARGET_SIZE_SMALL) { builtData =>
-          assert(builtData.isRight)
-          var batchCount = 0
-          val builtIt = builtData.right.get
-          builtIt.foreach { builtBatch =>
-            batchCount += 1
-            assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
-          }
-          assert(batchCount == 2)
+      }
+      testJoinPreparation(buildIter, targetSize = TARGET_SIZE_SMALL) { builtData =>
+        assert(builtData.isRight)
+        var batchCount = 0
+        val builtIt = builtData.right.get
+        builtIt.foreach { builtBatch =>
+          batchCount += 1
+          assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
         }
+        assert(batchCount == 2)
       }
     }
   }
@@ -186,65 +174,57 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
   }
 
   test("test a 0-column serialized batch, optimal case") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = Iterator(getSerializedBatch(5))
-        testJoinPreparation(buildIter, goal, Seq.empty, optimalCase = true) { builtData =>
-          assert(builtData.isLeft)
-          assertBatchColsAndRowsAndClose(builtData.left.get, 0, 5)
-        }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = Iterator(getSerializedBatch(5))
+      testJoinPreparation(buildIter, Seq.empty, optimalCase = true) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 0, 5)
       }
     }
   }
 
   test("test a serialized batch, optimal case") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = withResource(newOneIntColumnTable()) { tbl =>
-          Iterator(getSerializedBatch(tbl))
-        }
-        testJoinPreparation(buildIter, goal, optimalCase = true) { builtData =>
-          assert(builtData.isLeft)
-          assertBatchColsAndRowsAndClose(builtData.left.get, 1, 5)
-        }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = withResource(newOneIntColumnTable()) { tbl =>
+        Iterator(getSerializedBatch(tbl))
+      }
+      testJoinPreparation(buildIter, optimalCase = true) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 5)
       }
     }
   }
 
   test("test two serialized batches, going over the limit") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = withResource(newOneIntColumnTable()) { tbl =>
-          closeOnExcept(getSerializedBatch(tbl)) { serializedBatch1 =>
-            Iterator(serializedBatch1, getSerializedBatch(tbl))
-          }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = withResource(newOneIntColumnTable()) { tbl =>
+        closeOnExcept(getSerializedBatch(tbl)) { serializedBatch1 =>
+          Iterator(serializedBatch1, getSerializedBatch(tbl))
         }
-        testJoinPreparation(buildIter, goal, targetSize = TARGET_SIZE_SMALL) { builtData =>
-          assert(builtData.isRight)
-          var batchCount = 0
-          val builtIt = builtData.right.get
-          builtIt.foreach { builtBatch =>
-            batchCount += 1
-            assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
-          }
-          assert(batchCount == 2)
+      }
+      testJoinPreparation(buildIter, targetSize = TARGET_SIZE_SMALL) { builtData =>
+        assert(builtData.isRight)
+        var batchCount = 0
+        val builtIt = builtData.right.get
+        builtIt.foreach { builtBatch =>
+          batchCount += 1
+          assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
         }
+        assert(batchCount == 2)
       }
     }
   }
 
   test("test two serialized batches, stating within the limit, optimal case") {
-    buildGoals.foreach { goal =>
-      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-        val buildIter = withResource(newOneIntColumnTable()) { tbl =>
-          closeOnExcept(getSerializedBatch(tbl)) { serializedBatch1 =>
-            Iterator(serializedBatch1, getSerializedBatch(tbl))
-          }
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = withResource(newOneIntColumnTable()) { tbl =>
+        closeOnExcept(getSerializedBatch(tbl)) { serializedBatch1 =>
+          Iterator(serializedBatch1, getSerializedBatch(tbl))
         }
-        testJoinPreparation(buildIter, goal, optimalCase = true) { builtData =>
-          assert(builtData.isLeft)
-          assertBatchColsAndRowsAndClose(builtData.left.get, 1, 10)
-        }
+      }
+      testJoinPreparation(buildIter, optimalCase = true) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 10)
       }
     }
   }

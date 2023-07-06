@@ -284,7 +284,7 @@ object GpuShuffledHashJoinExec extends Logging {
           // serialized host batch and the sub-partitioning is not activated.
           val (singleBuildCb, bufferedStreamIter) = getBuildBatchOptimizedAndClose(
             firstBuildBatch.asInstanceOf[HostConcatResult], streamIter, buildTypes,
-            buildGoal, buildTime)
+            buildTime)
           logDebug("In the optimized case for grabbing the GPU semaphore, return " +
             s"a single batch (size: ${getBatchSize(singleBuildCb)}) for the build side " +
             s"with $buildGoal goal.")
@@ -301,18 +301,23 @@ object GpuShuffledHashJoinExec extends Logging {
             safeIter.asInstanceOf[Iterator[ColumnarBatch]]
           }
 
-          val needFiltering = buildGoal.isInstanceOf[RequireSingleBatchWithFilter]
-          val buildRet = if (needFiltering) {
-            getBuildBatchesFiltered(gpuBuildIter, targetSize, buildGoal, subPartConf, buildTime)
-          } else if (needSingleBuildBatch) {
+          val buildRet = if (needSingleBuildBatch) {
             val oneCB = getAsSingleBatch(gpuBuildIter, buildOutput, buildGoal, coalesceMetrics)
             logDebug(s"Return a single batch (size: ${getBatchSize(oneCB)}) for the " +
               s"build side with $buildGoal goal.")
             Left(oneCB)
           } else {
-            logDebug(s"Return multiple batches for the build side, ignoring the $buildGoal " +
-              "goal because the total size exceeds the target size.")
-            Right(new CollectTimeIterator("hash join build", gpuBuildIter, buildTime))
+            val (maybeFilteredIter, isFiltered) = getBuildIterMaybeFiltered(gpuBuildIter,
+              buildGoal)
+            if (isFiltered) {
+              // Enter null-filtering mode, similar with that in GpuCoalesceIterator.
+              // Filter the input batches and redo the size estimation
+              getFilteredBuildBatches(maybeFilteredIter, targetSize, subPartConf, buildTime)
+            } else {
+              logDebug("Return multiple batches as the build side data for the following " +
+                "sub-partitioning join")
+              Right(new CollectTimeIterator("hash join build", maybeFilteredIter, buildTime))
+            }
           }
           buildTime += System.nanoTime() - startTime
           (buildRet, streamIter)
@@ -324,22 +329,47 @@ object GpuShuffledHashJoinExec extends Logging {
     }
   }
 
-  private def getBuildBatchesFiltered(
+  private def getBuildIterMaybeFiltered(
       gpuBuildIter: Iterator[ColumnarBatch],
+      buildGoal: CoalesceSizeGoal): (Iterator[ColumnarBatch], Boolean) = {
+    var accBatchRows = 0L
+    closeOnExcept(new mutable.ArrayBuffer[SpillableColumnarBatch]) { spillBuf =>
+      // Check if the total rows number goes beyond the hard limit of 2^31 rows
+      while (accBatchRows < Int.MaxValue && gpuBuildIter.hasNext) {
+        closeOnExcept(gpuBuildIter.next()) { cb =>
+          accBatchRows += cb.numRows()
+          spillBuf.append(
+            SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+        }
+      }
+      val rowsExceedIntMax = accBatchRows > Int.MaxValue ||
+        (accBatchRows == Int.MaxValue && gpuBuildIter.hasNext)
+      val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf).map { sp =>
+        withResource(sp)(_.getColumnarBatch())
+      } ++ gpuBuildIter
+
+      buildGoal match {
+        case RequireSingleBatchWithFilter(filterExpr) if rowsExceedIntMax =>
+          val filteredIter = safeIter.map(cb => withResource(cb)(GpuFilter(_, filterExpr)))
+          (filteredIter, true)
+        case _ => (safeIter, false)
+      }
+    }
+  }
+
+  private def getFilteredBuildBatches(
+      filteredIter: Iterator[ColumnarBatch],
       targetSize: Long,
-      buildGoal: CoalesceSizeGoal,
       subPartConf: Option[Boolean],
       buildTime: GpuMetric): Either[ColumnarBatch, Iterator[ColumnarBatch]] = {
-    // Filter the input batches and redo the size estimation
-    val filterFunc = filterBatchAndClose(buildGoal)(_)
-    val filteredIter = gpuBuildIter.map(filterFunc)
+    // Redo the size estimation for filtered batches
     var accBatchSize = 0L
     closeOnExcept(new mutable.ArrayBuffer[SpillableColumnarBatch]) { spillBuf =>
       while (accBatchSize < targetSize && filteredIter.hasNext) {
         closeOnExcept(filteredIter.next()) { cb =>
           accBatchSize += GpuColumnVector.getTotalDeviceMemoryUsed(cb)
           spillBuf.append(
-            SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+            SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
         }
       }
       val multiBuildBatches = subPartConf.getOrElse {
@@ -348,32 +378,26 @@ object GpuShuffledHashJoinExec extends Logging {
       }
       if (multiBuildBatches) {
         // The size still overflows after filtering or sub-partitioning is enabled for test.
-        logDebug(s"Return multiple batches for the build side, ignoring the $buildGoal " +
-          "goal because the total size still exceeds the target size after filtering the " +
-          "original batches.")
+        logWarning("Return multiple batches as the build side data for the following " +
+          "sub-partitioning join in null-filtering mode.")
         val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf).map { sp =>
           withResource(sp)(_.getColumnarBatch())
         } ++ filteredIter
         Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
-      } else {
+      } else { // We can get here only when the filtered size is within the target size.
+        while(filteredIter.hasNext) {
+          spillBuf.append(
+            SpillableColumnarBatch(filteredIter.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+        }
         val spill = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(spillBuf)
         // There is a prior empty check so this `spill` can not be a None.
         assert(spill.isDefined, "The build data iterator should not be empty.")
         withResource(spill) { _ =>
-          logDebug(s"Return a single batch (size: ${spill.get.sizeInBytes}) for the " +
-            s"build side after filtering the original batches.")
+          logWarning(s"Return a single batch (size: ${spill.get.sizeInBytes}) for the " +
+            s"build side in null-filtering mode.")
           Left(spill.get.getColumnarBatch())
         }
       }
-    }
-  }
-
-  private def filterBatchAndClose(goal: CoalesceSizeGoal)(cb: ColumnarBatch): ColumnarBatch = {
-    // Do the filtering similar with that in AbstractGpuCoalesceIterator
-    goal match {
-      case RequireSingleBatchWithFilter(filterExpression) =>
-        withResource(cb)(GpuFilter(_, filterExpression))
-      case _ => cb
     }
   }
 
@@ -389,7 +413,6 @@ object GpuShuffledHashJoinExec extends Logging {
       hostConcatResult: HostConcatResult,
       streamIter: Iterator[ColumnarBatch],
       buildDataTypes: Array[DataType],
-      buildGoal: CoalesceSizeGoal,
       buildTime: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     // For the optimal case, the build iterator is already drained and didn't have a
     // prior so it was a single batch, and is entirely on the host.
@@ -407,9 +430,7 @@ object GpuShuffledHashJoinExec extends Logging {
         }
         // Bring the build batch to the GPU now
         val buildBatch = buildTime.ns {
-          val cb = cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult,
-            buildDataTypes)
-          filterBatchAndClose(buildGoal)(cb)
+          cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, buildDataTypes)
         }
         (buildBatch, bufStreamIter)
       }
