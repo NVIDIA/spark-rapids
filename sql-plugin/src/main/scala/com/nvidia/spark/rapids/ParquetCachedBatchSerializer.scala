@@ -619,7 +619,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
    * Read the data from an input file and convert the result to rows. The data will not be
    * transformed in any way. It will just be read.
    */
-  private class PcbsFileToRowsIterator(inputFile: ByteArrayInputFile,
+  private class PcbFileToRowsIterator(inputFile: ByteArrayInputFile,
       cacheAttributes: Seq[Attribute],
       hadoopConf: Configuration,
       options: ParquetReadOptions) extends Iterator[InternalRow] with AutoCloseable {
@@ -699,7 +699,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         new ColumnarBatch(null, parquetCachedBatch.numRows).rowIterator().asScala
       } else {
         val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
-        new PcbsFileToRowsIterator(inputFile, cacheAttributes, hadoopConf, options)
+        new PcbFileToRowsIterator(inputFile, cacheAttributes, hadoopConf, options)
       }
     }
   }
@@ -739,6 +739,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           structData.getInt(1), structData.getLong(2))
       }
     }
+
     override def handleInternalRow(
         schema: Seq[Attribute],
         row: InternalRow,
