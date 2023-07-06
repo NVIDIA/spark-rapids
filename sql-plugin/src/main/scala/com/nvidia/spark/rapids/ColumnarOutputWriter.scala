@@ -132,7 +132,9 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
         // to the expected types before spilling but we need a SpillableTable
         // rather than a SpillableColumnBatch to be able to do that
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
-        bufferBatchAndClose(sb.getColumnarBatch())
+        withRestoreOnRetry(checkpointRestore) {
+          bufferBatchAndClose(sb.getColumnarBatch())
+        }
       }.sum
     } else {
       withResource(spillableBatch) { _ =>
@@ -148,11 +150,9 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private[this] def bufferBatchAndClose(batch: ColumnarBatch): Long = {
     val startTimestamp = System.nanoTime
-    withRestoreOnRetry(checkpointRestore) {
-      withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-        withResource(transformAndClose(batch)) { maybeTransformed =>
-          encodeAndBufferToHost(maybeTransformed)
-        }
+    withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+      withResource(transformAndClose(batch)) { maybeTransformed =>
+        encodeAndBufferToHost(maybeTransformed)
       }
     }
     // time spent on GPU encoding to the host sink
