@@ -24,9 +24,9 @@ package com.nvidia.spark.rapids.delta
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillableColumnarBatch
 import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
