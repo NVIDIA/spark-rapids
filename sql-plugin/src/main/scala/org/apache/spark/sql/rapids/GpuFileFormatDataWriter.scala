@@ -35,7 +35,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, NullsFirst, ScalaUDF, SortOrder, UnsafeProjection}
-import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.connector.write.DataWriter
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, PartitioningUtils, WriteTaskResult}
 import org.apache.spark.sql.rapids.GpuFileFormatDataWriter.{shouldSplitToFitMaxRecordsPerFile, splitToFitMaxRecordsAndClose}
@@ -831,7 +830,6 @@ class GpuDynamicPartitionDataConcurrentWriter(
     val gpuSortOrder: Seq[SortOrder] = spec.sortOrder
     val output: Seq[Attribute] = spec.output
     val sorter = new GpuSorter(gpuSortOrder, output)
-    val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
 
     // use noop metrics below
     val sortTime = NoopMetric
@@ -841,7 +839,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     val targetSize = GpuSortExec.targetSize(spec.batchSize)
     // out of core sort the entire iterator
-    GpuOutOfCoreSortIterator(iterator, sorter, cpuOrd, targetSize,
+    GpuOutOfCoreSortIterator(iterator, sorter, targetSize,
       opTime, sortTime, outputBatch, outputRows)
   }
 

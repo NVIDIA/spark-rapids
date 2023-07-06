@@ -117,8 +117,8 @@ object ConfHelper {
   }
 }
 
-abstract class ConfEntry[T](val key: String, val converter: String => T,
-    val doc: String, val isInternal: Boolean, val isStartUpOnly: Boolean) {
+abstract class ConfEntry[T](val key: String, val converter: String => T, val doc: String, 
+    val isInternal: Boolean, val isStartUpOnly: Boolean, val isCommonlyUsed: Boolean) {
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
@@ -127,9 +127,10 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
   override def toString: String = key
 }
 
-class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
-    isInternal: Boolean, isStartupOnly: Boolean, val defaultValue: T)
-  extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly) {
+class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String, 
+    isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false,
+    val defaultValue: T)
+  extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
@@ -162,8 +163,9 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 }
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
-    isInternal: Boolean, isStartupOnly: Boolean)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, isStartupOnly) {
+    isInternal: Boolean, isStartupOnly: Boolean, isCommonlyUsed: Boolean = false)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, 
+  isStartupOnly, isCommonlyUsed) {
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
@@ -235,7 +237,7 @@ class TypedConfBuilder[T](
     // then 'converter' will throw an exception
     val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, parent.isStartupOnly, transformedValue)
+      parent.doc, parent.isInternal, parent.isStartupOnly, parent.isCommonlyUsed, transformedValue)
     parent.register(ret)
     ret
   }
@@ -248,7 +250,7 @@ class TypedConfBuilder[T](
 
   def createOptional: OptionalConfEntry[T] = {
     val ret = new OptionalConfEntry[T](parent.key, converter,
-      parent.doc, parent.isInternal, parent.isStartupOnly)
+      parent.doc, parent.isInternal, parent.isStartupOnly, parent.isCommonlyUsed)
     parent.register(ret)
     ret
   }
@@ -261,6 +263,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   var doc: String = null
   var isInternal: Boolean = false
   var isStartupOnly: Boolean = false
+  var isCommonlyUsed: Boolean = false
 
   def doc(data: String): ConfBuilder = {
     this.doc = data
@@ -274,6 +277,11 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   def startupOnly(): ConfBuilder = {
     this.isStartupOnly = true
+    this
+  }
+
+  def commonlyUsed(): ConfBuilder = {
+    this.isCommonlyUsed = true
     this
   }
 
@@ -325,6 +333,7 @@ object RapidsConf {
     .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
     .startupOnly()
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
@@ -410,6 +419,7 @@ object RapidsConf {
         "Note that this limit will be reduced by the reserve memory configured in " +
         s"$RMM_ALLOC_RESERVE_KEY.")
     .startupOnly()
+    .commonlyUsed()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -418,6 +428,7 @@ object RapidsConf {
     .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
       s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
     .startupOnly()
+    .commonlyUsed()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.25)
@@ -434,6 +445,7 @@ object RapidsConf {
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
         "memory pools.")
     .startupOnly()
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
@@ -488,11 +500,13 @@ object RapidsConf {
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
+      .commonlyUsed()
       .integerConf
       .createWithDefault(2)
 
   val SHUFFLE_SPILL_THREADS = conf("spark.rapids.sql.shuffle.spillThreads")
     .doc("Number of threads used to spill shuffle data to disk in the background.")
+    .commonlyUsed()
     .integerConf
     .createWithDefault(6)
 
@@ -500,6 +514,7 @@ object RapidsConf {
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
       "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
       "cudf row count limit of a column.")
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
       s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
@@ -509,6 +524,7 @@ object RapidsConf {
     .doc("Soft limit on the maximum number of rows the reader will read per batch. " +
       "The orc and parquet readers will read row groups until this limit is met or exceeded. " +
       "The limit is respected by the csv reader.")
+    .commonlyUsed()
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
@@ -524,6 +540,7 @@ object RapidsConf {
       "The readers will read chunks of data until this limit is met or exceeded. " +
       "Note that the reader may estimate the number of bytes that will be used on the GPU " +
       "in some cases based on the schema and number of rows in each batch.")
+    .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
@@ -595,6 +612,7 @@ object RapidsConf {
           "query is taking and how much data is going to each part of the query. " +
           "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
           "report or their equivalents.")
+      .commonlyUsed()
       .stringConf
       .transform(_.toUpperCase(java.util.Locale.ROOT))
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
@@ -611,6 +629,7 @@ object RapidsConf {
 
   val SQL_ENABLED = conf("spark.rapids.sql.enabled")
     .doc("Enable (true) or disable (false) sql operations on the GPU")
+    .commonlyUsed()
     .booleanConf
     .createWithDefault(true)
 
@@ -632,6 +651,7 @@ object RapidsConf {
 
   val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
     .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
+    .commonlyUsed()
     .booleanConf
     .createWithDefault(false)
 
@@ -648,7 +668,7 @@ object RapidsConf {
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
          "at [parsing strings as dates or timestamps]" +
-         "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
+         "(../compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
 
@@ -803,6 +823,7 @@ object RapidsConf {
         s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
         ".")
       .startupOnly()
+      .commonlyUsed()
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
@@ -945,6 +966,7 @@ object RapidsConf {
       "higher I/O read cost. Many times the cloud filesystems also get better throughput when " +
       "you have multiple readers in parallel. This is used with " +
       "spark.rapids.sql.format.parquet.reader.type")
+    .commonlyUsed()
     .stringConf
     .toSequence
     .createOptional
@@ -1251,6 +1273,23 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
+    .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
+        "indicates it would be good we pre-sort the data before a partial agg and then " +
+        "do the agg in a single pass with no merge, so there is no spilling")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
+    .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
+        "no matter what the heuristic says. This is really just for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
       "Unsupported expressions will fall back to CPU. However, there are some known edge cases " +
@@ -1355,7 +1394,7 @@ object RapidsConf {
 
   val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
     .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
-      "The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must " +
+      "The [RAPIDS Shuffle Manager](rapids-shuffle.md) must " +
       "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
     .booleanConf
     .createWithDefault(true)
@@ -1676,6 +1715,7 @@ object RapidsConf {
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
       "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of " +
       "a query that did not go on the GPU")
+    .commonlyUsed()
     .stringConf
     .createWithDefault("NOT_ON_GPU")
 
@@ -1917,6 +1957,11 @@ object RapidsConf {
   }
 
   def help(asTable: Boolean = false): Unit = {
+    helpCommon(asTable)
+    helpAdvanced(asTable)
+  }
+
+  def helpCommon(asTable: Boolean = false): Unit = {
     if (asTable) {
       println("---")
       println("layout: page")
@@ -1948,16 +1993,57 @@ object RapidsConf {
         | valid on both startup and runtime.
         |""".stripMargin)
       // scalastyle:on line.size.limit
-
       println("\n## General Configuration\n")
       println("Name | Description | Default Value | Applicable at")
       println("-----|-------------|--------------|--------------")
     } else {
-      println("Rapids Configs:")
+      println("Commonly Used Rapids Configs:")
     }
     val allConfs = registeredConfs.clone()
     allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
-    allConfs.sortBy(_.key).foreach(_.help(asTable))
+    val outputConfs = allConfs.filter(_.isCommonlyUsed)
+    outputConfs.sortBy(_.key).foreach(_.help(asTable))
+    if (asTable) {
+      // scalastyle:off line.size.limit
+      println("""
+        |For more advanced configs, please refer to the [RAPIDS Accelerator for Apache Spark Advanced Configuration](./additional-functionality/advanced_configs.md) page.
+        |""".stripMargin)
+      // scalastyle:on line.size.limit
+    }
+  }
+
+  def helpAdvanced(asTable: Boolean = false): Unit = {
+    if (asTable) {
+      println("---")
+      println("layout: page")
+      // print advanced configuration
+      println("title: Advanced Configuration")
+      println("parent: Additional Functionality")
+      println("nav_order: 10")
+      println("---")
+      println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
+      // scalastyle:off line.size.limit
+      println("""# RAPIDS Accelerator for Apache Spark Advanced Configuration
+        |Most users will not need to modify the configuration options listed below.
+        |They are documented here for completeness and advanced usage.
+        |
+        |The following configuration options are supported by the RAPIDS Accelerator for Apache Spark.
+        |
+        |For commonly used configurations and examples of setting options, please refer to the
+        |[RAPIDS Accelerator for Configuration](../configs.md) page.
+        |""".stripMargin)
+      // scalastyle:on line.size.limit
+      println("\n## Advanced Configuration\n")
+
+      println("Name | Description | Default Value | Applicable at")
+      println("-----|-------------|--------------|--------------")
+    } else {
+      println("Advanced Rapids Configs:")
+    }
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    val outputConfs = allConfs.filterNot(_.isCommonlyUsed)
+    outputConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
@@ -2006,10 +2092,16 @@ object RapidsConf {
   def main(args: Array[String]): Unit = {
     // Include the configs in PythonConfEntries
     com.nvidia.spark.rapids.python.PythonConfEntries.init()
-    val out = new FileOutputStream(new File(args(0)))
-    Console.withOut(out) {
-      Console.withErr(out) {
-        RapidsConf.help(true)
+    val configs = new FileOutputStream(new File(args(0)))
+    Console.withOut(configs) {
+      Console.withErr(configs) {
+        RapidsConf.helpCommon(true)
+      }
+    }
+    val advanced = new FileOutputStream(new File(args(1)))
+    Console.withOut(advanced) {
+      Console.withErr(advanced) {
+        RapidsConf.helpAdvanced(true)
       }
     }
   }
@@ -2478,6 +2570,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
+
+  lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 

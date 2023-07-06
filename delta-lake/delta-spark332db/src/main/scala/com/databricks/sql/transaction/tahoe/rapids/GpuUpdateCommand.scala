@@ -69,7 +69,9 @@ case class GpuUpdateCommand(
         createTimingMetric(sc, "time taken to rewrite the matched files"),
     "numAddedChangeFiles" -> createMetric(sc, "number of change data capture files generated"),
     "changeFileBytes" -> createMetric(sc, "total size of change data capture files generated"),
-    "numTouchedRows" -> createMetric(sc, "number of rows touched (copied + updated)")
+    "numTouchedRows" -> createMetric(sc, "number of rows touched (copied + updated)"),
+    "numDeletionVectorsAdded" -> createMetric(sc, "number of deletion vectors added."),
+    "numDeletionVectorsRemoved" -> createMetric(sc, "number of deletion vectors removed.")
   )
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {
@@ -202,8 +204,10 @@ case class GpuUpdateCommand(
         metrics("numCopiedRows").set(
           metrics("numTouchedRows").value - metrics("numUpdatedRows").value)
       }
+      metrics("numDeletionVectorsAdded").set(0)
+      metrics("numDeletionVectorsRemoved").set(0)
       txn.registerSQLMetrics(sparkSession, metrics)
-      txn.commit(totalActions, DeltaOperations.Update(condition.map(_.toString)))
+      txn.commit(totalActions, DeltaOperations.Update(condition))
       // This is needed to make the SQL metrics visible in the Spark UI
       val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
       SQLMetrics.postDriverMetricUpdates(

@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuTieredProject, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{HashUtils, ShimExpression}
@@ -46,6 +46,20 @@ object GpuMurmur3Hash {
       boundExpr: Seq[Expression],
       seed: Int = 42): ColumnVector = {
     withResource(GpuProjectExec.project(batch, boundExpr)) { args =>
+      val bases = GpuColumnVector.extractBases(args)
+      val normalized = bases.safeMap { cv =>
+        HashUtils.normalizeInput(cv).asInstanceOf[ColumnView]
+      }
+      withResource(normalized) { _ =>
+        ColumnVector.spark32BitMurmurHash3(seed, normalized)
+      }
+    }
+  }
+
+  def computeTiered(batch: ColumnarBatch,
+      boundExpr: GpuTieredProject,
+      seed: Int = 42): ColumnVector = {
+    withResource(boundExpr.project(batch)) { args =>
       val bases = GpuColumnVector.extractBases(args)
       val normalized = bases.safeMap { cv =>
         HashUtils.normalizeInput(cv).asInstanceOf[ColumnView]

@@ -292,12 +292,12 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [
 
 _init_list_no_nans_with_decimalbig = _init_list_no_nans + [
     _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals,
     _grpkey_short_very_big_neg_scale_decimals]
 
 _init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_nans + [
     _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals,
     _grpkey_short_very_big_neg_scale_decimals]
 
 
@@ -387,7 +387,7 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, 
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals,
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_sum_full_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
@@ -552,12 +552,12 @@ _full_repeat_agg_column_for_collect_op = [
 _gen_data_for_collect_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen),
-    ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op]
+    ('c', UniqueLongGen())] for value_gen in _repeat_agg_column_for_collect_op]
 
 _full_gen_data_for_collect_op = _gen_data_for_collect_op + [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen),
-    ('c', LongRangeGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
+    ('c', UniqueLongGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
 
 _repeat_agg_column_for_collect_list_op = [
         RepeatSeqGen(ArrayGen(int_gen), length=15),
@@ -684,7 +684,7 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
         # to ObjectHashAggregateExec
         return spark.createDataFrame(df.rdd, schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
-        
+
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
@@ -724,7 +724,7 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
         # to ObjectHashAggregateExec
         return spark.createDataFrame(df.rdd, schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
-        
+
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 @ignore_order(local=True)
@@ -875,7 +875,7 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
 def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
         non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
         table_name='table',
@@ -1060,7 +1060,7 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample + [binary_gen]
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_first_last_reductions_decimal_types(data_gen):
@@ -1193,6 +1193,19 @@ def test_agg_count(data_gen, count_func):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
                               length=1024).groupBy('a').agg(count_func("b")))
+
+# Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
+# Have pytest do the sorting rather than Spark as a workaround.
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+               'HashPartitioning', 'ShuffleExchangeExec', 'Count')
+@pytest.mark.parametrize('data_gen', array_gens_sample + [binary_gen], ids=idfn)
+@pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
+def test_groupby_list_types_fallback(data_gen, count_func):
+    assert_gpu_fallback_collect(
+        lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
+                              length=1024).groupBy('a').agg(count_func("b")),
+        "HashAggregateExec")
 
 def subquery_create_temp_views(spark, expr):
     t1 = "select * from values (1,2) as t1(a,b)"
@@ -1411,7 +1424,7 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
@@ -1420,7 +1433,7 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
@@ -1429,7 +1442,7 @@ def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', LongRangeGen())], length=100),
+                                     ('v', UniqueLongGen())], length=100),
         0.5, conf)
 
 @incompat
@@ -1806,7 +1819,7 @@ def test_std_variance_partial_replace_fallback(data_gen,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
-    
+
     exist_clz = ['StddevSamp',
                  'GpuStddevSamp']
     assert_cpu_and_gpu_are_equal_collect_with_capture(
@@ -1820,7 +1833,7 @@ def test_std_variance_partial_replace_fallback(data_gen,
         conf=local_conf)
 
 #
-# test min max on single level structure
+# test min/max aggregations for structs
 #
 gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     float_gen, double_gen,
@@ -1828,7 +1841,7 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),
     DecimalGen(precision=36, scale=5),
-    null_gen]
+    null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
 def test_min_max_for_single_level_struct(data_gen):
@@ -1870,3 +1883,15 @@ def test_hash_aggregate_complete_with_grouping_expressions():
         lambda spark : spark.range(10).withColumn("id2", f.col("id")),
         "hash_agg_complete_table",
         "select id, avg(id) from hash_agg_complete_table group by id, id2 + 1")
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('cast_key_to', ["byte", "short", "int",
+    "long", "string", "DECIMAL(38,5)"], ids=idfn)
+def test_hash_agg_force_pre_sort(cast_key_to):
+    def do_it(spark):
+        gen = StructGen([("key", UniqueLongGen()), ("value", long_gen)], nullable=False)
+        df = gen_df(spark, gen)
+        return df.selectExpr("CAST((key div 10) as " + cast_key_to + ") as key", "value").groupBy("key").sum("value")
+    assert_gpu_and_cpu_are_equal_collect(do_it,
+        conf={'spark.rapids.sql.agg.forceSinglePassPartialSort': True,
+            'spark.rapids.sql.agg.singlePassPartialSortEnabled': True})

@@ -29,6 +29,7 @@ in our plugin:
 | 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
 | 3.3.2           | com.nvidia.spark.rapids.spark332.RapidsShuffleManager    |
 | 3.4.0           | com.nvidia.spark.rapids.spark340.RapidsShuffleManager    |
+| 3.4.1           | com.nvidia.spark.rapids.spark341.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 | Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
 
@@ -481,4 +482,4 @@ performance degradation with several Spark actions, consider tuning this setting
   ```
   ERROR UCX: UcpListener detected an error for executorId 2: UCXError(-25,Connection reset by remote peer)
   ```
-  Consider turning off keep-alive for UCX using: `spark.executorEnv.UCX_TCP_KEEPINTVL=inf`.
+  Consider turning off keep-alive for UCX using: `spark.executorEnv.UCX_TCP_KEEPINTVL=inf`. NOTE: this would only mitigate the issue but not resolve it.

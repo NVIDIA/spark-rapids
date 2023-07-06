@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.catalyst.expressions
 
 import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCast, GpuCoalesce, GpuIf, GpuIsNull, GpuLiteral, GpuMonotonicallyIncreasingID}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression}
@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringT
  * Many of these tests were derived from SubexpressionEliminationSuite in Apache Spark,
  * and changed to use GPU expressions.
  */
-class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
+class GpuEquivalentExpressionsSuite extends AnyFunSuite with Logging {
 
   test("Gpu Expression Equivalence - basic") {
     val equivalence = new GpuEquivalentExpressions

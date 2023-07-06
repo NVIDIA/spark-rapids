@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class AddressSpaceAllocatorSuite extends FunSuite {
+class AddressSpaceAllocatorSuite extends AnyFunSuite {
   test("empty allocator") {
     val allocatorSize = 1024
     val allocator = new AddressSpaceAllocator(allocatorSize)

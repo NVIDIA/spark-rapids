@@ -16,12 +16,12 @@
 
 package org.apache.spark.sql.rapids
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.catalyst.expressions.Literal
 
-class CanonicalizeSuite extends FunSuite {
+class CanonicalizeSuite extends AnyFunSuite {
   /* In the future, if we decide to implement the Spark 3.3 algorithm to perform canonicalization
    * this unit test should still pass. We should use the implementation made in
    * https://github.com/apache/spark/pull/37851 (SPARK-40362) as a base.
