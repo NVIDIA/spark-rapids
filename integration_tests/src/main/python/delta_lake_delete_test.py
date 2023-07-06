@@ -86,14 +86,15 @@ def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.skipif(is_before_spark_340(), reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
 @pytest.mark.xfail(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8654")
-def test_delta_deletion_vector_fallback(spark_tmp_path):
+def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
         setup_dest_tables(spark, data_path,
                           dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                          use_cdf=True, enable_deletion_vectors=True)
+                          use_cdf=use_cdf, enable_deletion_vectors=True)
     def write_func(spark, path):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
