@@ -170,6 +170,13 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   private def encodeAndBufferToHost(batch: ColumnarBatch): Unit = {
     withResource(GpuColumnVector.from(batch)) { table =>
       scanTableBeforeWrite(table)
+      // that `anythingWritten` is set here is an indication that there was data at all
+      // to write, even if the `tableWriter.write` method fails. If we fail to write
+      // and the task fails, any output is going to be discarded anyway, so no data
+      // corruption to worry about. Otherwise, we should retry (OOM case).
+      // If we have nothing to write, we won't flip this flag to true and we will
+      // buffer an empty batch on close() to work around issues in cuDF
+      // where corrupt files can be written if nothing is encoded via the writer.
       anythingWritten = true
       tableWriter.write(table)
     }
