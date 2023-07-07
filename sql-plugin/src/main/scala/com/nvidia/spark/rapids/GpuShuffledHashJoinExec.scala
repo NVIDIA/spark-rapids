@@ -378,22 +378,19 @@ object GpuShuffledHashJoinExec extends Logging {
       }
       if (multiBuildBatches) {
         // The size still overflows after filtering or sub-partitioning is enabled for test.
-        logWarning("Return multiple batches as the build side data for the following " +
+        logDebug("Return multiple batches as the build side data for the following " +
           "sub-partitioning join in null-filtering mode.")
         val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf).map { sp =>
           withResource(sp)(_.getColumnarBatch())
         } ++ filteredIter
         Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
       } else { // We can get here only when the filtered size is within the target size.
-        while(filteredIter.hasNext) {
-          spillBuf.append(
-            SpillableColumnarBatch(filteredIter.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY))
-        }
+        assert(!filteredIter.hasNext)
         val spill = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(spillBuf)
         // There is a prior empty check so this `spill` can not be a None.
         assert(spill.isDefined, "The build data iterator should not be empty.")
         withResource(spill) { _ =>
-          logWarning(s"Return a single batch (size: ${spill.get.sizeInBytes}) for the " +
+          logDebug(s"Return a single batch (size: ${spill.get.sizeInBytes}) for the " +
             s"build side in null-filtering mode.")
           Left(spill.get.getColumnarBatch())
         }
