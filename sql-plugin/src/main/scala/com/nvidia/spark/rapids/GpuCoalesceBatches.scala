@@ -421,7 +421,7 @@ abstract class AbstractGpuCoalesceIterator(
       var cb = if (inputFilterExpression.isDefined) {
         // If we have reached the cuDF limit once, proactively filter batches
         // after that first limit is reached.
-        GpuFilter(cbFromIter, inputFilterExpression.get)
+        withResource(cbFromIter)(GpuFilter(_, inputFilterExpression.get))
       } else {
         cbFromIter
       }
@@ -448,11 +448,18 @@ abstract class AbstractGpuCoalesceIterator(
                     s" are in this partition. Please try increasing your partition count.")
               case RequireSingleBatchWithFilter(filterExpression) =>
                 // filter what we had already stored
-                val filteredDown = GpuFilter(concatAllAndPutOnGPU(), filterExpression)
+                val filteredDown = withResource(concatAllAndPutOnGPU()) { concatCB =>
+                  GpuFilter(concatCB, filterExpression)
+                }
                 closeOnExcept(filteredDown) { _ =>
-                  // filter the incoming batch as well
-                  closeOnExcept(GpuFilter(cb, filterExpression)) { filteredCb =>
-                    cb = null // null out `cb` to prevent multiple close calls
+                  // filter the incoming batch if not be filtered.
+                  val filteredCb = if (inputFilterExpression.isEmpty) {
+                    withResource(cb)(GpuFilter(_, filterExpression))
+                  } else {
+                    cb
+                  }
+                  cb = null // null out `cb` to prevent multiple close calls
+                  closeOnExcept(filteredCb) { _ =>
                     val filteredWouldBeRows = filteredDown.numRows() + filteredCb.numRows()
                     if (filteredWouldBeRows > Int.MaxValue) {
                       throw new IllegalStateException(
