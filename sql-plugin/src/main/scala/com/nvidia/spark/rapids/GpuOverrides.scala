@@ -1124,6 +1124,30 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[DayOfYear](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
       }),
+    expr[SecondsToTimestamp](
+      "Converts the number of seconds from unix epoch to a timestamp",
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+      (a, conf, p, r) => new UnaryExprMeta[SecondsToTimestamp](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuSecondsToTimestamp(child)
+      }),
+    expr[MillisToTimestamp](
+      "Converts the number of milliseconds from unix epoch to a timestamp",
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryExprMeta[MillisToTimestamp](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMillisToTimestamp(child)
+      }),
+    expr[MicrosToTimestamp](
+      "Converts the number of microseconds from unix epoch to a timestamp",
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryExprMeta[MicrosToTimestamp](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMicrosToTimestamp(child)
+      }),
     expr[Acos](
       "Inverse cosine",
       ExprChecks.mathUnaryWithAst,
