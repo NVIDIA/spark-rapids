@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.RuntimeException
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
-
-import java.lang.RuntimeException
 
 class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Test from_unixtime", datesPostEpochDf) {
