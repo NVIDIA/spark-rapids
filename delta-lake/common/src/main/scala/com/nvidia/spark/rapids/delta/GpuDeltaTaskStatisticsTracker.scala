@@ -159,7 +159,7 @@ class GpuDeltaTaskStatisticsTracker(
     val aggBuffer = submittedFiles(filePath)
     extendedRow.update(0, aggBuffer)
 
-    val batch = withRetryNoSplit(spillableBatch) { sb =>
+    val batch = withRetryNoSplit { sb =>
       sb.getColumnarBatch()
     }
 
