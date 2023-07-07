@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 
+import java.lang.RuntimeException
+
 class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Test from_unixtime", datesPostEpochDf) {
     frame => frame.select(from_unixtime(col("dates")))
@@ -48,5 +50,22 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual(
       "Test timestamp_seconds from large Long type", longTimestampSecondsDf) {
     frame => frame.select(timestamp_seconds(col("longs")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_millis from large Long type", longTimestampMillisDf) {
+    frame => frame.selectExpr("timestamp_millis(longs)")
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_micros from large Long type", longTimestampMicrosDf) {
+    frame => frame.selectExpr("timestamp_micros(longs)")
+  }
+
+  testBothCpuGpuExpectedException[RuntimeException](
+    "Test timestamp_micros from long near Long.minValue: long overflow",
+    e => e.getMessage.contains("ArithmeticException"),
+    longTimestampMicrosLongOverflowDf) {
+    frame => frame.selectExpr("timestamp_micros(longs)")
   }
 }

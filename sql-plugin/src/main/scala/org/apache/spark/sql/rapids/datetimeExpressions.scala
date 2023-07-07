@@ -504,10 +504,11 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
             throw new java.lang.ArithmeticException("Overflow")
           }
         }
-        withResource(mul) { _ =>
-          withResource(mul.castTo(DType.INT64)) { longs =>
-            longs.asTimestampMicroseconds()
-          }
+        val longs = withResource(mul) { _ =>
+          mul.castTo(DType.INT64)
+        }
+        withResource(longs) { _ =>
+          longs.asTimestampMicroseconds()
         }
       }
     case IntegerType | ShortType | ByteType =>

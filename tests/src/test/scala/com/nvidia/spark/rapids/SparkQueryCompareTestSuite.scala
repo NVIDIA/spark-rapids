@@ -1325,6 +1325,35 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
     ).toDF("longs")
   }
 
+  def longTimestampMillisDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401000L,
+      269999999999999L,
+      -62135510401000L,
+      -79999999999999L
+    ).toDF("longs")
+  }
+
+  def longTimestampMicrosDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401000000L,
+      269999999999999999L,
+      -62135510401000000L,
+      -79999999999999999L,
+      Long.MaxValue
+    ).toDF("longs")
+  }
+
+   def longTimestampMicrosLongOverflowDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      Long.MinValue,
+      -9223183700000000000L
+    ).toDF("longs")
+  }
+  
   def datesPostEpochDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
