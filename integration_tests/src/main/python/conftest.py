@@ -83,6 +83,9 @@ _is_precommit_run = False
 def is_nightly_run():
     return _is_nightly_run
 
+def is_precommit_run():
+    return _is_precommit_run
+
 def is_at_least_precommit_run():
     return _is_nightly_run or _is_precommit_run
 
