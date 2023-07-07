@@ -16,7 +16,7 @@
 # https://github.com/apache/parquet-testing
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
-from conftest import get_std_input_path, is_precommit_run
+from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
@@ -87,7 +87,7 @@ def locate_parquet_testing_files():
     # TODO: Also fail for nightly tests when nightly scripts have been updated to initialize
     #       the git submodules when pulling spark-rapids changes.
     #       https://github.com/NVIDIA/spark-rapids/issues/8677
-    if is_precommit_run():
+    if is_precommit_run() or is_parquet_testing_tests_forced():
         raise AssertionError("Cannot find parquet-testing data in any of: " + locations)
     warnings.warn("Skipping parquet-testing tests. Unable to locate data in any of: " + locations)
     return []

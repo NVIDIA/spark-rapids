@@ -103,6 +103,11 @@ def skip_unless_precommit_tests(description):
     else:
         pytest.skip(description)
 
+_is_parquet_testing_tests_forced = False
+
+def is_parquet_testing_tests_forced():
+    return _is_parquet_testing_tests_forced
+
 _limit = -1
 
 _inject_oom = None
@@ -227,6 +232,8 @@ def pytest_configure(config):
         _is_precommit_run = True
     elif "developer" != test_type:
         raise Exception("not supported test type {}".format(test_type))
+    global _is_parquet_testing_tests_forced
+    _is_parquet_testing_tests_forced = config.getoption("force_parquet_testing_tests")
 
 # For OOM injection: we expect a seed to be provided by the environment, or default to 1.
 # This is done such that any worker started by the xdist plugin for pytest will
