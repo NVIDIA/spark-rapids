@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta
+package com.nvidia.spark.rapids.delta.delta24x
 
-import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
-import com.nvidia.spark.rapids.delta.shims.MergeIntoCommandMetaShim
+import com.nvidia.spark.rapids.delta.RapidsDeltaUtils
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.delta.commands.MergeIntoCommand
+import org.apache.spark.sql.delta.rapids.GpuDeltaLog
+import org.apache.spark.sql.delta.rapids.delta24x.GpuMergeIntoCommand
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class MergeIntoCommandMeta(
@@ -35,34 +37,24 @@ class MergeIntoCommandMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
-    MergeIntoCommandMetaShim.tagForGpu(this, mergeCmd)
-    val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
-    val deltaLog = mergeCmd.targetFileIndex.deltaLog
-    RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
-  }
-
-  override def convertToGpu(): RunnableCommand =
-    MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
-}
-
-class MergeIntoCommandEdgeMeta(
-    mergeCmd: MergeIntoCommandEdge,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends RunnableCommandMeta[MergeIntoCommandEdge](mergeCmd, conf, parent, rule) {
-
-  override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-          s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      // https://github.com/NVIDIA/spark-rapids/issues/8415
+      willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
     }
-    MergeIntoCommandMetaShim.tagForGpu(this, mergeCmd)
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand =
-    MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
+  override def convertToGpu(): RunnableCommand = {
+    GpuMergeIntoCommand(
+      mergeCmd.source,
+      mergeCmd.target,
+      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+      mergeCmd.condition,
+      mergeCmd.matchedClauses,
+      mergeCmd.notMatchedClauses,
+      mergeCmd.notMatchedBySourceClauses,
+      mergeCmd.migratedSchema)(conf)
+  }
 }

@@ -32,7 +32,7 @@ object RapidsDeltaUtils {
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    deltaLog.fileFormat() match {
+    DeltaRuntimeShim.fileFormatFromLog(deltaLog) match {
       case _: DeltaParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
       case f =>

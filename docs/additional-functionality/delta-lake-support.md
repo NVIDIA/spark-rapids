@@ -35,6 +35,7 @@ The RAPIDS Accelerator supports the following software configurations for accele
 Delta Lake writes:
 - Delta Lake version 2.0.1 on Apache Spark 3.2.x
 - Delta Lake version 2.1.1 and 2.2.0 on Apache Spark 3.3.x
+- Delta Lake version 2.4.0 on Apache Spark 3.4.x
 - Delta Lake on Databricks 10.4 LTS
 - Delta Lake on Databricks 11.3 LTS
 

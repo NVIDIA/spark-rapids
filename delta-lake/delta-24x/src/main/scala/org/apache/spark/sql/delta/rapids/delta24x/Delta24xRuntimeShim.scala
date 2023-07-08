@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids.delta22x
+package org.apache.spark.sql.delta.rapids.delta24x
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.DeltaProvider
-import com.nvidia.spark.rapids.delta.delta22x.Delta22xProvider
+import com.nvidia.spark.rapids.delta.delta24x.Delta24xProvider
 
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
@@ -26,8 +26,8 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
-class Delta22xRuntimeShim extends DeltaRuntimeShim {
-  override def getDeltaProvider: DeltaProvider = Delta22xProvider
+class Delta24xRuntimeShim extends DeltaRuntimeShim {
+  override def getDeltaProvider: DeltaProvider = Delta24xProvider
 
   override def startTransaction(
       log: DeltaLog,
@@ -45,5 +45,6 @@ class Delta22xRuntimeShim extends DeltaRuntimeShim {
   }
 
   override def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
-    deltaLog.fileFormat()
+    deltaLog.fileFormat(deltaLog.unsafeVolatileSnapshot.protocol,
+      deltaLog.unsafeVolatileSnapshot.metadata)
 }
