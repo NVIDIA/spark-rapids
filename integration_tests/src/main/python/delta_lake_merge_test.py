@@ -53,11 +53,11 @@ def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_colu
         path = "{}/{}".format(data_path, name)
         dest_df = dest_table_func(spark)
         writer = dest_df.write.format("delta")
+        ddl = schema_to_ddl(spark, dest_df.schema)
+        sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
+        if partition_columns:
+            sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
         if use_cdf:
-            ddl = schema_to_ddl(spark, dest_df.schema)
-            sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
-            if partition_columns:
-                sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
             sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true)"
             spark.sql(sql_text)
             writer = writer.mode("append")

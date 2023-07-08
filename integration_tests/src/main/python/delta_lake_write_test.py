@@ -67,6 +67,12 @@ def fixup_operation_metrics(opm):
     for k in metrics_to_remove:
         opm.pop(k, None)
 
+def fixup_deletion_vector(dv):
+    # we remove offset and pathOrInlineDv because they are non-deterministic, but
+    # we compare other fields such as sizeInBytes, cardinality, and storageType
+    dv.pop("offset", None)
+    dv.pop("pathOrInlineDv", None)
+
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
 TMP_TABLE_PATH_PATTERN=re.compile(r"delta.`[^`]*`")
 REF_ID_PATTERN=re.compile(r"#[0-9]+")
@@ -96,6 +102,11 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             del_keys(("modificationTime", "size"), c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
+            c_dv = c_val.get('deletionVector', {})
+            g_dv = g_val.get('deletionVector', {})
+            assert c_dv.keys() == g_dv.keys(), "Delta log {} 'add/deletionVector' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_dv, g_dv)
+            fixup_deletion_vector(c_dv)
+            fixup_deletion_vector(g_dv)
         elif key == "cdc":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'cdc' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("size",), c_val, g_val)
@@ -112,6 +123,11 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             del_keys(("deletionTimestamp", "size"), c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
+            c_dv = c_val.get('deletionVector', {})
+            g_dv = g_val.get('deletionVector', {})
+            assert c_dv.keys() == g_dv.keys(), "Delta log {} 'remove/deletionVector' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_dv, g_dv)
+            fixup_deletion_vector(c_dv)
+            fixup_deletion_vector(g_dv)
         assert c_val == g_val, "Delta log {} is different at key '{}':\nCPU: {}\nGPU: {}".format(filename, key, c_val, g_val)
 
 def decode_jsons(json_data):
