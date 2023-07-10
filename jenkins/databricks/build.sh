@@ -41,8 +41,6 @@
 
 set -ex
 
-git submodule update --init
-
 # Map of software versions for each dependency.
 declare -A sw_versions
 # Map of jar file locations of all dependencies
@@ -82,6 +80,7 @@ initialize()
         cd spark-rapids
     fi
 
+    git submodule update --init
     # Now, we can set the WORKSPACE
     export WORKSPACE=$PWD
     # set the retry count for mvn commands
