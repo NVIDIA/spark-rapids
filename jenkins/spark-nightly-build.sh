@@ -17,6 +17,8 @@
 
 set -ex
 
+git submodule update --init
+
 . jenkins/version-def.sh
 
 ## export 'M2DIR' so that shims can get the correct Spark dependency info

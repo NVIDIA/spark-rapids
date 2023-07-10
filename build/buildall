@@ -19,6 +19,8 @@ set -e
 
 shopt -s extglob
 
+git submodule update --init
+
 SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
 

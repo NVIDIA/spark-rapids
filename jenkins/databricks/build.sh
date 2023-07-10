@@ -41,6 +41,8 @@
 
 set -ex
 
+git submodule update --init
+
 # Map of software versions for each dependency.
 declare -A sw_versions
 # Map of jar file locations of all dependencies
