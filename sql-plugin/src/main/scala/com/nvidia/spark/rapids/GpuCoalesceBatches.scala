@@ -450,9 +450,10 @@ abstract class AbstractGpuCoalesceIterator(
             if (wouldBeRows > Int.MaxValue) {
               goal match {
                 case RequireSingleBatch =>
-                  throw new IllegalStateException("A single batch is required for this operation," +
-                    s" but cuDF only supports ${Int.MaxValue} rows. At least $wouldBeRows" +
-                    s" are in this partition. Please try increasing your partition count.")
+                  throw new IllegalStateException("A single batch is required for this " +
+                    s"operation, but cuDF only supports ${Int.MaxValue} rows. At least " +
+                    s"$wouldBeRows are in this partition. Please try increasing your " +
+                    "partition count.")
                 case RequireSingleBatchWithFilter(filterExpression) =>
                   val filterTier = GpuTieredProject(Seq(Seq(filterExpression)))
                   // filter what we had already stored, and the rows number should be within
@@ -460,6 +461,8 @@ abstract class AbstractGpuCoalesceIterator(
                   var filteredNumRows = 0L
                   var filteredBytes = 0L
                   if (hasAnyToConcat) {
+                    // We are going to enter the null-filtering mode, so re-calculate the
+                    // filtered rows number and size.
                     val filteredDowIter = withResource(concatAllAndPutOnGPU()) { concatCB =>
                       GpuFilter.filterAndClose(concatCB, filterTier,
                         NoopMetric, NoopMetric, opTime)
@@ -471,6 +474,11 @@ abstract class AbstractGpuCoalesceIterator(
                         addBatch(filteredDownCb)
                       }
                     }
+                  } else {
+                    // More than one batch after we enter the null-filtering mode,
+                    // set to the current rows number and size
+                    filteredNumRows = numRows
+                    filteredBytes = numBytes
                   }
 
                   // filter the incoming batch if not be filtered.
@@ -486,16 +494,16 @@ abstract class AbstractGpuCoalesceIterator(
                       val filteredWouldBeRows = filteredNumRows + filteredCb.numRows()
                       if (filteredWouldBeRows > Int.MaxValue) {
                         throw new IllegalStateException(
-                          "A single batch is required for this operation, but cuDF only supports " +
-                            s"${Int.MaxValue} rows. At least $filteredWouldBeRows are in this " +
-                            "partition, even after filtering nulls. " +
+                          "A single batch is required for this operation, but cuDF only " +
+                            s"supports ${Int.MaxValue} rows. At least $filteredWouldBeRows " +
+                            "are in this partition, even after filtering nulls. " +
                             "Please try increasing your partition count.")
                       }
                       if (inputFilterTier.isEmpty) {
                         inputFilterTier = Some(filterTier)
                         logWarning("Switched to null-filtering mode. This coalesce iterator " +
-                          "succeeded to fit rows under the cuDF limit only after null filtering. " +
-                          "Please try increasing your partition count.")
+                          "succeeded to fit rows under the cuDF limit only after null " +
+                          "filtering. Please try increasing your partition count.")
                       }
 
                       filteredNumRows = filteredWouldBeRows
