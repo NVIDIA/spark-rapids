@@ -361,8 +361,14 @@ object GpuShuffledHashJoinExec extends Logging {
           withResource(sp)(_.getColumnarBatch())
         } ++ filteredIter
         Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
-      } else { // We can get here only when the filtered size is within the target size.
-        assert(!filteredIter.hasNext)
+      } else {
+        // The size after filtering is within the target size or sub-partitioning is disabled.
+        while(filteredIter.hasNext) {
+          // Pull out all the remaining batches, this is for the case when sub-partitioning
+          // is disabled by setting the relevant conf to false no matter how big the data is.
+          spillBuf.append(
+            SpillableColumnarBatch(filteredIter.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+        }
         val spill = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(spillBuf)
         // There is a prior empty check so this `spill` can not be a None.
         assert(spill.isDefined, "The build data iterator should not be empty.")
