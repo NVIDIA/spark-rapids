@@ -943,10 +943,12 @@ object GpuOverrides extends Logging {
         TypeSig.numericAndInterval,
         Seq(
           ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128 +
+              TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128 +
+              TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
     expr[WindowSpecDefinition](
