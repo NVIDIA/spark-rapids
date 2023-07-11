@@ -50,7 +50,7 @@ object RebaseHelper {
     if (dtype.hasTimeResolution) {
       assert(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
-          Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
           withResource(hasBad.any()) { a =>
             a.isValid && a.getBoolean

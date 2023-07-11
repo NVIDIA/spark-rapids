@@ -238,14 +238,6 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
-  // private def scanAndWrite(batch: ColumnarBatch): Unit = {
-  //   withResource(GpuColumnVector.from(batch)) { table =>
-  //     scanTableBeforeWrite(table)
-  //     anythingWritten = true
-  //     tableWriter.write(table)
-  //   }
-  // }
-
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
    * are persisted, before the task output is committed.
