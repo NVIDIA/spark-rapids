@@ -1833,7 +1833,7 @@ def test_std_variance_partial_replace_fallback(data_gen,
         conf=local_conf)
 
 #
-# test min/max aggregations for structs
+# Test min/max aggregations.
 #
 gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     float_gen, double_gen,
