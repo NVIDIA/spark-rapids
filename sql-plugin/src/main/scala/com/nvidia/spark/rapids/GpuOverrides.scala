@@ -2111,15 +2111,11 @@ object GpuOverrides extends Logging {
       ExprChecksImpl(
         ExprChecks.reductionAndGroupByAgg(
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
-            TypeSig.ARRAY)
-            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-              TypeSig.STRUCT + TypeSig.ARRAY),
+            TypeSig.ARRAY).nested(),
           TypeSig.orderable,
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
-              TypeSig.ARRAY)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.STRUCT + TypeSig.ARRAY),
+              TypeSig.ARRAY).nested(),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2140,15 +2136,11 @@ object GpuOverrides extends Logging {
       ExprChecksImpl(
         ExprChecks.reductionAndGroupByAgg(
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
-              TypeSig.ARRAY)
-            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-              TypeSig.STRUCT + TypeSig.ARRAY),
+              TypeSig.ARRAY).nested(),
           TypeSig.orderable,
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
-              TypeSig.ARRAY)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.STRUCT + TypeSig.ARRAY),
+              TypeSig.ARRAY).nested(),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
