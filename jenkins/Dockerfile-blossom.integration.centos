@@ -23,7 +23,7 @@
 #    URM_URL=<maven repo url>
 ###
 
-ARG CUDA_VER=11.8.0
+ARG CUDA_VER=11.0
 ARG CENTOS_VER=7
 FROM nvidia/cuda:${CUDA_VER}-runtime-centos${CENTOS_VER}
 ARG CENTOS_VER
