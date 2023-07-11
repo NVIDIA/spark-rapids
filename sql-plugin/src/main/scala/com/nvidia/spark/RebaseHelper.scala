@@ -48,14 +48,26 @@ object RebaseHelper {
       startTs: Long): Boolean = {
     val dtype = column.getType
     if (dtype.hasTimeResolution) {
-      // TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to properly handle
-      // TIMESTAMP_MILLIS, for use require so we fail if that happens
-      require(dtype == DType.TIMESTAMP_MICROSECONDS)
-      withResource(
-        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
-        withResource(column.lessThan(minGood)) { hasBad =>
+      if (dtype == DType.TIMESTAMP_MILLISECONDS) {
+        val hasBad = withResource(
+          Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+          withResource(column.castTo(DType.TIMESTAMP_MICROSECONDS)) { microColumn =>
+            microColumn.lessThan(minGood)
+          }
+        }
+        withResource(hasBad) { _ =>
           withResource(hasBad.any()) { a =>
             a.isValid && a.getBoolean
+          }
+        }
+      } else {
+        assert(dtype == DType.TIMESTAMP_MICROSECONDS)
+        withResource(
+          Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+          withResource(column.lessThan(minGood)) { hasBad =>
+            withResource(hasBad.any()) { a =>
+              a.isValid && a.getBoolean
+            }
           }
         }
       }
