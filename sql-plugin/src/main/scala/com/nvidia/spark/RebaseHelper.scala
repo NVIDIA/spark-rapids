@@ -20,7 +20,7 @@ import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.util.{DateTimeConstants, RebaseDateTime}
+import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper {
@@ -48,24 +48,12 @@ object RebaseHelper {
       startTs: Long): Boolean = {
     val dtype = column.getType
     if (dtype.hasTimeResolution) {
-      if (dtype == DType.TIMESTAMP_MILLISECONDS) {
-        val startTsMillis = (startTs - 1L) / DateTimeConstants.MICROS_PER_MILLIS
-        withResource(
-          Scalar.timestampFromLong(DType.TIMESTAMP_MILLISECONDS, startTsMillis)) { maxBad =>
-          withResource(column.lessOrEqualTo(maxBad)) { hasBad =>
-            withResource(hasBad.any()) { a =>
-              a.isValid && a.getBoolean
-            }
-          }
-        }
-      } else {
-        assert(dtype == DType.TIMESTAMP_MICROSECONDS)
-        withResource(
+      assert(dtype == DType.TIMESTAMP_MICROSECONDS)
+      withResource(
           Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
-          withResource(column.lessThan(minGood)) { hasBad =>
-            withResource(hasBad.any()) { a =>
-              a.isValid && a.getBoolean
-            }
+        withResource(column.lessThan(minGood)) { hasBad =>
+          withResource(hasBad.any()) { a =>
+            a.isValid && a.getBoolean
           }
         }
       }
