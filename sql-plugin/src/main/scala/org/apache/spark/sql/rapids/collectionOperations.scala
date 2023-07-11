@@ -581,8 +581,11 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
         // if all values in each list are nans or nulls
         val allNanOrNull = {
           val childIsNanOrNull = withResource(child.isNull()) {_.or(childIsNan)}
-          val nanOrNullList = withResource(childIsNanOrNull) {base.replaceListChild(_)}
-          withResource(nanOrNullList) {_.listReduce(listAll)}
+          withResource(childIsNanOrNull) { newChild =>
+            withResource(base.replaceListChild(newChild)) {
+              _.listReduce(listAll)
+            }
+          }
         }
         withResource(allNanOrNull){ allNanOrNull =>
           // return nan if the list contains nan, else return null

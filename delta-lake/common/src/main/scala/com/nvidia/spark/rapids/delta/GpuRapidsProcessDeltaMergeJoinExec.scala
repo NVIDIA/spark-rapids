@@ -44,6 +44,8 @@ object RapidsProcessDeltaMergeJoinStrategy extends SparkStrategy {
         matchedOutputs = p.matchedOutputs,
         notMatchedConditions = p.notMatchedConditions,
         notMatchedOutputs = p.notMatchedOutputs,
+        notMatchedBySourceConditions = p.notMatchedBySourceConditions,
+        notMatchedBySourceOutputs = p.notMatchedBySourceOutputs,
         noopCopyOutput = p.noopCopyOutput,
         deleteRowOutput = p.deleteRowOutput))
     case _ => Nil
@@ -59,6 +61,8 @@ case class RapidsProcessDeltaMergeJoin(
     matchedOutputs: Seq[Seq[Seq[Expression]]],
     notMatchedConditions: Seq[Expression],
     notMatchedOutputs: Seq[Seq[Seq[Expression]]],
+    notMatchedBySourceConditions: Seq[Expression],
+    notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
     noopCopyOutput: Seq[Expression],
     deleteRowOutput: Seq[Expression]) extends UnaryNode {
 
@@ -77,6 +81,8 @@ case class RapidsProcessDeltaMergeJoinExec(
     sourceRowHasNoMatch: Expression,
     matchedConditions: Seq[Expression],
     matchedOutputs: Seq[Seq[Seq[Expression]]],
+    notMatchedBySourceConditions: Seq[Expression],
+    notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
     notMatchedConditions: Seq[Expression],
     notMatchedOutputs: Seq[Seq[Seq[Expression]]],
     noopCopyOutput: Seq[Expression],
@@ -111,6 +117,8 @@ class RapidsProcessDeltaMergeJoinMeta(
       matchedOutputs = p.matchedOutputs.map(_.map(_.map(convertExprToGpu))),
       notMatchedConditions = p.notMatchedConditions.map(convertExprToGpu),
       notMatchedOutputs = p.notMatchedOutputs.map(_.map(_.map(convertExprToGpu))),
+      notMatchedBySourceConditions = p.notMatchedBySourceConditions.map(convertExprToGpu),
+      notMatchedBySourceOutputs = p.notMatchedBySourceOutputs.map(_.map(_.map(convertExprToGpu))),
       noopCopyOutput = p.noopCopyOutput.map(convertExprToGpu),
       deleteRowOutput = p.deleteRowOutput.map(convertExprToGpu))
   }
@@ -136,10 +144,17 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
     matchedOutputs: Seq[Seq[Seq[Expression]]],
     notMatchedConditions: Seq[Expression],
     notMatchedOutputs: Seq[Seq[Seq[Expression]]],
+    notMatchedBySourceConditions: Seq[Expression],
+    notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
     noopCopyOutput: Seq[Expression],
     deleteRowOutput: Seq[Expression]) extends UnaryExecNode with GpuExec {
   require(matchedConditions.length == matchedOutputs.length)
   require(notMatchedConditions.length == notMatchedOutputs.length)
+
+  // TODO add support for notMatchedBy*
+  // see https://github.com/NVIDIA/spark-rapids/issues/8415
+  require(notMatchedBySourceConditions.isEmpty)
+  require(notMatchedBySourceOutputs.isEmpty)
 
   private lazy val inputTypes: Array[DataType] = GpuColumnVector.extractTypes(child.schema)
   private lazy val outputExprs: Seq[GpuBoundReference] = output.zipWithIndex.map {

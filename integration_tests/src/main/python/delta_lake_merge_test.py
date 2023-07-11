@@ -21,7 +21,7 @@ from data_gen import *
 from marks import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, spark_version
 
 # Databricks changes the number of files being written, so we cannot compare logs
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
@@ -48,7 +48,7 @@ def make_df(spark, gen, num_slices):
     return three_col_df(spark, gen, SetValuesGen(StringType(), string.ascii_lowercase),
                         SetValuesGen(StringType(), string.ascii_uppercase), num_slices=num_slices)
 
-def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None):
+def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         dest_df = dest_table_func(spark)
@@ -63,6 +63,8 @@ def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_colu
             writer = writer.mode("append")
         elif partition_columns:
             writer = writer.partitionBy(*partition_columns)
+        if enable_deletion_vectors:
+            spark.sql("ALTER TABLE delta.`{path}` SET TBLPROPERTIES ('delta.enableDeletionVectors' = true)".format(path=path))
         writer.save(path)
 
 def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
@@ -131,10 +133,11 @@ def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, 
 @allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.skipif(not is_databricks122_or_later(), reason="NOT MATCHED BY SOURCE only since DBR 12.2")
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() < "3.3.2", reason="NOT MATCHED BY SOURCE added in DBR 12.2")
+@pytest.mark.skipif((not is_databricks_runtime()) and is_before_spark_340(), reason="NOT MATCHED BY SOURCE added in Delta Lake 2.4")
 def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
     def checker(data_path, do_merge):
-        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec")
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec", conf = delta_merge_enabled_conf)
     merge_sql = "MERGE INTO {dest_table} " \
                 "USING {src_table} " \
                 "ON {src_table}.a == {dest_table}.a " \

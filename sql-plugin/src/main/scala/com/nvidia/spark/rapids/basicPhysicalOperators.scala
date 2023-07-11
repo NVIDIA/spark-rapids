@@ -719,7 +719,7 @@ object GpuFilter {
     }
   }
 
-  private def apply(batch: ColumnarBatch,
+  private[rapids] def apply(batch: ColumnarBatch,
       boundCondition: Expression) : ColumnarBatch = {
     val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
     doFilter(checkedFilterMask, batch)
