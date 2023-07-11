@@ -135,7 +135,7 @@ void databricksBuild() {
             script {
                 container('cpu') {
                     sh "rm -rf spark-rapids-ci.tgz"
-                    sh "tar -zcf spark-rapids-ci.tgz *"
+                    sh "tar -zcf spark-rapids-ci.tgz * .git"
                     def CREATE_PARAMS = " -r $DATABRICKS_RUNTIME -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN" +
                             " -s $DB_TYPE -n CI-${BUILD_TAG}-${BASE_SPARK_VERSION} -k \"$DATABRICKS_PUBKEY\" -i $IDLE_TIMEOUT" +
                             " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS"
