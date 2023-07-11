@@ -1128,7 +1128,7 @@ object GpuOverrides extends Logging {
       }),
     expr[SecondsToTimestamp](
       "Converts the number of seconds from unix epoch to a timestamp",
-      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
       TypeSig.gpuNumeric, TypeSig.cpuNumeric),
       (a, conf, p, r) => new UnaryExprMeta[SecondsToTimestamp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1136,7 +1136,7 @@ object GpuOverrides extends Logging {
       }),
     expr[MillisToTimestamp](
       "Converts the number of milliseconds from unix epoch to a timestamp",
-      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
       TypeSig.integral, TypeSig.integral),
       (a, conf, p, r) => new UnaryExprMeta[MillisToTimestamp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1144,7 +1144,7 @@ object GpuOverrides extends Logging {
       }),
     expr[MicrosToTimestamp](
       "Converts the number of microseconds from unix epoch to a timestamp",
-      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
       TypeSig.integral, TypeSig.integral),
       (a, conf, p, r) => new UnaryExprMeta[MicrosToTimestamp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -2110,12 +2110,14 @@ object GpuOverrides extends Logging {
       "Max aggregate operator",
       ExprChecksImpl(
         ExprChecks.reductionAndGroupByAgg(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+            TypeSig.ARRAY)
             .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
               TypeSig.STRUCT + TypeSig.ARRAY),
           TypeSig.orderable,
           Seq(ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+              TypeSig.ARRAY)
               .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
                 TypeSig.STRUCT + TypeSig.ARRAY),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
@@ -2137,12 +2139,14 @@ object GpuOverrides extends Logging {
       "Min aggregate operator",
       ExprChecksImpl(
         ExprChecks.reductionAndGroupByAgg(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+              TypeSig.ARRAY)
             .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
               TypeSig.STRUCT + TypeSig.ARRAY),
           TypeSig.orderable,
           Seq(ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+              TypeSig.ARRAY)
               .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
                 TypeSig.STRUCT + TypeSig.ARRAY),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts

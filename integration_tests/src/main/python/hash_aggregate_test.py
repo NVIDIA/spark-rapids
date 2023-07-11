@@ -1844,11 +1844,9 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
-def test_min_max_for_single_level_struct(data_gen):
+def test_min_max_for_nested_types(data_gen):
     df_gen = [
-        ('a', StructGen([
-                ('aa', data_gen),
-                ('ab', data_gen)])),
+        ('a', data_gen),
         ('b', RepeatSeqGen(IntegerGen(), length=20))]
 
     # test max
