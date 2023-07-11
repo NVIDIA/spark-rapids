@@ -15,6 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
@@ -105,7 +106,8 @@ class GpuBatchSubPartitioner(
     inputIter: Iterator[ColumnarBatch],
     inputBoundKeys: Seq[GpuExpression],
     numPartitions: Int,
-    hashSeed: Int) extends AutoCloseable {
+    hashSeed: Int,
+    name: String = "GpuBatchSubPartitioner") extends AutoCloseable with Logging {
 
   private var isNotInited = true
   private var numCurBatches = 0
@@ -166,7 +168,20 @@ class GpuBatchSubPartitioner(
     if (isNotInited) {
       partitionBatches()
       isNotInited = false
+      logDebug(subPartitionsInfoAsString())
     }
+  }
+
+  private def subPartitionsInfoAsString(): String = {
+    val stringBuilder = new mutable.StringBuilder()
+    stringBuilder.append(s"$name subpartitions: \n")
+    stringBuilder.append(s"    Part Id        Part Size        Batch number\n")
+    pendingParts.zipWithIndex.foreach { case (part, id) =>
+      val batchNum = if (part == null) 0 else part.length
+      val partSize = if (part == null) 0L else part.map(_.sizeInBytes).sum
+      stringBuilder.append(s"    $id        $partSize        $batchNum\n")
+    }
+    stringBuilder.toString()
   }
 
   private[this] def partitionBatches(): Unit = {
@@ -338,9 +353,9 @@ class GpuSubPartitionPairIterator(
   private[this] var hashSeed = 100
 
   private[this] var buildSubPartitioner =
-    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions, hashSeed)
+    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions, hashSeed, "initBuild")
   private[this] var streamSubPartitioner =
-    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions, hashSeed)
+    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions, hashSeed, "initStream")
   private[this] var buildSubIterator =
     new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
 
@@ -445,7 +460,7 @@ class GpuSubPartitionPairIterator(
     bigBuildBatches.clear()
     buildSubPartitioner.safeClose(new Exception())
     buildSubPartitioner = new GpuBatchSubPartitioner(buildIt, boundBuildKeys,
-      realNumPartitions, hashSeed)
+      realNumPartitions, hashSeed, "repartedBuild")
     buildSubIterator = new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
 
     // stream partitioner
@@ -454,7 +469,7 @@ class GpuSubPartitionPairIterator(
     bigStreamBatches.clear()
     streamSubPartitioner.safeClose(new Exception())
     streamSubPartitioner = new GpuBatchSubPartitioner(streamIt, boundStreamKeys,
-      realNumPartitions, hashSeed)
+      realNumPartitions, hashSeed, "repartedStream")
   }
 
   private[this] def computeNumPartitions(parts: Seq[SpillableColumnarBatch]): Int = {
