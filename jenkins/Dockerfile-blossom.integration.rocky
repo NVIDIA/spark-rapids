@@ -23,7 +23,7 @@
 #    URM_URL=<maven repo url>
 ###
 
-ARG CUDA_VER=11.5.1
+ARG CUDA_VER=11.8.0
 ARG ROCKY_VER=8
 FROM nvidia/cuda:${CUDA_VER}-runtime-rockylinux${ROCKY_VER}
 ARG CUDA_VER
