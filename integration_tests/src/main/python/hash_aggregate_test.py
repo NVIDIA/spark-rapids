@@ -1844,10 +1844,8 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
-def test_min_max_for_nested_types(data_gen):
-    df_gen = [
-        ('a', data_gen),
-        ('b', RepeatSeqGen(IntegerGen(), length=20))]
+def test_min_max_in_groupby_and_reduction(data_gen):
+    df_gen = [('a', data_gen), ('b', RepeatSeqGen(IntegerGen(), length=20))]
 
     # test max
     assert_gpu_and_cpu_are_equal_sql(
