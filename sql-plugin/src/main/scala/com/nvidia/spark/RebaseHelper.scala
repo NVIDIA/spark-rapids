@@ -48,7 +48,7 @@ object RebaseHelper {
       startTs: Long): Boolean = {
     val dtype = column.getType
     if (dtype.hasTimeResolution) {
-      assert(dtype == DType.TIMESTAMP_MICROSECONDS)
+      require(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
         Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
