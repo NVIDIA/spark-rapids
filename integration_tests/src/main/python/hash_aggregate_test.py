@@ -118,7 +118,10 @@ _grpkey_floats_with_nulls_and_nans = [
 
 # grouping single-level lists
 _grpkey_list_with_non_nested_children = [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
-                                          ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens]
+                                          ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens] + \
+                                          # StringGen child will force the SortAggregation
+                                        [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
+                                          ('b', StringGen())] for data_gen in all_basic_gens + decimal_gens]
 
 #grouping mutliple-level structs with arrays
 _grpkey_nested_structs_with_array_basic_child = [
@@ -332,9 +335,9 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
 @pytest.mark.parametrize('data_gen', [_grpkey_nested_structs_with_array_basic_child,  _longs_with_nulls] + _grpkey_list_with_non_nested_children, ids=idfn)
-def test_hash_grpby_sum_count_action(data_gen):
+def test_hash_grpby_agg_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'), f.min('b'), f.max('b'))
     )
 
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
@@ -1732,14 +1735,6 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen, nullable=False) for sub_gen in all_basic_gens + decimal_gens])
-def test_grpby_array_agg_on_func(data_gen):
-    gen = RepeatSeqGen(data_gen, length=10)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, gen, IntegerGen())
-            .groupBy('a').agg(f.first('b'), f.last('b'), f.max('b'), f.min('b')))
 
 # Tests for standard deviation and variance aggregations.
 @ignore_order(local=True)
