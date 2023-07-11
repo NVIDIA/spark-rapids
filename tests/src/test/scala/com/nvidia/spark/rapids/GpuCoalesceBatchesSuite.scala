@@ -668,9 +668,9 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     // We are entering the filtering mode during processing the second batch (3 null rows),
     // but the filtered rows number (12 = 5 + 7) is still too big, so it blows up before
     // switching into the filtering mode.
-    val dataWithNulls = (1 to 3).map(_ => null) ++ (6 to 12).map(new Integer(_))
+    val dataWithNulls = (1 to 3).map(_ => null) ++ (6 to 12).map(Integer.valueOf)
     val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
-      newOneIntColumnBatch((1 to 5).map(new Integer(_))),
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
       newOneIntColumnBatch(dataWithNulls)
     ))
     assert(coalIter.hasNext)
@@ -684,9 +684,9 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     // We succeed in entering the filtering mode after processing the second
     // batch (8 null rows), because the filtered rows number (7 = 5 + 2) is smaller
     // than the threshold (10) of filtering mode now.
-    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(new Integer(_))
+    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(Integer.valueOf)
     val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
-      newOneIntColumnBatch((1 to 5).map(new Integer(_))),
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
       newOneIntColumnBatch(dataWithNulls)
     ))
     assert(coalIter.hasNext)
@@ -702,10 +702,10 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     // We are already in the filtering mode after processing the second batch, but
     // the total filtered rows number (12 = 5 + 2 + 5) is still too big when the
     // third batch comes, so it blows up.
-    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(new Integer(_))
-    val dataWithNulls2 = (1 to 8).map(_ => null) ++ (8 to 12).map(new Integer(_))
+    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(Integer.valueOf)
+    val dataWithNulls2 = (1 to 8).map(_ => null) ++ (8 to 12).map(Integer.valueOf)
     val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
-      newOneIntColumnBatch((1 to 5).map(new Integer(_))),
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
       newOneIntColumnBatch(dataWithNulls),
       newOneIntColumnBatch(dataWithNulls2)
     ))
@@ -719,10 +719,10 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     // We are already in the filtering mode after processing the second batch, and even
     // including the third batch, the total filtered rows number (9 = 5 + 2 + 2) is still
     // smaller than the threshold (10) of filtering mode.
-    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(new Integer(_))
-    val dataWithNulls2 = (1 to 8).map(_ => null) ++ (8 to 9).map(new Integer(_))
+    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(Integer.valueOf)
+    val dataWithNulls2 = (1 to 8).map(_ => null) ++ (8 to 9).map(Integer.valueOf)
     val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
-      newOneIntColumnBatch((1 to 5).map(new Integer(_))),
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
       newOneIntColumnBatch(dataWithNulls),
       newOneIntColumnBatch(dataWithNulls2)
     ))
