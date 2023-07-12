@@ -174,9 +174,10 @@ class GpuKeyBatchingIterator(
       val tables = withResource(table) { table =>
         table.contiguousSplit(cutoff)
       }
-      val (firstSpill, secondSpill) = withResource(tables) { tables =>
+      val (firstSpill, secondSpill) = closeOnExcept(tables) { tables =>
         assert(tables.length == 2)
-        val tmp = tables.safeMap { t =>
+        val tmp = tables.zipWithIndex.safeMap { case (t, ix) =>
+          tables(ix) = null
           SpillableColumnarBatch(t, types, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         }
         (tmp(0), tmp(1))

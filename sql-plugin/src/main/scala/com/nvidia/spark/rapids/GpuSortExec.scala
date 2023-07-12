@@ -344,9 +344,14 @@ case class GpuOutOfCoreSortIterator(
         }
 
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { splits =>
+        var currentSplit = 0
         val stillPending = if (hasFullySortedData) {
-          val sp = SpillableColumnarBatch(splits.head, sorter.projectedBatchTypes,
+          val ct = splits(currentSplit)
+          splits(currentSplit) = null
+          val sp = SpillableColumnarBatch(ct,
+            sorter.projectedBatchTypes,
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          currentSplit = currentSplit + 1
           sortedCb = Some(sp)
           splits.slice(1, splits.length)
         } else {
@@ -358,6 +363,8 @@ case class GpuOutOfCoreSortIterator(
           closeOnExcept(pendingObs) { _ =>
             stillPending.zip(lowerBoundaries).foreach {
               case (ct: ContiguousTable, lower: UnsafeRow) =>
+                splits(currentSplit) = null
+                currentSplit = currentSplit + 1
                 if (ct.getRowCount > 0) {
                   val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,
                     SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
@@ -365,6 +372,7 @@ case class GpuOutOfCoreSortIterator(
                 } else {
                   ct.close()
                 }
+
             }
           }
         }

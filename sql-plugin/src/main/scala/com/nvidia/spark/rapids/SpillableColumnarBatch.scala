@@ -149,7 +149,7 @@ object SpillableColumnarBatch {
 
   /**
    * Create a new SpillableColumnarBatch
-   * @note The caller is responsible for closing the contiguous table parameter.
+   * @note This takes over ownership of `ct`, and `ct` should not be used after this.
    * @param ct contiguous table containing the batch GPU data
    * @param sparkTypes array of Spark types describing the data schema
    * @param priority the initial spill priority of this batch
@@ -158,12 +158,14 @@ object SpillableColumnarBatch {
       ct: ContiguousTable,
       sparkTypes: Array[DataType],
       priority: Long): SpillableColumnarBatch = {
-    val handle = RapidsBufferCatalog.addContiguousTable(ct, priority)
-    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { _ =>
-      new SpillableColumnarBatchImpl(
-        handle,
-        ct.getRowCount.toInt,
-        sparkTypes)
+    withResource(ct) { _ =>
+      val handle = RapidsBufferCatalog.addContiguousTable(ct, priority)
+      withResource(RapidsBufferCatalog.acquireBuffer(handle)) { _ =>
+        new SpillableColumnarBatchImpl(
+          handle,
+          ct.getRowCount.toInt,
+          sparkTypes)
+      }
     }
   }
 
