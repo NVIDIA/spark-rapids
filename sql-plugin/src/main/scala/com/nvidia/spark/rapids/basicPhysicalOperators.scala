@@ -317,6 +317,12 @@ class PreProjectSplitIterator(
     opTime: GpuMetric,
     numSplits: GpuMetric) extends AbstractProjectSplitIterator(iter, schema, opTime, numSplits) {
 
+  // We memoize this parameter here as the value doesn't change during the execution
+  // of a SQL query. This is the highest level we can cache at without getting it
+  // passed in from the Exec that instantiates this split iterator.
+  // NOTE: this is overwritten by tests to trigger various corner cases
+  private lazy val splitUntilSize: Double = GpuDeviceManager.getSplitUntilSize.toDouble
+
   /**
    * calcNumSplit will return the number of splits that we need for the input, in the case
    * that we can detect that a projection using `boundExprs` would expand the output above
@@ -332,7 +338,7 @@ class PreProjectSplitIterator(
       val minOutputSize = PreProjectSplitIterator.calcMinOutputSize(cb, boundExprs)
       // If the minimum size is too large we will split before doing the project, to help avoid
       // extreme cases where the output size is so large that we cannot split it afterwards.
-      math.max(1, math.ceil(minOutputSize / GpuDeviceManager.getSplitUntilSize.toDouble).toInt)
+      math.max(1, math.ceil(minOutputSize / splitUntilSize).toInt)
     }
   }
 }
