@@ -81,6 +81,8 @@ jobs:
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
       - name: Setup Java and Maven Env
         uses: s4u/setup-maven-action@v1.8.0
         with:
