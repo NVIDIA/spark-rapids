@@ -74,10 +74,9 @@ def _set_all_confs(conf):
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
-            if value is None:
-                _spark.conf.unset(key)
-            else:
-                _spark.conf.set(key, value)
+            _spark.conf.set(key, value)
+
+
 
 def reset_spark_session_conf():
     """Reset all of the configs for a given spark session."""

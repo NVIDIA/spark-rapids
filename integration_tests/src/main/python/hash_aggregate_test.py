@@ -322,11 +322,15 @@ def test_hash_reduction_decimal_overflow_sum(precision):
 @pytest.mark.parametrize('override_split_until_size', [None, 1], ids=idfn)
 @pytest.mark.parametrize('override_batch_size_bytes', [None, 1], ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen, override_split_until_size, override_batch_size_bytes):
+    conf = {
+        'spark.rapids.sql.test.overrides.splitUntilSize': override_split_until_size
+    }
+    if override_batch_size_bytes is not None:
+        conf["spark.rapids.sql.batchSizeBytes"] = override_batch_size_bytes
+
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
-        conf = {
-            'spark.rapids.sql.test.overrides.splitUntilSize': override_split_until_size,
-            'spark.rapids.sql.batchSizeBytes': override_batch_size_bytes}
+        conf = conf
     )
 
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
