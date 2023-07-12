@@ -755,3 +755,13 @@ def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled,
         lambda spark, path: spark.read.parquet(path),
         data_path,
         conf)
+
+# Issue to test a known bug https://github.com/NVIDIA/spark-rapids/issues/8694 to avoid regression
+@ignore_order
+def test_write_list_struct_single_element(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_gen = ArrayGen(StructGen([('element', long_gen)], nullable=False), max_length=10, nullable=False)
+    conf = {}
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, data_gen).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path), data_path, conf)
