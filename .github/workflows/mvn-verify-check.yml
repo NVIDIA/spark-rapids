@@ -33,6 +33,7 @@ jobs:
   get-shim-versions-from-dist:
     runs-on: ubuntu-latest
     outputs:
+      defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
       sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
     steps:
@@ -62,6 +63,7 @@ jobs:
 
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
           # default version
+          echo "defaultSparkVersion=${SPARK_BASE_SHIM_VERSION}" >> $GITHUB_OUTPUT
           jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8}" "${SPARK_BASE_SHIM_VERSION}")
           # jdk11
           jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
@@ -121,6 +123,7 @@ jobs:
           $COMMON_MVN_FLAGS
 
   install-modules:
+    needs: get-shim-versions-from-dist
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -134,6 +137,9 @@ jobs:
           distribution: adopt
           java-version: 11
 
+      - name: Debug Output
+        run: echo "Runner PWD=$PWD"
+
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
 
@@ -141,4 +147,5 @@ jobs:
         run: >
           ./mvnw -Dmaven.wagon.http.retryHandler.count=3 -B install
           -P "individual,pre-merge,jdk11"
+          -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }}
           $COMMON_MVN_FLAGS
