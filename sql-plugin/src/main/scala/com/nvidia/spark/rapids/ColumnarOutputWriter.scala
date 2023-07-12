@@ -20,8 +20,8 @@ import java.io.OutputStream
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry}
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
@@ -108,7 +108,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
-  protected def scanTableBeforeWrite(table: Table): Unit = {
+  protected def scanBatchBeforeWrite(batch: ColumnarBatch): Unit = {
     // NOOP for now, but allows a child to override this
   }
 
@@ -126,20 +126,27 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       spillableBatch: SpillableColumnarBatch,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     val writeStartTime = System.nanoTime
-    scanTableBeforeWrite(table)
     val gpuTime = if (includeRetry) {
       withRetry(spillableBatch, splitSpillableInHalfByRows) { sb =>
         //TODO: we should really apply the transformations to cast timestamps
         // to the expected types before spilling but we need a SpillableTable
         // rather than a SpillableColumnBatch to be able to do that
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
+        val cb = sb.getColumnarBatch()
+        closeOnExcept(cb) { _ =>
+          scanBatchBeforeWrite(cb)
+        }
         withRestoreOnRetry(checkpointRestore) {
-          bufferBatchAndClose(sb.getColumnarBatch())
+          bufferBatchAndClose(cb)
         }
       }.sum
     } else {
       withResource(spillableBatch) { _ =>
-        bufferBatchAndClose(spillableBatch.getColumnarBatch())
+        val cb = spillableBatch.getColumnarBatch()
+        closeOnExcept(cb) { _ =>
+          scanBatchBeforeWrite(cb)
+        }
+        bufferBatchAndClose(cb)
       }
     }
     // we successfully buffered to host memory, release the semaphore and write

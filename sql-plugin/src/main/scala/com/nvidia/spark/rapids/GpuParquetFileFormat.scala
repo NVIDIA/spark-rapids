@@ -306,9 +306,9 @@ class GpuParquetWriter(
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
-  override def scanTableBeforeWrite(table: Table): Unit = {
-    (0 until table.getNumberOfColumns).foreach { i =>
-      val col = table.getColumn(i)
+  override def scanBatchBeforeWrite(batch: ColumnarBatch): Unit = {
+    val cols = GpuColumnVector.extractBases(batch)
+    cols.foreach { col =>
       // if col is a day
       if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")

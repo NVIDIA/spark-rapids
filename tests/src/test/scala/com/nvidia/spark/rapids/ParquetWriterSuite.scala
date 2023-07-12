@@ -253,9 +253,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps millis in EXCEPTION mode",
-    // FIXME: because the column is in micros this will throw IllegalArgumentException
-    //   instead of `SparkUpgradeException`
-    classOf[IllegalArgumentException], //SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
+    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
