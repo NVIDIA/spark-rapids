@@ -353,6 +353,7 @@ void checkoutCode(String url, String sha) {
         ]
     )
 
+    git submodule update --init
     stash(name: "source_tree", includes: "**,.git/**", useDefaultExcludes: false)
 }
 

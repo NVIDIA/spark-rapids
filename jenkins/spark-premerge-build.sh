@@ -27,8 +27,6 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-git submodule update --init
-
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
 MVN_BUILD_ARGS="-Drat.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
