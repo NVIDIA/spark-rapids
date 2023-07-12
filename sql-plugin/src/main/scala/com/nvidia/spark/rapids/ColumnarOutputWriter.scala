@@ -126,6 +126,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       spillableBatch: SpillableColumnarBatch,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     val writeStartTime = System.nanoTime
+    scanTableBeforeWrite(table)
     val gpuTime = if (includeRetry) {
       withRetry(spillableBatch, splitSpillableInHalfByRows) { sb =>
         //TODO: we should really apply the transformations to cast timestamps
@@ -169,7 +170,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private def encodeAndBufferToHost(batch: ColumnarBatch): Unit = {
     withResource(GpuColumnVector.from(batch)) { table =>
-      scanTableBeforeWrite(table)
+
       // that `anythingWritten` is set here is an indication that there was data at all
       // to write, even if the `tableWriter.write` method fails. If we fail to write
       // and the task fails, any output is going to be discarded anyway, so no data

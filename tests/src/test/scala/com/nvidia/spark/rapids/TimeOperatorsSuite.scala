@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.RuntimeException
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 
@@ -34,4 +36,36 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(from_unixtime(col("dates"),"dd/LL/yy HH:mm:ss.SSSSSS"))
   }
 
+  // some cases for timestamp_seconds not covered by integration tests
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from Large Double type", doubleTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("doubles")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from Large Decimal type", decimalTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("decimals")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_seconds from large Long type", longTimestampSecondsDf) {
+    frame => frame.select(timestamp_seconds(col("longs")))
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_millis from large Long type", longTimestampMillisDf) {
+    frame => frame.selectExpr("timestamp_millis(longs)")
+  }
+
+  testSparkResultsAreEqual(
+      "Test timestamp_micros from large Long type", longTimestampMicrosDf) {
+    frame => frame.selectExpr("timestamp_micros(longs)")
+  }
+
+  testBothCpuGpuExpectedException[RuntimeException](
+    "Test timestamp_micros from long near Long.minValue: long overflow",
+    e => e.getMessage.contains("ArithmeticException"),
+    longTimestampMicrosLongOverflowDf) {
+    frame => frame.selectExpr("timestamp_micros(longs)")
+  }
 }
