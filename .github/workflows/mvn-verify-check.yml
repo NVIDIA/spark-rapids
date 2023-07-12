@@ -128,15 +128,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java and Maven Env
-        uses: s4u/setup-maven-action@v1.8.0
+      - name: Setup Java
+        uses: actions/setup-java@v3
         with:
-          java-distribution: adopt
+          distribution: adopt
           java-version: 11
-          maven-version: ${{ matrix.maven-version }}
 
-      - name: Build JDK
+      - name: Setup Maven Wrapper
+        run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
+
+      - name: Install with Maven ${{ matrix.maven-version }}
         run: >
-          mvn -Dmaven.wagon.http.retryHandler.count=3 -B install
+          ./mvnw -Dmaven.wagon.http.retryHandler.count=3 -B install
           -P "individual,pre-merge,jdk11"
           $COMMON_MVN_FLAGS
