@@ -71,7 +71,6 @@ def _set_all_confs(conf):
         _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
     else:
         _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
-    _spark.conf.set("spark.rapids.sql.test.isTestRun", "true")
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
