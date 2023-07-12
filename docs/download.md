@@ -29,7 +29,7 @@ Software Requirements:
 
 	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
 
-	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.x & v470+
 
 	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4, 3.3.0, 3.3.1, 3.3.2, 3.4.0 Databricks 10.4 ML LTS or 11.3 ML LTS Runtime and GCP Dataproc 2.0, Dataproc 2.1
 

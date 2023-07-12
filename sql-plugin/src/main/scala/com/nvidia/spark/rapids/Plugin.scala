@@ -230,7 +230,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
       case m: FileCacheLocalityMsg =>
         // handleMsg should not block current thread
         FileCacheLocalityManager.get.handleMsg(m)
-        null
       case RapidsExecutorStartupMsg(id) =>
         if (rapidsShuffleHeartbeatManager == null) {
           throw new IllegalStateException(
