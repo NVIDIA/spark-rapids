@@ -372,7 +372,6 @@ case class GpuOutOfCoreSortIterator(
                 } else {
                   ct.close()
                 }
-
             }
           }
         }
