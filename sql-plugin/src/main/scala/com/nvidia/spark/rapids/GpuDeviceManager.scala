@@ -64,28 +64,10 @@ object GpuDeviceManager extends Logging {
 
   @volatile private var poolSizeLimit = 0L
 
-  private class DefaultOverrideProvider {
-    def splitUntilSizeOverride: Option[Long] = None
-  }
-
-  private class TestOverrideProvider extends DefaultOverrideProvider {
-    // for tests only
-    override def splitUntilSizeOverride: Option[Long] =
-      new RapidsConf(SQLConf.get).splitUntilSizeOverride
-  }
-
-  private lazy val overrideProvider: DefaultOverrideProvider = {
-    if (new RapidsConf(SQLConf.get).isTestRun) {
-      new TestOverrideProvider()
-    } else {
-      new DefaultOverrideProvider()
-    }
-  }
-
   // Never split below 100 MiB (but this is really just for testing)
   def getSplitUntilSize: Long = {
-    overrideProvider
-        .splitUntilSizeOverride
+    val conf = new RapidsConf(SQLConf.get)
+    conf.splitUntilSizeOverride
         .getOrElse(Math.max(poolSizeLimit / 8, 100 * 1024 * 1024))
   }
 
