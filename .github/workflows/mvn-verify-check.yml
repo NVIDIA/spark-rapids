@@ -137,9 +137,6 @@ jobs:
           distribution: adopt
           java-version: 11
 
-      - name: Debug Output
-        run: echo "Runner PWD=$PWD"
-
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
 
