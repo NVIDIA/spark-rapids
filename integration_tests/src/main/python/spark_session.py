@@ -71,10 +71,14 @@ def _set_all_confs(conf):
         _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
     else:
         _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
+    _spark.conf.set("spark.rapids.sql.test.isTestRun", "true")
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
-            _spark.conf.set(key, value)
+            if value is None:
+                _spark.conf.unset(key)
+            else:
+                _spark.conf.set(key, value)
 
 def reset_spark_session_conf():
     """Reset all of the configs for a given spark session."""

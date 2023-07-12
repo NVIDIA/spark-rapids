@@ -1332,6 +1332,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val IS_TEST_RUN = conf("spark.rapids.sql.test.isTestRun")
+      .doc("Intended to be used by unit tests, set to true if we are running under tests. " +
+          "This allows creation of configuration override providers that can be dynamically set " +
+          "by the tests.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
     .doc("Intended to be used by unit tests, if enabled all operations must run on the " +
       "GPU or an error happens.")
@@ -1955,6 +1963,12 @@ object RapidsConf {
         "The chunked pack bounce buffer must be at least 1MB in size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
+      .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
+      .internal()
+      .longConf
+      .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2172,6 +2186,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val isTestRun: Boolean = get(IS_TEST_RUN)
 
   lazy val testRetryOOMInjectionEnabled : Boolean = get(TEST_RETRY_OOM_INJECTION_ENABLED)
 
@@ -2622,6 +2638,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
