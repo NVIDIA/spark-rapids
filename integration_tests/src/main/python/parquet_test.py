@@ -1527,3 +1527,8 @@ def test_parquet_column_name_with_dots(spark_tmp_path, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`.`c.d.e`.`f.g`"),
                                          conf=all_confs)
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/13664')
+def test_read_list_struct(std_input_path):
+    # https://github.com/apache/parquet-testing/blob/master/data/repeated_no_annotation.parquet
+    data_path = std_input_path + '/repeated_no_annotation.parquet'
+    with_gpu_session(lambda spark: spark.read.parquet(data_path).collect())
