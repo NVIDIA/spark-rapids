@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_before_spark_340, is_databricks113_or_later
+from spark_session import is_before_spark_320, is_databricks113_or_later
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -73,6 +73,16 @@ _grpkey_longs_with_nullable_largest_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', DecimalGen(precision=38, scale=2, nullable=True)),
     ('c', DecimalGen(precision=38, scale=2, nullable=True))]
+
+_grpkey_longs_with_nullable_floats = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', FloatGen(nullable=True)),
+    ('c', IntegerGen(nullable=True))]
+
+_grpkey_longs_with_nullable_doubles = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DoubleGen(nullable=True)),
+    ('c', IntegerGen(nullable=True))]
 
 _grpkey_decimals_with_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
@@ -879,15 +889,17 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
   pytest.param(_grpkey_longs_with_nullable_largest_decimals,
     marks=pytest.mark.xfail(
       condition=is_databricks113_or_later(),
-      reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+      reason='https://github.com/NVIDIA/spark-rapids/issues/7429')),
+  _grpkey_longs_with_nullable_floats,
+  _grpkey_longs_with_nullable_doubles
 ], ids=idfn)
-def test_window_aggregations_for_decimal_ranges(data_gen):
+def test_window_aggregations_for_decimal_and_float_ranges(data_gen):
     """
-    Tests for range window aggregations, with DECIMAL order by columns.
+    Tests for range window aggregations, with DECIMAL/FLOATING POINT order by columns.
     The table schema used:
       a: Group By column
-      b: Order By column (decimal)
-      c: Aggregation column (incidentally, also decimal)
+      b: Order By column (decimals, floats, doubles)
+      c: Aggregation column (decimals or ints)
 
     Since this test is for the order-by column type, and not for each specific windowing aggregation,
     we use COUNT(1) throughout the test, for different window widths and ordering.

@@ -17,10 +17,10 @@
 package com.nvidia.spark.rapids
 
 import java.io.{EOFException, InputStream, IOException, OutputStream}
+import java.nio.ByteBuffer
 import java.nio.channels.ReadableByteChannel
 
 import ai.rapids.cudf.HostMemoryBuffer
-import com.nvidia.spark.rapids.Arm.withResource
 
 /**
  * An implementation of OutputStream that writes to a HostMemoryBuffer.
@@ -47,6 +47,13 @@ class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream 
     pos += len
   }
 
+  def write(data: ByteBuffer): Unit = {
+    val numBytes = data.remaining()
+    val outBuffer = buffer.asByteBuffer(pos, numBytes)
+    outBuffer.put(data)
+    pos += numBytes
+  }
+
   def getPos: Long = pos
 
   def seek(newPos: Long): Unit = {
@@ -55,15 +62,14 @@ class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream 
 
   def copyFromChannel(channel: ReadableByteChannel, length: Long): Unit = {
     val endPos = pos + length
+    assert(endPos <= buffer.getLength)
     while (pos != endPos) {
-      val bytesToCopy = (endPos - pos).min(Integer.MAX_VALUE)
-      withResource(buffer.slice(pos, bytesToCopy)) { sliced =>
-        val bytebuf = sliced.asByteBuffer()
-        while (bytebuf.hasRemaining) {
-          val channelReadBytes = channel.read(bytebuf)
-          if (channelReadBytes < 0) {
-            throw new EOFException("Unexpected EOF while reading from byte channel")
-          }
+      val bytesToCopy = (endPos - pos).min(Integer.MAX_VALUE).toInt
+      val bytebuf = buffer.asByteBuffer(pos, bytesToCopy)
+      while (bytebuf.hasRemaining) {
+        val channelReadBytes = channel.read(bytebuf)
+        if (channelReadBytes < 0) {
+          throw new EOFException("Unexpected EOF while reading from byte channel")
         }
       }
       pos += bytesToCopy

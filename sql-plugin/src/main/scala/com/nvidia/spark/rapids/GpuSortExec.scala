@@ -136,8 +136,7 @@ case class GpuSortExec(
     val singleBatch = sortType == FullSortSingleBatch
     child.executeColumnar().mapPartitions { cbIter =>
       if (outOfCore) {
-        val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
-        val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
+        val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
           targetSize, opTime, sortTime, outputBatch, outputRows)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter
@@ -239,7 +238,6 @@ class Pending(cpuOrd: LazilyGeneratedOrdering) extends AutoCloseable {
 case class GpuOutOfCoreSortIterator(
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
-    cpuOrd: LazilyGeneratedOrdering,
     targetSize: Long,
     opTime: GpuMetric,
     sortTime: GpuMetric,
@@ -247,6 +245,7 @@ case class GpuOutOfCoreSortIterator(
     outputRows: GpuMetric) extends Iterator[ColumnarBatch]
     with AutoCloseable {
 
+  private val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
   // A priority queue of data that is not merged yet.
   private val pending = new Pending(cpuOrd)
 
@@ -328,16 +327,16 @@ case class GpuOutOfCoreSortIterator(
         targetRowCount until rows by targetRowCount
       }
       // Get back the first row so we can sort the batches
-      val gatherIndexes = if (hasFullySortedData) {
+      val lowerGatherIndexes = if (hasFullySortedData) {
         // The first batch is sorted so don't gather a row for it
         splitIndexes
       } else {
         Seq(0) ++ splitIndexes
       }
 
-      val boundaries =
-        withResource(new NvtxRange("boundaries", NvtxColor.ORANGE)) { _ =>
-          withResource(ColumnVector.fromInts(gatherIndexes: _*)) { gatherMap =>
+      val lowerBoundaries =
+        withResource(new NvtxRange("lower boundaries", NvtxColor.ORANGE)) { _ =>
+          withResource(ColumnVector.fromInts(lowerGatherIndexes: _*)) { gatherMap =>
             withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
               convertBoundaries(boundariesTab)
             }
@@ -355,9 +354,9 @@ case class GpuOutOfCoreSortIterator(
         }
 
         closeOnExcept(sortedCb) { _ =>
-          assert(boundaries.length == stillPending.length)
+          assert(lowerBoundaries.length == stillPending.length)
           closeOnExcept(pendingObs) { _ =>
-            stillPending.zip(boundaries).foreach {
+            stillPending.zip(lowerBoundaries).foreach {
               case (ct: ContiguousTable, lower: UnsafeRow) =>
                 if (ct.getRowCount > 0) {
                   val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,

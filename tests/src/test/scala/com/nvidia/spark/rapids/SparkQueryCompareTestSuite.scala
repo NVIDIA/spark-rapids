@@ -20,7 +20,8 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
-import org.scalatest.{Assertion, FunSuite}
+import org.scalatest.Assertion
+import org.scalatest.funsuite.AnyFunSuite
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
@@ -145,7 +146,7 @@ object SparkSessionHolder extends Logging {
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends FunSuite {
+trait SparkQueryCompareTestSuite extends AnyFunSuite {
   import SparkSessionHolder.withSparkSession
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
@@ -1293,6 +1294,66 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("dates")
   }
 
+  def doubleTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    // some cases out of the range (-62135510400, 253402214400), which are not covered by IT
+    Seq[Double](
+      253402214400.000001d,
+      269999999999.999999d,
+      -62135510400.000001d,
+      -79999999999.999999d
+    ).toDF("doubles")
+  }
+
+  def decimalTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[BigDecimal](
+      BigDecimal("253402214400.000001"),
+      BigDecimal("269999999999.999999"),
+      BigDecimal("-62135510400.000001"),
+      BigDecimal("-79999999999.999999")
+    ).toDF("decimals")
+  }
+
+  def longTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401L,
+      269999999999L,
+      -62135510401L,
+      -79999999999L
+    ).toDF("longs")
+  }
+
+  def longTimestampMillisDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401000L,
+      269999999999999L,
+      -62135510401000L,
+      -79999999999999L
+    ).toDF("longs")
+  }
+
+  def longTimestampMicrosDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401000000L,
+      269999999999999999L,
+      -62135510401000000L,
+      -79999999999999999L,
+      Long.MaxValue
+    ).toDF("longs")
+  }
+
+   def longTimestampMicrosLongOverflowDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      Long.MinValue,
+      -9223183700000000000L
+    ).toDF("longs")
+  }
+  
   def datesPostEpochDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(

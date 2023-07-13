@@ -30,6 +30,7 @@
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
+{"spark": "341"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -227,11 +228,11 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         Seq(
           ParamCheck("lower",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
-              + TypeSig.DECIMAL_128,
+              + TypeSig.DECIMAL_128 + TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
-              + TypeSig.DECIMAL_128,
+              + TypeSig.DECIMAL_128 + TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
     GpuOverrides.expr[WindowExpression](

@@ -228,8 +228,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def receive(msg: Any): AnyRef = {
     msg match {
       case m: FileCacheLocalityMsg =>
+        // handleMsg should not block current thread
         FileCacheLocalityManager.get.handleMsg(m)
-        null
       case RapidsExecutorStartupMsg(id) =>
         if (rapidsShuffleHeartbeatManager == null) {
           throw new IllegalStateException(
@@ -263,7 +263,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
       }
     }
 
-    FileCacheLocalityManager.init(pluginContext.conf())
+    FileCacheLocalityManager.init(sc)
 
     logDebug("Loading extra driver plugins: " +
       s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")

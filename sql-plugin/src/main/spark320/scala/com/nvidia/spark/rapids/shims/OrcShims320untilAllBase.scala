@@ -28,17 +28,20 @@
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
+{"spark": "341"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import java.nio.ByteBuffer
+
 import scala.collection.mutable.ArrayBuffer
 
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.OrcOutputStripe
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hive.common.io.DiskRangeList
 import org.apache.orc.{CompressionCodec, CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
-import org.apache.orc.impl.{BufferChunk, BufferChunkList, DataReaderProperties, InStream, OrcCodecPool, OutStream, ReaderImpl, SchemaEvolution}
+import org.apache.orc.impl.{BufferChunk, DataReaderProperties, InStream, OrcCodecPool, OutStream, ReaderImpl, SchemaEvolution}
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.impl.reader.StripePlanner
 import org.apache.orc.impl.writer.StreamOptions
@@ -59,21 +62,6 @@ trait OrcShims320untilAllBase {
     if(reader != null) {
       reader.close()
     }
-  }
-
-  // read data to buffer
-  def readFileData(dataReader: DataReader, inputDataRanges: DiskRangeList): DiskRangeList = {
-
-    // convert DiskRangeList to BufferChunkList
-    val chuckList = new BufferChunkList
-    var curr = inputDataRanges
-    while (curr != null) {
-      chuckList.add(new BufferChunk(curr.getOffset, curr.getLength))
-      curr = curr.next
-    }
-
-    // BufferChunk is subclass of DiskRangeList
-    dataReader.readFileData(chuckList, false).get()
   }
 
   // create reader properties builder
@@ -146,4 +134,24 @@ trait OrcShims320untilAllBase {
   def forcePositionalEvolution(conf: Configuration): Boolean = {
     OrcConf.FORCE_POSITIONAL_EVOLUTION.getBoolean(conf)
   }
+
+  def parseFooterFromBuffer(
+      bb: ByteBuffer,
+      ps: OrcProto.PostScript,
+      psLen: Int): OrcProto.Footer = {
+    val footerSize = ps.getFooterLength.toInt
+    val footerOffset = bb.limit() - 1 - psLen - footerSize
+    val compressionKind = CompressionKind.valueOf(ps.getCompression.name())
+    val streamOpts = new InStream.StreamOptions()
+    withResource(OrcCodecPool.getCodec(compressionKind)) { codec =>
+      if (codec != null) {
+        streamOpts.withCodec(codec).withBufferSize(ps.getCompressionBlockSize.toInt)
+      }
+      val in = InStream.createCodedInputStream(
+        InStream.create("footer", new BufferChunk(bb, 0), footerOffset, footerSize, streamOpts))
+      OrcProto.Footer.parseFrom(in)
+    }
+  }
+
+  def getStripeStatisticsLength(ps: OrcProto.PostScript): Long = ps.getStripeStatisticsLength
 }

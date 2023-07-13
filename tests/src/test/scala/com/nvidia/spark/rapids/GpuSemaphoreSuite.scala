@@ -18,15 +18,16 @@ package com.nvidia.spark.rapids
 
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.BeforeAndAfterEach
 import org.scalatest.concurrent.{TimeLimitedTests, TimeLimits}
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.time.{Seconds, Span}
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.SparkSession
 
-class GpuSemaphoreSuite extends FunSuite
+class GpuSemaphoreSuite extends AnyFunSuite
     with BeforeAndAfterEach with MockitoSugar with TimeLimits  with TimeLimitedTests {
   val timeLimit = Span(10, Seconds)
 

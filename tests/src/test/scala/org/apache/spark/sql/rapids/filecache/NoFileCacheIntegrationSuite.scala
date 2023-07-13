@@ -47,6 +47,7 @@ class NoFileCacheIntegrationSuite extends SparkQueryCompareTestSuite {
         .set("spark.rapids.filecache.enabled", "false")
         .set("spark.sql.sources.useV1SourceList", "orc")
     withGpuSparkSession({ spark =>
+      assume(!isFileCacheEnabled(spark.sparkContext.conf))
       val df = frameFromOrc(SCHEMA_CAN_PRUNE_ORC)(spark)
       checkNoMetricsV1(df)
     }, conf)

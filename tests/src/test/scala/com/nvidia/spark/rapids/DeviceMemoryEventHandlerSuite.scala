@@ -18,10 +18,10 @@ package com.nvidia.spark.rapids
 
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
-class DeviceMemoryEventHandlerSuite extends FunSuite with MockitoSugar {
+class DeviceMemoryEventHandlerSuite extends AnyFunSuite with MockitoSugar {
 
   test("a failed allocation should be retried if we spilled enough") {
     val mockCatalog = mock[RapidsBufferCatalog]
