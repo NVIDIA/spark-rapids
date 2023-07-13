@@ -731,19 +731,19 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
     )
 
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
-@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
-def test_hive_timestamp_value(with_x_session, spark_tmp_table_factory):
-    def create_table(spark):
-        tmp_input = spark_tmp_table_factory.get()
-        spark.sql(f"""CREATE TABLE {tmp_input} STORED AS PARQUET """ +
-        " AS SELECT CAST('2015-01-01 00:00:00' AS TIMESTAMP) as t; ")
-        return tmp_input
+def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
 
-    def read_table(path):
-        return lambda spark: spark.sql(f"""SELECT * FROM {path}""")
+    def create_table(spark, path):
+        tmp_table = spark_tmp_table_factory.get()
+        spark.sql(f"CREATE TABLE {tmp_table} STORED AS PARQUET " +
+        f""" LOCATION '{path}' AS SELECT CAST('2015-01-01 00:00:00' AS TIMESTAMP) as t; """)
 
-    input_table = with_x_session(create_table)
-    assert_gpu_and_cpu_are_equal_collect(read_table(input_table))
+    def read_table(spark, path):
+        return spark.read.parquet(path)
+
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path + '/CPU'))
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")
