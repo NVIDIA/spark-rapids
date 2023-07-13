@@ -69,6 +69,16 @@
             <timezone>-6</timezone>
         </developer>
     </developers>
+    <!-- modules shared among profiles -->
+    <modules>
+        <module>aggregator</module>
+        <module>dist</module>
+        <module>integration_tests</module>
+        <module>shuffle-plugin</module>
+        <module>sql-plugin</module>
+        <module>tests</module>
+        <module>udf-compiler</module>
+    </modules>
     <profiles>
         <profile>
             <id>release311</id>
@@ -87,14 +97,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
                 <module>api_validation</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -113,13 +116,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -139,13 +135,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -165,13 +154,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -190,13 +172,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -221,13 +196,6 @@
             </repositories>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -246,13 +214,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -271,13 +232,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -296,13 +250,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -333,13 +280,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-spark321db</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -360,13 +300,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -387,13 +320,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -414,13 +340,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -442,13 +361,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -469,13 +381,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -496,13 +401,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -535,13 +433,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -573,13 +464,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-spark330db</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -611,19 +495,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-spark332db</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>udf-compiler</id>
-            <modules>
-                <module>udf-compiler</module>
             </modules>
         </profile>
         <profile>
@@ -1437,6 +1308,10 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
