@@ -44,7 +44,7 @@ _additional_gens = [
     # simple_string_to_string_map_gen),
     ArrayGen(date_gen),
     struct_gen_decimal128,
-    StructGen([("c0", ArrayGen(long_gen))]),
+    StructGen([("c0", ArrayGen(long_gen)), ("c1", boolean_gen)]),
 ]
 
 def get_additional_columns():
