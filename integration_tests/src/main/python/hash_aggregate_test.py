@@ -116,6 +116,22 @@ _grpkey_floats_with_nulls_and_nans = [
     ('b', FloatGen(nullable=(True, 10.0), special_cases=[(float('nan'), 10.0)])),
     ('c', LongGen())]
 
+# grouping single-level lists
+# StringGen for the value being aggregated will force CUDF to do a sort based aggregation internally.
+_grpkey_list_with_non_nested_children = [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
+                                          ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens] + \
+                                        [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
+                                          ('b', StringGen())] for data_gen in all_basic_gens + decimal_gens]
+
+#grouping mutliple-level structs with arrays
+_grpkey_nested_structs_with_array_basic_child = [[
+    ('a', RepeatSeqGen(StructGen([
+        ['aa', IntegerGen()],
+        ['ab', ArrayGen(IntegerGen())]]),
+        length=20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]]
+
 _nan_zero_float_special_cases = [
     (float('nan'),  5.0),
     (NEG_FLOAT_NAN_MIN_VALUE, 5.0),
@@ -322,6 +338,14 @@ def test_hash_reduction_decimal_overflow_sum(precision):
 def test_hash_grpby_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
+    )
+
+@allow_non_gpu("SortAggregateExec", "SortExec", "ShuffleExchangeExec")
+@ignore_order
+@pytest.mark.parametrize('data_gen', _grpkey_nested_structs_with_array_basic_child + _grpkey_list_with_non_nested_children, ids=idfn)
+def test_hash_grpby_list_min_max(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).coalesce(1).groupby('a').agg(f.min('b'), f.max('b'))
     )
 
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
@@ -1199,7 +1223,9 @@ def test_agg_count(data_gen, count_func):
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
                'HashPartitioning', 'ShuffleExchangeExec', 'Count')
-@pytest.mark.parametrize('data_gen', array_gens_sample + [binary_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen',
+                         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))
+                         , binary_gen], ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 def test_groupby_list_types_fallback(data_gen, count_func):
     assert_gpu_fallback_collect(
@@ -1717,7 +1743,6 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
-
 
 # Tests for standard deviation and variance aggregations.
 @ignore_order(local=True)
