@@ -693,11 +693,17 @@
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
         <ucx.version>1.14</ucx.version>
+        <rapids.compressed.artifact>true</rapids.compressed.artifact>
+        <rapids.default.jar.excludePattern/>
+        <rapids.default.jar.phase>package</rapids.default.jar.phase>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.shim.jar.phase>none</rapids.shim.jar.phase>
+        <rapids.shim.jar.test.phase>package</rapids.shim.jar.test.phase>
+
         <!--
             cuda-toolkit 11.5+ will install nvidia GDS package by default
             if no compatible GDS device on test machine, the scala test would fail
@@ -737,7 +743,8 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
-        <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
+        <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
+        <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <arrow.cdh.version>2.0.0</arrow.cdh.version>
@@ -1196,9 +1203,45 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>${maven.jar.plugin.version}</version>
+                    <!--
+                        Packaging type jar requires an output artifact without a classifier a.k.a.
+                        main artifact. Modules whose real "main" output artifact is a shim jar
+                        should comply by outputing a main jar without the class bytecode. In the pom
+                        of such a module set
+                          exludePattern to **/*
+                          rapids.shim.jar.phase to package to attach the shim artifact
+
+                       Modules feededing into dist need not be compressed.
+                        Set rapids.compressed.artifact to false
+                    -->
                     <executions>
                         <execution>
+                            <id>default-jar</id>
+                            <goals><goal>jar</goal></goals>
+                            <phase>${rapids.default.jar.phase}</phase>
+                            <configuration>
+                                <excludes>
+                                    <exclude>${rapids.default.jar.excludePattern}</exclude>
+                                </excludes>
+                                <archive>
+                                    <compress>${rapids.compressed.artifact}</compress>
+                                </archive>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <id>create-${spark.version.classifier}-jar</id>
+                            <goals><goal>jar</goal></goals>
+                            <phase>${rapids.shim.jar.phase}</phase>
+                            <configuration>
+                                <classifier>${spark.version.classifier}</classifier>
+                                <archive>
+                                    <compress>${rapids.compressed.artifact}</compress>
+                                </archive>
+                            </configuration>
+                        </execution>
+                        <execution>
                             <id>default-test-jar</id>
+                            <phase>${rapids.shim.jar.test.phase}</phase>
                             <goals>
                                 <goal>test-jar</goal>
                             </goals>
@@ -1217,12 +1260,34 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-install-plugin</artifactId>
-                    <version>2.4</version>
+                    <version>${maven.install.plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
 
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                  <execution>
+                    <id>enforce-maven</id>
+                    <goals>
+                      <goal>enforce</goal>
+                    </goals>
+                    <configuration>
+                      <rules>
+                        <requireMavenVersion>
+                          <message>Minimum Maven version 3.6.x required</message>
+                          <version>[3.6,)</version>
+                        </requireMavenVersion>
+                        <!-- TODO add buildver validation -->
+                      </rules>
+                    </configuration>
+                  </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
