@@ -689,12 +689,9 @@ case class ByteGenFunc(mapping: LocationToSeedMapping = null,
 object ByteGen {
   def asByte(a: Any): Byte = a match {
     case n: Byte => n
-    case n: Short if n <= Byte.MaxValue && n >= Byte.MinValue =>
-      n.toByte
-    case n: Int if n <= Byte.MaxValue && n >= Byte.MinValue =>
-      n.toByte
-    case n: Long if n <= Byte.MaxValue && n >= Byte.MinValue =>
-      n.toByte
+    case n: Short if n == n.toByte => n.toByte
+    case n: Int if n == n.toByte => n.toByte
+    case n: Long if n == n.toByte => n.toByte
     case other =>
       throw new IllegalArgumentException(s"a byte value range only supports " +
           s"byte values found $other")
@@ -749,10 +746,8 @@ object ShortGen {
   def asShort(a: Any): Short = a match {
     case n: Byte => n.toShort
     case n: Short => n
-    case n: Int if n <= Short.MaxValue && n >= Short.MinValue =>
-      n.toShort
-    case n: Long if n <= Short.MaxValue && n >= Short.MinValue =>
-      n.toShort
+    case n: Int if n == n.toShort => n.toShort
+    case n: Long if n == n.toShort => n.toShort
     case other =>
       throw new IllegalArgumentException(s"a short value range only supports " +
           s"short values found $other")
@@ -808,8 +803,7 @@ object IntGen {
     case n: Byte => n.toInt
     case n: Short => n.toInt
     case n: Int => n
-    case n: Long if n <= Int.MaxValue && n >= Int.MinValue =>
-      n.toInt
+    case n: Long if n == n.toInt => n.toInt
     case other =>
       throw new IllegalArgumentException(s"a int value range only supports " +
           s"int values found $other")
@@ -1834,12 +1828,20 @@ class DBGen {
    * @param spark the session to use
    * @param path the base path to write the data under
    * @param numParts the number of parts to use, if > 0
+   * @param overwrite if true will overwrite existing data
    */
-  def writeParquet(spark: SparkSession, path: String, numParts: Int = 0): Unit = {
+  def writeParquet(spark: SparkSession,
+      path: String,
+      numParts: Int = 0,
+      overwrite: Boolean = false): Unit = {
     tables.foreach {
       case (name, gen) =>
         val subPath = path + "/" + name
-        gen.toDF(spark, numParts).write.mode("overwrite").parquet(subPath)
+        var writer = gen.toDF(spark, numParts).write
+        if (overwrite) {
+          writer = writer.mode("overwrite")
+        }
+        writer.parquet(subPath)
     }
   }
 
@@ -1860,29 +1862,41 @@ class DBGen {
   /**
    * Write all of the tables out as parquet under path/table_name and then create or replace temp
    * views for each of the tables using the given name.
+   *
    * @param spark the session to use
    * @param path the base path to write the data under
    * @param numParts the number of parts to use, if > 0
+   * @param overwrite if true will overwrite existing data
    */
   def writeParquetAndReplaceTempViews(spark: SparkSession,
       path: String,
-      numParts: Int = 0): Unit = {
-    writeParquet(spark, path, numParts)
+      numParts: Int = 0,
+      overwrite: Boolean = false): Unit = {
+    writeParquet(spark, path, numParts, overwrite)
     createOrReplaceTempViewsFromParquet(spark, path)
   }
 
   /**
    * Write all of the tables out as orc under path/table_name and overwrite anything that is
    * already there.
+   *
    * @param spark the session to use
    * @param path the base path to write the data under
    * @param numParts the number of parts to use, if > 0
+   * @param overwrite if true will overwrite existing data
    */
-  def writeOrc(spark: SparkSession, path: String, numParts: Int = 0): Unit = {
+  def writeOrc(spark: SparkSession,
+      path: String,
+      numParts: Int = 0,
+      overwrite: Boolean = false): Unit = {
     tables.foreach {
       case (name, gen) =>
         val subPath = path + "/" + name
-        gen.toDF(spark, numParts).write.mode("overwrite").orc(subPath)
+        var writer = gen.toDF(spark, numParts).write
+        if (overwrite) {
+          writer = writer.mode("overwrite")
+        }
+        writer.orc(subPath)
     }
   }
 
@@ -1903,14 +1917,17 @@ class DBGen {
   /**
    * Write all of the tables out as orc under path/table_name and then create or replace temp
    * views for each of the tables using the given name.
+   *
    * @param spark the session to use
    * @param path the base path to write the data under
    * @param numParts the number of parts to use, if > 0
+   * @param overwrite if true will overwrite existing data
    */
   def writeOrcAndReplaceTempViews(spark: SparkSession,
       path: String,
-      numParts: Int = 0): Unit = {
-    writeOrc(spark, path, numParts)
+      numParts: Int = 0,
+      overwrite: Boolean = false): Unit = {
+    writeOrc(spark, path, numParts, overwrite)
     createOrReplaceTempViewsFromOrc(spark, path)
   }
 

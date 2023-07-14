@@ -2,18 +2,18 @@
 
 In order to do scale testing we need a way to generate lots of data in a
 deterministic way that gives us control over the number of unique values
-in a column, the skew of the values in a column, and the for joins have ways
-to correlate overlap of those values. To accomplish this we wrote
+in a column, the skew of the values in a column, and the correlation of 
+data between tables for joins. To accomplish this we wrote
 `org.apache.spark.sql.tests.datagen`.
 
 ## Setup Environment
 
 To get started with big data generation the first thing you need to do is 
 to include the appropriate jar on the classpath for your version of Apache Spark. 
-Note that this does not run on the GPU, it is a standalone, but it does use
+Note that this does not run on the GPU, but it does use
 parts of the shim framework that the RAPIDS Accelerator does, so it is currently in 
 the integration tests jar for the RAPIDS Accelerator. The jar is specific to the
-version of spark you are using and is not pushed to maven central. Because of this
+version of Spark you are using and is not pushed to Maven Central. Because of this
 you will have to build it from source yourself.
 
 ```shell
@@ -142,7 +142,7 @@ seed range is too small to have found a mapping to a particular value.
 
 Generating values with a desired unique count is great, but we also want
 to be able to generate values with various different distributions of keys.
-By default, the generated values have a `FlastDistribution`, meaning that
+By default, the generated values have a `FlatDistribution`, meaning that
 every seed has approximately the same probability of being generated as any
 other seed.
 
@@ -175,7 +175,7 @@ around this.
 ### DistinctDistribution
 
 The `DistinctDistribution` generates seeds from min seed to max seed, but
-walks them in a non-sequential order. The data generation functions also maps
+walks them in a non-sequential order. The data generation function also maps
 the data in a pseudo-random way so the unique keys will not show this very
 clearly.
 
@@ -306,6 +306,11 @@ dataTable.toDF(spark).show()
 This can also be used to create a column for a struct or an array that has the
 desired properties as if it were a single column.
 
+Here the `CorrelatedKeyGroup` takes an ID for this grouping, should be the same for
+both sides of a join, followed by the seed range for the group of values. The
+seed range is consistent between groups with the same ID. This allows you to setup
+ranges that only partially overlap if desired.
+
 ### CombinatorialKeyGroup
 
 A combinatorial key group really is just a key group that tries to automatically
@@ -366,8 +371,8 @@ convention, it should honor things like the LocationToSeedMapping,
 but it is under no requirement to do so.
 
 This is similar for the LocationToSeedMapping and the NullGeneratorFunction. 
-If you have a requirement to generate null values from row 1024 to row 9999999.
-You can write a NullGeneratorFunction to do that and install it on a column
+If you have a requirement to generate null values from row 1024 to row 9999999,
+you can write a NullGeneratorFunction to do that and install it on a column
 
 ```scala
 case class MyNullGen(minRow: Long, maxRow: Long, 
