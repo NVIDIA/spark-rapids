@@ -148,8 +148,8 @@ abstract class GpuFileFormatDataWriter(
     }
   }
 
-  /** Release all resources. */
-  protected def releaseResources(): Unit = {
+  /** Release all resources. Public for testing */
+  def releaseResources(): Unit = {
     // Call `releaseCurrentWriter()` by default, as this is the only resource to be released.
     releaseCurrentWriter()
   }
@@ -409,7 +409,7 @@ class GpuDynamicPartitionDataSingleWriter(
   @scala.annotation.nowarn(
     "msg=method newTaskTempFile.* in class FileCommitProtocol is deprecated"
   )
-  protected def newWriter(
+  def newWriter(
       partDir: String,
       bucketId: Option[Int], // Currently it's always None
       fileCounter: Int
@@ -699,6 +699,9 @@ class GpuDynamicPartitionDataSingleWriter(
 
           // will create a new file, close the old writer
           if (currentWriterStatus != null) {
+            println(
+              s"releasing writer recs in file: ${currentWriterStatus.recordsInFile}" +
+              s" ${partPath}. writer is null? ${currentWriterStatus.outputWriter}")
             releaseWriter(currentWriterStatus.outputWriter)
           }
 
@@ -706,6 +709,9 @@ class GpuDynamicPartitionDataSingleWriter(
           currentWriterStatus.outputWriter =
             newWriter(partPath, None, currentWriterStatus.fileCounter)
           currentWriterStatus.recordsInFile = 0
+        }
+        withResource(part.getColumnarBatch()) { cb =>
+          GpuColumnVector.debug(s"batch for ${partIx}", cb)
         }
         spillableBatches(partIx) = null
         writeUpdateMetricsAndClose(currentWriterStatus, part)
@@ -761,7 +767,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol,
-    spec: GpuConcurrentOutputWriterSpec)
+    spec: GpuConcurrentOutputWriterSpec,
+    taskContext: TaskContext)
     extends GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer) {
 
   // Keep all the unclosed writers, key is partition directory string.
@@ -769,30 +776,22 @@ class GpuDynamicPartitionDataConcurrentWriter(
   private val concurrentWriters = mutable.HashMap[String, WriterStatusWithCaches]()
 
   // guarantee to close the caches and writers when task is finished
-  TaskContext.get().addTaskCompletionListener[Unit](_ => closeCachesAndWriters())
+  taskContext.addTaskCompletionListener[Unit](_ => closeCachesAndWriters())
 
   private val outDataTypes = description.dataColumns.map(_.dataType).toArray
 
-  val partitionFlushSize = if (description.concurrentWriterPartitionFlushSize <= 0) {
-    // if the property is equal or less than 0, use default value of parquet or orc
-    val extension = description.outputWriterFactory
-        .getFileExtension(taskAttemptContext).toLowerCase()
-    if (extension.endsWith("parquet")) {
-      taskAttemptContext.getConfiguration.getLong("write.parquet.row-group-size-bytes",
-        128L * 1024L * 1024L) // 128M
-    } else if (extension.endsWith("orc")) {
-      taskAttemptContext.getConfiguration.getLong("orc.stripe.size",
-        64L * 1024L * 1024L) // 64M
+  private val partitionFlushSize =
+    if (description.concurrentWriterPartitionFlushSize <= 0) {
+      // if the property is equal or less than 0, use default value given by the
+      // writer factory
+      description.outputWriterFactory.partitionFlushSize(taskAttemptContext)
     } else {
-      128L * 1024L * 1024L // 128M
+      // if the property is greater than 0, use the property value
+      description.concurrentWriterPartitionFlushSize
     }
-  } else {
-    // if the property is greater than 0, use the property value
-    description.concurrentWriterPartitionFlushSize
-  }
 
   // refer to current batch if should fall back to `single writer`
-  var currentFallbackColumnarBatch: ColumnarBatch = _
+  private var currentFallbackColumnarBatch: ColumnarBatch = _
 
   override def abort(): Unit = {
     try {
@@ -808,14 +807,14 @@ class GpuDynamicPartitionDataConcurrentWriter(
    */
   private var fallBackToSortBased: Boolean = false
 
-  def writeWithSingleWriter(cb: ColumnarBatch): Unit = {
+  private def writeWithSingleWriter(cb: ColumnarBatch): Unit = {
     // invoke `GpuDynamicPartitionDataSingleWriter`.write,
     // single writer will take care of the unclosed writers and the pending caches
     // in `concurrentWriters`
     super.write(cb, Some(concurrentWriters))
   }
 
-  def writeWithConcurrentWriter(cb: ColumnarBatch): Unit = {
+  private def writeWithConcurrentWriter(cb: ColumnarBatch): Unit = {
     this.write(cb)
   }
 

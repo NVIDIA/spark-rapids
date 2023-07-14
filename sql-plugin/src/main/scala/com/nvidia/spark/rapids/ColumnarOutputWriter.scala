@@ -24,10 +24,11 @@ import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRang
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry}
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -39,6 +40,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * `org.apache.spark.sql.execution.datasources.OutputWriterFactory`.
  */
 abstract class ColumnarOutputWriterFactory extends Serializable {
+  def partitionFlushSize(context: TaskAttemptContext): Long= 128L * 1024L * 1024L // 128M
 
   /** Returns the file extension to be used when writing files out. */
   def getFileExtension(context: TaskAttemptContext): String
@@ -68,14 +70,18 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     rangeName: String,
     includeRetry: Boolean) extends HostBufferConsumer {
 
-  val tableWriter: TableWriter
-  val conf = context.getConfiguration
+  protected val tableWriter: TableWriter
 
-  private[this] val outputStream: FSDataOutputStream = {
+  protected val conf: Configuration = context.getConfiguration
+
+  protected def getOutputStream: FSDataOutputStream = {
     val hadoopPath = new Path(path)
     val fs = hadoopPath.getFileSystem(conf)
     fs.create(hadoopPath, false)
   }
+
+  protected val outputStream: FSDataOutputStream = getOutputStream
+
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] var anythingWritten = false
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
@@ -177,7 +183,6 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private def encodeAndBufferToHost(batch: ColumnarBatch): Unit = {
     withResource(GpuColumnVector.from(batch)) { table =>
-
       // that `anythingWritten` is set here is an indication that there was data at all
       // to write, even if the `tableWriter.write` method fails. If we fail to write
       // and the task fails, any output is going to be discarded anyway, so no data
@@ -189,12 +194,15 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       tableWriter.write(table)
     }
   }
+  private var closedTimes = 0
 
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
    * are persisted, before the task output is committed.
    */
   def close(): Unit = {
+    closedTimes += 1
+    println(s"Times closed: ${closedTimes}")
     if (!anythingWritten) {
       // This prevents writing out bad files
       bufferBatchAndClose(GpuColumnVector.emptyBatch(dataSchema))

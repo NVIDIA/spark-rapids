@@ -290,6 +290,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       override def getFileExtension(context: TaskAttemptContext): String = {
         CodecConfig.from(context).getCodec.getExtension + ".parquet"
       }
+
+      override def partitionFlushSize(context: TaskAttemptContext): Long =
+        context.getConfiguration.getLong("write.parquet.row-group-size-bytes",
+        128L * 1024L * 1024L) // 128M
     }
   }
 }
