@@ -755,3 +755,18 @@ def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled,
         lambda spark, path: spark.read.parquet(path),
         data_path,
         conf)
+
+@ignore_order
+def test_parquet_write_column_name_with_dots(spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    gens = [
+        ("a.b", StructGen([
+            ("c.d.e", StructGen([
+                ("f.g", int_gen),
+                ("h", string_gen)])),
+            ("i.j", long_gen)])),
+        ("k", boolean_gen)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path:  gen_df(spark, gens).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path)
