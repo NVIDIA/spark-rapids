@@ -19,7 +19,6 @@
 {"spark": "312"}
 {"spark": "313"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.tests.datagen
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, UnaryExpression}
