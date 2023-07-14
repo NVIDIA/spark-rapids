@@ -351,7 +351,7 @@ case class GpuOutOfCoreSortIterator(
           val sp = SpillableColumnarBatch(ct,
             sorter.projectedBatchTypes,
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-          currentSplit = currentSplit + 1
+          currentSplit += 1
           sortedCb = Some(sp)
           splits.slice(1, splits.length)
         } else {
@@ -364,7 +364,7 @@ case class GpuOutOfCoreSortIterator(
             stillPending.zip(lowerBoundaries).foreach {
               case (ct: ContiguousTable, lower: UnsafeRow) =>
                 splits(currentSplit) = null
-                currentSplit = currentSplit + 1
+                currentSplit += 1
                 if (ct.getRowCount > 0) {
                   val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,
                     SpillPriorities.ACTIVE_ON_DECK_PRIORITY)

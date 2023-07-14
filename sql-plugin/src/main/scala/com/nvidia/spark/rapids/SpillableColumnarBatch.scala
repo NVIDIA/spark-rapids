@@ -160,12 +160,7 @@ object SpillableColumnarBatch {
       priority: Long): SpillableColumnarBatch = {
     withResource(ct) { _ =>
       val handle = RapidsBufferCatalog.addContiguousTable(ct, priority)
-      withResource(RapidsBufferCatalog.acquireBuffer(handle)) { _ =>
-        new SpillableColumnarBatchImpl(
-          handle,
-          ct.getRowCount.toInt,
-          sparkTypes)
-      }
+      new SpillableColumnarBatchImpl(handle, ct.getRowCount.toInt, sparkTypes)
     }
   }
 
