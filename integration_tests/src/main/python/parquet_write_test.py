@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_spark_exception, assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_spark_exception
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
@@ -730,6 +730,20 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
         conf={}
     )
 
+# Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
+def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
+
+    def create_table(spark, path):
+        tmp_table = spark_tmp_table_factory.get()
+        spark.sql(f"CREATE TABLE {tmp_table} STORED AS PARQUET " +
+        f""" LOCATION '{path}' AS SELECT CAST('2015-01-01 00:00:00' AS TIMESTAMP) as t; """)
+
+    def read_table(spark, path):
+        return spark.read.parquet(path)
+
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path + '/CPU'))
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")
