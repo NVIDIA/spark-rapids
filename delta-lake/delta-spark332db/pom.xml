@@ -31,6 +31,12 @@
     <description>Databricks 12.2 Delta Lake support for the RAPIDS Accelerator for Apache Spark</description>
     <version>23.08.0-SNAPSHOT</version>
 
+    <properties>
+        <rapids.compressed.artifact>false</rapids.compressed.artifact>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -264,17 +270,6 @@
                         </configuration>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <!-- transient jar, writing compressed can take several x time -->
-                        <compress>false</compress>
-                    </archive>
-                    <classifier>${spark.version.classifier}</classifier>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
