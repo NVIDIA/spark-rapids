@@ -26,6 +26,7 @@ import ai.rapids.cudf._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 
 sealed trait MemoryState
@@ -64,7 +65,11 @@ object GpuDeviceManager extends Logging {
   @volatile private var poolSizeLimit = 0L
 
   // Never split below 100 MiB (but this is really just for testing)
-  def getSplitUntilSize: Long = Math.max(poolSizeLimit / 8, 100 * 1024 * 1024)
+  def getSplitUntilSize: Long = {
+    val conf = new RapidsConf(SQLConf.get)
+    conf.splitUntilSizeOverride
+        .getOrElse(Math.max(poolSizeLimit / 8, 100 * 1024 * 1024))
+  }
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
