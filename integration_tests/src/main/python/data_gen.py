@@ -176,13 +176,12 @@ class ConvertGen(DataGen):
 _MAX_CHOICES = 1 << 64
 class StringGen(DataGen):
     """Generate strings that match a pattern"""
-    def __init__(self, pattern=None, flags=0, charset=sre_yield.CHARSET, nullable=True):
+    def __init__(self, pattern="(.|\n){1,30}", flags=0, charset=sre_yield.CHARSET, nullable=True):
         super().__init__(StringType(), nullable=nullable)
+        self.base_strs = sre_yield.AllStrings(pattern, flags=flags, charset=charset, max_count=_MAX_CHOICES)
+        # save pattern and charset for cache repr
         charsetrepr = '[' + ','.join(charset) + ']' if charset != sre_yield.CHARSET else 'sre_yield.CHARSET'
-        self.stringrepr = str(pattern) + ',' + str(flags) + ',' + charsetrepr
-        self.pattern = pattern
-        self.flags = flags
-        self.charset = charset
+        self.stringrepr = pattern + ',' + str(flags) + ',' + charsetrepr
     
     def _cache_repr(self):
         return super()._cache_repr() + '(' + self.stringrepr + ')'
@@ -197,15 +196,9 @@ class StringGen(DataGen):
         return self.with_special_case(lambda rand : strs[rand.randint(0, length-1)], weight=weight)
 
     def start(self, rand):
-        if self.pattern == None and self.charset == sre_yield.CHARSET:
-            def gen_default_str():
-                # use "(.|\n){1,30}" as default pattern
-                return ''.join(rand.choice(sre_yield.CHARSET + ['\n']) for _ in range(30))
-            self._start(rand, gen_default_str)
-        else:
-            strs = sre_yield.AllStrings(self.pattern, flags=self.flags, charset=self.charset, max_count=_MAX_CHOICES)
-            length = strs.__len__()
-            self._start(rand, lambda : strs[rand.randint(0, length-1)])
+        strs = self.base_strs
+        length = strs.__len__()
+        self._start(rand, lambda : strs[rand.randint(0, length-1)])
 
 BYTE_MIN = -(1 << 7)
 BYTE_MAX = (1 << 7) - 1
