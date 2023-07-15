@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
-import com.nvidia.spark.rapids.Arm.withResource
+// import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -335,37 +335,9 @@ class GpuParquetWriter(
       // included in Spark's `TimestampType`.
       case (cv, _) if cv.getType.isTimestampType && cv.getType != DType.TIMESTAMP_DAYS =>
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-        val typeInt96 = ParquetOutputTimestampType.INT96.toString
-
         outputTimestampType match {
           case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
             cv.castTo(DType.TIMESTAMP_MILLISECONDS)
-
-          case `typeInt96` =>
-            val inRange = withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
-              withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
-                withResource(cv.bitCastTo(DType.INT64)) { int64 =>
-                  withResource(int64.greaterOrEqualTo(upper)) { a =>
-                    withResource(int64.lessOrEqualTo(lower)) { b =>
-                      a.or(b)
-                    }
-                  }
-                }
-              }
-            }
-            val anyInRange = withResource(inRange)(_.any())
-            withResource(anyInRange) { _ =>
-              require(!(anyInRange.isValid && anyInRange.getBoolean),
-                // Its the writer's responsibility to close the input batch when this
-                // exception is thrown.
-                "INT96 column contains one " +
-                "or more values that can overflow and will result in data " +
-                "corruption. Please set " +
-                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false " +
-                "so we can fallback on CPU for writing parquet but still take " +
-                "advantage of parquet read on the GPU.")
-            }
-            cv.copyToColumnVector() /* the input is unchanged */
 
           // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`
           case _ => cv.copyToColumnVector() /* the input is unchanged */

@@ -27,6 +27,7 @@ class CanonicalizeSuite extends AnyFunSuite {
    * https://github.com/apache/spark/pull/37851 (SPARK-40362) as a base.
    */
   test("SPARK-40362: Commutative operator under BinaryComparison") {
+    println("GERA_DEBUG " + getClass())
     Seq(GpuEqualTo, GpuEqualNullSafe, GpuGreaterThan,
         GpuLessThan, GpuGreaterThanOrEqual, GpuLessThanOrEqual)
       .foreach( bc => {
