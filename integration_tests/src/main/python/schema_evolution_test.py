@@ -17,6 +17,7 @@ from data_gen import *
 from datetime import datetime, timezone
 from marks import ignore_order
 import pytest
+from spark_session import is_databricks_runtime, is_databricks113_or_later
 
 _formats = ("parquet", "orc")
 
@@ -58,7 +59,10 @@ def get_ddl(col_gen_pairs):
 @ignore_order(local=True)
 @pytest.mark.parametrize("format", _formats)
 def test_column_add_after_partition(spark_tmp_table_factory, format):
-    before_gens = [("a", LongGen(min_val=-1, max_val=1)),
+    # Databricks 10.4 appears to be missing https://issues.apache.org/jira/browse/SPARK-39417
+    # so avoid generating nulls for numeric partitions
+    before_gens = [("a", LongGen(min_val=-1, max_val=1,
+                                 nullable=not is_databricks_runtime() or is_databricks113_or_later())),
                    ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
                    ("c", long_gen)]
     new_cols_gens = get_additional_columns()
