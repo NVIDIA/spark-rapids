@@ -699,9 +699,6 @@ class GpuDynamicPartitionDataSingleWriter(
 
           // will create a new file, close the old writer
           if (currentWriterStatus != null) {
-            println(
-              s"releasing writer recs in file: ${currentWriterStatus.recordsInFile}" +
-              s" ${partPath}. writer is null? ${currentWriterStatus.outputWriter}")
             releaseWriter(currentWriterStatus.outputWriter)
           }
 

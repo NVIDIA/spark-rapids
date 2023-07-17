@@ -194,15 +194,12 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       tableWriter.write(table)
     }
   }
-  private var closedTimes = 0
 
   /**
    * Closes the [[ColumnarOutputWriter]]. Invoked on the executor side after all columnar batches
    * are persisted, before the task output is committed.
    */
   def close(): Unit = {
-    closedTimes += 1
-    println(s"Times closed: ${closedTimes}")
     if (!anythingWritten) {
       // This prevents writing out bad files
       bufferBatchAndClose(GpuColumnVector.emptyBatch(dataSchema))
