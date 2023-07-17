@@ -54,17 +54,23 @@ def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_colu
         dest_df = dest_table_func(spark)
         writer = dest_df.write.format("delta")
         ddl = schema_to_ddl(spark, dest_df.schema)
-        sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
-        if partition_columns:
-            sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
+        table_properties = {}
         if use_cdf:
-            sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true)"
+            table_properties['delta.enableChangeDataFeed'] = 'true'
+        if enable_deletion_vectors:
+            table_properties['delta.enableDeletionVectors'] = 'true'
+        if len(table_properties) > 0:
+            # if any table properties are specified then we need to use SQL to define the table
+            sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
+            if partition_columns:
+                sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
+            properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
+            sql_text += " TBLPROPERTIES ({})".format(properties)
             spark.sql(sql_text)
-            writer = writer.mode("append")
         elif partition_columns:
             writer = writer.partitionBy(*partition_columns)
-        if enable_deletion_vectors:
-            spark.sql("ALTER TABLE delta.`{path}` SET TBLPROPERTIES ('delta.enableDeletionVectors' = true)".format(path=path))
+        if use_cdf or enable_deletion_vectors:
+            writer = writer.mode("append")
         writer.save(path)
 
 def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,

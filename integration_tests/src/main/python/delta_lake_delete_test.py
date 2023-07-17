@@ -99,9 +99,7 @@ def test_delta_deletion_vector(spark_tmp_path, use_cdf, enable_deletion_vectors,
         return three_col_df(spark,
                             SetValuesGen(IntegerType(), range(5)),
                             SetValuesGen(StringType(), "abcdefg"),
-                            string_gen, num_slices=num_slices_to_test) \
-            .coalesce(1)\
-            .sort("a", ascending=True)
+                            string_gen, num_slices=num_slices_to_test)
     delete_sql = "DELETE FROM delta.`{path}` WHERE b < 'd'"
     dv_conf = copy_and_update(delta_delete_enabled_conf,
                   {"spark.databricks.delta.delete.deletionVectors.persistent": enable_deletion_vectors})
