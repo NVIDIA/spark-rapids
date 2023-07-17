@@ -707,9 +707,6 @@ class GpuDynamicPartitionDataSingleWriter(
             newWriter(partPath, None, currentWriterStatus.fileCounter)
           currentWriterStatus.recordsInFile = 0
         }
-        withResource(part.getColumnarBatch()) { cb =>
-          GpuColumnVector.debug(s"batch for ${partIx}", cb)
-        }
         spillableBatches(partIx) = null
         writeUpdateMetricsAndClose(currentWriterStatus, part)
         needNewWriter = true
