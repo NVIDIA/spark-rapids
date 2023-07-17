@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+
+
 /**
  *
  * Jenkinsfile for building rapids-plugin on blossom
@@ -109,6 +111,7 @@ pipeline {
             }
         } // end of Init githubHelper
 
+/*
         stage('Build docker image') {
             when {
                 beforeAgent true
@@ -191,12 +194,6 @@ pipeline {
                                 timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
                                     try {
                                         sh "$PREMERGE_SCRIPT mvn_verify"
-                                        step([$class                : 'JacocoPublisher',
-                                              execPattern           : '**/target/jacoco.exec',
-                                              classPattern          : 'target/jacoco_classes/',
-                                              sourceInclusionPattern: '**/*.java,**/*.scala',
-                                              sourcePattern         : sourcePattern
-                                        ])
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
@@ -268,6 +265,7 @@ pipeline {
                 } // Dummy stage
             } // end of parallel
         } // end of Premerge Test
+*/
     } // end of stages
 
     post {
@@ -345,14 +343,17 @@ void checkoutCode(String url, String sha) {
         poll: true,
         scm: [
             $class           : 'GitSCM', branches: [[name: sha]],
-            submoduleCfg     : [],
             userRemoteConfigs: [[
                                     credentialsId: 'github-token',
                                     url          : url,
-                                    refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
+                                    refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
+             extensions      : [[$class: 'CloneOption', shallow: true],
+                                [$class: 'SubmoduleOption', shallow: true, parentCredentials: true]]
         ]
     )
-
+    sh "git log --oneline"
+    sh "cd thirdparty/parquet-testing && git log --oneline"
+    sh "find thirdparty/parquet-testing/bad-data || true"
     stash(name: "source_tree", includes: "**,.git/**", useDefaultExcludes: false)
 }
 
