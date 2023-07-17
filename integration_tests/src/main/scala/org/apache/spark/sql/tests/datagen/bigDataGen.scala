@@ -574,8 +574,13 @@ abstract class DataGen(var conf: ColumnConf,
   /**
    * Get a child column for a given name, if it has one.
    */
-  def apply(name: String): DataGen =
-    throw new IllegalStateException(s"$this is not a nested type")
+  final def apply(name: String): DataGen = {
+    get(name).getOrElse{
+      throw new IllegalStateException(s"Could not find a child $name for $this")
+    }
+  }
+
+  def get(name: String): Option[DataGen] = None
 }
 
 /**
@@ -1340,13 +1345,11 @@ class StructGen(val children: Seq[(String, DataGen)],
     this
   }
 
-  override def apply(name: String): DataGen = {
+  override def get(name: String): Option[DataGen] = {
     children.find {
       case (childName, _) =>
         childName.equalsIgnoreCase(name)
-    }.map(_._2).getOrElse {
-      throw new IllegalArgumentException(s"$name not found: ${children.map(_._1).mkString(" ")}")
-    }
+    }.map(_._2)
   }
 
   override protected def getValGen: GeneratorFunction = {
@@ -1400,11 +1403,11 @@ class ArrayGen(child: DataGen,
 
   override def dataType: DataType = ArrayType(child.dataType, containsNull = child.nullable)
 
-  override def apply(name: String): DataGen = {
+  override def get(name: String): Option[DataGen] = {
     if ("data".equalsIgnoreCase(name) || "child".equalsIgnoreCase(name)) {
-      child
+      Some(child)
     } else {
-      throw new IllegalArgumentException(s"$name not found: child or data are supported")
+      None
     }
   }
 }
@@ -1474,7 +1477,13 @@ class ColumnGen(val dataGen: DataGen) {
     this
   }
 
-  def apply(name: String): DataGen = dataGen(name)
+  final def apply(name: String): DataGen = {
+    get(name).getOrElse {
+      throw new IllegalArgumentException(s"$name not a child of $this")
+    }
+  }
+
+  def get(name: String): Option[DataGen] = dataGen.get(name)
 
   def gen(rowNumber: Column): Column = {
     ColumnGen.genInternal(rowNumber, dataGen.dataType, dataGen.nullable, dataGen.getGen)
@@ -1582,12 +1591,16 @@ class TableGen(val columns: Seq[(String, ColumnGen)], numRows: Long) {
    * @return the corresponding column gen
    */
   def apply(name: String): ColumnGen = {
+    get(name).getOrElse {
+      throw new IllegalArgumentException(s"$name not found: ${columns.map(_._1).mkString(" ")}")
+    }
+  }
+
+  def get(name: String): Option[ColumnGen] = {
     columns.find {
       case (childName, _) =>
         childName.equalsIgnoreCase(name)
-    }.map(_._2).getOrElse {
-      throw new IllegalArgumentException(s"$name not found: ${columns.map(_._1).mkString(" ")}")
-    }
+    }.map(_._2)
   }
 }
 
@@ -1729,6 +1742,7 @@ object DBGen {
  */
 class DBGen {
   private var tableId = 0
+  private val tables = mutable.HashMap.empty[String, TableGen]
   private val defaultRanges = mutable.HashMap.empty[DataType, (Any, Any)]
   private val mappings = ArrayBuffer[TypeMapping](DefaultTypeMapping)
 
@@ -1773,7 +1787,9 @@ class DBGen {
    * @param numRows the number of rows for this table
    * @return the TableGen that was just added
    */
-  def addTable(name: String, st: StructType, numRows: Long): TableGen = {
+  def addTable(name: String,
+      st: StructType,
+      numRows: Long): TableGen = {
     val localTableId = tableId
     tableId += 1
     val mapping = OrderedTypeMapping(mappings.toArray)
@@ -1788,7 +1804,9 @@ class DBGen {
    * @param numRows the number of rows for this table
    * @return the TableGen that was just created
    */
-  def addTable(name: String, ddl: String, numRows: Long): TableGen = {
+  def addTable(name: String,
+      ddl: String,
+      numRows: Long): TableGen = {
     val localTableId = tableId
     tableId += 1
     val mapping = OrderedTypeMapping(mappings.toArray)
@@ -1804,10 +1822,29 @@ class DBGen {
    */
   def apply(name: String): TableGen = tables(name.toLowerCase)
 
+  def get(name: String): Option[TableGen] = tables.get(name)
+
   /**
    * Names of the tables.
    */
   def tableNames: Seq[String] = tables.keys.toSeq
+
+  /**
+   * Get an immutable map out of this.
+   */
+  def toMap: Map[String, TableGen] = tables.toMap
+
+  /**
+   * Convert all of the tables into dataframes
+   * @param spark the session to use for the conversion
+   * @param numParts the number of parts (tasks) to use. <= 0 uses the same number of tasks
+   *                 as the cluster has.
+   * @return a Map of the name of the table to the dataframe.
+   */
+  def toDF(spark: SparkSession, numParts: Int = 0): Map[String, DataFrame] =
+    tables.asInstanceOf[Map[String, TableGen]].map {
+      case (name, gen) => (name, gen.toDF(spark, numParts))
+    }
 
   /**
    * Take all of the tables and create or replace temp views with them using the given name.
@@ -1815,12 +1852,10 @@ class DBGen {
    * @param spark the session to use
    * @param numParts the number of parts to use, if > 0
    */
-  def createOrReplaceTempViews(spark: SparkSession, numParts: Int = 0): Unit = {
-    tables.foreach {
-      case (name, gen) =>
-        gen.toDF(spark, numParts).createOrReplaceTempView(name)
+  def createOrReplaceTempViews(spark: SparkSession, numParts: Int = 0): Unit =
+    toDF(spark, numParts).foreach {
+      case (name, df) => df.createOrReplaceTempView(name)
     }
-  }
 
   /**
    * Write all of the tables out as parquet under path/table_name and overwrite anything that is
@@ -1834,10 +1869,10 @@ class DBGen {
       path: String,
       numParts: Int = 0,
       overwrite: Boolean = false): Unit = {
-    tables.foreach {
-      case (name, gen) =>
+    toDF(spark, numParts).foreach {
+      case (name, df) =>
         val subPath = path + "/" + name
-        var writer = gen.toDF(spark, numParts).write
+        var writer = df.write
         if (overwrite) {
           writer = writer.mode("overwrite")
         }
@@ -1889,10 +1924,10 @@ class DBGen {
       path: String,
       numParts: Int = 0,
       overwrite: Boolean = false): Unit = {
-    tables.foreach {
-      case (name, gen) =>
+    toDF(spark, numParts).foreach {
+      case (name, df) =>
         val subPath = path + "/" + name
-        var writer = gen.toDF(spark, numParts).write
+        var writer = df.write
         if (overwrite) {
           writer = writer.mode("overwrite")
         }
@@ -1931,10 +1966,13 @@ class DBGen {
     createOrReplaceTempViewsFromOrc(spark, path)
   }
 
+  /**
+   * Add a new user controlled type mapping. This allows
+   * the user to totally override the handling for any or all types.
+   * @param mapping the new mapping to add with highest priority.
+   */
   def addTypeMapping(mapping: TypeMapping): Unit = {
     // Insert this mapping in front of the others
     mappings.insert(0, mapping)
   }
-
-  private val tables = mutable.HashMap.empty[String, TableGen]
 }
