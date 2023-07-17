@@ -731,6 +731,7 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
     )
 
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
+@pytest.mark.allow_non_gpu_databricks("DataWritingCommandExec")
 def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
 
     def create_table(spark, path):
