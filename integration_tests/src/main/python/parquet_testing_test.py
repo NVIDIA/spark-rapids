@@ -38,11 +38,10 @@ _java_reader_confs = copy_and_update(
 # When the association is a pair rather than a string, it's a way to xfail the test
 # by providing the error string and xfail reason.
 _error_files = {
-    "delta_length_byte_array.parquet": "Unsupported",
-    "fixed_length_byte_array.parquet": "type",
+    "fixed_length_byte_array.parquet": "Exception",
     "large_string_map.brotli.parquet": "Exception",
-    "lz4_raw_compressed.parquet": "Required field 'codec' was not present!",
-    "lz4_raw_compressed_larger.parquet": "Required field 'codec' was not present!",
+    "lz4_raw_compressed.parquet": "Exception",
+    "lz4_raw_compressed_larger.parquet": "Exception",
     "nation.dict-malformed.parquet": ("Exception", "https://github.com/NVIDIA/spark-rapids/issues/8644"),
     "non_hadoop_lz4_compressed.parquet": "Exception",
     "PARQUET-1481.parquet": "Exception",
@@ -57,6 +56,7 @@ _xfail_files = {
     "delta_byte_array.parquet": "https://github.com/rapidsai/cudf/issues/13501",
     "delta_encoding_optional_column.parquet": "https://github.com/rapidsai/cudf/issues/13501",
     "delta_encoding_required_column.parquet": "https://github.com/rapidsai/cudf/issues/13501",
+    "delta_length_byte_array.parquet": "https://github.com/rapidsai/cudf/issues/13501",
     "hadoop_lz4_compressed.parquet": "cudf does not support Hadoop LZ4 format",
     "hadoop_lz4_compressed_larger.parquet": "cudf does not support Hadoop LZ4 format",
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
