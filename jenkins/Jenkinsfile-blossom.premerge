@@ -345,15 +345,15 @@ void checkoutCode(String url, String sha) {
         poll: true,
         scm: [
             $class           : 'GitSCM', branches: [[name: sha]],
-            submoduleCfg     : [],
             userRemoteConfigs: [[
                                     credentialsId: 'github-token',
                                     url          : url,
-                                    refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
+                                    refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
+             extensions      : [[$class: 'CloneOption', shallow: true],
+                                [$class: 'SubmoduleOption', shallow: true, parentCredentials: true]]
         ]
     )
 
-    git submodule update --init
     stash(name: "source_tree", includes: "**,.git/**", useDefaultExcludes: false)
 }
 
