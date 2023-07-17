@@ -174,14 +174,15 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
         RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
           withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+            scan(cb)
             transform(cb) match {
               case Some(transformed) =>
                 // because we created a new transformed batch, we need to make sure we close it
                 withResource(transformed) { _ =>
-                  scanAndWrite(transformed)
+                  write(transformed)
                 }
               case _ =>
-                scanAndWrite(cb)
+                write(cb)
             }
           }
         }
@@ -198,14 +199,15 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     try {
       val startTimestamp = System.nanoTime
       withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+        scan(batch)
         transform(batch) match {
           case Some(transformed) =>
             // because we created a new transformed batch, we need to make sure we close it
             withResource(transformed) { _ =>
-              scanAndWrite(transformed)
+              write(transformed)
             }
           case _ =>
-            scanAndWrite(batch)
+            write(batch)
         }
       }
 
@@ -223,9 +225,14 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
-  private def scanAndWrite(batch: ColumnarBatch): Unit = {
+  private def scan(batch: ColumnarBatch): Unit = {
     withResource(GpuColumnVector.from(batch)) { table =>
       scanTableBeforeWrite(table)
+    }
+  }
+
+  private def write(batch: ColumnarBatch): Unit = {
+    withResource(GpuColumnVector.from(batch)) { table =>
       anythingWritten = true
       tableWriter.write(table)
     }

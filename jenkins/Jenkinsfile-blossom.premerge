@@ -75,16 +75,6 @@ pipeline {
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CUDA_CLASSIFIER = 'cuda11'
-        // DB related ENVs
-        IDLE_TIMEOUT = '390' // 6.5 hours
-        NUM_WORKERS = '0'
-        DB_TYPE = getDbType()
-        DATABRICKS_HOST = DbUtils.getHost("$DB_TYPE")
-        DATABRICKS_TOKEN = credentials("${DbUtils.getToken("$DB_TYPE")}")
-        DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
-        DATABRICKS_DRIVER = DbUtils.getDriver("$DB_TYPE")
-        DATABRICKS_WORKER = DbUtils.getWorker("$DB_TYPE")
-        INIT_SCRIPTS_DIR = "dbfs:/databricks/init_scripts/${BUILD_TAG}"
     }
 
     stages {
@@ -141,7 +131,7 @@ pipeline {
                 script {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
                     unstash "source_tree"
-                    container('docker-build') {
+                    container('cpu') {
                         // check if pre-merge dockerfile modified
                         def dockerfileModified = sh(returnStdout: true,
                                 script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
@@ -166,28 +156,6 @@ pipeline {
                 }
             }
         } // end of Build docker image
-
-        stage('Init DB') {
-            when {
-                beforeAgent true
-                expression {
-                    db_build
-                }
-            }
-            agent {
-                kubernetes {
-                    label "premerge-ci-db-init-${BUILD_NUMBER}"
-                    cloud 'sc-ipp-blossom-prod'
-                    yaml "${IMAGE_DB}"
-                }
-            }
-            steps {
-                script {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
-                    unstash "source_tree"
-                }
-            }
-        }
 
         stage('Premerge Test') {
             when {
@@ -270,101 +238,28 @@ pipeline {
                     }
                 } // end of Unit Test stage
 
-                stage('DB runtime 10.4') {
+                stage('Databricks') {
                     when {
-                        beforeAgent true
-                        anyOf {
-                            expression { db_build }
-                        }
-                    }
-
-                    agent {
-                        kubernetes {
-                            label "premerge-ci-db-10.4-${BUILD_NUMBER}"
-                            cloud 'sc-ipp-blossom-prod'
-                            yaml "${IMAGE_DB}"
-                        }
-                    }
-                    environment {
-                        DB_RUNTIME = '10.4'
-                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
-                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
-                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
-                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
+                        expression { db_build }
                     }
                     steps {
                         script {
-                            timeout(time: 6, unit: 'HOURS') {
-                                unstash "source_tree"
-                                databricksBuild()
+                            githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
+                            def DBJob = build(job: 'rapids-databricks_premerge-github',
+                                propagate: false, wait: true,
+                                parameters: [
+                                        string(name: 'REF', value: params.REF),
+                                        string(name: 'GITHUB_DATA', value: params.GITHUB_DATA)
+                                ])
+                            if ( DBJob.result != 'SUCCESS' ) {
+                                // Output Databricks failure logs to uploaded onto the pre-merge PR
+                                print(DBJob.getRawBuild().getLog())
+                                // Fail the pipeline
+                                error "Databricks build result : " + DBJob.result
                             }
                         }
                     }
-                } // end of DB runtime 10.4
-
-                stage('DB runtime 11.3') {
-                    when {
-                        beforeAgent true
-                        anyOf {
-                            expression { db_build }
-                        }
-                    }
-
-                    agent {
-                        kubernetes {
-                            label "premerge-ci-db-11.3-${BUILD_NUMBER}"
-                            cloud 'sc-ipp-blossom-prod'
-                            yaml "${IMAGE_DB}"
-                        }
-                    }
-                    environment {
-                        DB_RUNTIME = '11.3'
-                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
-                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
-                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
-                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
-                    }
-                    steps {
-                        script {
-                            timeout(time: 6, unit: 'HOURS') {
-                                unstash "source_tree"
-                                databricksBuild()
-                            }
-                        }
-                    }
-                } // end of DB runtime 11.3
-
-                stage('DB runtime 12.2') {
-                    when {
-                        beforeAgent true
-                        anyOf {
-                            expression { db_build }
-                        }
-                    }
-
-                    agent {
-                        kubernetes {
-                            label "premerge-ci-db-12.2-${BUILD_NUMBER}"
-                            cloud 'sc-ipp-blossom-prod'
-                            yaml "${IMAGE_DB}"
-                        }
-                    }
-                    environment {
-                        DB_RUNTIME = '12.2'
-                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
-                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
-                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
-                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
-                    }
-                    steps {
-                        script {
-                            timeout(time: 6, unit: 'HOURS') {
-                                unstash "source_tree"
-                                databricksBuild()
-                            }
-                        }
-                    }
-                } // end of DB runtime 12.2
+                } // end of Databricks
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
@@ -406,88 +301,6 @@ pipeline {
     }
 
 } // end of pipeline
-
-// params.DATABRICKS_TYPE: 'aws' or 'azure', param can be defined through the jenkins webUI
-String getDbType() {
-    return params.DATABRICKS_TYPE ? params.DATABRICKS_TYPE : 'aws'
-}
-
-void databricksBuild() {
-    def CLUSTER_ID = ''
-    def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
-    def dbfs_path = "$INIT_SCRIPTS_DIR-$DB_TYPE"
-    try {
-        stage("Create $SPARK_MAJOR DB") {
-            script {
-                container('cpu') {
-                    sh "rm -rf spark-rapids-ci.tgz"
-                    sh "tar -zcf spark-rapids-ci.tgz *"
-                    def CREATE_PARAMS = " -r $DATABRICKS_RUNTIME -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN" +
-                            " -s $DB_TYPE -n CI-${BUILD_TAG}-${BASE_SPARK_VERSION} -k \"$DATABRICKS_PUBKEY\" -i $IDLE_TIMEOUT" +
-                            " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS"
-
-                    // handle init scripts if exist
-                    if (env.INIT_SCRIPTS) {
-                        sh "bash -c 'dbfs mkdirs $dbfs_path'"
-                        env.INIT_SCRIPTS.split(',').each {
-                            sh "bash -c 'dbfs cp --overwrite jenkins/databricks/${it} $dbfs_path'"
-                        }
-                        // foo.sh,bar.sh --> dbfs:/path/foo.sh,dbfs:/path/bar.sh
-                        CREATE_PARAMS += " -f $dbfs_path/" + env.INIT_SCRIPTS.replace(',', ",$dbfs_path/")
-                    }
-
-                    CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS",
-                            returnStdout: true).trim()
-                    echo CLUSTER_ID
-                }
-            }
-        }
-
-        stage("Build against $SPARK_MAJOR DB") {
-            script {
-                container('cpu') {
-                    withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                        def BUILD_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -z ./spark-rapids-ci.tgz" +
-                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/build.sh -d /home/ubuntu/build.sh" +
-                                " -v $BASE_SPARK_VERSION -i $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
-                        sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
-                    }
-                }
-            }
-        }
-
-        stage("Test agaist $SPARK_MAJOR DB") {
-            script {
-                container('cpu') {
-                    try {
-                        withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                            def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
-                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
-                            if (params.SPARK_CONF) {
-                                TEST_PARAMS += " -f ${params.SPARK_CONF}"
-                            }
-                            sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
-                        }
-                    } finally {
-                        common.publishPytestResult(this, "${STAGE_NAME}")
-                    }
-                }
-            }
-        }
-
-    } finally {
-        if (CLUSTER_ID) {
-            container('cpu') {
-                retry(3) {
-                    if (env.INIT_SCRIPTS) {
-                        sh "bash -c 'dbfs rm -r $dbfs_path'"
-                    }
-                    sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
-                }
-            }
-        }
-    }
-}
 
 void uploadDocker(String IMAGE_NAME) {
     def DOCKER_CMD = "docker --config $WORKSPACE/.docker"

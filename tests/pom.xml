@@ -29,6 +29,11 @@
     <description>RAPIDS plugin for Apache Spark integration tests</description>
     <version>23.08.0-SNAPSHOT</version>
 
+    <properties>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -428,17 +433,19 @@
                 </property>
             </activation>
         </profile>
+        <profile>
+            <id>release341</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341</value>
+                </property>
+            </activation>
+        </profile>
     </profiles>
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <classifier>${spark.version.classifier}</classifier>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>

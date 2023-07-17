@@ -943,10 +943,12 @@ object GpuOverrides extends Logging {
         TypeSig.numericAndInterval,
         Seq(
           ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128 +
+              TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128 +
+              TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
     expr[WindowSpecDefinition](
@@ -1123,6 +1125,30 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[DayOfYear](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
+      }),
+    expr[SecondsToTimestamp](
+      "Converts the number of seconds from unix epoch to a timestamp",
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+      (a, conf, p, r) => new UnaryExprMeta[SecondsToTimestamp](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuSecondsToTimestamp(child)
+      }),
+    expr[MillisToTimestamp](
+      "Converts the number of milliseconds from unix epoch to a timestamp",
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryExprMeta[MillisToTimestamp](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMillisToTimestamp(child)
+      }),
+    expr[MicrosToTimestamp](
+      "Converts the number of microseconds from unix epoch to a timestamp",
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryExprMeta[MicrosToTimestamp](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMicrosToTimestamp(child)
       }),
     expr[Acos](
       "Inverse cosine",
@@ -1539,9 +1565,7 @@ object GpuOverrides extends Logging {
       }),
     expr[KnownFloatingPointNormalized](
       "Tag to prevent redundant normalization",
-      ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.FLOAT,
-        TypeSig.DOUBLE + TypeSig.FLOAT),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.all, TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
@@ -3044,7 +3068,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-              TypeSig.STRUCT).nested(), TypeSig.all))),
+              TypeSig.STRUCT + TypeSig.ARRAY).nested(), TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -3566,10 +3590,25 @@ object GpuOverrides extends Logging {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT).nested(), TypeSig.all)),
+            TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+        TypeSig.all)
+      ),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagPartForGpu(): Unit = {
+          val arrayWithStructsHashing = hp.expressions.exists(e =>
+            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+              dt => dt match {
+                case ArrayType(_: StructType, _) => true
+                case _ => false
+              })
+          )
+          if (arrayWithStructsHashing) {
+            willNotWorkOnGpu("hashing arrays with structs is not supported")
+          }
+        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
@@ -3818,7 +3857,7 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(
-            Seq(TypeEnum.ARRAY, TypeEnum.MAP),
+            Seq(TypeEnum.MAP),
             "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
@@ -3883,8 +3922,10 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP, TypeEnum.BINARY),
+            .withPsNote(Seq(TypeEnum.MAP, TypeEnum.BINARY),
               "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.ARRAY,
+              "not allowed for grouping expressions if containing Struct as child")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array, Map, or Binary as child"),
         TypeSig.all),
