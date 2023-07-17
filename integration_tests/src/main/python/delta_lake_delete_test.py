@@ -50,12 +50,15 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
         if not skip_sql_result_check:
             # compare resulting dataframe from the delete operation (some older Spark versions return empty here)
             cpu_result = with_cpu_session(lambda spark: do_delete(spark, cpu_path).collect(), conf=conf)
-            gpu_result = with_gpu_session(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
-            assert_equal(cpu_result, gpu_result)
+            gpu_write_cpu_read_result = with_gpu_session(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
+            assert_equal(cpu_result, gpu_write_cpu_read_result)
         # compare table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).collect(), conf=conf)
-        gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
-        assert_equal(cpu_result, gpu_result)
+        gpu_write_cpu_read_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
+        # also read via GPU to ensure that GPU reads respect data written by GPU, such as deletion vectors
+        gpu_write_gpu_read_result = with_gpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
+        assert_equal(cpu_result, gpu_write_cpu_read_result)
+        assert_equal(cpu_result, gpu_write_gpu_read_result)
         with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql, checker,
                           partition_columns, enable_deletion_vectors)
