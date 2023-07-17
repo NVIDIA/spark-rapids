@@ -1842,7 +1842,7 @@ class DBGen {
    * @return a Map of the name of the table to the dataframe.
    */
   def toDF(spark: SparkSession, numParts: Int = 0): Map[String, DataFrame] =
-    tables.asInstanceOf[Map[String, TableGen]].map {
+    toMap.map {
       case (name, gen) => (name, gen.toDF(spark, numParts))
     }
 
