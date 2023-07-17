@@ -1822,7 +1822,7 @@ class DBGen {
    */
   def apply(name: String): TableGen = tables(name.toLowerCase)
 
-  def get(name: String): Option[TableGen] = tables.get(name)
+  def get(name: String): Option[TableGen] = tables.get(name.toLowerCase)
 
   /**
    * Names of the tables.
