@@ -264,6 +264,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batch.numRows())).sum
   }
 
+  override def hasAnyToConcat: Boolean = totalRows > 0
+
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())

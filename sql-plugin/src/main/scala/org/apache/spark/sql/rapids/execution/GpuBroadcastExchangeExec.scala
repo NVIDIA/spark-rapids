@@ -135,12 +135,10 @@ class SerializeConcatHostBuffersDeserializeBatch(
               SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           } else {
             // Regular GPU batch with rows/cols
-            withResource(data.toContiguousTable) { ct =>
-              SpillableColumnarBatch(
-                ct,
-                dataTypes,
-                SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-            }
+            SpillableColumnarBatch(
+              data.toContiguousTable,
+              dataTypes,
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
         // At this point we no longer need the host data and should not need to touch it again.
         // Note that we don't close this using `withResources` around the creation of the

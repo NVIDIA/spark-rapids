@@ -808,7 +808,7 @@ def test_regexp_extract_all_idx_negative():
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_out_of_bounds():
-    gen = mk_str_gen('[abcd]{0,3}')
+    gen = mk_str_gen('[a-d]{1,2}.{0,1}[0-9]{1,2}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract_all(a, "([a-d]+).*([0-9])", 3)'

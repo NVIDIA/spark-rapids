@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
@@ -752,12 +752,11 @@ case class GpuGenerateExec(
       val splitInput = withResource(GpuColumnVector.from(input)) { table =>
         table.contiguousSplit(splitIndices: _*)
       }
-      splitInput.zipWithIndex.safeMap { case (ct, i) =>
-        closeOnExcept(splitInput.slice(i + 1, splitInput.length)) { _ =>
-          withResource(ct) { ct: ContiguousTable =>
-            SpillableColumnarBatch(ct, schema,
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          }
+      closeOnExcept(splitInput) { _ =>
+        splitInput.zipWithIndex.safeMap { case (ct, i) =>
+          splitInput(i) = null
+          SpillableColumnarBatch(ct, schema,
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
         }
       }
     }
