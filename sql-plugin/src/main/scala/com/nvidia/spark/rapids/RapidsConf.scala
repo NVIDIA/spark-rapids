@@ -1266,6 +1266,20 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_RANGE_WINDOW_FLOAT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.float.enabled")
+      .doc("When set to false, this disables the range window acceleration for the " +
+        "FLOAT type order-by column")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_RANGE_WINDOW_DOUBLE: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.double.enabled")
+      .doc("When set to false, this disables the range window acceleration for the " +
+        "double type order-by column")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_RANGE_WINDOW_DECIMAL: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.window.range.decimal.enabled")
     .doc("When set to false, this disables the range window acceleration for the " +
@@ -1941,6 +1955,12 @@ object RapidsConf {
         "The chunked pack bounce buffer must be at least 1MB in size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
+      .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
+      .internal()
+      .longConf
+      .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2569,6 +2589,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
+  lazy val isRangeWindowFloatEnabled: Boolean = get(ENABLE_RANGE_WINDOW_FLOAT)
+
+  lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
+
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
@@ -2604,6 +2628,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

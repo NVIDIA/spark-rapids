@@ -60,6 +60,10 @@ abstract class GpuOrcDataReaderBase(
   private val missMetric = getMetric(GpuMetric.FILECACHE_DATA_RANGE_MISSES)
   private val missSizeMetric = getMetric(GpuMetric.FILECACHE_DATA_RANGE_MISSES_SIZE)
 
+  // cache of the last stripe footer that was read and the corresponding stripe info for it
+  private var lastStripeFooter: OrcProto.StripeFooter = null
+  private var lastStripeFooterInfo: StripeInformation = null
+
   protected trait BlockLoader {
     /** Load data and potentially populate the filecache, returning the next range after last */
     def loadRemoteBlocks(
@@ -109,6 +113,9 @@ abstract class GpuOrcDataReaderBase(
   }
 
   override def readStripeFooter(stripe: StripeInformation): OrcProto.StripeFooter = {
+    if (stripe == lastStripeFooterInfo) {
+      return lastStripeFooter
+    }
     val offset = stripe.getOffset + stripe.getIndexLength + stripe.getDataLength
     val tailLength = stripe.getFooterLength.toInt
     val tailBuf = ByteBuffer.allocate(tailLength)
@@ -139,7 +146,9 @@ abstract class GpuOrcDataReaderBase(
         }
       }
     }
-    parseStripeFooter(tailBuf, tailLength)
+    lastStripeFooter = parseStripeFooter(tailBuf, tailLength)
+    lastStripeFooterInfo = stripe
+    lastStripeFooter
   }
 
   override def isTrackingDiskRanges: Boolean = false
