@@ -761,8 +761,8 @@ def test_hive_timestamp_value_fallback(spark_tmp_table_factory, spark_tmp_path):
 
     def func_test(create_table, read_table, data_path, conf):
         assert_gpu_fallback_write(
-            lambda spark, path: create_table(spark, path),
-            lambda spark, path: read_table(spark, path),
+            create_table,
+            read_table,
             data_path,
             ['DataWritingCommandExec'],
             conf)
