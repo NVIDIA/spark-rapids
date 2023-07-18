@@ -2,7 +2,7 @@
 NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch.
 
 The RAPIDS Accelerator for Apache Spark provides a set of plugins for
-[Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing 
+[Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing
 via the [RAPIDS](https://rapids.ai) libraries.
 
 Documentation on the current release can be found [here](https://nvidia.github.io/spark-rapids/).
@@ -68,6 +68,7 @@ for more details on how to use the tools.
 If you need to develop some functionality on top of RAPIDS Accelerator For Apache Spark (we currently
 limit support to GPU-accelerated UDFs) we recommend you declare our distribution artifact
 as a `provided` dependency.
+
 
 ```xml
 <dependency>
