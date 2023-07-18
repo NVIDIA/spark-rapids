@@ -139,8 +139,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
         // rather than a SpillableColumnBatch to be able to do that
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
         val cb = sb.getColumnarBatch()
-        statsTrackers.foreach(_.newBatch(path(), cb))
         closeOnExcept(cb) { _ =>
+          statsTrackers.foreach(_.newBatch(path(), cb))
           scanBatchBeforeWrite(cb)
         }
         withRestoreOnRetry(checkpointRestore) {
@@ -150,8 +150,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     } else {
       withResource(spillableBatch) { _ =>
         val cb = spillableBatch.getColumnarBatch()
-        statsTrackers.foreach(_.newBatch(path(), cb))
         closeOnExcept(cb) { _ =>
+          statsTrackers.foreach(_.newBatch(path(), cb))
           scanBatchBeforeWrite(cb)
         }
         bufferBatchAndClose(cb)
