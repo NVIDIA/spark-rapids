@@ -350,7 +350,7 @@ void checkoutCode(String url, String sha) {
                                     url          : url,
                                     refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
              extensions      : [[$class: 'CloneOption', shallow: true],
-                                [$class: 'SubmoduleOption', shallow: true, parentCredentials: true]]
+                                [$class: 'SubmoduleOption', disableSubmodules: false, shallow: true, parentCredentials: true]]
         ]
     )
 
