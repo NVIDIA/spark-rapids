@@ -237,11 +237,7 @@ class GpuSingleDirectoryDataWriter(
   }
 
   private def writeUpdateMetricsAndClose(scb: SpillableColumnarBatch): Unit = {
-    closeOnExcept(scb) { _ =>
-      statsTrackers.foreach(_.newBatch(currentWriter.path(), scb))
-      recordsInFile += scb.numRows
-    }
-    currentWriter.writeSpillableAndClose(scb, statsTrackers)
+    recordsInFile += currentWriter.writeSpillableAndClose(scb, statsTrackers)
   }
 
   override def write(batch: ColumnarBatch): Unit = {
@@ -717,12 +713,8 @@ class GpuDynamicPartitionDataSingleWriter(
   protected def writeUpdateMetricsAndClose(
       writerStatus: WriterStatus,
       spillableBatch: SpillableColumnarBatch): Unit = {
-    closeOnExcept(spillableBatch) { _ =>
-      statsTrackers.foreach(_.newBatch(
-        writerStatus.outputWriter.path(), spillableBatch))
-      writerStatus.recordsInFile += spillableBatch.numRows
-    }
-    writerStatus.outputWriter.writeSpillableAndClose(spillableBatch, statsTrackers)
+    writerStatus.recordsInFile +=
+        writerStatus.outputWriter.writeSpillableAndClose(spillableBatch, statsTrackers)
   }
 
   /** Release all resources. */

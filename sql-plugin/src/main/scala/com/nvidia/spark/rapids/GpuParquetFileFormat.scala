@@ -293,7 +293,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
       override def partitionFlushSize(context: TaskAttemptContext): Long =
         context.getConfiguration.getLong("write.parquet.row-group-size-bytes",
-        128L * 1024L * 1024L) // 128M
+          128L * 1024L * 1024L) // 128M
     }
   }
 }

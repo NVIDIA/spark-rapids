@@ -40,7 +40,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * `org.apache.spark.sql.execution.datasources.OutputWriterFactory`.
  */
 abstract class ColumnarOutputWriterFactory extends Serializable {
-  def partitionFlushSize(context: TaskAttemptContext): Long= 128L * 1024L * 1024L // 128M
+  def partitionFlushSize(context: TaskAttemptContext): Long = 128L * 1024L * 1024L // 128M
 
   /** Returns the file extension to be used when writing files out. */
   def getFileExtension(context: TaskAttemptContext): String
@@ -130,7 +130,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
    */
   def writeSpillableAndClose(
       spillableBatch: SpillableColumnarBatch,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
     val writeStartTime = System.nanoTime
     val gpuTime = if (includeRetry) {
       withRetry(spillableBatch, splitSpillableInHalfByRows) { sb =>
@@ -139,6 +139,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
         // rather than a SpillableColumnBatch to be able to do that
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
         val cb = sb.getColumnarBatch()
+        statsTrackers.foreach(_.newBatch(path(), cb))
         closeOnExcept(cb) { _ =>
           scanBatchBeforeWrite(cb)
         }
@@ -149,6 +150,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     } else {
       withResource(spillableBatch) { _ =>
         val cb = spillableBatch.getColumnarBatch()
+        statsTrackers.foreach(_.newBatch(path(), cb))
         closeOnExcept(cb) { _ =>
           scanBatchBeforeWrite(cb)
         }
@@ -160,6 +162,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     GpuSemaphore.releaseIfNecessary(TaskContext.get)
     writeBufferedData()
     updateStatistics(writeStartTime, gpuTime, statsTrackers)
+    spillableBatch.numRows()
   }
 
   private[this] def bufferBatchAndClose(batch: ColumnarBatch): Long = {
@@ -183,7 +186,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   private def encodeAndBufferToHost(batch: ColumnarBatch): Unit = {
     withResource(GpuColumnVector.from(batch)) { table =>
-      // that `anythingWritten` is set here is an indication that there was data at all
+      // `anythingWritten` is set here as an indication that there was data at all
       // to write, even if the `tableWriter.write` method fails. If we fail to write
       // and the task fails, any output is going to be discarded anyway, so no data
       // corruption to worry about. Otherwise, we should retry (OOM case).
