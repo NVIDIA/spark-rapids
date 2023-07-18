@@ -40,6 +40,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * `org.apache.spark.sql.execution.datasources.OutputWriterFactory`.
  */
 abstract class ColumnarOutputWriterFactory extends Serializable {
+  /** Returns the default partition flush size in bytes, format specific */
   def partitionFlushSize(context: TaskAttemptContext): Long = 128L * 1024L * 1024L // 128M
 
   /** Returns the file extension to be used when writing files out. */
