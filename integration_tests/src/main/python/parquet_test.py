@@ -1527,3 +1527,11 @@ def test_parquet_column_name_with_dots(spark_tmp_path, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`.`c.d.e`.`f.g`"),
                                          conf=all_confs)
+
+# https://github.com/NVIDIA/spark-rapids/issues/8712
+def test_select_single_complex_field_array(spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    data_gen = ArrayGen(StructGen([('first', StringGen()),('last', StringGen())]), max_length=10, nullable=False)
+    with_cpu_session(lambda spark: gen_df(spark, data_gen).write.parquet(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path).selectExpr("value.last", "value"))
