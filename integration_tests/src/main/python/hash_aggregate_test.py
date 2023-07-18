@@ -1877,8 +1877,7 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),
     DecimalGen(precision=36, scale=5),
-    null_gen] + array_gens_sample # + struct_gens_sample
-# Nested structs have issues, https://github.com/NVIDIA/spark-rapids/issues/8702
+    null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
 def test_min_max_for_struct(data_gen):
