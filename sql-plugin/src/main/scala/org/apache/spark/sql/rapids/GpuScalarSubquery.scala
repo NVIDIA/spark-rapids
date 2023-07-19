@@ -66,9 +66,13 @@ case class GpuScalarSubquery(
       ExprId(0))
   }
 
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    require(updated, s"$this has not finished")
+    GpuScalar(result, dataType)
+  }
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     require(updated, s"$this has not finished")
-    GpuExpressionsUtils.resolveColumnVector(
-      GpuScalar(result, dataType), batch.numRows())
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
   }
 }
