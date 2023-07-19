@@ -756,7 +756,7 @@ def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
     hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, 'CORRECTED', func_test)
 
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec')
 def test_hive_timestamp_value_fallback(spark_tmp_table_factory, spark_tmp_path):
 
     def func_test(create_table, read_table, data_path, conf):
