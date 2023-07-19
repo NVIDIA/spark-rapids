@@ -21,6 +21,7 @@ import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, Group
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -857,8 +858,8 @@ case class GpuExtractChunk32(
 
   override def sql: String = data.sql
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(data.columnarEval(batch)) { dataCol =>
       val dtype = if (chunkIdx < 3) DType.UINT32 else DType.INT32
       val chunkCol = Aggregation128Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
       val replacedCol = if (replaceNullsWithZero) {
@@ -895,7 +896,7 @@ case class GpuAssembleSumChunks(
 
   override def nullable: Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val cudfType = DecimalUtil.createCudfDecimal(dataType)
     val assembledTable = withResource(GpuProjectExec.project(batch, chunkAttrs)) { dataCol =>
       withResource(GpuColumnVector.from(dataCol)) { chunkTable =>
@@ -1001,10 +1002,10 @@ case class GpuCheckOverflowAfterSum(
 
   override def sql: String = data.sql
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(data.columnarEval(batch)) { dataCol =>
       val dataBase = dataCol.getBase
-      withResource(GpuProjectExec.projectSingle(batch, isEmpty)) { isEmptyCol =>
+      withResource(isEmpty.columnarEval(batch)) { isEmptyCol =>
         val isEmptyBase = isEmptyCol.getBase
         if (!nullOnOverflow) {
           // ANSI mode
@@ -1057,8 +1058,8 @@ case class GpuDecimalSumHighDigits(
     Decimal(math.pow(10, GpuDecimalSumOverflow.updateCutoffPrecision))
   private val divisionType = DecimalType(38, 0)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, input)) { inputCol =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(input.columnarEval(batch)) { inputCol =>
       val inputBase = inputCol.getBase
       // We don't have direct access to 128 bit ints so we use a decimal with a scale of 0
       // as a stand in.

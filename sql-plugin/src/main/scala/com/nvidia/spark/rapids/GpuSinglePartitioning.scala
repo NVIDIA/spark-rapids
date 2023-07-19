@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ case object GpuSinglePartitioning extends GpuExpression with ShimExpression
    * into a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
    * temporary value.
    */
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (batch.numCols == 0) {
       Array(batch).zipWithIndex
     } else {

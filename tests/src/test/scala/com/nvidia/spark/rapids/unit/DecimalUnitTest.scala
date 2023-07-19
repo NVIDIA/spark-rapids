@@ -24,8 +24,8 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.shims.GpuBatchScanExec
-
 import org.apache.spark.SparkConf
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
 import org.apache.spark.sql.execution.FileSourceScanExec
@@ -33,6 +33,7 @@ import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.types.{Decimal, DecimalType, IntegerType, LongType, StructField, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class DecimalUnitTest extends GpuUnitTests {
   Random.setSeed(1234L)
@@ -134,7 +135,7 @@ class DecimalUnitTest extends GpuUnitTests {
     wrapperLit.tagForGpu()
     assertResult(true)(wrapperLit.canExprTreeBeReplaced)
     val gpuLit = wrapperLit.convertToGpu().asInstanceOf[GpuLiteral]
-    withResourceIfAllowed(gpuLit.columnarEval(null)) { s =>
+    withResourceIfAllowed(gpuLit.columnarEvalAny(null)) { s =>
       assertResult(lit.eval(null))(s.asInstanceOf[GpuScalar].getValue)
     }
     assertResult(lit.sql)(gpuLit.sql)
@@ -151,9 +152,11 @@ class DecimalUnitTest extends GpuUnitTests {
     wrapperAlias.tagForGpu()
     assertResult(true)(wrapperAlias.canExprTreeBeReplaced)
     val gpuAlias = wrapperAlias.convertToGpu().asInstanceOf[GpuAlias]
+
     assertResult(cpuAlias.dataType)(gpuAlias.dataType)
     assertResult(cpuAlias.sql)(gpuAlias.sql)
-    withResourceIfAllowed(gpuAlias.columnarEval(null)) { s =>
+    val batch = new ColumnarBatch(Array.empty, 1)
+    withResourceIfAllowed(gpuAlias.columnarEvalAny(batch)) { s =>
       assertResult(cpuAlias.eval(null))(s.asInstanceOf[GpuScalar].getValue)
     }
   }

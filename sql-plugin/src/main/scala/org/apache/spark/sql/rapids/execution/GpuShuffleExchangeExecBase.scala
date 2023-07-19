@@ -299,7 +299,7 @@ object GpuShuffleExchangeExecBase {
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
     def getPartitioned: ColumnarBatch => Any = {
-      batch => partitioner.columnarEval(batch)
+      batch => partitioner.columnarEvalAny(batch)
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>

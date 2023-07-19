@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
@@ -66,8 +66,9 @@ case class GpuScalarSubquery(
       ExprId(0))
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     require(updated, s"$this has not finished")
-    GpuScalar(result, dataType)
+    GpuExpressionsUtils.resolveColumnVector(
+      GpuScalar(result, dataType), batch.numRows())
   }
 }

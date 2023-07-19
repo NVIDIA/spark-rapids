@@ -371,7 +371,7 @@ case class GpuConcatWs(children: Seq[Expression])
       numRows: Int,
       colOrScalarSep: Any,
       batch: ColumnarBatch): GpuColumnVector = {
-    withResourceIfAllowed(expr.columnarEval(batch)) {
+    withResourceIfAllowed(expr.columnarEvalAny(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
           case ArrayType(_: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
@@ -403,9 +403,9 @@ case class GpuConcatWs(children: Seq[Expression])
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
-    withResourceIfAllowed(children.head.columnarEval(batch)) { colOrScalarSep =>
+    withResourceIfAllowed(children.head.columnarEvalAny(batch)) { colOrScalarSep =>
       // check for null scalar separator
       checkScalarSeparatorNull(colOrScalarSep, numRows).getOrElse {
         withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
@@ -1754,6 +1754,7 @@ case class GpuSubstringIndex(strExpr: Expression,
   // This is a bit hacked up at the moment. We are going to use a regular expression to extract
   // a single value. It only works if the delim is a single character. A full version of
   // substring_index for the GPU has been requested at https://github.com/rapidsai/cudf/issues/5158
+  // spark-rapids plugin issue https://github.com/NVIDIA/spark-rapids/issues/8750
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
     if (regexp == null) {
@@ -1780,8 +1781,8 @@ case class GpuSubstringIndex(strExpr: Expression,
       str: GpuColumnVector,
       delim: GpuColumnVector,
       count: GpuColumnVector): ColumnVector =
-        throw new IllegalStateException(
-          "Internal Error: this version of substring index is not supported")
+    throw new IllegalStateException(
+      "Internal Error: this version of substring index is not supported")
 
   override def doColumnar(
       str: GpuScalar,
@@ -2128,8 +2129,8 @@ case class GpuStringToMap(strExpr: Expression,
   override def nullable: Boolean = children.head.nullable
   override def foldable: Boolean = children.forall(_.foldable)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(strExpr.columnarEval(batch)) {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(strExpr.columnarEvalAny(batch)) {
       case strsCol: GpuColumnVector => toMap(strsCol)
       case str: GpuScalar =>
         withResource(GpuColumnVector.from(str, batch.numRows, str.dataType)) {
