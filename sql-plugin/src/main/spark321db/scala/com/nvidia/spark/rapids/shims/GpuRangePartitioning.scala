@@ -79,6 +79,6 @@ case class GpuRangePartitioning(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+  override def columnarEvalAny(batch: ColumnarBatch): Any =
     throw new IllegalStateException("This cannot be executed")
 }
