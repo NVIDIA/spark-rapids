@@ -212,7 +212,7 @@ around this.
 
 ### NormalDistribution
 
-Often data is distributed in a normal or gaussian like distribution. 
+Often data is distributed in a normal or Gaussian like distribution. 
 `NormalDistribution` takes a mean and a standard deviation to provide a way to
 insert some basic skew into your data. Please note that this will clamp
 the produced values to the configured seed range, so if seed range is not large
