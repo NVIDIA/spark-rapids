@@ -66,6 +66,8 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
   private val EXECUTOR_CORES_KEY = "spark.executor.cores"
+  private val TASK_GPU_AMOUNT_KEY = "spark.task.resource.gpu.amount"
+  private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -157,6 +159,22 @@ object RapidsPluginUtils extends Logging {
           conf.get(EXECUTOR_CORES_KEY).toInt).toString
         conf.set(numThreadsKey, numThreads)
         logWarning(s"$numThreadsKey is set to $numThreads.")
+      }
+    }
+
+    // If spark.task.resource.gpu.amount is larger than 
+    // (spark.executor.resource.gpu.amount / spark.executor.cores) then GPUs will be the limiting
+    // resource for task scheduling.
+    if (conf.contains(TASK_GPU_AMOUNT_KEY) && conf.contains(EXECUTOR_CORES_KEY) && 
+        conf.contains(EXECUTOR_GPU_AMOUNT_KEY)) {
+      val gpuAmount = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
+      val executorCores = conf.get(EXECUTOR_CORES_KEY).toDouble
+      val executorGpusPerCore = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble / executorCores
+      
+      if (gpuAmount > executorGpusPerCore) {
+        logWarning("GPUs are the limiting resource for task scheduling because " + 
+        s"spark.task.resource.gpu.amount is set to ($gpuAmount). " + 
+        "This will significantly limit performance.")
       }
     }
   }
