@@ -27,7 +27,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuPartitioning}
 
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}

@@ -475,8 +475,8 @@ case class GpuIntegralDecimalDivide(
 
   override def failOnError: Boolean = SQLConf.get.ansiEnabled
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    super.columnarEval(batch).asInstanceOf[GpuColumnVector]
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    super.columnarEval(batch)
   }
 
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
