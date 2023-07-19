@@ -688,7 +688,7 @@ def test_hash_groupby_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(condition=is_before_spark_330(), reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
 def test_hash_groupby_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -731,7 +731,7 @@ def test_hash_reduction_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(condition=is_before_spark_330(), reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
 def test_hash_reduction_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
