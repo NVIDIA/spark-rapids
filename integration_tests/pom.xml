@@ -241,6 +241,12 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>com.esotericsoftware.kryo</groupId>
+                    <artifactId>kryo-shaded-db</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.arrow</groupId>
                     <artifactId>arrow-format</artifactId>
                     <version>${spark.version}</version>
