@@ -1345,12 +1345,10 @@ class StructGen(val children: Seq[(String, DataGen)],
     this
   }
 
-  override def get(name: String): Option[DataGen] = {
-    children.find {
-      case (childName, _) =>
-        childName.equalsIgnoreCase(name)
-    }.map(_._2)
-  }
+  override def get(name: String): Option[DataGen] =
+    children.collectFirst {
+      case (childName, dataGen) if childName.equalsIgnoreCase(name) => dataGen
+    }
 
   override protected def getValGen: GeneratorFunction = {
     val childGens = children.map(c => c._2.getGen).toArray
@@ -1596,12 +1594,10 @@ class TableGen(val columns: Seq[(String, ColumnGen)], numRows: Long) {
     }
   }
 
-  def get(name: String): Option[ColumnGen] = {
-    columns.find {
-      case (childName, _) =>
-        childName.equalsIgnoreCase(name)
-    }.map(_._2)
-  }
+  def get(name: String): Option[ColumnGen] =
+    columns.collectFirst {
+      case (childName, colGen) if childName.equalsIgnoreCase(name) => colGen
+    }
 }
 
 /**

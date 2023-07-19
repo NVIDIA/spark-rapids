@@ -23,6 +23,9 @@ mvn clean package -Drat.skip -DskipTests -Dbuildver=$SPARK_VERSION
 
 Where `$SPARK_VERSION` is a compressed version number, like 330 for Spark 3.3.0.
 
+If you are building with a jdk version that is not 8, you will need to add in the 
+corresponding profile flag `-P<jdk11|jdk17>`
+
 After this the jar should be at 
 `target/rapids-4-spark-integration-tests_2.12-$PLUGIN_VERSION-spark$SPARK_VERSION.jar`
 for example a Spark 3.3.0 jar for the 23.08.0 release would be
@@ -338,11 +341,20 @@ seed that corresponds to the user provided seed range. But it has full
 control over how it wants to do that. It could favor some seed more than
 others, or simply go off of the row itself.
 
+You can manually set this for columns or sub-columns through the 
+`configureKeyGroup` API in a `TableGen`. Or you can call 
+`setSeedMapping` on a column or sub-column. Be careful not to mix the two
+because they can conflict with each other and there are no guard rails.
+
 ### NullGeneratorFunction
 
 The next level decides if a null should be returned on not. This is an optional
 level. If the user does not configure nulls, or if the type is not nullable
 this never runs.
+
+This can be set on any column or sub-column by calling either `setNullProbability`
+which will install a `NullProbabilityGenerationFunction` or by calling the 
+`setNullGen` API on that item. 
 
 ### LengthGeneratorFunction
 
@@ -354,25 +366,50 @@ resulting values. A length of 0 has one and only one possible value in it.
 So if we restrict the length to 0 or 1, then half of all values generated will be
 zero length strings, which is not ideal.
 
+If you want to set the length of a String or Array you can navigate to the 
+column or sub-column you want and call `setLength` on it. This will install
+and updated `FixedLengthGeneratorFunction`.
+
+```scala
+val dataTable = DBGen().addTable("data", "a string, b array<string>", 3)
+dataTable("a").setLength(1)
+dataTable("b").setLength(2)
+dataTable("b")("data").setLength(3)
+dataTable.toDF(spark).show(false)
++---+----------+
+|a  |b         |
++---+----------+
+|t  |[X]6, /<E]|
+|y  |[[d", uu=]|
+|^  |[uH[, wjX]|
++---+----------+
+```
+
+You can also set a `LengthGeneratorFunction` instance for any column or sub-column 
+using the `setLengthGen` API.
+
 ### GeneratorFunction
 
-The thing that actually produces data is a GeneratorFunction. It maps the key to
-a non-null value in the desired value range if that range is supported. For nested
+The thing that actually produces data is a `GeneratorFunction`. It maps the key to
+a value in the desired value range if that range is supported. For nested
 types like structs or arrays parts of this can be delegated to child
 GeneratorFunctions. 
 
+You can set the `GeneratorFunction` for a column or sub-column with the
+`setValueGen` API.
+
 ## Advanced Control
 
-The reality is that nearly everything is pluggable and the GeneratorFunction has
-close to ultimate control over what is actually generated. The GeneratorFunction
+The reality is that nearly everything is pluggable and the `GeneratorFunction` has
+close to ultimate control over what is actually generated. The `GeneratorFunction`
 for a column can be replaced by a user supplied implementation. It also has
 control to decide how the location information is mapped to the values. By
-convention, it should honor things like the LocationToSeedMapping,
+convention, it should honor things like the `LocationToSeedMapping`,
 but it is under no requirement to do so.
 
-This is similar for the LocationToSeedMapping and the NullGeneratorFunction. 
+This is similar for the `LocationToSeedMapping` and the `NullGeneratorFunction`. 
 If you have a requirement to generate null values from row 1024 to row 9999999,
-you can write a NullGeneratorFunction to do that and install it on a column
+you can write a `NullGeneratorFunction` to do that and install it on a column
 
 ```scala
 case class MyNullGen(minRow: Long, maxRow: Long, 
@@ -403,5 +440,5 @@ dataTable("a").setNullGen(MyNullGen(1024, 9999999L))
 Similarly, if you have a requirement to generate JSON formatted strings that
 follow a given pattern you can do that. Or provide a distribution where a very
 specific seed shows up 99% of the time, and the rest of the time it falls back
-to the regular FlatDistribution, you can also do that. It is designed to be very
+to the regular `FlatDistribution`, you can also do that. It is designed to be very
 flexible.
