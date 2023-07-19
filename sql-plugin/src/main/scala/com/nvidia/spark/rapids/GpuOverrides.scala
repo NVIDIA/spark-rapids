@@ -3071,6 +3071,18 @@ object GpuOverrides extends Logging {
         def convertToGpu(): GpuExpression =
           GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
       }),
+    expr[XxHash64](
+      "xxhash64 hash operator",
+      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[XxHash64](a, conf, p, r) {
+        override val childExprs: Seq[BaseExprMeta[_]] = a.children
+          .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        def convertToGpu(): GpuExpression =
+          GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
+      }),
     expr[Contains](
       "Contains",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
