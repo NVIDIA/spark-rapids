@@ -36,9 +36,9 @@ trait GpuPartitioning extends Partitioning {
       GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf))
   }
 
-  def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+  final def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     throw new IllegalStateException(
-      "Partitioners should do not support columnarEval, only columnarEvalAny")
+      "Partitioners do not support columnarEval, only columnarEvalAny")
   }
 
   def usesGPUShuffle: Boolean = _useGPUShuffle

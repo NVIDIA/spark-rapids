@@ -124,10 +124,8 @@ trait GpuExpression extends Expression {
    * value. Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
    * In this case the 100 is a literal that Add would have to be able to handle.
    *
-   * By convention any `GpuColumnVector` returned by [[columnarEvalAny]]
-   * is owned by the caller and will need to be closed by them. This can happen by putting it into
-   * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
-   * temporary value.
+   * By convention any `AutoCloseable` returned by [[columnarEvalAny]] is owned by the caller and
+   * will need to be closed by them.
    */
   def columnarEvalAny(batch: ColumnarBatch): Any = columnarEval(batch)
 
