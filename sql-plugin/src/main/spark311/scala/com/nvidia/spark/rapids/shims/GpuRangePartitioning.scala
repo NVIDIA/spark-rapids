@@ -27,11 +27,12 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning, GpuUnevaluable}
+import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}
 
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
 import org.apache.spark.sql.types.{DataType, IntegerType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * A GPU accelerated `org.apache.spark.sql.catalyst.plans.physical.Partitioning` that partitions
@@ -49,8 +50,7 @@ case class GpuRangePartitioning(
     numPartitions: Int)
     extends GpuExpression
         with ShimExpression
-        with GpuPartitioning
-        with GpuUnevaluable {
+        with GpuPartitioning {
 
   override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
@@ -84,5 +84,9 @@ case class GpuRangePartitioning(
         case _ => false
       }
     }
+  }
+
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    throw new IllegalStateException("This cannot be executed")
   }
 }
