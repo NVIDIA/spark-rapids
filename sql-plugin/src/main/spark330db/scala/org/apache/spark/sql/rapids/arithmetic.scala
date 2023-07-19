@@ -67,7 +67,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 trait GpuAddSub extends CudfBinaryArithmetic {
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
   val failOnError: Boolean
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val outputType = dataType
     val leftInputType = left.dataType
     val rightInputType = right.dataType
@@ -92,13 +92,11 @@ trait GpuAddSub extends CudfBinaryArithmetic {
               super.columnarEval(batch)
             } else {
               // eval operands using the output precision
-              val castLhs = withResource(
-                GpuExpressionsUtils.columnarEvalToColumn(left, batch)
-              ) { lhs =>
+              val castLhs = withResource(left.columnarEval(batch)) { lhs =>
                 GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
-                withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+                withResource(right.columnarEval(batch)) { rhs =>
                   GpuCast.doCast(rhs.getBase(), rightInputType, resultType, false, false, false)
                 }
               }
@@ -137,14 +135,14 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 
   protected def prepareInputAndExecute(
       batch: ColumnarBatch,
-      resultType: DecimalType): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      resultType: DecimalType): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
     }
     val retTab = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
-      }
+      
       withResource(castRhs) { castRhs =>
         do128BitOperation(castLhs, castRhs, -resultType.scale)
       }
@@ -294,7 +292,7 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
   }
 
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (useLongDivision) {
       longRemainder(batch)
     } else {
@@ -302,12 +300,12 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
     }
   }
 
-  private def longRemainder(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+  private def longRemainder(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
     }
     val retTab = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           fixed.castTo(DType.create(DType.DTypeEnum.DECIMAL128, fixed.getType.getScale))
         }
@@ -340,13 +338,13 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
     GpuColumnVector.from(retCol, dataType)
   }
 
-  private def regularRemainder(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+  private def regularRemainder(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
             legacyCastToString = false, stringToDateAnsiModeEnabled = false)

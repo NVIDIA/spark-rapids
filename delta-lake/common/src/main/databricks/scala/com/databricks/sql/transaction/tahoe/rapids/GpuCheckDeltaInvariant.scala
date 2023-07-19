@@ -62,8 +62,8 @@ case class GpuCheckDeltaInvariant(
       constraint)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(child, batch)) { col =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(child.columnarEval(batch)) { col =>
       constraint match {
         case n: NotNull =>
           if (col.getBase.hasNulls) {

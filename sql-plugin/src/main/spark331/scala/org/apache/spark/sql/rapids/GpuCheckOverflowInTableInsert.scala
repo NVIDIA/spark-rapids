@@ -47,7 +47,7 @@ case class GpuCheckOverflowInTableInsert(child: GpuCast, columnName: String)
 
   override def dataType: DataType = child.dataType
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     try {
       child.columnarEval(batch)
     } catch {
