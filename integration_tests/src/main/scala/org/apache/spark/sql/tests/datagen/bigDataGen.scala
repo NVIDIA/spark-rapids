@@ -388,14 +388,14 @@ object MultiDistribution {
       val runningNormalizedWeights = normalizedWeights.tail
           .scanLeft(normalizedWeights.head)(_ + _).toArray
       val mappings = weightsNMappings.map(_._2).toArray
-      MultiDistribution(runningNormalizedWeights, mappings)
+      MultiDistribution(runningNormalizedWeights, mappings, 0)
     }
   }
 }
 
 case class MultiDistribution private (normalizedWeights: Array[Double],
     mappings: Array[LocationToSeedMapping],
-    colLocSeed: Long = 0) extends LocationToSeedMapping {
+    colLocSeed: Long) extends LocationToSeedMapping {
   require(normalizedWeights.length == mappings.length,
     s"${normalizedWeights.toList} vs ${mappings.toList}")
   require(normalizedWeights.length > 0)
