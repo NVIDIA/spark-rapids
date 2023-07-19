@@ -142,7 +142,7 @@ trait GpuAddSub extends CudfBinaryArithmetic {
     val retTab = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
-      
+      }
       withResource(castRhs) { castRhs =>
         do128BitOperation(castLhs, castRhs, -resultType.scale)
       }
