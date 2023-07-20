@@ -332,6 +332,92 @@ case class FlatDistribution(colLocSeed: Long = 0L,
 }
 
 /**
+ * A LocationToSeedMapping that generates seeds with a normal distribution around a
+ * given mean, and with a desired standard deviation. Not that if you set the
+ * seeds produced are bound to the seed range requested so if the range is too small
+ * or outside of the expected mean the results will not have the expected distribution
+ * of values.
+ * @param mean the desired mean as a double
+ * @param stdDev the desired standard deviation
+ */
+case class NormalDistribution(mean: Double,
+    stdDev: Double,
+    min: Long = Long.MinValue,
+    max: Long = Long.MaxValue,
+    colLocSeed: Long = 0) extends LocationToSeedMapping {
+
+  override def withColumnConf(colConf: ColumnConf): NormalDistribution = {
+    val colLocSeed = colConf.columnLoc.hashLoc
+    NormalDistribution(mean, stdDev, colConf.minSeed, colConf.maxSeed, colLocSeed)
+  }
+
+  override def apply(rowLoc: RowLocation): Long = {
+    val r = DataGen.getRandomFor(rowLoc.hashLoc(colLocSeed))
+    val g = r.nextGaussian() // g has a mean of 0 and a stddev of 1.0
+    val adjusted = mean + (g * stdDev)
+    // If the range of seeds is too small compared to the stddev and mean we will
+    // end up with an invalid distribution, but they asked for it.
+    math.max(min, math.min(max, adjusted.toLong))
+  }
+}
+
+object MultiDistribution {
+  /**
+   * Create a LocationToSeedMapping that combines multiple other LocationsToSeed mappings
+   * together based on weights.
+   * @param weightsNMappings The weights and mappings to use. The weights are relative to each
+   *                         other. So if you want two mappings with one applied 5 times more
+   *                         often than the other. You can set the weight of the more desirable
+   *                         one to 5.0 and the other to 1.0.
+   * @return a LocationToSeedMapping that fits the desired distribution.
+   */
+  def apply(weightsNMappings: Seq[(Double, LocationToSeedMapping)]): LocationToSeedMapping = {
+    if (weightsNMappings.length <= 0) {
+      throw new IllegalArgumentException("Need at least one mapping")
+    }
+
+    if (weightsNMappings.exists(_._1 <= 0.0)) {
+      throw new IllegalArgumentException("All weights must be positive")
+    }
+
+    if (weightsNMappings.length == 1) {
+      weightsNMappings.head._2
+    } else {
+      val weightSum = weightsNMappings.map(_._1).sum
+      val normalizedWeights = weightsNMappings.map(_._1 / weightSum)
+      val runningNormalizedWeights = normalizedWeights.tail
+          .scanLeft(normalizedWeights.head)(_ + _).toArray
+      val mappings = weightsNMappings.map(_._2).toArray
+      MultiDistribution(runningNormalizedWeights, mappings, 0)
+    }
+  }
+}
+
+case class MultiDistribution private (normalizedWeights: Array[Double],
+    mappings: Array[LocationToSeedMapping],
+    colLocSeed: Long) extends LocationToSeedMapping {
+  require(normalizedWeights.length == mappings.length,
+    s"${normalizedWeights.toList} vs ${mappings.toList}")
+  require(normalizedWeights.length > 0)
+
+  override def withColumnConf(colConf: ColumnConf): LocationToSeedMapping = {
+    val colLocSeed = colConf.columnLoc.hashLoc
+    val newMappings = mappings.map(_.withColumnConf(colConf))
+    MultiDistribution(normalizedWeights, newMappings, colLocSeed)
+  }
+
+  override def apply(rowLoc: RowLocation): Long = {
+    val r = DataGen.getRandomFor(rowLoc.hashLoc(colLocSeed))
+    val lookingFor = r.nextDouble()
+    var i = 0
+    while (i < (normalizedWeights.length - 1) && normalizedWeights(i) < lookingFor) {
+      i += 1
+    }
+    mappings(i)(rowLoc)
+  }
+}
+
+/**
  * A LocationToSeedMapping that generates a unique seed per row. The order in which the values are
  * generated is some what of a random like order. This should *NOT* be applied to any
  * columns that are under an array because it ues rowNum and assumes that this maps correctly
@@ -581,6 +667,21 @@ abstract class DataGen(var conf: ColumnConf,
   }
 
   def get(name: String): Option[DataGen] = None
+}
+
+/**
+ * A special GeneratorFunction that just returns the computed seed. This is helpful for
+ * debugging distributions or if you want long values without any abstraction in between.
+ */
+case class SeedPassThrough(mapping: LocationToSeedMapping = null) extends GeneratorFunction {
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    SeedPassThrough(mapping)
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalStateException("Value range is not supported")
+
+  override def apply(rowLoc: RowLocation): Any =
+    mapping(rowLoc)
 }
 
 /**
