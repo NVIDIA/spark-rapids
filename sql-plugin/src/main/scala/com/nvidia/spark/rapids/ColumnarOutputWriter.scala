@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.OutputStream
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -27,8 +28,8 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRow
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -115,8 +116,34 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     }
   }
 
-  protected def scanBatchBeforeWrite(batch: ColumnarBatch): Unit = {
+  protected def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     // NOOP for now, but allows a child to override this
+  }
+
+  /**
+   * Function that convert any errors (including OOM) to `RuntimeException` when
+   * calling into `ColumnarWriteTaskStatsTracker` API, it also clears out the array
+   * of trackers passed in so we don't invoke them again.
+   *
+   * For now this is making it so that if any exception is throw in newBatch
+   * it is fatal, it should be vary rare but since it could be a collection of stats
+   * trackers it is probably better to be on the safe side and fail the task.
+   */
+  private def updateStatTrackersIfNeeded(
+      cb: ColumnarBatch,
+      statsTrackers: ArrayBuffer[ColumnarWriteTaskStatsTracker]): Unit = {
+    try {
+      statsTrackers.foreach(_.newBatch(path(), cb))
+    } catch {
+      case t: Throwable =>
+        val rt = new RuntimeException("Exception thrown from stats newBatch, this is fatal.")
+        rt.addSuppressed(t)
+        throw t
+    } finally {
+      // clear because we don't want to call into them again
+      // in either the success or failure case
+      statsTrackers.clear()
+    }
   }
 
   /**
@@ -133,6 +160,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       spillableBatch: SpillableColumnarBatch,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
     val writeStartTime = System.nanoTime
+    // It is very important that we call `newBatch` in the stats tracker
+    // once with the whole batch (the batch inside the passed in `spillableBatch`).
+    // This array will be set to all Nones if there are any issues.
+    val statsTrackersToCall = statsTrackers.to[mutable.ArrayBuffer]
     val gpuTime = if (includeRetry) {
       withRetry(spillableBatch, splitSpillableInHalfByRows) { sb =>
         //TODO: we should really apply the transformations to cast timestamps
@@ -141,8 +172,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
         // See https://github.com/NVIDIA/spark-rapids/issues/8262
         val cb = sb.getColumnarBatch()
         closeOnExcept(cb) { _ =>
-          statsTrackers.foreach(_.newBatch(path(), cb))
-          scanBatchBeforeWrite(cb)
+          throwIfRebaseNeededInExceptionMode(cb)
+          updateStatTrackersIfNeeded(cb, statsTrackersToCall)
         }
         withRestoreOnRetry(checkpointRestore) {
           bufferBatchAndClose(cb)
@@ -152,8 +183,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       withResource(spillableBatch) { _ =>
         val cb = spillableBatch.getColumnarBatch()
         closeOnExcept(cb) { _ =>
-          statsTrackers.foreach(_.newBatch(path(), cb))
-          scanBatchBeforeWrite(cb)
+          throwIfRebaseNeededInExceptionMode(cb)
+          updateStatTrackersIfNeeded(cb, statsTrackersToCall)
         }
         bufferBatchAndClose(cb)
       }
