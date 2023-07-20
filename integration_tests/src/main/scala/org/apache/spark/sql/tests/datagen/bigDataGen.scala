@@ -19,13 +19,12 @@ package org.apache.spark.sql.tests.datagen
 import java.math.{BigDecimal => JavaBigDecimal}
 import java.sql.{Date, Timestamp}
 import java.time.{Instant, LocalDate}
+import java.util
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.math.BigDecimal.RoundingMode
 import scala.util.Random
-
-import java.util
 
 import org.apache.spark.sql.{Column, DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
