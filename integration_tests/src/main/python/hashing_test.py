@@ -17,8 +17,23 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import allow_non_gpu, ignore_order
+from spark_session import is_before_spark_320
 
-_xxhash_gens = all_gen + [null_gen]
+# Spark 3.1.x does not normalize -0.0 and 0.0 but GPU version does
+_xxhash_gens = [
+    null_gen,
+    boolean_gen,
+    byte_gen,
+    short_gen,
+    int_gen,
+    long_gen,
+    date_gen,
+    timestamp_gen,
+    decimal_gen_32bit,
+    decimal_gen_64bit,
+    decimal_gen_128bit]
+if not is_before_spark_320():
+    _xxhash_gens += [float_gen, double_gen]
 
 _struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_xxhash_gens)])
 
@@ -26,6 +41,8 @@ _xxhash_fallback_gens = single_level_array_gens + nested_array_gens_sample + [
     all_basic_struct_gen,
     struct_array_gen_no_nans,
     _struct_of_xxhash_gens]
+if is_before_spark_320():
+    _xxhash_fallback_gens += [float_gen, double_gen]
 
 @ignore_order(local=True)
 @pytest.mark.parametrize("gen", _xxhash_gens, ids=idfn)

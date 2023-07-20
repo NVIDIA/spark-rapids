@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -3075,7 +3075,7 @@ object GpuOverrides extends Logging {
       "xxhash64 hash operator",
       ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128, TypeSig.all))),
+          XxHash64Shims.supportedTypes, TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[XxHash64](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
