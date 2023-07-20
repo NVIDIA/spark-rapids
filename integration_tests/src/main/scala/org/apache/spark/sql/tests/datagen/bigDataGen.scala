@@ -25,10 +25,12 @@ import scala.collection.mutable.ArrayBuffer
 import scala.math.BigDecimal.RoundingMode
 import scala.util.Random
 
+import java.util
+
 import org.apache.spark.sql.{Column, DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, XXH64}
-import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, DateTimeUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -333,15 +335,15 @@ case class FlatDistribution(colLocSeed: Long = 0L,
 
 /**
  * A LocationToSeedMapping that generates seeds with a normal distribution around a
- * given mean, and with a desired standard deviation. Not that if you set the
+ * given mean, and with a desired standard deviation. Note that the
  * seeds produced are bound to the seed range requested so if the range is too small
  * or outside of the expected mean the results will not have the expected distribution
  * of values.
- * @param mean the desired mean as a double
- * @param stdDev the desired standard deviation
+ * @param mean the desired mean as a double, defaults to 0
+ * @param stdDev the desired standard deviation defaults to 10
  */
-case class NormalDistribution(mean: Double,
-    stdDev: Double,
+case class NormalDistribution(mean: Double = 0.0,
+    stdDev: Double = 10.0,
     min: Long = Long.MinValue,
     max: Long = Long.MaxValue,
     colLocSeed: Long = 0) extends LocationToSeedMapping {
@@ -682,6 +684,20 @@ case class SeedPassThrough(mapping: LocationToSeedMapping = null) extends Genera
 
   override def apply(rowLoc: RowLocation): Any =
     mapping(rowLoc)
+}
+
+/**
+ * A special GeneratorFunction that just returns the row number. This can be helpful for
+ * visualizing what is happening.
+ */
+case object RowNumPassThrough extends GeneratorFunction {
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    RowNumPassThrough
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalStateException("Value range is not supported")
+
+  override def apply(rowLoc: RowLocation): Any = rowLoc.rowNum
 }
 
 /**
@@ -1511,6 +1527,71 @@ class ArrayGen(child: DataGen,
   }
 }
 
+case class MapGenFunc(
+    key: GeneratorFunction,
+    value: GeneratorFunction,
+    lengthGen: LengthGeneratorFunction = null,
+    mapping: LocationToSeedMapping = null) extends GeneratorFunction {
+
+  override def apply(rowLoc: RowLocation): Any = {
+    val len = lengthGen(rowLoc)
+    val jMap = new util.HashMap[Any, Any](len * 2)
+    val childRowLoc = rowLoc.withNewChild()
+    var i = 0
+    while (i < len) {
+      childRowLoc.setLastChildIndex(i)
+      val keyData = key(childRowLoc)
+      val valueData = value(childRowLoc)
+      jMap.put(keyData, valueData)
+      i += 1
+    }
+    ArrayBasedMapData(jMap, n => n, n => n)
+  }
+
+  override def withLengthGeneratorFunction(lengthGen: LengthGeneratorFunction): GeneratorFunction =
+    MapGenFunc(key, value, lengthGen, mapping)
+
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    MapGenFunc(key, value, lengthGen, mapping)
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalArgumentException("value ranges are not supported for maps")
+}
+
+class MapGen(key: DataGen,
+    value: DataGen,
+    conf: ColumnConf,
+    defaultValueRange: Option[(Any, Any)])
+    extends DataGen(conf, defaultValueRange) {
+  require(!key.nullable, "Map keys cannot contain nulls")
+
+  override def setCorrelatedKeyGroup(keyGroup: Long,
+      minSeed: Long,
+      maxSeed: Long,
+      seedMapping: LocationToSeedMapping): DataGen = {
+    super.setCorrelatedKeyGroup(keyGroup, minSeed, maxSeed, seedMapping)
+    key.setCorrelatedKeyGroup(keyGroup, minSeed, maxSeed, seedMapping)
+    value.setCorrelatedKeyGroup(keyGroup, minSeed, maxSeed, seedMapping)
+    this
+
+  }
+
+  override protected def getValGen: GeneratorFunction = MapGenFunc(key.getGen, value.getGen)
+
+  override def dataType: DataType = MapType(key.dataType, value.dataType, value.nullable)
+
+  override def get(name: String): Option[DataGen] = {
+    if ("key".equalsIgnoreCase(name)) {
+      Some(key)
+    } else if ("value".equalsIgnoreCase(name)) {
+      Some(value)
+    } else {
+      None
+    }
+  }
+}
+
+
 object ColumnGen {
   private def genInternal(rowNumber: Column,
       dataType: DataType,
@@ -1738,6 +1819,9 @@ object DefaultTypeMapping extends TypeMapping {
       st.forall(child => subTypeMapping.canMap(child.dataType, subTypeMapping))
     case at: ArrayType =>
       subTypeMapping.canMap(at.elementType, subTypeMapping)
+    case mt: MapType =>
+      subTypeMapping.canMap(mt.keyType, subTypeMapping) &&
+          subTypeMapping.canMap(mt.valueType, subTypeMapping)
     case _ => false
   }
 
@@ -1780,6 +1864,13 @@ object DefaultTypeMapping extends TypeMapping {
       val childConf = conf.forNextColumn(at.containsNull)
       val child = subTypeMapping.map(at.elementType, childConf, defaultRanges, subTypeMapping)
       (new ArrayGen(child._1, conf, defaultRanges.get(dataType)), child._2)
+    case mt: MapType =>
+      val keyChildConf = conf.forNextColumn(false)
+      val keyInfo = subTypeMapping.map(mt.keyType, keyChildConf, defaultRanges, subTypeMapping)
+      val valueChildConf = keyInfo._2.forNextColumn(mt.valueContainsNull)
+      val valueInfo = subTypeMapping.map(mt.valueType, valueChildConf, defaultRanges,
+        subTypeMapping)
+      (new MapGen(keyInfo._1, valueInfo._1, conf, defaultRanges.get(mt)), valueInfo._2)
     case other =>
       throw new IllegalArgumentException(s"$other is not a supported type yet")
   }
