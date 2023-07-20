@@ -19,52 +19,11 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import org.apache.hadoop.fs.FileUtil.fullyDelete
+
 import org.apache.spark.SparkContext
-
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData}
+import org.apache.spark.sql.rapids.{MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
-
-
-/**
- * copied from spark-catalyst test project
- */
-class MyDenseVectorUDT extends UserDefinedType[MyDenseVector] {
-
-  override def sqlType: DataType = ArrayType(DoubleType, containsNull = false)
-
-  override def serialize(features: MyDenseVector): ArrayData = {
-    new GenericArrayData(features.data.map(_.asInstanceOf[Any]))
-  }
-
-  override def deserialize(datum: Any): MyDenseVector = {
-    datum match {
-      case data: ArrayData =>
-        new MyDenseVector(data.toDoubleArray())
-    }
-  }
-
-  override def userClass: Class[MyDenseVector] = classOf[MyDenseVector]
-
-  override def hashCode(): Int = getClass.hashCode()
-
-  override def equals(other: Any): Boolean = other.isInstanceOf[MyDenseVectorUDT]
-}
-
-/**
- * copied from spark-catalyst test project
- */
-@SQLUserDefinedType(udt = classOf[MyDenseVectorUDT])
-class MyDenseVector(val data: Array[Double]) extends Serializable {
-  override def hashCode(): Int = java.util.Arrays.hashCode(data)
-
-  override def equals(other: Any): Boolean = other match {
-    case v: MyDenseVector => java.util.Arrays.equals(this.data, v.data)
-    case _ => false
-  }
-
-  override def toString: String = data.mkString("(", ", ", ")")
-}
 
 class OrcQuerySuite extends SparkQueryCompareTestSuite {
   val tempFile = File.createTempFile("orc-test-udt", ".orc")
