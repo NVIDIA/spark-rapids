@@ -24,6 +24,7 @@ import org.apache.spark.sql.types._
  */
 class MyDenseVectorUDT extends UserDefinedType[MyDenseVector] {
 
+  // type is: array(double)
   override def sqlType: DataType = ArrayType(DoubleType, containsNull = false)
 
   override def serialize(features: MyDenseVector): ArrayData = {
