@@ -84,8 +84,8 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
 
-  def parseUrlWrongNumArgs(actual: Int): TypeCheckResult = {
-    TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments")
+  def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
+    Some(TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments"))
   }
 
   def invalidUrlException(url: UTF8String, e: URISyntaxException): Throwable = {

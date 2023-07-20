@@ -25,7 +25,7 @@ import java.net.URISyntaxException
 import org.apache.spark.SparkDateTimeException
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 import org.apache.spark.unsafe.types.UTF8String
@@ -92,10 +92,11 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.intervalDividedByZeroError(origin.context)
   }
 
-  def parseUrlWrongNumArgs(actual: Int): Throwable = {
+  def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
     throw QueryCompilationErrors.wrongNumArgsError(
-      "parse_url", Seq("[2, 3]"), actualNumber
+      "parse_url", Seq("[2, 3]"), actual
     )
+    None
   }
 
   def invalidUrlException(url: UTF8String, e: URISyntaxException): Throwable = {

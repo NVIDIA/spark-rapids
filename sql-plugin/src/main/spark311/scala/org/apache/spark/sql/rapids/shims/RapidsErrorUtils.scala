@@ -84,11 +84,11 @@ object RapidsErrorUtils {
     throw new AnalysisException(s"$tableIdentifier already exists.")
   }
 
-  def parseUrlWrongNumArgs(actual: Int): TypeCheckResult = {
-    TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments")
+  def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
+    Some(TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments"))
   }
 
-  def invalidUrlException(url: UFT8String, e: Throwable): Throwable = {
+  def invalidUrlException(url: UTF8String, e: Throwable): Throwable = {
     new IllegalArgumentException(s"Find an invaild url string ${url.toString}", e)
   }
 }

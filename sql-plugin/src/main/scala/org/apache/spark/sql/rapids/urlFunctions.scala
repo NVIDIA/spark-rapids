@@ -60,10 +60,12 @@ case class GpuParseUrl(children: Seq[Expression],
   
   override def checkInputDataTypes(): TypeCheckResult = {
     if (children.size > 3 || children.size < 2) {
-      RapidsErrorUtils.parseUrlWrongNumArgs(children.size)
-    } else {
-      super[ExpectsInputTypes].checkInputDataTypes()
+      RapidsErrorUtils.parseUrlWrongNumArgs(children.size) match {
+        case res: Some[TypeCheckResult] => return res.get
+        case _ => // error message has been thrown
+      }
     }
+    super[ExpectsInputTypes].checkInputDataTypes()
   }
 
   private def getPattern(key: UTF8String): RegexProgram = {
