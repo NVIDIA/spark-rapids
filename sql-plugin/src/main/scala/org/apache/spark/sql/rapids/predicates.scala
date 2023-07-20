@@ -77,10 +77,10 @@ abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with
    * results are combined back into a single batch using the gather
    * algorithm.
    */
-  def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+  def columnarEvalWithSideEffects(batch: ColumnarBatch): GpuColumnVector = {
     val leftExpr = left.asInstanceOf[GpuExpression]
     withResource(GpuColumnVector.from(batch)) { tbl =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(leftExpr, batch)) { lhsBool =>
+      withResource(leftExpr.columnarEval(batch)) { lhsBool =>
         if (shouldShortCircuit(lhsBool)) {
           applyShortCircuit(lhsBool)
         } else {
@@ -89,7 +89,7 @@ abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with
           // Process the LHS. It may imply replacing null values (if any) with true.
           withResource(processLHS(lhsBool.getBase)) { lhsNoNulls =>
             withResource(filterBatch(tbl, lhsNoNulls, colTypes)) { leftTrueBatch =>
-              withResource(GpuExpressionsUtils.columnarEvalToColumn(rightExpr, leftTrueBatch)) {
+              withResource(rightExpr.columnarEval(leftTrueBatch)) {
                 rEval =>
                   withResource(gather(lhsNoNulls, rEval)) { combinedVector =>
                     GpuColumnVector.from(
@@ -104,7 +104,7 @@ abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val rightExpr = right.asInstanceOf[GpuExpression]
 
     if (rightExpr.hasSideEffects) {

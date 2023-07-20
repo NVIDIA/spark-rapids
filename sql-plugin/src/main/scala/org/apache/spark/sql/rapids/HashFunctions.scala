@@ -78,6 +78,6 @@ case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuExpre
   override def toString: String = s"hash($children)"
   def nullable: Boolean = children.exists(_.nullable)
 
-  def columnarEval(batch: ColumnarBatch): Any =
+  def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     GpuColumnVector.from(GpuMurmur3Hash.compute(batch, children, seed), dataType)
 }

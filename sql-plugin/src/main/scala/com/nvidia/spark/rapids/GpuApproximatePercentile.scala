@@ -134,9 +134,9 @@ case class ApproxPercentileFromTDigestExpr(
     finalDataType: DataType)
   extends GpuExpression with ShimExpression {
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val expr = child.asInstanceOf[GpuExpression]
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(expr, batch)) { cv =>
+    withResource(expr.columnarEval(batch)) { cv =>
       percentiles match {
         case Left(p) =>
           // For the scalar case, we still pass cuDF an array of percentiles
