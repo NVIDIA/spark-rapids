@@ -3464,8 +3464,8 @@ object GpuOverrides extends Logging {
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Nil, None),
       (a, conf, p, r) =>

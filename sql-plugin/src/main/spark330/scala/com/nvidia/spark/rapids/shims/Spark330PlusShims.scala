@@ -91,6 +91,17 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
         (a, conf, p, r) => new BinaryExprMeta[DivideYMInterval](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuDivideYMInterval(lhs, rhs)
+        }),
+      GpuOverrides.expr[BloomFilterMightContain](
+        "Bloom filter query",
+        ExprChecks.binaryProject(
+          TypeSig.BOOLEAN,
+          TypeSig.BOOLEAN,
+          ("lhs", TypeSig.BINARY + TypeSig.NULL, TypeSig.BINARY + TypeSig.NULL),
+          ("rhs", TypeSig.LONG + TypeSig.NULL, TypeSig.LONG + TypeSig.NULL)),
+        (a, conf, p, r) => new BinaryExprMeta[BloomFilterMightContain](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuBloomFilterMightContain(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
