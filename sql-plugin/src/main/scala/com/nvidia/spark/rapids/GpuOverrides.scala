@@ -3125,6 +3125,19 @@ object GpuOverrides extends Logging {
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
+    expr[ParseUrl](
+      "Extracts a part from a URL",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+          // Should really be an OptionalParam
+          Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
+        val failOnError = SQLConf.get.ansiEnabled
+        override def convertToGpu(): GpuExpression = {
+          GpuParseUrl(childExprs.map(_.convertToGpu()), failOnError)
+        }
+      }),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,

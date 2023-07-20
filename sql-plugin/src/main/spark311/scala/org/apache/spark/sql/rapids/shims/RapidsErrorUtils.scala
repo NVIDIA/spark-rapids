@@ -23,8 +23,10 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.unsafe.types.UTF8String
 
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
@@ -80,5 +82,13 @@ object RapidsErrorUtils {
 
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     throw new AnalysisException(s"$tableIdentifier already exists.")
+  }
+
+  def parseUrlWrongNumArgs(actual: Int): TypeCheckResult = {
+    TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments")
+  }
+
+  def invalidUrlException(url: UFT8String, e: Throwable): Throwable = {
+    new IllegalArgumentException(s"Find an invaild url string ${url.toString}", e)
   }
 }
