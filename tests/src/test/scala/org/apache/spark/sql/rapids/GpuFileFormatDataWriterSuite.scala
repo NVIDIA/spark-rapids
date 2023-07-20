@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.TableWriter
 import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuBoundReference, GpuColumnVector, RapidsBufferCatalog, RapidsDeviceMemoryStore}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataOutputStream
 import org.apache.hadoop.mapred.TaskAttemptContext
@@ -31,6 +32,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
+import org.apache.spark.sql.execution.datasources.WriteTaskStats
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -58,6 +60,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           dataSchema,
           rangeName,
           includeRetry) {
+
     // this writer (for tests) doesn't do anything and passes through the
     // batch passed to it when asked to transform, which is done to
     // check for leaks
@@ -65,6 +68,18 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     override val tableWriter: TableWriter = mock[TableWriter]
     override def getOutputStream: FSDataOutputStream = mock[FSDataOutputStream]
     override def path(): String = null
+    private var throwOnce: Option[Throwable] = None
+    override def bufferBatchAndClose(batch: ColumnarBatch): Long = {
+      throwOnce.foreach { t =>
+        throwOnce = None
+        throw t
+      }
+      super.bufferBatchAndClose(batch)
+    }
+    def throwOnNextBufferBatchAndClose(exception: Throwable): Unit = {
+      throwOnce = Some(exception)
+    }
+
   }
 
   def mockOutputWriter(types: StructType, includeRetry: Boolean): Unit = {
@@ -451,6 +466,107 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         // A follow on issue is filed to handle this better:
         // https://github.com/NVIDIA/spark-rapids/issues/8736
         // verify(mockOutputWriter, times(18)).close()
+      }
+    }
+  }
+
+  test("call newBatch only once when there is a failure writing") {
+    // this test is to exercise the contract that the ColumnarWriteTaskStatsTracker.newBatch
+    // has. When there is a retry within writeSpillableAndClose, we will guarantee that
+    // newBatch will be called only once. If there are exceptions within newBatch they are fatal,
+    // and are not retried.
+    resetMocksWithAndWithoutRetry {
+      val cb = buildBatchWithPartitionedCol(1, 1, 1, 1, 1, 1, 1, 1, 1)
+      val cbs = Seq(spy(cb))
+      withColumnarBatchesVerifyClosed(cbs) {
+        // I would like to not flush on the first iteration of the `write` method
+        when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
+        when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
+
+        val statsTracker = mock[ColumnarWriteTaskStatsTracker]
+        val jobTracker = new ColumnarWriteJobStatsTracker {
+          override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+            statsTracker
+          }
+          override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+        }
+        when(mockJobDescription.statsTrackers)
+            .thenReturn(Seq(jobTracker))
+
+        // throw once from bufferBatchAndClose to simulate an exception after we call the
+        // stats tracker
+        mockOutputWriter.throwOnNextBufferBatchAndClose(
+          new SplitAndRetryOOM("mocking a split and retry"))
+        val dynamicConcurrentWriter =
+          prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
+
+        if (includeRetry) {
+          dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+          dynamicConcurrentWriter.commit()
+        } else {
+          assertThrows[SplitAndRetryOOM] {
+            dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+            dynamicConcurrentWriter.commit()
+          }
+        }
+
+        // 1 batch is written, all rows fit
+        verify(mockOutputWriter, times(1))
+            .writeSpillableAndClose(any(), any())
+        // we call newBatch once
+        verify(statsTracker, times(1)).newBatch(any(), any())
+        if (includeRetry) {
+          // we call it 3 times, once for the first whole batch that fails with OOM
+          // and twice for the two halves after we handle the OOM
+          verify(mockOutputWriter, times(3)).bufferBatchAndClose(any())
+        } else {
+          // once and we fail, so we don't retry
+          verify(mockOutputWriter, times(1)).bufferBatchAndClose(any())
+        }
+      }
+    }
+  }
+
+  test("newBatch throwing is fatal") {
+    // this test is to exercise the contract that the ColumnarWriteTaskStatsTracker.newBatch
+    // has. When there is a retry within writeSpillableAndClose, we will guarantee that
+    // newBatch will be called only once. If there are exceptions within newBatch they are fatal,
+    // and are not retried.
+    resetMocksWithAndWithoutRetry {
+      val cb = buildBatchWithPartitionedCol(1, 1, 1, 1, 1, 1, 1, 1, 1)
+      val cbs = Seq(spy(cb))
+      withColumnarBatchesVerifyClosed(cbs) {
+        // I would like to not flush on the first iteration of the `write` method
+        when(mockJobDescription.concurrentWriterPartitionFlushSize).thenReturn(1000)
+        when(mockJobDescription.maxRecordsPerFile).thenReturn(9)
+
+        val statsTracker = mock[ColumnarWriteTaskStatsTracker]
+        val jobTracker = new ColumnarWriteJobStatsTracker {
+          override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+            statsTracker
+          }
+
+          override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {}
+        }
+        when(mockJobDescription.statsTrackers)
+            .thenReturn(Seq(jobTracker))
+        when(statsTracker.newBatch(any(), any()))
+            .thenThrow(new RetryOOM("mocking a retry"))
+        val dynamicConcurrentWriter =
+          prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
+
+        assertThrows[RetryOOM] {
+          dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+          dynamicConcurrentWriter.commit()
+        }
+
+        // we never reach the buffer stage
+        verify(mockOutputWriter, times(0)).bufferBatchAndClose(any())
+        // we attempt to write one batch
+        verify(mockOutputWriter, times(1))
+            .writeSpillableAndClose(any(), any())
+        // we call newBatch once
+        verify(statsTracker, times(1)).newBatch(any(), any())
       }
     }
   }

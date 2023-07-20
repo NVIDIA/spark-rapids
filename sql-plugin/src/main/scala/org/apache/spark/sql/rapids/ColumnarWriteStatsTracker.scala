@@ -52,7 +52,9 @@ trait ColumnarWriteTaskStatsTracker {
   /**
    * Process a new column batch to update the tracked statistics accordingly.
    * The batch will be written to the most recently witnessed file (via `newFile`).
-   *
+   * @note Call this function only once per `batch` to be written. If the batch is going to be
+   *       split later because of a retry, that is OK, but don't call newBatch again with the
+   *       splitted out parts.
    * @param filePath Path of the file which the batch is written to.
    * @param batch Current data batch to be processed.
    */
