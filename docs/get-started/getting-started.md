@@ -36,7 +36,7 @@ will vary depending on your cluster manager. Here are some example configs:
 - Request your executor to have GPUs:
   - `--conf spark.executor.resource.gpu.amount=1`
 - Specify the number of GPUs per task:
-  - `--conf spark.task.resource.gpu.amount=1`
+  - `--conf spark.task.resource.gpu.amount=0.125`
 - Specify a GPU discovery script (required on YARN and K8S):
   - `--conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh`
 - Explain why some operations of a query were not placed on a GPU or not:

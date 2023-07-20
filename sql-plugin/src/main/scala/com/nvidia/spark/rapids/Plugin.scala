@@ -165,10 +165,11 @@ object RapidsPluginUtils extends Logging {
     // If spark.task.resource.gpu.amount is larger than 
     // (spark.executor.resource.gpu.amount / spark.executor.cores) then GPUs will be the limiting
     // resource for task scheduling.
-    if (conf.contains(TASK_GPU_AMOUNT_KEY) && conf.contains(EXECUTOR_CORES_KEY) && 
-        conf.contains(EXECUTOR_GPU_AMOUNT_KEY)) {
+    if (conf.contains(TASK_GPU_AMOUNT_KEY) && conf.contains(EXECUTOR_GPU_AMOUNT_KEY)) {
       val gpuAmount = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
-      val executorCores = conf.get(EXECUTOR_CORES_KEY).toDouble
+      // get worker's all cores num if spark.executor.cores is not set explicitly
+      val workerAllCores = Runtime.getRuntime.availableProcessors.toString()
+      val executorCores = conf.get(EXECUTOR_CORES_KEY, workerAllCores).toDouble
       val executorGpusPerCore = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble / executorCores
       
       if (gpuAmount > executorGpusPerCore) {
