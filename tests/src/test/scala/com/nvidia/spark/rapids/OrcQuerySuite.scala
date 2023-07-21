@@ -20,7 +20,7 @@ import java.io.File
 
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.rapids.{MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
@@ -40,17 +40,23 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
       getSchema)
   }
 
-  testGpuWriteFallback(
-    "Writing User Defined Type(UDT) to ORC fall back",
-    "DataWritingCommandExec",
-    spark => getDf(spark),
-    execsAllowedNonGpu = Seq("DataWritingCommandExec", "ShuffleExchangeExec")
-  ) { frame =>
-    val tempFile = File.createTempFile("orc-test-udt-write", ".orc")
-    try {
-      frame.write.mode("overwrite").orc(tempFile.getAbsolutePath)
-    } finally {
-      fullyDelete(tempFile)
+  Seq("orc", "").foreach { v1List =>
+    val sparkConf = new SparkConf().set("spark.sql.sources.useV1SourceList", v1List)
+    testGpuWriteFallback(
+      "Writing User Defined Type(UDT) to ORC fall back, source list is (" + v1List + ")",
+      "DataWritingCommandExec",
+      spark => getDf(spark),
+      // WriteFilesExec is a new operator from Spark version 340, for simplicity, add it here for
+      // all Spark versions.
+      execsAllowedNonGpu = Seq("DataWritingCommandExec", "WriteFilesExec", "ShuffleExchangeExec"),
+      conf = sparkConf
+    ) { frame =>
+      val tempFile = File.createTempFile("orc-test-udt-write", ".orc")
+      try {
+        frame.write.mode("overwrite").orc(tempFile.getAbsolutePath)
+      } finally {
+        fullyDelete(tempFile)
+      }
     }
   }
 
