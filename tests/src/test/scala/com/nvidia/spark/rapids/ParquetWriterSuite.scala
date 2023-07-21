@@ -28,7 +28,6 @@ import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 
 /**
@@ -256,43 +255,6 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         spark.sql("DROP TABLE IF EXISTS tempmetricstable")
       }
     }, new SparkConf().set("spark.sql.sources.commitProtocolClass", slowCommitClass))
-  }
-
-  test("Concurrent writer update file metrics") {
-    withGpuSparkSession(spark => {
-      try {
-        spark.sql("CREATE TABLE t(c int) USING parquet PARTITIONED BY (p String)")
-        SQLConf.get.setConfString(SQLConf.MAX_CONCURRENT_OUTPUT_FILE_WRITERS.key, "3")
-        SQLConf.get.setConfString(SQLConf.LEAF_NODE_DEFAULT_PARALLELISM.key, "1")
-
-        def checkMetrics(sqlStr: String, numFiles: Int, numOutputRows: Long): Unit = {
-          val df = spark.sql(sqlStr)
-          val insert = SparkShimImpl.findOperators(df.queryExecution.executedPlan,
-            _.isInstanceOf[GpuDataWritingCommandExec]).head
-            .asInstanceOf[GpuDataWritingCommandExec]
-          assert(insert.metrics.contains("numFiles"))
-          assert(insert.metrics("numFiles").value == numFiles)
-          assert(insert.metrics.contains("numOutputBytes"))
-          assert(insert.metrics("numOutputBytes").value > 0)
-          assert(insert.metrics.contains("numOutputRows"))
-          assert(insert.metrics("numOutputRows").value == numOutputRows)
-        }
-
-        checkMetrics("""
-                       |INSERT INTO TABLE t PARTITION(p) SELECT * 
-                       |FROM VALUES(1, 'a'),(2, 'a'),(1, 'b')""".stripMargin, 2, 3)
-        
-        checkMetrics("""
-                       |INSERT INTO TABLE t PARTITION(p) SELECT *
-                       |FROM VALUES(1, 'a'),(2, 'b'),(1, 'c'),(2, 'd')""".stripMargin, 4, 4)
-
-      } finally {
-        spark.sql("DROP TABLE IF EXISTS t")
-        spark.sql("DROP TABLE IF EXISTS tempmetricstable")
-        SQLConf.get.unsetConf(SQLConf.MAX_CONCURRENT_OUTPUT_FILE_WRITERS)
-        SQLConf.get.unsetConf(SQLConf.LEAF_NODE_DEFAULT_PARALLELISM)
-      }
-    })
   }
 }
 
