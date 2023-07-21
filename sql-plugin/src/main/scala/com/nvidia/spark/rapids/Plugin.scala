@@ -166,16 +166,16 @@ object RapidsPluginUtils extends Logging {
     // (spark.executor.resource.gpu.amount / spark.executor.cores) then GPUs will be the limiting
     // resource for task scheduling.
     if (conf.contains(TASK_GPU_AMOUNT_KEY) && conf.contains(EXECUTOR_GPU_AMOUNT_KEY)) {
-      val gpuAmount = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
+      val taskGpuAmountSetByUser = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
       // get worker's all cores num if spark.executor.cores is not set explicitly
-      val workerAllCores = Runtime.getRuntime.availableProcessors.toString()
+      lazy val workerAllCores = Runtime.getRuntime.availableProcessors.toString()
       val executorCores = conf.get(EXECUTOR_CORES_KEY, workerAllCores).toDouble
-      val executorGpusPerCore = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble / executorCores
-      
-      if (gpuAmount > executorGpusPerCore) {
-        logWarning("GPUs are the limiting resource for task scheduling because " + 
-        s"spark.task.resource.gpu.amount is set to ($gpuAmount). " + 
-        "This will significantly limit performance.")
+      val executorGpuAmount = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toInt
+      if (executorCores != 0 && taskGpuAmountSetByUser > executorGpuAmount / executorCores) {
+        logWarning("The current setting of spark.task.resource.gpu.amount " + 
+        s"($taskGpuAmountSetByUser) is not ideal to get the best performance from the " + 
+        "Spark Rapids plugin. It's recommended to be set to 1/{number of cores} unless " + 
+        "you have a special use case.")
       }
     }
   }
