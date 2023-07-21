@@ -19,7 +19,7 @@ from data_gen import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from delta_lake_merge_test import read_delta_path, read_delta_path_with_cdf, setup_dest_tables
 from marks import *
-from spark_session import is_before_spark_320, is_before_spark_340, is_databricks_runtime, is_databricks122_or_later, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_332, is_databricks_runtime, is_databricks122_or_later, with_cpu_session, with_gpu_session
 
 delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
@@ -94,7 +94,8 @@ def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
 @pytest.mark.parametrize("enable_deletion_vectors", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.skipif(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8654")
+@pytest.mark.skipif(is_databricks_runtime() and is_before_spark_332(), reason="Deletion vectors introduced in DBR 12.2")
+@pytest.mark.xfail(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8654")
 def test_delta_deletion_vector(spark_tmp_path, use_cdf, enable_deletion_vectors, partition_columns):
     # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
     num_slices_to_test = 1 if is_databricks_runtime() else 10
