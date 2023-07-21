@@ -170,7 +170,7 @@ object RapidsPluginUtils extends Logging {
       // get worker's all cores num if spark.executor.cores is not set explicitly
       lazy val workerAllCores = Runtime.getRuntime.availableProcessors.toString()
       val executorCores = conf.get(EXECUTOR_CORES_KEY, workerAllCores).toDouble
-      val executorGpuAmount = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toInt
+      val executorGpuAmount = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble
       if (executorCores != 0 && taskGpuAmountSetByUser > executorGpuAmount / executorCores) {
         logWarning("The current setting of spark.task.resource.gpu.amount " + 
         s"($taskGpuAmountSetByUser) is not ideal to get the best performance from the " + 
