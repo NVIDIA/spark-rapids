@@ -201,6 +201,7 @@ class GpuBatchSubPartitioner(
           subTables.zipWithIndex.foreach { case (table, id) =>
             // skip empty tables
             if (table.getRowCount > 0) {
+              subTables(id) = null
               pendingParts(id) += SpillableColumnarBatch(table, types,
                 SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               numCurBatches += 1

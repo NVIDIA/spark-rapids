@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuCast, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -143,9 +143,9 @@ abstract class GpuTimeMath(
 
   val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
         (lhs, rhs) match {
           case (l, intvlS: GpuScalar)
               if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
@@ -197,10 +197,10 @@ case class GpuDateAddInterval(start: Expression,
 
   override def dataType: DataType = DateType
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
 
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) {
         case intvlS: GpuScalar if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
           // Scalar does not support 'CalendarInterval' now, so use
           // the Scala value instead.

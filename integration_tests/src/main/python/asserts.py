@@ -181,7 +181,7 @@ def _prep_func_for_compare(func, mode):
     if should_sort_on_spark():
         def with_sorted(spark):
             df = func(spark)
-            return df.sort(df.columns)
+            return df.sort([f"`{x}`" for x in df.columns])
 
         sorted_func = with_sorted
     else:

@@ -20,7 +20,6 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -45,13 +44,13 @@ object GpuNvl {
 case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression
     with ShimExpression with ComplexTypeMergingExpression {
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     // runningResult has precedence over runningScalar
     var runningResult: ColumnVector = null
     var runningScalar: GpuScalar = null
     try {
       children.reverse.foreach(expr => {
-        expr.columnarEval(batch) match {
+        expr.columnarEvalAny(batch) match {
           case data: GpuColumnVector =>
             try {
               if (runningResult != null) {
@@ -84,7 +83,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression
         }
       })
 
-      if (runningResult != null) {
+      val res = if (runningResult != null) {
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
         // Wrap it as a GpuScalar instead of pulling data out of GPU.
@@ -93,6 +92,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression
         // null is not welcome, so use a null scalar instead
         GpuScalar(null, dataType)
       }
+      GpuExpressionsUtils.resolveColumnVector(res, batch.numRows())
     } finally {
       if (runningResult != null) {
         runningResult.close()
@@ -187,7 +187,7 @@ case class GpuAtLeastNNonNulls(
    * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
    * temporary value.
    */
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val nonNullNanCounts : mutable.Queue[ColumnVector] = new mutable.Queue[ColumnVector]()
     try {
       exprs.foreach { expr =>
@@ -196,7 +196,7 @@ case class GpuAtLeastNNonNulls(
         var notNanVector: ColumnVector = null
         var nanAndNullVector: ColumnVector = null
         try {
-          cv = columnarEvalToColumn(expr, batch).getBase
+          cv = expr.columnarEval(batch).getBase
           notNullVector = cv.isNotNull
           if (cv.getType == DType.FLOAT32 || cv.getType == DType.FLOAT64) {
             notNanVector = cv.isNotNan

@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_spark_exception
+from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_spark_exception
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
@@ -730,6 +730,44 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
         conf={}
     )
 
+def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, func):
+    conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+          'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase}
+
+    def create_table(spark, path):
+        tmp_table = spark_tmp_table_factory.get()
+        spark.sql(f"CREATE TABLE {tmp_table} STORED AS PARQUET " +
+                  f""" LOCATION '{path}' AS SELECT CAST('2015-01-01 00:00:00' AS TIMESTAMP) as t; """)
+
+    def read_table(spark, path):
+        return spark.read.parquet(path)
+
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+
+    func(create_table, read_table, data_path, conf)
+
+# Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
+def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
+
+    def func_test(create_table, read_table, data_path, conf):
+        assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path, conf=conf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path + '/CPU'))
+
+    hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, 'CORRECTED', func_test)
+
+# Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec')
+def test_hive_timestamp_value_fallback(spark_tmp_table_factory, spark_tmp_path):
+
+    def func_test(create_table, read_table, data_path, conf):
+        assert_gpu_fallback_write(
+            create_table,
+            read_table,
+            data_path,
+            ['DataWritingCommandExec'],
+            conf)
+
+    hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, 'LEGACY', func_test)
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")
@@ -755,3 +793,31 @@ def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled,
         lambda spark, path: spark.read.parquet(path),
         data_path,
         conf)
+
+# Issue to test a known bug https://github.com/NVIDIA/spark-rapids/issues/8694 to avoid regression
+@ignore_order
+@allow_non_gpu("SortExec", "ShuffleExchangeExec")
+def test_write_list_struct_single_element(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_gen = ArrayGen(StructGen([('element', long_gen)], nullable=False), max_length=10, nullable=False)
+    conf = {}
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, data_gen).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path), data_path, conf)
+    cpu_path = data_path + '/CPU'
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(cpu_path), conf)
+
+@ignore_order
+def test_parquet_write_column_name_with_dots(spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    gens = [
+        ("a.b", StructGen([
+            ("c.d.e", StructGen([
+                ("f.g", int_gen),
+                ("h", string_gen)])),
+            ("i.j", long_gen)])),
+        ("k", boolean_gen)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path:  gen_df(spark, gens).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path)

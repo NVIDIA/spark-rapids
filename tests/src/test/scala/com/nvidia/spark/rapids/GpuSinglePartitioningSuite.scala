@@ -56,7 +56,8 @@ class GpuSinglePartitioningSuite extends AnyFunSuite {
             val expected = contigTables.head
             // partition will consume batch, so increment refcounts enabling withResource to close
             GpuColumnVector.extractBases(batch).foreach(_.incRefCount())
-            val result = partitioner.columnarEval(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+            val result =
+              partitioner.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
             try {
               assertResult(1)(result.length)
               assertResult(0)(result.head._2)

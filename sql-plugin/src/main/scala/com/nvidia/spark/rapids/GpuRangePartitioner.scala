@@ -218,7 +218,7 @@ case class GpuRangePartitioner(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (rangeBounds.nonEmpty) {
       val (parts, partitionColumns) = computeBoundsAndClose(batch)
       val slicedCb = sliceInternalGpuOrCpuAndClose(partitionColumns.head.getRowCount.toInt,

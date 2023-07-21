@@ -51,8 +51,8 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
   override def sql: String =
     child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(child.columnarEval(batch)) { input =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(child.columnarEvalAny(batch)) { input =>
       val dt = dataType
       input match {
         case cv: GpuColumnVector =>
