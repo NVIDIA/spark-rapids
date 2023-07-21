@@ -22,7 +22,6 @@
 #   BASE_SPARK_VERSION: Spark version [3.2.1, 3.3.0]. Default is pulled from current instance.
 #   SHUFFLE_SPARK_SHIM: Set the default value for the shuffle shim. For databricks versions, append
 #                       db. Example: spark330 => spark330db
-#   SCALA_BINARY_VER: Scala version of the provided binaries. Default is 2.12.
 #   TEST_MODE: Can be one of the following (`DEFAULT` is the default value):
 #       - DEFAULT: all tests except cudf_udf tests
 #       - DELTA_LAKE_ONLY: delta_lake tests only
@@ -32,41 +31,28 @@
 #       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/test.sh`
 # To add support of a new runtime:
 #   1. Check if any more dependencies need to be added to the apt/pip install commands.
-#   2. Review the `sw_versions` array, adding the relevant versions required by the new runtime.
-#   3. If you had to go beyond the above steps to support the new runtime, then update the
+#   2. If you had to go beyond the above steps to support the new runtime, then update the
 #      instructions accordingly.
 set -ex
 
-# Map of software versions for each dependency.
-declare -A sw_versions
+SOURCE_PATH="/home/ubuntu/spark-rapids"
+[[ -d "$LOCAL_JAR_PATH" ]] && cd $LOCAL_JAR_PATH || cd $SOURCE_PATH
 
-CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
+# Install python packages for integration tests
+source jenkins/databricks/setup.sh
 
-LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${BASE_SPARK_VERSION//./}db}
 SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM//\-SNAPSHOT/}
-SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
-
-# install required packages
-sudo apt -y install zip unzip
 
 # Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
-# Install if python pip does not exist.
-if [ -z "$($PYSPARK_PYTHON -m pip --version || true)" ]; then
-    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-        $PYSPARK_PYTHON get-pip.py && rm get-pip.py
-fi
-
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-# Set the path of python site-packages, and install packages here.
+# Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
 PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
-# Use "python -m pip install" to make sure pip matches with python.
-$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
@@ -76,10 +62,6 @@ PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
 # Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
 # Note that Koala is deprecated for DB10.4+ and it is recommended to use Pandas API on Spark instead.
 export PYTHONPATH=$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
-sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
-sudo chmod 777 /databricks/data/logs/
-sudo chmod 777 /databricks/data/logs/*
-echo { \"port\":\"15002\" } > ~/.databricks-connect
 
 ## 'spark.foo=1,spark.bar=2,...' to 'export PYSP_TEST_spark_foo=1 export PYSP_TEST_spark_bar=2'
 if [ -n "$SPARK_CONF" ]; then
@@ -127,38 +109,28 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
     PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
     SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
-    bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
+    bash integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
 
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=${TEST_PARALLEL:-4}
-if [ -d "$LOCAL_JAR_PATH" ]; then
-    if [[ $TEST_MODE == "DEFAULT" ]]; then
-        ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo
-        LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE
 
-        ## Run cache tests
-        if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
-          PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-           LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-        fi
+if [[ $TEST_MODE == "DEFAULT" ]]; then
+    bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+
+    ## Run cache tests
+    if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
+        PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
+            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
     fi
-else
-    if [[ $TEST_MODE == "DEFAULT" ]]; then
-        ## Run tests with jars building from the spark-rapids source code
-        bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+fi
 
-        ## Run cache tests
-        if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
-            PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-        fi
-    fi
-
+## Run tests with jars building from the spark-rapids source code
+if [ "$(pwd)" == "$SOURCE_PATH" ]; then
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
         ## Run Delta Lake tests
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
-            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
+            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
     fi
 
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
