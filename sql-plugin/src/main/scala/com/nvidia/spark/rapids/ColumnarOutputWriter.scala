@@ -134,8 +134,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       spillableBatch: SpillableColumnarBatch,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
     val writeStartTime = System.nanoTime
-    val cb = withRetryNoSplit[ColumnarBatch] {
-      spillableBatch.getColumnarBatch()
+    val cb = closeOnExcept(spillableBatch) { _ =>
+      withRetryNoSplit[ColumnarBatch] {
+        spillableBatch.getColumnarBatch()
+      }
     }
     closeOnExcept(spillableBatch) { _ =>
       // run pre-flight checks and update stats
