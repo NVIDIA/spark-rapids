@@ -22,19 +22,14 @@
 #   BASE_SPARK_VERSION: Spark version [3.2.1, 3.3.0]. Default is pulled from current instance.
 #   SHUFFLE_SPARK_SHIM: Set the default value for the shuffle shim. For databricks versions, append
 #                       db. Example: spark330 => spark330db
-#   ICEBERG_VERSION: The iceberg version. To find the list of supported ICEBERG versions,
-#                    check https://iceberg.apache.org/multi-engine-support/#apache-spark
 #   SCALA_BINARY_VER: Scala version of the provided binaries. Default is 2.12.
 #   TEST_MODE: Can be one of the following (`DEFAULT` is the default value):
 #       - DEFAULT: all tests except cudf_udf tests
-#       - ICEBERG_ONLY: iceberg tests only
 #       - DELTA_LAKE_ONLY: delta_lake tests only
 #       - MULTITHREADED_SHUFFLE: shuffle tests only
 # Usage:
 # - Running tests on DB10.4/Spark 3.2.1:
 #       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/test.sh`
-# - Running tests on DB11.3 with ICEBERG Version 1.0.0 instead of default (0.14.1)
-#       `BASE_SPARK_VERSION=3.3.0 ICEBERG_VERSION=1.0.0 ./jenkins/databricks/test.sh`
 # To add support of a new runtime:
 #   1. Check if any more dependencies need to be added to the apt/pip install commands.
 #   2. Review the `sw_versions` array, adding the relevant versions required by the new runtime.
@@ -76,24 +71,6 @@ $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield r
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
 export SPARK_CONF_DIR=$PWD
-# Set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
-case "$BASE_SPARK_VERSION" in
-    "3.3.0")
-        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
-        sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.14.1'}
-        ;;
-    "3.3.2")
-        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
-        sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.14.1'}
-        ;;
-    "3.2.1")
-        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.2_2.12/
-        sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.13.2'}
-        ;;
-    *) echo "Unexpected Spark version: $BASE_SPARK_VERSION"; exit 1;;
-esac
-# Set the iceberg_spark to something like 3.3 for DB11.3, 3.2 for DB10.4
-sw_versions[ICEBERG_SPARK]=$(echo $BASE_SPARK_VERSION | cut -d. -f1,2)
 # Get the correct py4j file.
 PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
 # Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
@@ -124,7 +101,6 @@ IS_SPARK_321_OR_LATER=0
 
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
-# - ICEBERG_ONLY: iceberg tests only
 # - DELTA_LAKE_ONLY: delta_lake tests only
 # - MULTITHREADED_SHUFFLE: shuffle tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
@@ -134,11 +110,6 @@ PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
 # https://github.com/NVIDIA/spark-rapids/pull/5646
-ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${sw_versions[ICEBERG_SPARK]}_${SCALA_BINARY_VER}:${sw_versions[ICEBERG]} \
- --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
- --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
- --conf spark.sql.catalog.spark_catalog.type=hadoop \
- --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$"
 
 # Increase driver memory as Delta Lake tests can slowdown with default 1G (possibly due to caching?)
 DELTA_LAKE_CONFS="--driver-memory 2g"
@@ -172,12 +143,6 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
            LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
         fi
     fi
-
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
-        ## Run Iceberg tests
-        LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
-            bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m iceberg --iceberg --test_type=$TEST_TYPE
-    fi
 else
     if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars building from the spark-rapids source code
@@ -188,12 +153,6 @@ else
             PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
         fi
-    fi
-
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
-        ## Run Iceberg tests
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
-            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m iceberg --iceberg --test_type=$TEST_TYPE
     fi
 
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
