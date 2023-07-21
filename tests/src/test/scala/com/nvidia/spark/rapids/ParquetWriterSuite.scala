@@ -258,7 +258,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }, new SparkConf().set("spark.sql.sources.commitProtocolClass", slowCommitClass))
   }
 
-  test("Fix concurrent writer does not update file metrics") {
+  test("Concurrent writer update file metrics") {
     withGpuSparkSession(spark => {
       try {
         spark.sql("CREATE TABLE t(c int) USING parquet PARTITIONED BY (p String)")
