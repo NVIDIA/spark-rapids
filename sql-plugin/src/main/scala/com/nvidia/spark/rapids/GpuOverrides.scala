@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -3070,6 +3070,18 @@ object GpuOverrides extends Logging {
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
         def convertToGpu(): GpuExpression =
           GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
+      }),
+    expr[XxHash64](
+      "xxhash64 hash operator",
+      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          XxHash64Shims.supportedTypes, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[XxHash64](a, conf, p, r) {
+        override val childExprs: Seq[BaseExprMeta[_]] = a.children
+          .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        def convertToGpu(): GpuExpression =
+          GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
       }),
     expr[Contains](
       "Contains",
