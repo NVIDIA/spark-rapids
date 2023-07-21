@@ -17,7 +17,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.TableWriter
 import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuBoundReference, GpuColumnVector, RapidsBufferCatalog, RapidsDeviceMemoryStore}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataOutputStream
@@ -504,9 +504,11 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
           dynamicConcurrentWriter.commit()
         } else {
-          assertThrows[SplitAndRetryOOM] {
-            dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
-            dynamicConcurrentWriter.commit()
+          closeOnExcept(cbs) { _ =>
+            assertThrows[SplitAndRetryOOM] {
+              dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+              dynamicConcurrentWriter.commit()
+            }
           }
         }
 
@@ -555,9 +557,11 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         val dynamicConcurrentWriter =
           prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
 
-        assertThrows[RetryOOM] {
-          dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
-          dynamicConcurrentWriter.commit()
+        closeOnExcept(cbs) { _ =>
+          assertThrows[RetryOOM] {
+            dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+            dynamicConcurrentWriter.commit()
+          }
         }
 
         // we never reach the buffer stage
