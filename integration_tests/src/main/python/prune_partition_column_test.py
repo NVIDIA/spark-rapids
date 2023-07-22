@@ -15,10 +15,11 @@
 import os
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, run_with_cpu_and_gpu, assert_equal
 from data_gen import *
 from marks import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_before_spark_320
+from conftest import spark_jvm
 
 # Several values to avoid generating too many folders for partitions.
 part1_gen = SetValuesGen(IntegerType(), [-10, -1, 0, 1, 10])
@@ -127,3 +128,76 @@ def test_prune_partition_column_when_filter_fallback_project(spark_tmp_path, pru
                                                              filter_col, file_format):
     do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
                                                   filter_col, gpu_project_enabled=False)
+
+def create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, func, conf):
+    full_name_type = StructGen([('first', StringGen()), ('middle', StringGen()), ('last', StringGen())])
+    name_type = StructGen([('first', StringGen()), ('last', StringGen())])
+    contacts_data_gen = StructGen([
+        ('id', IntegerGen()),
+        ('full_name', full_name_type),
+        ('address', StringGen()),
+        ('friends', ArrayGen(full_name_type, max_length=10, nullable=False))], nullable=False)
+
+    brief_contacts_data_gen = StructGen([
+        ('id', IntegerGen()),
+        ('name', name_type),
+        ('address', StringGen())], nullable=False)
+
+    def contact_gen_df(spark, data_gen, partition):
+        gen = gen_df(spark, data_gen)
+        if is_partitioned:
+            return gen.withColumn('p', f.lit(partition))
+        else:
+            return gen
+
+    with_cpu_session(lambda spark: contact_gen_df(spark, contacts_data_gen, 1).write.format(format).save(data_path + "/contacts/p=1"))
+    with_cpu_session(lambda spark: contact_gen_df(spark, brief_contacts_data_gen, 2).write.format(format).save(data_path + "/contacts/p=2"))
+
+    (from_cpu, cpu_df), (from_gpu, gpu_df) = run_with_cpu_and_gpu(
+        func,
+        'COLLECT_WITH_DATAFRAME',
+        conf=conf)
+
+    jvm = spark_jvm()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertSchemataMatch(cpu_df._jdf, gpu_df._jdf, expected_schemata)
+    assert_equal(from_cpu, from_gpu)
+
+# https://github.com/NVIDIA/spark-rapids/issues/8712
+# https://github.com/NVIDIA/spark-rapids/issues/8714
+@pytest.mark.parametrize('query_and_expected_schemata', [("select friends.middle, friends from contacts where p=1", "struct<friends:array<struct<first:string,middle:string,last:string>>>"),
+                                                         ("select name.first from contacts where name.first = 'Jane'", "struct<name:struct<first:string>>")])
+@pytest.mark.parametrize('vectorized', ["true", "false"])
+@pytest.mark.parametrize('is_partitioned', [True, False])
+@pytest.mark.parametrize('format', ["parquet", "orc"])
+def test_select_complex_field(format, spark_tmp_path, query_and_expected_schemata, vectorized, is_partitioned):
+    query, expected_schemata = query_and_expected_schemata
+    data_path = spark_tmp_path + "/DATA"
+    def read_temp_view(spark):
+        schema = "`id` INT, `name` STRUCT<`first`: STRING, `middle`: STRING, `last`: STRING>, " + \
+                 "`address` STRING,`friends` ARRAY<STRUCT<`first`: STRING, `middle`: STRING, " + \
+                 "`last`: STRING>>,`p` INT"
+        spark.read.format(format).schema(schema).load(data_path + "/contacts").createOrReplaceTempView("contacts")
+        return spark.sql(query)
+    conf={"spark.sql.parquet.enableVectorizedReader": vectorized}
+    create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf)
+
+# https://github.com/NVIDIA/spark-rapids/issues/8715
+@pytest.mark.parametrize('select_and_expected_schemata', [("friend.First", "struct<friends:array<struct<first:string>>>"),
+                                                          ("friend.MIDDLE", "struct<friends:array<struct<middle:string>>>")])
+@pytest.mark.parametrize('vectorized', ["true", "false"])
+@pytest.mark.skipif(is_before_spark_320(), reason='https://issues.apache.org/jira/browse/SPARK-34638')
+@pytest.mark.parametrize('is_partitioned', [True, False])
+@pytest.mark.parametrize('format', ["parquet", "orc"])
+def test_nested_column_prune_on_generator_output(format, spark_tmp_path, select_and_expected_schemata, vectorized, is_partitioned):
+    query, expected_schemata = select_and_expected_schemata
+    data_path = spark_tmp_path + "/DATA"
+    def read_temp_view(spark):
+        schema = "`id` INT, `name` STRUCT<`first`: STRING, `middle`: STRING, `last`: STRING>, " + \
+                 "`address` STRING,`friends` ARRAY<STRUCT<`first`: STRING, `middle`: STRING, " + \
+                 "`last`: STRING>>,`p` INT"
+        spark.read.format(format).schema(schema).load(data_path + "/contacts").createOrReplaceTempView("contacts")
+        return spark.table("contacts").select(f.explode(f.col("friends")).alias("friend")).select(query)
+
+    conf = {"spark.sql.caseSensitive": "false",
+            "spark.sql.parquet.enableVectorizedReader": vectorized}
+    create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf)

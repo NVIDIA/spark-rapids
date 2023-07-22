@@ -25,11 +25,11 @@ import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
 
-object ExecutionPlanCaptureCallback {
+object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
   private[this] var shouldCapture: Boolean = false
   private[this] val execPlans: ArrayBuffer[SparkPlan] = ArrayBuffer.empty
 
@@ -81,6 +81,34 @@ object ExecutionPlanCaptureCallback {
     val gpuPlans = getResultsWithTimeout(timeoutMs = timeoutMs)
     assert(gpuPlans.nonEmpty, "Did not capture a plan")
     fallbackCpuClassList.foreach(fallbackCpuClass => assertDidFallBack(gpuPlans, fallbackCpuClass))
+  }
+
+  def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit = {
+    import org.apache.spark.sql.execution.FileSourceScanExec
+    import org.apache.spark.sql.types.StructType
+    import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
+
+    val cpuFileSourceScanSchemata = collect(cpuDf.queryExecution.executedPlan) {
+      case scan: FileSourceScanExec => scan.requiredSchema
+    }
+    val gpuFileSourceScanSchemata = collect(gpuDf.queryExecution.executedPlan) {
+      case scan: GpuFileSourceScanExec => scan.requiredSchema
+    }
+    assert(cpuFileSourceScanSchemata.size == gpuFileSourceScanSchemata.size,
+      s"Found ${cpuFileSourceScanSchemata.size} file sources in dataframe, " +
+        s"but expected ${gpuFileSourceScanSchemata.size}")
+
+    cpuFileSourceScanSchemata.zip(gpuFileSourceScanSchemata).foreach {
+      case (cpuScanSchema, gpuScanSchema) =>
+         cpuScanSchema match {
+           case otherType: StructType =>
+             assert(gpuScanSchema.sameType(otherType))
+             val expectedStructType = CatalystSqlParser.parseDataType(expectedSchema)
+             assert(gpuScanSchema.sameType(expectedStructType))
+             assert(cpuScanSchema.sameType(expectedStructType))
+           case _ => assert(false)
+         }
+    }
   }
 
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
