@@ -17,12 +17,15 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuTieredProject, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.shims.{HashUtils, ShimExpression}
 
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -41,6 +44,32 @@ case class GpuMd5(child: Expression)
   }
 }
 
+abstract class GpuHashExpression extends GpuExpression with ShimExpression {
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  override def nullable: Boolean = false
+
+  private def hasMapType(dt: DataType): Boolean = {
+    dt.existsRecursively(_.isInstanceOf[MapType])
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (children.length < 1) {
+      TypeCheckResult.TypeCheckFailure(
+        s"input to function $prettyName requires at least one argument")
+    } else if (children.exists(child => hasMapType(child.dataType)) &&
+      !SQLConf.get.getConf(SQLConf.LEGACY_ALLOW_HASH_ON_MAPTYPE)) {
+      TypeCheckResult.TypeCheckFailure(
+        s"input to function $prettyName cannot contain elements of MapType. In Spark, same maps " +
+          "may have different hashcode, thus hash expressions are prohibited on MapType elements." +
+          s" To restore previous behavior set ${SQLConf.LEGACY_ALLOW_HASH_ON_MAPTYPE.key} " +
+          "to true.")
+    } else {
+      TypeCheckResult.TypeCheckSuccess
+    }
+  }
+}
+
 object GpuMurmur3Hash {
   def compute(batch: ColumnarBatch,
       boundExpr: Seq[Expression],
@@ -55,29 +84,27 @@ object GpuMurmur3Hash {
       }
     }
   }
-
-  def computeTiered(batch: ColumnarBatch,
-      boundExpr: GpuTieredProject,
-      seed: Int = 42): ColumnVector = {
-    withResource(boundExpr.project(batch)) { args =>
-      val bases = GpuColumnVector.extractBases(args)
-      val normalized = bases.safeMap { cv =>
-        HashUtils.normalizeInput(cv).asInstanceOf[ColumnView]
-      }
-      withResource(normalized) { _ =>
-        ColumnVector.spark32BitMurmurHash3(seed, normalized)
-      }
-    }
-  }
 }
 
-case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuExpression
-  with ShimExpression {
+case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuHashExpression {
   override def dataType: DataType = IntegerType
 
-  override def toString: String = s"hash($children)"
-  def nullable: Boolean = children.exists(_.nullable)
+  override def prettyName: String = "hash"
 
-  def columnarEval(batch: ColumnarBatch): Any =
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     GpuColumnVector.from(GpuMurmur3Hash.compute(batch, children, seed), dataType)
+}
+
+
+case class GpuXxHash64(children: Seq[Expression], seed: Long) extends GpuHashExpression {
+  override def dataType: DataType = LongType
+
+  override def prettyName: String = "xxhash64"
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(children.safeMap(_.columnarEval(batch))) { childCols =>
+      val cudfCols = childCols.map(_.getBase.asInstanceOf[ColumnView]).toArray
+      GpuColumnVector.from(Hash.xxhash64(seed, cudfCols), dataType)
+    }
+  }
 }

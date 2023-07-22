@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -1128,7 +1128,7 @@ object GpuOverrides extends Logging {
       }),
     expr[SecondsToTimestamp](
       "Converts the number of seconds from unix epoch to a timestamp",
-      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
       TypeSig.gpuNumeric, TypeSig.cpuNumeric),
       (a, conf, p, r) => new UnaryExprMeta[SecondsToTimestamp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1136,7 +1136,7 @@ object GpuOverrides extends Logging {
       }),
     expr[MillisToTimestamp](
       "Converts the number of milliseconds from unix epoch to a timestamp",
-      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
       TypeSig.integral, TypeSig.integral),
       (a, conf, p, r) => new UnaryExprMeta[MillisToTimestamp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1144,7 +1144,7 @@ object GpuOverrides extends Logging {
       }),
     expr[MicrosToTimestamp](
       "Converts the number of microseconds from unix epoch to a timestamp",
-      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP, 
+      ExprChecks.unaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
       TypeSig.integral, TypeSig.integral),
       (a, conf, p, r) => new UnaryExprMeta[MicrosToTimestamp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -2108,14 +2108,12 @@ object GpuOverrides extends Logging {
       "Max aggregate operator",
       ExprChecksImpl(
         ExprChecks.reductionAndGroupByAgg(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-              TypeSig.STRUCT + TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+            TypeSig.ARRAY).nested(),
           TypeSig.orderable,
           Seq(ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.STRUCT + TypeSig.ARRAY),
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+              TypeSig.ARRAY).nested(),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2135,14 +2133,12 @@ object GpuOverrides extends Logging {
       "Min aggregate operator",
       ExprChecksImpl(
         ExprChecks.reductionAndGroupByAgg(
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-              TypeSig.STRUCT + TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+              TypeSig.ARRAY).nested(),
           TypeSig.orderable,
           Seq(ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.STRUCT + TypeSig.ARRAY),
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT +
+              TypeSig.ARRAY).nested(),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -3074,6 +3070,18 @@ object GpuOverrides extends Logging {
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
         def convertToGpu(): GpuExpression =
           GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
+      }),
+    expr[XxHash64](
+      "xxhash64 hash operator",
+      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          XxHash64Shims.supportedTypes, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[XxHash64](a, conf, p, r) {
+        override val childExprs: Seq[BaseExprMeta[_]] = a.children
+          .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        def convertToGpu(): GpuExpression =
+          GpuXxHash64(childExprs.map(_.convertToGpu()), a.seed)
       }),
     expr[Contains](
       "Contains",

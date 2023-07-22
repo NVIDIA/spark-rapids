@@ -175,7 +175,7 @@ case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean
   override def toString: String =
     s"input[$ordinal, ${dataType.simpleString}, $nullable]($name#${exprId.id})"
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     batch.column(ordinal) match {
       case fb: GpuColumnVectorFromBuffer =>
         // When doing a project we might re-order columns or do other things that make it

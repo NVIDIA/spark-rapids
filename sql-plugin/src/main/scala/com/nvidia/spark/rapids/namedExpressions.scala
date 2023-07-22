@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,8 +105,13 @@ case class GpuAlias(child: Expression, name: String)(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any =
+  // pass through any calls to columarEval to child
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     child.columnarEval(batch)
+
+  // pass through any calls to columarEvalAny to child
+  override def columnarEvalAny(batch: ColumnarBatch): Any =
+    child.columnarEvalAny(batch)
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("GpuAlias should never have doColumnar called")

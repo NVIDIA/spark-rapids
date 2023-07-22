@@ -357,7 +357,7 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
       predicate: Expression): (ColumnarBatch, ColumnarBatch) = {
     withResource(input) { _ =>
       withResource(GpuColumnVector.from(input)) { inTable =>
-        val predCol = GpuExpressionsUtils.columnarEvalToColumn(predicate, input)
+        val predCol = predicate.columnarEval(input)
         val matchedBatch = closeOnExcept(predCol) { _ =>
           withResource(inTable.filter(predCol.getBase)) { matchedTable =>
             GpuColumnVector.from(matchedTable, inputTypes)
