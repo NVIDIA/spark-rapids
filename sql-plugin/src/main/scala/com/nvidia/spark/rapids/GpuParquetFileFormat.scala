@@ -334,6 +334,7 @@ class GpuParquetWriter(
       // Note that cudf's `isTimestampType` returns `true` for `TIMESTAMP_DAYS`, which is not
       // included in Spark's `TimestampType`.
       case (cv, _) if cv.getType.isTimestampType && cv.getType != DType.TIMESTAMP_DAYS =>
+        GpuColumnVector.debug("GERA_DEBUG timestamp CV", cv)
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
         outputTimestampType match {
           case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
