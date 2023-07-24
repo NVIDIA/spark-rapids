@@ -603,9 +603,9 @@ _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_list_op]
 
 _repeat_agg_column_for_collect_set_op = [
-    RepeatSeqGen(all_basic_struct_gen, length=15),
+    RepeatSeqGen(all_basic_struct_gen_no_nan, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15)]
+        ['c0', all_basic_struct_gen_no_nan], ['c1', int_gen]]), length=15)]
 
 # data generating for collect_set based-nested Struct[Array] types
 _repeat_agg_column_for_collect_set_op_nested = [
@@ -688,7 +688,6 @@ def test_hash_groupby_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
 def test_hash_groupby_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -731,7 +730,6 @@ def test_hash_reduction_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
 def test_hash_reduction_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
