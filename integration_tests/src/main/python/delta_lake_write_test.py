@@ -97,8 +97,8 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             fixup_path(c_val)
             fixup_path(g_val)
             # tightBounds is an optional statistic and sometimes it appears on CPU and
-            # not GPU, and sometimes appears on GPU and not on CPU, when running
-            # against DBR 12.2, but is consistent when running with OSS Delta Lake 2.4
+            # not on GPU when running against DBR 12.2, but is consistent when running
+            # with OSS Delta Lake 2.4
             # TODO resolve this or file an issue
             c_stats = c_val.get('stats', '')
             g_stats = g_val.get('stats', '')
