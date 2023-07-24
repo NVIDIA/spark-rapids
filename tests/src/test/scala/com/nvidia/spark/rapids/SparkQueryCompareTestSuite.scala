@@ -20,12 +20,13 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
-import org.scalatest.Assertion
+import org.scalatest.{Assertion, BeforeAndAfterAll}
 import org.scalatest.funsuite.AnyFunSuite
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
 import org.apache.spark.SparkConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
@@ -146,10 +147,15 @@ object SparkSessionHolder extends Logging {
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends AnyFunSuite {
+trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
+
+  override def afterAll(): Unit = {
+    super.afterAll()
+    //TrampolineUtil.cleanupAnyExistingSession()
+  }
 
   def enableCsvConf(conf: SparkConf): SparkConf = {
     conf
