@@ -17,9 +17,10 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
+
 import org.apache.spark.sql.{Column, SparkSession}
-import org.apache.spark.sql.delta.actions.Protocol
 import org.apache.spark.sql.delta.{DeletionVectorsTableFeature, DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.actions.Protocol
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.stats.DeltaStatistics.TIGHT_BOUNDS
