@@ -17,11 +17,11 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeletionVectorsTableFeature, DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import com.databricks.sql.transaction.tahoe.actions.Protocol
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, TypeSig, WriteFileOp}
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.{Column, SparkSession}
-import org.apache.spark.sql.delta.actions.Protocol
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.internal.SQLConf
