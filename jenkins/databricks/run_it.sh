@@ -54,31 +54,6 @@ if [[ "$TEST" == "cache_test" || "$TEST" == "cache_test.py" ]]; then
     export PYSP_TEST_spark_sql_cache_serializer='com.nvidia.spark.ParquetCachedBatchSerializer'
 fi
 
-if [[ "$TEST_TAGS" == "iceberg" ]]; then
-    ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
-
-    # Set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
-    # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
-    case "$SPARK_VER" in
-        # TODO: Will put shared scripts together for test.sh and run_it.sh
-        "3.3.0" | "3.3.2")
-            ICEBERG_VERSION=${ICEBERG_VERSION:-0.14.1}
-            ;;
-        "3.2.1")
-            ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
-            ;;
-        *) echo "Unexpected Spark version: $SPARK_VER"; exit 1;;
-    esac
-
-    export SPARK_SUBMIT_FLAGS="$SPARK_SUBMIT_FLAGS \
-        --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
-        --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
-        --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
-        --conf spark.sql.catalog.spark_catalog.type=hadoop \
-        --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$ \
-        "
-fi
-
 TEST_TYPE=${TEST_TYPE:-"nightly"}
 
 if [[ -n "$LOCAL_JAR_PATH" ]]; then

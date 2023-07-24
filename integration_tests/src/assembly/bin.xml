@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2021, NVIDIA CORPORATION.
+  Copyright (c) 2020-2023, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -58,6 +58,13 @@
         <fileSet>
             <directory>src/test/resources/</directory>
             <outputDirectory>integration_tests/src/test/resources</outputDirectory>
+        </fileSet>
+        <fileSet>
+            <directory>${project.basedir}/../thirdparty/parquet-testing</directory>
+            <outputDirectory>integration_tests/src/test/resources/parquet-testing</outputDirectory>
+            <includes>
+                <include>**/*.parquet</include>
+            </includes>
         </fileSet>
     </fileSets>
 </assembly>
