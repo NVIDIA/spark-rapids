@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides,
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.{Column, SparkSession}
+import org.apache.spark.sql.delta.actions.Protocol
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.internal.SQLConf
