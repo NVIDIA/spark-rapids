@@ -35,12 +35,9 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-class CastOpSuite extends GpuExpressionTestSuite with BeforeAndAfterAll {
+class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
 
-  override def afterAll(): Unit = {
-    TrampolineUtil.cleanupAnyExistingSession()
-  }
 
   private val sparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
