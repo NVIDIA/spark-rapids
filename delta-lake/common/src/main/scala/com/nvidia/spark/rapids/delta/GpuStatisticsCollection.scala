@@ -22,17 +22,16 @@
 package com.nvidia.spark.rapids.delta
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{ColumnView, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF, ShimUsesMetadataFields}
+
 import org.apache.spark.sql.{Column, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.delta.DeletionVectorsTableFeature
 import org.apache.spark.sql.delta.actions.Protocol
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.delta.stats.DeltaStatistics.TIGHT_BOUNDS
 import org.apache.spark.sql.functions.{count, lit, max, min, struct, substring, sum, when}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -46,8 +45,6 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
   val stringPrefixLength: Int
 
   protected def protocol: Protocol
-
-  lazy val deletionVectorsSupported = protocol.isFeatureSupported(DeletionVectorsTableFeature)
 
   // Build a mapping of a field path to a field index within the parent struct
   lazy val explodedDataSchema: Map[Seq[String], Int] =
@@ -79,12 +76,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
     val prefixLength = stringPrefixLength
 
     // On file initialization/stat recomputation TIGHT_BOUNDS is always set to true
-    val tightBoundsColOpt = if (deletionVectorsSupported &&
-        !spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)) {
-      Some(lit(true).as(TIGHT_BOUNDS))
-    } else {
-      None
-    }
+    val tightBoundsColOpt = RapidsDeltaUtils.getTightBoundsStat(spark, protocol)
 
     val statCols = Seq(
       count(new Column("*")) as NUM_RECORDS,

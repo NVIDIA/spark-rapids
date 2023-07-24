@@ -22,4 +22,5 @@ trait ShimUsesMetadataFields {
   val MIN = DeltaStatistics.MIN
   val MAX = DeltaStatistics.MAX
   val NULL_COUNT = DeltaStatistics.NULL_COUNT
+  val TIGHT_BOUNDS = DeltaStatistics.TIGHT_BOUNDS
 }
