@@ -509,11 +509,9 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
           dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
           dynamicConcurrentWriter.commit()
         } else {
-          closeOnExcept(cbs) { _ =>
-            assertThrows[SplitAndRetryOOM] {
-              dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
-              dynamicConcurrentWriter.commit()
-            }
+          assertThrows[SplitAndRetryOOM] {
+            dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+            dynamicConcurrentWriter.commit()
           }
         }
 
@@ -562,11 +560,9 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         val dynamicConcurrentWriter =
           prepareDynamicPartitionConcurrentWriter(maxWriters = 5, batchSize = 1)
 
-        closeOnExcept(cbs) { _ =>
-          assertThrows[RetryOOM] {
-            dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
-            dynamicConcurrentWriter.commit()
-          }
+        assertThrows[RetryOOM] {
+          dynamicConcurrentWriter.writeWithIterator(cbs.iterator)
+          dynamicConcurrentWriter.commit()
         }
 
         // we never reach the buffer stage
