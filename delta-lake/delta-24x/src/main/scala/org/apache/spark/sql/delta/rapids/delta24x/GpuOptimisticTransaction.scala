@@ -22,21 +22,18 @@
 package org.apache.spark.sql.delta.rapids.delta24x
 
 import java.net.URI
-
 import scala.collection.mutable.ListBuffer
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkException
-import org.apache.spark.sql.{DataFrame, Dataset}
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
-import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
+import org.apache.spark.sql.delta.actions.{AddFile, FileAction, Protocol}
 import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.schema.InvariantViolationException
@@ -107,7 +104,12 @@ class GpuOptimisticTransaction
         }
       }
 
+      val _spark = spark
+
       val statsCollection = new GpuStatisticsCollection {
+        override protected def spark: SparkSession = _spark
+        override protected def protocol: Protocol =
+          DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).protocol
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
         override val numIndexedCols = indexedCols

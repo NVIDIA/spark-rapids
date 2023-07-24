@@ -96,14 +96,6 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             del_keys(("modificationTime", "size"), c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
-            # tightBounds is an optional statistic and sometimes it appears on CPU and
-            # not on GPU when running against DBR 12.2, but is consistent when running
-            # with OSS Delta Lake 2.4
-            # TODO resolve this or file an issue
-            c_stats = c_val.get('stats', '')
-            g_stats = g_val.get('stats', '')
-            c_val['stats'] = re.sub(',"tightBounds":true', '', c_stats)
-            g_val['stats'] = re.sub(',"tightBounds":true', '', g_stats)
         elif key == "cdc":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'cdc' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("size",), c_val, g_val)
