@@ -358,7 +358,38 @@ case class NormalDistribution(mean: Double = 0.0,
     val adjusted = mean + (g * stdDev)
     // If the range of seeds is too small compared to the stddev and mean we will
     // end up with an invalid distribution, but they asked for it.
-    math.max(min, math.min(max, adjusted.toLong))
+    math.max(min, math.min(max, math.round(adjusted).toLong))
+  }
+}
+
+/**
+ * An exponential distribution that will target a specific seed. That target seed will be the
+ * maximum value in the distribution. values below it will back off exponentially. There will
+ * be no values larger than the target. Note that the seeds produced are bound to the seed range
+ * requested. If the target is not within that range or if the rate is such that a large number
+ * of seeds might appear outside of the range, then the distribution will be off.
+ * @param target the maximum seed value to return, and the most common seed value. Defaults to 0
+ * @param stdDev the standard deviation of the distribution. This is 1/the rate, but we use
+ *               standard deviation for consistency with other mappings. The default is 1.0
+ */
+case class ExponentialDistribution(
+    target: Double = 0.0,
+    stdDev: Double = 1.0,
+    min: Long = Long.MinValue,
+    max: Long = Long.MaxValue,
+    colLocSeed: Long = 0) extends LocationToSeedMapping {
+  override def withColumnConf(colConf: ColumnConf): ExponentialDistribution = {
+    val colLocSeed = colConf.columnLoc.hashLoc
+    ExponentialDistribution(target, stdDev, colConf.minSeed, colConf.maxSeed, colLocSeed)
+  }
+
+  override def apply(rowLoc: RowLocation): Long = {
+    val r = DataGen.getRandomFor(rowLoc.hashLoc(colLocSeed))
+    val g = r.nextDouble()
+    val logged = math.log(1.0 - g)
+    val adjusted = logged * stdDev
+    // This adjusted value targets 0.0 right now and will got negative from there.
+    math.max(min, math.min(max, math.ceil(adjusted + target).toLong))
   }
 }
 
