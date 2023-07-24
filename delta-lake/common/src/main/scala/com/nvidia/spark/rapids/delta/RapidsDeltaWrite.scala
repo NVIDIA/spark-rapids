@@ -68,10 +68,22 @@ case class RapidsDeltaWrite(child: LogicalPlan) extends UnaryNode {
  * a GpuRapidsDeltaWriteExec during GPU planning and should never be executed.
  */
 case class RapidsDeltaWriteExec(child: SparkPlan) extends V2CommandExec with UnaryExecNode {
+  @transient lazy val doExecuteMethod = classOf[SparkPlan].getDeclaredMethod("doExecute")
+
   override def output: Seq[Attribute] = child.output
 
   override def run(): Seq[InternalRow] = {
     throw new IllegalStateException("Should have been replaced with a GPU node before execution")
+  }
+
+  override protected def doExecute(): RDD[InternalRow] = {
+    // During execution of GpuDeleteCommand, we sometimes make the entire plan
+    // fall back to CPU due to the query being categorized as a Delta Lake
+    // Metadata Query, such as when there are references to internal
+    // metadata fields in a Parquet scan
+    logWarning("RapidsDeltaWriteExec performing row-based execution")
+    doExecuteMethod.setAccessible(true)
+    doExecuteMethod.invoke(child).asInstanceOf[RDD[InternalRow]]
   }
 
   override def withNewChildInternal(newChild: SparkPlan): SparkPlan = {
