@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.DeltaLog
-import com.databricks.sql.transaction.tahoe.actions.Metadata
+import com.databricks.sql.transaction.tahoe.actions.{Metadata, Protocol}
 
 import org.apache.spark.sql.execution.datasources.FileFormat
 
@@ -27,5 +27,9 @@ object DeltaLogShim {
   }
   def getMetadata(deltaLog: DeltaLog): Metadata = {
     deltaLog.unsafeVolatileSnapshot.metadata
+  }
+
+  def getProtocol(deltaLog: DeltaLog): Protocol = {
+    deltaLog.unsafeVolatileSnapshot.protocol
   }
 }

@@ -31,7 +31,6 @@ import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF
 import org.apache.spark.sql.{Column, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.delta.actions.Protocol
 import org.apache.spark.sql.functions.{count, lit, max, min, struct, substring, sum, when}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -44,7 +43,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
   val numIndexedCols: Int
   val stringPrefixLength: Int
 
-  protected def protocol: Protocol
+  protected def deletionVectorsSupported: Boolean
 
   // Build a mapping of a field path to a field index within the parent struct
   lazy val explodedDataSchema: Map[Seq[String], Int] =
@@ -76,7 +75,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
     val prefixLength = stringPrefixLength
 
     // On file initialization/stat recomputation TIGHT_BOUNDS is always set to true
-    val tightBoundsColOpt = RapidsDeltaUtils.getTightBoundsStat(spark, protocol)
+    val tightBoundsColOpt = RapidsDeltaUtils.getTightBoundsStat(spark, deletionVectorsSupported)
 
     val statCols = Seq(
       count(new Column("*")) as NUM_RECORDS,

@@ -107,7 +107,11 @@ class GpuOptimisticTransaction
         }
       }
 
+      val _spark = spark
+
       val statsCollection = new GpuStatisticsCollection {
+        override val spark = _spark
+        override val deletionVectorsSupported = false
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
         override val numIndexedCols = indexedCols

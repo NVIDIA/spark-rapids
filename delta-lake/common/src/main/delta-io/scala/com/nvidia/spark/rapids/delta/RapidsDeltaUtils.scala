@@ -19,8 +19,7 @@ package com.nvidia.spark.rapids.delta
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
 
 import org.apache.spark.sql.{Column, SparkSession}
-import org.apache.spark.sql.delta.{DeletionVectorsTableFeature, DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
-import org.apache.spark.sql.delta.actions.Protocol
+import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.stats.DeltaStatistics.TIGHT_BOUNDS
@@ -87,10 +86,9 @@ object RapidsDeltaUtils {
     }
   }
 
-  def getTightBoundsStat(spark: SparkSession, protocol: Protocol): Option[Column] = {
-    val deletionVectorsSupported = protocol.isFeatureSupported(DeletionVectorsTableFeature)
+  def getTightBoundsStat(spark: SparkSession, deletionVectorsSupported: Boolean): Option[Column] = {
     if (deletionVectorsSupported &&
-      !spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)) {
+        !spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)) {
       Some(lit(true).as(TIGHT_BOUNDS))
     } else {
       None

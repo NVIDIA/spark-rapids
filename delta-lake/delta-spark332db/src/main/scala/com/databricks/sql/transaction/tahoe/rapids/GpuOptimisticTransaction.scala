@@ -32,6 +32,7 @@ import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
+import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
@@ -108,7 +109,12 @@ class GpuOptimisticTransaction(
         }
       }
 
+      val _spark = spark
+      val protocol = DeltaLogShim.getProtocol(deltaLog)
+
       val statsCollection = new GpuStatisticsCollection {
+        override val spark = _spark
+        override val deletionVectorsSupported = protocol.isFeatureSupported(DeletionVectorsTableFeature)
         override val tableDataSchema = tableSchema
         override val dataSchema = statsDataSchema.toStructType
         override val numIndexedCols = indexedCols
