@@ -70,12 +70,17 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
     override def path(): String = null
     private var throwOnce: Option[Throwable] = None
     override def bufferBatchAndClose(batch: ColumnarBatch): Long = {
-      throwOnce.foreach { t =>
-        throwOnce = None
-        throw t
+      //closeOnExcept to maintain the contract of `bufferBatchAndClose`
+      // we have to close the batch.
+      closeOnExcept(batch) { _ =>
+        throwOnce.foreach { t =>
+          throwOnce = None
+          throw t
+        }
       }
       super.bufferBatchAndClose(batch)
     }
+
     def throwOnNextBufferBatchAndClose(exception: Throwable): Unit = {
       throwOnce = Some(exception)
     }
