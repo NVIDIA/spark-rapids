@@ -348,7 +348,6 @@ EOF
             --driver-java-options "$driverJavaOpts" \
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
-            --conf 'spark.rapids.sql.explain=ALL' \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
