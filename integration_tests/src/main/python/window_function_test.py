@@ -351,7 +351,8 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
         'from window_agg_table ',
         conf = conf)
 
-# In a distributed setup the order of the partitions returend might be different, so we must ignore the order
+
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
@@ -398,7 +399,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
     [('grp', RepeatSeqGen(int_gen, length=20)),  # Grouping column.
-     ('ord', UniqueLongGen(nullable=True)),       # Order-by column (after cast to STRING).
+     ('ord', UniqueLongGen(nullable=True)),      # Order-by column (after cast to STRING).
      ('agg', IntegerGen())]                      # Aggregation column.
 ], ids=idfn)
 def test_range_windows_with_string_order_by_column(data_gen, batch_size):
@@ -434,6 +435,9 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size):
         ' COUNT(1) OVER '
         '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
         '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_asc_CURRENT_to_CURRENT, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
+        '       RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as count_1_asc_UNB_to_UNB, '
         ' COUNT(1) OVER '
         '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC  '
         '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_desc_CURRENT_to_CURRENT '
