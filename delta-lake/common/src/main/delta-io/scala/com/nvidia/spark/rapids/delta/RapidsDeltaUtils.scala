@@ -84,6 +84,6 @@ object RapidsDeltaUtils {
     }
   }
 
-  def getTightBoundColumnOnFieInitDisabled(spark: SparkSession): Boolean =
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
     spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)
 }

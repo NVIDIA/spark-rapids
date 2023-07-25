@@ -76,7 +76,7 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
 
     // On file initialization/stat recomputation TIGHT_BOUNDS is always set to true
     val tightBoundsColOpt = if (deletionVectorsSupported &&
-        !RapidsDeltaUtils.getTightBoundColumnOnFieInitDisabled(spark)) {
+        !RapidsDeltaUtils.getTightBoundColumnOnFileInitDisabled(spark)) {
       Some(lit(true).as("tightBounds"))
     } else {
       None
