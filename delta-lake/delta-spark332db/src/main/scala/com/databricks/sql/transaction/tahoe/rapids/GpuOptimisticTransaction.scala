@@ -110,7 +110,7 @@ class GpuOptimisticTransaction(
       }
 
       val _spark = spark
-      val protocol = DeltaLogShim.getProtocol(deltaLog)
+      val protocol = deltaLog.unsafeVolatileSnapshot.protocol
 
       val statsCollection = new GpuStatisticsCollection {
         override val spark = _spark
