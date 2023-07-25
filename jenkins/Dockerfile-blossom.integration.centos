@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-###
+### DEPRECATED: https://github.com/NVIDIA/spark-rapids/issues/8789
 #
 # Arguments:
 #    CUDA_VER=11.0+
