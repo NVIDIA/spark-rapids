@@ -18,11 +18,12 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import com.nvidia.spark.rapids.Arm.withResource
+import scala.collection.mutable.ListBuffer
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
-import org.apache.orc.OrcFile
+import org.apache.orc.{OrcFile, Reader}
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -102,7 +103,11 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
   }
 
   private def getOrcFilePostfix(compression: String): String =
-    if ("NONE" == compression) ".orc" else s".${compression.toLowerCase()}.orc"
+    if (Seq("NONE", "UNCOMPRESSED").contains(compression)) {
+      ".orc"
+    } else {
+      s".${compression.toLowerCase()}.orc"
+    }
 
   def checkCompressType(compression: Option[String], orcCompress: Option[String]): Unit = {
     withGpuSparkSession { spark =>
@@ -110,39 +115,68 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
         var writer = spark.range(0, 10).write
         writer = compression.map(t => writer.option("compression", t)).getOrElse(writer)
         writer = orcCompress.map(t => writer.option("orc.compress", t)).getOrElse(writer)
+        // write ORC file on GPU
         writer.orc(file.getCanonicalPath)
 
-        // first use compression, then orc.compress
-        val expectedType = compression.getOrElse(orcCompress.get)
+        // expectedType: first use compression, then orc.compress
+        var expectedType = compression.getOrElse(orcCompress.get)
+        // ORC use NONE for UNCOMPRESSED
+        if (expectedType == "UNCOMPRESSED") expectedType = "NONE"
         val maybeOrcFile = file.listFiles()
             .find(_.getName.endsWith(getOrcFilePostfix(expectedType)))
         assert(maybeOrcFile.isDefined)
 
+        // check the compress type using ORC jar
         val orcFilePath = new Path(maybeOrcFile.get.getAbsolutePath)
         val conf = OrcFile.readerOptions(new Configuration())
-        withResource(OrcFile.createReader(orcFilePath, conf)) { reader =>
+        var reader: Reader = null
+        try {
+          reader = OrcFile.createReader(orcFilePath, conf)
+          // check
           assert(expectedType === reader.getCompressionKind.name)
+        } finally {
+          // close reader if needed
+          reader match {
+            case closeableReader: AutoCloseable => closeableReader.close()
+            // the reader is not a AutoCloseable for Spark CDH
+            // 321cdh uses orc-core-1.5.1.7.1.7.1000-141.jar
+            // 330cdh uses orc-core-1.5.1.7.1.8.0-801.jar
+            case _ => // do nothing for 321cdh 330cdh Sparks
+          }
         }
       }
     }
   }
 
+  private val supportedWriteCompressTypes = {
+    // GPU ORC writing does not support ZLIB, LZ4, refer to GpuOrcFileFormat
+    val supportedWriteCompressType = ListBuffer("UNCOMPRESSED", "NONE", "ZSTD", "SNAPPY")
+    // Cdh321, Cdh330 does not support ZSTD, refer to the Cdh Class:
+    // org.apache.spark.sql.execution.datasources.orc.OrcOptions
+    // Spark 31x do not support lz4, zstd
+    if (isCdh321 || isCdh330 || !VersionUtils.isSpark320OrLater) {
+      supportedWriteCompressType -= "ZSTD"
+    }
+    supportedWriteCompressType
+  }
+
   test("SPARK-16610: Respect orc.compress (i.e., OrcConf.COMPRESS) when compression is unset") {
-    // TODO GPU ORC writing supports ZLIB
     // Respect `orc.compress` (i.e., OrcConf.COMPRESS).
-    Seq("SNAPPY", "ZSTD").foreach { orcCompress =>
+    supportedWriteCompressTypes.foreach { orcCompress =>
       checkCompressType(None, Some(orcCompress))
     }
 
+    // make paris, e.g.: [("UNCOMPRESSED", "NONE"), ("NONE", "SNAPPY"), ("SNAPPY", "ZSTD") ... ]
+    val pairs = supportedWriteCompressTypes.sliding(2).toList.map(pair => (pair.head, pair.last))
+
     // "compression" overwrite "orc.compress"
-    Seq(("SNAPPY", "ZSTD"), ("ZSTD", "SNAPPY")).foreach { case (compression, orcCompress) =>
+    pairs.foreach { case (compression, orcCompress) =>
       checkCompressType(Some(compression), Some(orcCompress))
     }
   }
 
   test("Compression options for writing to an ORC file (SNAPPY, ZLIB and NONE)") {
-    // TODO GPU ORC writing supports ZLIB
-    Seq("SNAPPY", "ZSTD", "NONE").foreach { compression =>
+    supportedWriteCompressTypes.foreach { compression =>
       checkCompressType(Some(compression), None)
     }
   }
