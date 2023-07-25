@@ -18,7 +18,12 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
+import com.nvidia.spark.rapids.Arm.withResource
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
+import org.apache.hadoop.fs.Path
+import org.apache.orc.{OrcFile, Reader, StripeInformation}
+import org.apache.orc.impl.RecordReaderImpl
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -91,5 +96,54 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu = Seq("FileSourceScanExec", "ShuffleExchangeExec")
   ) {
     frame => frame
+  }
+
+  private def getColumnEncoding(orcDir: File): (String, String) = {
+    val orcFile = orcDir.listFiles(f => f.getName.endsWith(".orc"))(0)
+    val p = new Path(orcFile.getCanonicalPath)
+    val conf = OrcFile.readerOptions(new Configuration())
+    var reader: Reader = null
+    try {
+      reader = OrcFile.createReader(p, conf)
+      withResource(reader.rows().asInstanceOf[RecordReaderImpl]) { rows =>
+        val stripe: StripeInformation = reader.getStripes.get(0)
+        val stripeFooter = rows.readStripeFooter(stripe)
+        (stripeFooter.getColumns(1).getKind.toString,
+            stripeFooter.getColumns(2).getKind.toString)
+      }
+    } finally {
+      reader match {
+        case c: AutoCloseable => c.close()
+        case _ => // cdh321, cdh330 use a lower ORC version, and the reader is not a AutoCloseable
+      }
+    }
+  }
+
+  /**
+   * This corresponds to Spark case:
+   * https://github.com/apache/spark/blob/v3.4.0/sql/core/src/test/scala/org/apache/spark/sql/
+   * execution/datasources/orc/OrcQuerySuite.scala#L359
+   */
+  test("SPARK-5309 strings stored using dictionary compression in orc") {
+    withGpuSparkSession(spark => {
+      val tempFile = File.createTempFile("orc-test-string-dic", ".orc")
+      try {
+        // first column dic is ("s0", "s1"), second column dic is ("s0", "s1", "s2")
+        val data = (0 until 1000).map(i => ("s" + i % 2, "s" + i % 3))
+
+        // write to ORC, columns is [_1, _2]
+        spark.createDataFrame(data).coalesce(1).write.mode("overwrite")
+            .orc(tempFile.getAbsolutePath)
+
+        // get columns encoding
+        val (c1Enc, c2Enc) = getColumnEncoding(tempFile)
+
+        // encoding should be DICTIONARY_V2
+        assert(c1Enc.toUpperCase().contains("DICTIONARY"))
+        assert(c2Enc.toUpperCase.contains("DICTIONARY"))
+      } finally {
+        fullyDelete(tempFile)
+      }
+    })
   }
 }
