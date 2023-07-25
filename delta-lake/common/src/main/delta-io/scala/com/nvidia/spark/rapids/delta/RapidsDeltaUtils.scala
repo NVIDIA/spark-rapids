@@ -86,13 +86,6 @@ object RapidsDeltaUtils {
     }
   }
 
-  def getTightBoundsStat(spark: SparkSession, deletionVectorsSupported: Boolean): Option[Column] = {
-    if (deletionVectorsSupported &&
-        !spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)) {
-      Some(lit(true).as(TIGHT_BOUNDS))
-    } else {
-      None
-    }
-  }
-
+  def getTightBoundColumnOnFieInitDisabled(spark: SparkSession): Boolean =
+    spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)
 }

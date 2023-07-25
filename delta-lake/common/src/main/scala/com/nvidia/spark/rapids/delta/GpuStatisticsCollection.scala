@@ -75,7 +75,12 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
     val prefixLength = stringPrefixLength
 
     // On file initialization/stat recomputation TIGHT_BOUNDS is always set to true
-    val tightBoundsColOpt = RapidsDeltaUtils.getTightBoundsStat(spark, deletionVectorsSupported)
+    val tightBoundsColOpt = if (deletionVectorsSupported &&
+        !RapidsDeltaUtils.getTightBoundColumnOnFieInitDisabled(spark)) {
+      Some(lit(true).as("tightBounds"))
+    } else {
+      None
+    }
 
     val statCols = Seq(
       count(new Column("*")) as NUM_RECORDS,

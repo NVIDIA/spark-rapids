@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, TypeSig, WriteFileOp}
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
@@ -94,15 +95,6 @@ object RapidsDeltaUtils {
     }
   }
 
-  def getTightBoundsStat(spark: SparkSession,
-      deletionVectorsSupported: Boolean): Option[Column] = {
-    if (deletionVectorsSupported &&
-        !spark.sessionState.conf.getConfString(
-          "deletionVectors.disableTightBoundOnFileCreationForDevOnly", "false")
-          .toBoolean) {
-      Some(lit(true).as("tightBounds"))
-    } else {
-      None
-    }
-  }
+  def getTightBoundColumnOnFieInitDisabled(spark: SparkSession): Boolean =
+    spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)
 }
