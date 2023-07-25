@@ -50,7 +50,7 @@ conda install -y -c conda-forge mamba python=$PYTHON_VERSION
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas || true
 
 REQUIRED_PACKAGES=(
-  cudatoolkit=$CUDA_VER
+  cuda-toolkit=$CUDA_VER
   cudf=$CUDF_VER
   findspark
   pandas
