@@ -154,7 +154,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
 
   override def afterAll(): Unit = {
     super.afterAll()
-    //TrampolineUtil.cleanupAnyExistingSession()
+    TrampolineUtil.cleanupAnyExistingSession()
   }
 
   def enableCsvConf(conf: SparkConf): SparkConf = {

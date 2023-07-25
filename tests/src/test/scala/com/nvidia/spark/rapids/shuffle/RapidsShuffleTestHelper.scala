@@ -22,7 +22,7 @@ import java.util.concurrent.Executor
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsBufferHandle, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{GpuColumnVector, MetaUtils, RapidsBufferHandle, RapidsConf, RapidsDeviceMemoryStore, RmmSparkRetrySuiteBase, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
@@ -52,9 +52,10 @@ class TestShuffleMetricsUpdater extends ShuffleMetricsUpdater {
   }
 }
 
-class RapidsShuffleTestHelper extends AnyFunSuite
-    with BeforeAndAfterEach
-    with MockitoSugar {
+abstract class RapidsShuffleTestHelper
+    extends RmmSparkRetrySuiteBase
+      with BeforeAndAfterEach
+      with MockitoSugar {
   var mockTransaction: Transaction = _
   var mockConnection: MockClientConnection = _
   var mockTransport: RapidsShuffleTransport = _
@@ -120,11 +121,13 @@ class RapidsShuffleTestHelper extends AnyFunSuite
   override def beforeEach(): Unit = {
     assert(buffersToClose.isEmpty)
     newMocks()
+    super.beforeEach()
   }
 
   override def afterEach(): Unit = {
     buffersToClose.foreach(_.close())
     buffersToClose.clear()
+    super.afterEach()
   }
 
   def newMocks(): Unit = {
