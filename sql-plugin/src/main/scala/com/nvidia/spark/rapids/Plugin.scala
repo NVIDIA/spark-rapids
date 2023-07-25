@@ -174,7 +174,7 @@ object RapidsPluginUtils extends Logging {
       if (executorCores != 0 && taskGpuAmountSetByUser > executorGpuAmount / executorCores) {
         logWarning("The current setting of spark.task.resource.gpu.amount " + 
         s"($taskGpuAmountSetByUser) is not ideal to get the best performance from the " + 
-        "Spark Rapids plugin. It's recommended to be set to 1/{number of cores} unless " + 
+        "RAPIDS Accelerator plugin. It's recommended to be 1/{executor core count} unless " + 
         "you have a special use case.")
       }
     }
