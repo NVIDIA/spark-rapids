@@ -127,15 +127,15 @@ class GpuOptimisticTransaction(
     // If Statistics Collection is enabled, then create a stats tracker that will be injected during
     // the FileFormatWriter.write call below and will collect per-file stats using
     // StatisticsCollection
-    val optionalStatsTracker = if (spark.sessionState.conf
-        .getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
+    val optionalStatsTracker =
+    if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
       val indexedCols = DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(metadata)
       val prefixLength =
         spark.sessionState.conf.getConf(DeltaSQLConf.DATA_SKIPPING_STRING_PREFIX_LENGTH)
 
       val _spark = spark
 
-      val statsCollection = new GpuStatisticsCollection
+      val statsCollection = new GpuStatisticsCollection {
         override val spark = _spark
         override val deletionVectorsSupported = false
         override val tableDataSchema: StructType = statsDataSchema.toStructType
