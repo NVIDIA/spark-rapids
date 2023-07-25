@@ -134,7 +134,7 @@ def create_contacts_table_and_read(is_partitioned, format, data_path, expected_s
     name_type = StructGen([('first', StringGen()), ('last', StringGen())])
     contacts_data_gen = StructGen([
         ('id', IntegerGen()),
-        ('full_name', full_name_type),
+        ('name', full_name_type),
         ('address', StringGen()),
         ('friends', ArrayGen(full_name_type, max_length=10, nullable=False))], nullable=False)
 
@@ -163,8 +163,10 @@ def create_contacts_table_and_read(is_partitioned, format, data_path, expected_s
     assert_equal(from_cpu, from_gpu)
 
 # https://github.com/NVIDIA/spark-rapids/issues/8712
+# https://github.com/NVIDIA/spark-rapids/issues/8713
 # https://github.com/NVIDIA/spark-rapids/issues/8714
 @pytest.mark.parametrize('query_and_expected_schemata', [("select friends.middle, friends from contacts where p=1", "struct<friends:array<struct<first:string,middle:string,last:string>>>"),
+                                                         pytest.param(("select name.middle, address from contacts where p=2", "struct<name:struct<middle:string>,address:string>"), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8788')),
                                                          ("select name.first from contacts where name.first = 'Jane'", "struct<name:struct<first:string>>")])
 @pytest.mark.parametrize('vectorized', ["true", "false"])
 @pytest.mark.parametrize('is_partitioned', [True, False])
