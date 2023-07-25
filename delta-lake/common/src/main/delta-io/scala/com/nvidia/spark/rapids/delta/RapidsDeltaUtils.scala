@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuParquetFil
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
@@ -84,6 +83,7 @@ object RapidsDeltaUtils {
     }
   }
 
-  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
-    spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = {
+    DeltaRuntimeShim.getTightBoundColumnOnFileInitDisabled(spark)
+  }
 }

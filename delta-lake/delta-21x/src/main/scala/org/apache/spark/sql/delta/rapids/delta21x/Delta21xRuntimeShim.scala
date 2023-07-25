@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.delta.delta21x.Delta21xProvider
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.execution.datasources.FileFormat
@@ -50,5 +51,7 @@ class Delta21xRuntimeShim extends DeltaRuntimeShim {
 
   override def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
     deltaLog.fileFormat()
+
+  override def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = false
 
 }

@@ -108,8 +108,8 @@ class GpuOptimisticTransaction
     // If Statistics Collection is enabled, then create a stats tracker that will be injected during
     // the FileFormatWriter.write call below and will collect per-file stats using
     // StatisticsCollection
-    val optionalStatsTracker =
-      if (spark.sessionState.conf.getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
+    val optionalStatsTracker = if (spark.sessionState.conf
+          .getConf(DeltaSQLConf.DELTA_COLLECT_STATS)) {
         val partitionColNames = partitionSchema.map(_.name).toSet
 
         // schema should be normalized, therefore we can do an equality check
