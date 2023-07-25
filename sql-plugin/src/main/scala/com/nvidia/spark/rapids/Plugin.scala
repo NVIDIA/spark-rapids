@@ -168,11 +168,9 @@ object RapidsPluginUtils extends Logging {
     if (conf.contains(TASK_GPU_AMOUNT_KEY) && conf.contains(EXECUTOR_GPU_AMOUNT_KEY)) {
       val taskGpuAmountSetByUser = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
       // get worker's all cores num if spark.executor.cores is not set explicitly
-      val executorCores = if (conf.contains(EXECUTOR_CORES_KEY)) {
-        conf.get(EXECUTOR_CORES_KEY).toDouble
-      } else {
-        Runtime.getRuntime.availableProcessors.toDouble
-      }
+      val executorCores = conf.getOption(EXECUTOR_CORES_KEY)
+          .map(_.toDouble)
+          .getOrElse(Runtime.getRuntime.availableProcessors.toDouble)
       val executorGpuAmount = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble
       if (executorCores != 0 && taskGpuAmountSetByUser > executorGpuAmount / executorCores) {
         logWarning("The current setting of spark.task.resource.gpu.amount " + 
