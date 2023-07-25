@@ -21,7 +21,7 @@
 set -ex
 
 CUDF_VER=${CUDF_VER:-23.08}
-CUDA_VER=${CUDA_VER:-11.0}
+CUDA_VER=${CUDA_VER:-11.8.0}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
