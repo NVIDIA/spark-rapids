@@ -956,7 +956,15 @@ class RapidsCachingWriter[K, V](
               throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
           bytesWritten += partSize
-          sizes(partId) += partSize
+          // if the size is 0 and we have rows, we are in a case where there are columns
+          // but the type is such that there isn't a buffer in the GPU backing it.
+          // For example, a Struct column without any members. We treat such a case as if it 
+          // were a degenerate table.
+          if (partSize == 0 && batch.numRows() > 0) {
+            sizes(partId) += 100
+          } else {
+            sizes(partId) += partSize
+          }
           handle
         } else {
           // no device data, tracking only metadata
