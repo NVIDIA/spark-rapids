@@ -548,9 +548,8 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <!-- TODO: https://github.com/NVIDIA/spark-rapids/issues/8794 -->
-        <spark-rapids-jni.version>23.08.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>23.08.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>23.10.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>23.10.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
