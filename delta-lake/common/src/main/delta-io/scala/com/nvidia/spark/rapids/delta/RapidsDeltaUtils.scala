@@ -82,4 +82,8 @@ object RapidsDeltaUtils {
       meta.willNotWorkOnGpu("automatic compaction of Delta Lake tables is not supported")
     }
   }
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = {
+    DeltaRuntimeShim.getTightBoundColumnOnFileInitDisabled(spark)
+  }
 }
