@@ -75,6 +75,8 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
 
   protected val conf: Configuration = context.getConfiguration
 
+  // This is implemented as a method to make it easier to subclass
+  // ColumnarOutputWriter in the tests, and override this behavior.
   protected def getOutputStream: FSDataOutputStream = {
     val hadoopPath = new Path(path)
     val fs = hadoopPath.getFileSystem(conf)
@@ -134,12 +136,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       spillableBatch: SpillableColumnarBatch,
       statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
     val writeStartTime = System.nanoTime
-    val cb = closeOnExcept(spillableBatch) { _ =>
-      withRetryNoSplit[ColumnarBatch] {
+    closeOnExcept(spillableBatch) { _ =>
+      val cb = withRetryNoSplit[ColumnarBatch] {
         spillableBatch.getColumnarBatch()
       }
-    }
-    closeOnExcept(spillableBatch) { _ =>
       // run pre-flight checks and update stats
       withResource(cb) { _ =>
         throwIfRebaseNeededInExceptionMode(cb)
