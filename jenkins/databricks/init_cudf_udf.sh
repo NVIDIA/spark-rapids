@@ -20,8 +20,9 @@
 
 set -ex
 
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/8794
 CUDF_VER=${CUDF_VER:-23.08}
-CUDA_VER=${CUDA_VER:-11.0}
+CUDA_VER=${CUDA_VER:-11.8.0}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
@@ -50,7 +51,7 @@ conda install -y -c conda-forge mamba python=$PYTHON_VERSION
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas || true
 
 REQUIRED_PACKAGES=(
-  cudatoolkit=$CUDA_VER
+  cuda-toolkit=$CUDA_VER
   cudf=$CUDF_VER
   findspark
   pandas

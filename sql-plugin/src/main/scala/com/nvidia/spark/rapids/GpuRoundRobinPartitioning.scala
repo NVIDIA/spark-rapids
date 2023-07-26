@@ -61,7 +61,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (batch.numCols() <= 0) {
       return Array(batch).zipWithIndex
     }

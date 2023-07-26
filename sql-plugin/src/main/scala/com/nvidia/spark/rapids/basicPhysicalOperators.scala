@@ -100,15 +100,12 @@ object GpuProjectExec {
     }
   }
 
-  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector =
-    GpuExpressionsUtils.columnarEvalToColumn(boundExpr, cb)
-
   def project(cb: ColumnarBatch, boundExprs: Seq[Expression]): ColumnarBatch = {
     if (isNoopProject(cb, boundExprs)) {
       // This can help avoid contiguous splits in some cases when the input data is also contiguous
       GpuColumnVector.incRefCounts(cb)
     } else {
-      val newColumns = boundExprs.safeMap(expr => projectSingle(cb, expr)).toArray[ColumnVector]
+      val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
       new ColumnarBatch(newColumns, cb.numRows())
     }
   }
@@ -718,8 +715,7 @@ object GpuFilter {
 
   private def computeCheckedFilterMask(boundCondition: Expression,
       cb: ColumnarBatch): Option[cudf.ColumnVector] = {
-    withResource(
-      GpuProjectExec.projectSingle(cb, boundCondition)) { filterMask =>
+    withResource(boundCondition.columnarEval(cb)) { filterMask =>
       // If  filter is a noop then return a None for the mask
       if (allEntriesAreTrue(filterMask)) {
         None

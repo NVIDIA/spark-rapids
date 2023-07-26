@@ -40,7 +40,7 @@ case class GpuSparkPartitionID() extends GpuLeafExpression {
 
   override val prettyName = "SPARK_PARTITION_ID"
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (!wasInitialized) {
       partitionId = TaskContext.getPartitionId()
       wasInitialized = true

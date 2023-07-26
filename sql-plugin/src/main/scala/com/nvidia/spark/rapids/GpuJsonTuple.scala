@@ -57,7 +57,7 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
     val fieldScalars = fieldExpressions.safeMap { field =>
-      withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
+      withResourceIfAllowed(field.columnarEvalAny(inputBatch)) { fieldVal =>
         fieldVal match {
           case fieldScalar: GpuScalar =>
             // Specials characters like '.', '[', ']' are not supported in field names

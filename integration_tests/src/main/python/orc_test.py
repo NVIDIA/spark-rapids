@@ -880,3 +880,25 @@ def test_orc_column_name_with_dots(spark_tmp_path, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`.`c.d.e`.`f.g`"),
                                          conf=all_confs)
+
+
+# This corresponds to a Spark ORC test in https://github.com/apache/spark/blob/v3.4.0/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/orc/OrcQuerySuite.scala#L173
+@pytest.mark.parametrize("reader_confs", reader_opt_confs, ids=idfn)
+@ignore_order
+def test_orc_with_null_column(spark_tmp_path, reader_confs):
+    data_path = spark_tmp_path + "/ORC_DATA"
+    all_confs = reader_confs
+
+    def gen_null_df(spark):
+        return spark.createDataFrame(
+            [(None, None, None, None, None)],
+            "c1 int, c2 long, c3 float, c4 double, c5 boolean")
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_null_df(spark).write.orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf=all_confs)
+    gpu_file_path = data_path + "/GPU"
+    reader = read_orc_df(gpu_file_path)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark), conf=all_confs)

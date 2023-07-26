@@ -251,6 +251,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assert(insert.metrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).value > 0)
         assert(insert.metrics(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME).value > 0)
       } finally {
+        spark.sql("DROP TABLE IF EXISTS t")
         spark.sql("DROP TABLE IF EXISTS tempmetricstable")
       }
     }, new SparkConf().set("spark.sql.sources.commitProtocolClass", slowCommitClass))

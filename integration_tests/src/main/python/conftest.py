@@ -83,6 +83,9 @@ _is_precommit_run = False
 def is_nightly_run():
     return _is_nightly_run
 
+def is_precommit_run():
+    return _is_precommit_run
+
 def is_at_least_precommit_run():
     return _is_nightly_run or _is_precommit_run
 
@@ -100,6 +103,11 @@ def skip_unless_precommit_tests(description):
     else:
         pytest.skip(description)
 
+_is_parquet_testing_tests_forced = False
+
+def is_parquet_testing_tests_forced():
+    return _is_parquet_testing_tests_forced
+
 _limit = -1
 
 _inject_oom = None
@@ -116,6 +124,10 @@ def _get_limit_from_mark(mark):
         return mark.args[0]
     else:
         return mark.kwargs.get('num_rows', 100000)
+
+_std_input_path = None
+def get_std_input_path():
+    return _std_input_path
 
 def pytest_runtest_setup(item):
     global _sort_on_spark
@@ -209,6 +221,8 @@ def pytest_runtest_setup(item):
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
+    global _std_input_path
+    _std_input_path = config.getoption("std_input_path")
     global _is_nightly_run
     global _is_precommit_run
     test_type = config.getoption('test_type').lower()
@@ -218,6 +232,8 @@ def pytest_configure(config):
         _is_precommit_run = True
     elif "developer" != test_type:
         raise Exception("not supported test type {}".format(test_type))
+    global _is_parquet_testing_tests_forced
+    _is_parquet_testing_tests_forced = config.getoption("force_parquet_testing_tests")
 
 # For OOM injection: we expect a seed to be provided by the environment, or default to 1.
 # This is done such that any worker started by the xdist plugin for pytest will

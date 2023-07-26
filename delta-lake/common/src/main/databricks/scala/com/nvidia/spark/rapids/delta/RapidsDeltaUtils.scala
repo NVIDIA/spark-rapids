@@ -92,4 +92,9 @@ object RapidsDeltaUtils {
       }
     }
   }
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
+    spark.sessionState.conf
+      .getConfString("deletionVectors.disableTightBoundOnFileCreationForDevOnly", "false")
+      .toBoolean
 }

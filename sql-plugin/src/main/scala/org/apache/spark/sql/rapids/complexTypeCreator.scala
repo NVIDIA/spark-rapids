@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuMapUtils}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, ReallyAGpuExpression}
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -64,12 +64,12 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
 
   override def prettyName: String = "array"
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(new Array[ColumnVector](children.size)) { columns =>
       val numRows = batch.numRows()
       children.indices.foreach { index =>
         columns(index) =
-          GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
+          children(index).columnarEval(batch).getBase
       }
 
       val elementDType =  GpuColumnVector.getRapidsType(dataType.elementType)
@@ -103,11 +103,11 @@ case class GpuCreateMap(
   override lazy val hasSideEffects: Boolean =
     GpuCreateMap.exceptionOnDupKeys || super.hasSideEffects
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(new Array[ColumnVector](children.size)) { columns =>
       val numRows = batch.numRows()
       children.indices.foreach { index =>
-        columns(index) = GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
+        columns(index) = children(index).columnarEval(batch).getBase
       }
 
       withResource(Range(0, columns.length, 2)
@@ -224,12 +224,12 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
     s"$alias($childrenSQL)"
   }.getOrElse(super.sql)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     // The names are only used for the type. Here we really just care about the data
     withResource(new Array[ColumnVector](valExprs.size)) { columns =>
       val numRows = batch.numRows()
       valExprs.indices.foreach { index =>
-        columns(index) = GpuExpressionsUtils.columnarEvalToColumn(valExprs(index), batch).getBase
+        columns(index) = valExprs(index).columnarEval(batch).getBase
       }
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
     }
