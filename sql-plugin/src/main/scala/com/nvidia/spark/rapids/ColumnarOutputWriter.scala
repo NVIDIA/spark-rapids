@@ -20,9 +20,11 @@ import java.io.OutputStream
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataOutputStream, Path}
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
@@ -38,6 +40,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * `org.apache.spark.sql.execution.datasources.OutputWriterFactory`.
  */
 abstract class ColumnarOutputWriterFactory extends Serializable {
+  /** Returns the default partition flush size in bytes, format specific */
+  def partitionFlushSize(context: TaskAttemptContext): Long = 128L * 1024L * 1024L // 128M
 
   /** Returns the file extension to be used when writing files out. */
   def getFileExtension(context: TaskAttemptContext): String
@@ -67,14 +71,20 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
     rangeName: String,
     includeRetry: Boolean) extends HostBufferConsumer {
 
-  val tableWriter: TableWriter
-  val conf = context.getConfiguration
+  protected val tableWriter: TableWriter
 
-  private[this] val outputStream: FSDataOutputStream = {
+  protected val conf: Configuration = context.getConfiguration
+
+  // This is implemented as a method to make it easier to subclass
+  // ColumnarOutputWriter in the tests, and override this behavior.
+  protected def getOutputStream: FSDataOutputStream = {
     val hadoopPath = new Path(path)
     val fs = hadoopPath.getFileSystem(conf)
     fs.create(hadoopPath, false)
   }
+
+  protected val outputStream: FSDataOutputStream = getOutputStream
+
   private[this] val tempBuffer = new Array[Byte](128 * 1024)
   private[this] var anythingWritten = false
   private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
@@ -93,146 +103,103 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
       true
   }
 
+  private[this] def updateStatistics(
+      writeStartTime: Long,
+      gpuTime: Long,
+      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    // Update statistics
+    val writeTime = System.nanoTime - writeStartTime - gpuTime
+    statsTrackers.foreach {
+      case gpuTracker: GpuWriteTaskStatsTracker =>
+        gpuTracker.addWriteTime(writeTime)
+        gpuTracker.addGpuTime(gpuTime)
+      case _ =>
+    }
+  }
+
+  protected def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
+    // NOOP for now, but allows a child to override this
+  }
+
+
   /**
    * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
    * partitioned tables, dynamic partition columns are not included in columns to be written.
    *
-   * NOTE: This method will close `batch`. We do this because we want
+   * NOTE: This method will close `spillableBatch`. We do this because we want
    * to free GPU memory after the GPU has finished encoding the data but before
    * it is written to the distributed filesystem. The GPU semaphore is released
    * during the distributed filesystem transfer to allow other tasks to start/continue
    * GPU processing.
    */
-  def writeAndClose(
-      batch: ColumnarBatch,
-      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
-    var needToCloseBatch = true
-    try {
-      val writeStartTimestamp = System.nanoTime
-      val writeRange = new NvtxRange("File write", NvtxColor.YELLOW)
-      val gpuTime = try {
-        needToCloseBatch = false
-        writeBatch(batch)
-      } finally {
-        writeRange.close()
+  def writeSpillableAndClose(
+      spillableBatch: SpillableColumnarBatch,
+      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Long = {
+    val writeStartTime = System.nanoTime
+    closeOnExcept(spillableBatch) { _ =>
+      val cb = withRetryNoSplit[ColumnarBatch] {
+        spillableBatch.getColumnarBatch()
       }
-
-      // Update statistics
-      val writeTime = System.nanoTime - writeStartTimestamp - gpuTime
-      statsTrackers.foreach {
-        case gpuTracker: GpuWriteTaskStatsTracker =>
-          gpuTracker.addWriteTime(writeTime)
-          gpuTracker.addGpuTime(gpuTime)
-        case _ =>
-      }
-    } finally {
-      if (needToCloseBatch) {
-        batch.close()
+      // run pre-flight checks and update stats
+      withResource(cb) { _ =>
+        throwIfRebaseNeededInExceptionMode(cb)
+        // NOTE: it is imperative that `newBatch` is not in a retry block.
+        // Otherwise it WILL corrupt writers that generate metadata in this method (like delta)
+        statsTrackers.foreach(_.newBatch(path(), cb))
       }
     }
-  }
-
-  protected def scanTableBeforeWrite(table: Table): Unit = {
-    // NOOP for now, but allows a child to override this
-  }
-
-  /**
-   * Writes the columnar batch and returns the time in ns taken to write
-   *
-   * NOTE: This method will close `batch`. We do this because we want
-   * to free GPU memory after the GPU has finished encoding the data but before
-   * it is written to the distributed filesystem. The GPU semaphore is released
-   * during the distributed filesystem transfer to allow other tasks to start/continue
-   * GPU processing.
-   *
-   * @param batch Columnar batch that needs to be written
-   * @return time in ns taken to write the batch
-   */
-  private[this] def writeBatch(batch: ColumnarBatch): Long = {
-    if (includeRetry) {
-      writeBatchWithRetry(batch)
+    val gpuTime = if (includeRetry) {
+      //TODO: we should really apply the transformations to cast timestamps
+      // to the expected types before spilling but we need a SpillableTable
+      // rather than a SpillableColumnBatch to be able to do that
+      // See https://github.com/NVIDIA/spark-rapids/issues/8262
+      withRetry(spillableBatch, splitSpillableInHalfByRows) { attempt =>
+        withRestoreOnRetry(checkpointRestore) {
+          bufferBatchAndClose(attempt.getColumnarBatch())
+        }
+      }.sum
     } else {
-      writeBatchNoRetry(batch)
+      withResource(spillableBatch) { _ =>
+        bufferBatchAndClose(spillableBatch.getColumnarBatch())
+      }
     }
+    // we successfully buffered to host memory, release the semaphore and write
+    // the buffered data to the FS
+    GpuSemaphore.releaseIfNecessary(TaskContext.get)
+    writeBufferedData()
+    updateStatistics(writeStartTime, gpuTime, statsTrackers)
+    spillableBatch.numRows()
+  }
+
+  // protected for testing
+  protected[this] def bufferBatchAndClose(batch: ColumnarBatch): Long = {
+    val startTimestamp = System.nanoTime
+    withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
+      withResource(transformAndClose(batch)) { maybeTransformed =>
+        encodeAndBufferToHost(maybeTransformed)
+      }
+    }
+    // time spent on GPU encoding to the host sink
+    System.nanoTime - startTimestamp
   }
 
   /** Apply any necessary casts before writing batch out */
-  def transform(cb: ColumnarBatch): Option[ColumnarBatch] = None
+  def transformAndClose(cb: ColumnarBatch): ColumnarBatch = cb
 
-  private[this] def writeBatchWithRetry(batch: ColumnarBatch): Long = {
-    val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-    RmmRapidsRetryIterator.withRetry(sb, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { sb =>
-      val cr = new CheckpointRestore {
-        override def checkpoint(): Unit = ()
-        override def restore(): Unit = dropBufferedData()
-      }
-      val startTimestamp = System.nanoTime
-      withResource(sb.getColumnarBatch()) { cb =>
-        //TODO: we should really apply the transformations to cast timestamps
-        // to the expected types before spilling but we need a SpillableTable
-        // rather than a SpillableColumnBatch to be able to do that
-        // See https://github.com/NVIDIA/spark-rapids/issues/8262
-        RmmRapidsRetryIterator.withRestoreOnRetry(cr) {
-          withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-            scan(cb)
-            transform(cb) match {
-              case Some(transformed) =>
-                // because we created a new transformed batch, we need to make sure we close it
-                withResource(transformed) { _ =>
-                  write(transformed)
-                }
-              case _ =>
-                write(cb)
-            }
-          }
-        }
-      }
-      GpuSemaphore.releaseIfNecessary(TaskContext.get)
-      val gpuTime = System.nanoTime - startTimestamp
-      writeBufferedData()
-      gpuTime
-    }.sum
+  private val checkpointRestore = new CheckpointRestore {
+    override def checkpoint(): Unit = ()
+    override def restore(): Unit = dropBufferedData()
   }
 
-  private[this] def writeBatchNoRetry(batch: ColumnarBatch): Long = {
-    var needToCloseBatch = true
-    try {
-      val startTimestamp = System.nanoTime
-      withResource(new NvtxRange(s"GPU $rangeName write", NvtxColor.BLUE)) { _ =>
-        scan(batch)
-        transform(batch) match {
-          case Some(transformed) =>
-            // because we created a new transformed batch, we need to make sure we close it
-            withResource(transformed) { _ =>
-              write(transformed)
-            }
-          case _ =>
-            write(batch)
-        }
-      }
-
-      // Batch is no longer needed, write process from here does not use GPU.
-      batch.close()
-      needToCloseBatch = false
-      GpuSemaphore.releaseIfNecessary(TaskContext.get)
-      val gpuTime = System.nanoTime - startTimestamp
-      writeBufferedData()
-      gpuTime
-    } finally {
-      if (needToCloseBatch) {
-        batch.close()
-      }
-    }
-  }
-
-  private def scan(batch: ColumnarBatch): Unit = {
+  private def encodeAndBufferToHost(batch: ColumnarBatch): Unit = {
     withResource(GpuColumnVector.from(batch)) { table =>
-      scanTableBeforeWrite(table)
-    }
-  }
-
-  private def write(batch: ColumnarBatch): Unit = {
-    withResource(GpuColumnVector.from(batch)) { table =>
+      // `anythingWritten` is set here as an indication that there was data at all
+      // to write, even if the `tableWriter.write` method fails. If we fail to write
+      // and the task fails, any output is going to be discarded anyway, so no data
+      // corruption to worry about. Otherwise, we should retry (OOM case).
+      // If we have nothing to write, we won't flip this flag to true and we will
+      // buffer an empty batch on close() to work around issues in cuDF
+      // where corrupt files can be written if nothing is encoded via the writer.
       anythingWritten = true
       tableWriter.write(table)
     }
@@ -245,9 +212,10 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   def close(): Unit = {
     if (!anythingWritten) {
       // This prevents writing out bad files
-      writeBatch(GpuColumnVector.emptyBatch(dataSchema))
+      bufferBatchAndClose(GpuColumnVector.emptyBatch(dataSchema))
     }
     tableWriter.close()
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
     writeBufferedData()
     outputStream.close()
   }
