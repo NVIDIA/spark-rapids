@@ -130,6 +130,8 @@ def test_prune_partition_column_when_filter_fallback_project(spark_tmp_path, pru
     do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
                                                   filter_col, gpu_project_enabled=False)
 
+# This method creates two tables and saves them to partitioned Parquet/ORC files. The file is then
+# read in using the read function that is passed in
 def create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, func, conf):
     full_name_type = StructGen([('first', StringGen()), ('middle', StringGen()), ('last', StringGen())])
     name_type = StructGen([('first', StringGen()), ('last', StringGen())])
