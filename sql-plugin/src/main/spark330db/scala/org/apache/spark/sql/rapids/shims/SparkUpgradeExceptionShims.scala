@@ -33,4 +33,10 @@ object SparkUpgradeExceptionShims {
       Array(version, message),
       cause)
   }
+
+  // Used in tests to compare the class seen in an exception to
+  // `SparkUpgradeException` which is private in Spark
+  def getSparkUpgradeExceptionClass: Class[_] = {
+    classOf[SparkUpgradeException]
+  }
 }
