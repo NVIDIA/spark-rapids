@@ -18,11 +18,11 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
-import org.apache.orc.{OrcFile, Reader, StripeInformation}
+import org.apache.orc.{OrcFile, StripeInformation}
 import org.apache.orc.impl.RecordReaderImpl
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -98,23 +98,26 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
     frame => frame
   }
 
-  private def getColumnEncoding(orcDir: File): (String, String) = {
+  /**
+   * Find a orc file in orcDir and get the columns encoding info for the first Stripe
+   *
+   * @param orcDir  orc file directory
+   * @param columns column indices, starting from 1 in ORC Stripe Footer
+   * @return (encodingKind, dictionarySize) list for each columns passed in
+   */
+  private def getDictEncodingInfo(orcDir: File, columns: Array[Int]): Array[(String, Int)] = {
     val orcFile = orcDir.listFiles(f => f.getName.endsWith(".orc"))(0)
     val p = new Path(orcFile.getCanonicalPath)
     val conf = OrcFile.readerOptions(new Configuration())
-    var reader: Reader = null
-    try {
-      reader = OrcFile.createReader(p, conf)
+
+    // cdh321 and cdh330 use a lower ORC version, and the reader is not a AutoCloseable,
+    // so use withResourceIfAllowed
+    withResourceIfAllowed(OrcFile.createReader(p, conf)) { reader =>
       withResource(reader.rows().asInstanceOf[RecordReaderImpl]) { rows =>
         val stripe: StripeInformation = reader.getStripes.get(0)
         val stripeFooter = rows.readStripeFooter(stripe)
-        (stripeFooter.getColumns(1).getKind.toString,
-            stripeFooter.getColumns(2).getKind.toString)
-      }
-    } finally {
-      reader match {
-        case c: AutoCloseable => c.close()
-        case _ => // cdh321, cdh330 use a lower ORC version, and the reader is not a AutoCloseable
+        columns.map(i => (stripeFooter.getColumns(i).getKind.toString,
+            stripeFooter.getColumns(i).getDictionarySize))
       }
     }
   }
@@ -125,25 +128,27 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
    * execution/datasources/orc/OrcQuerySuite.scala#L359
    */
   test("SPARK-5309 strings stored using dictionary compression in orc") {
-    withGpuSparkSession(spark => {
-      val tempFile = File.createTempFile("orc-test-string-dic", ".orc")
-      try {
+    def getEncodings: SparkSession => Array[(String, Int)] = { spark =>
+      withTempPath { tmpDir =>
         // first column dic is ("s0", "s1"), second column dic is ("s0", "s1", "s2")
         val data = (0 until 1000).map(i => ("s" + i % 2, "s" + i % 3))
 
         // write to ORC, columns is [_1, _2]
         spark.createDataFrame(data).coalesce(1).write.mode("overwrite")
-            .orc(tempFile.getAbsolutePath)
+            .orc(tmpDir.getAbsolutePath)
 
         // get columns encoding
-        val (c1Enc, c2Enc) = getColumnEncoding(tempFile)
-
-        // encoding should be DICTIONARY_V2
-        assert(c1Enc.toUpperCase().contains("DICTIONARY"))
-        assert(c2Enc.toUpperCase.contains("DICTIONARY"))
-      } finally {
-        fullyDelete(tempFile)
+        getDictEncodingInfo(tmpDir, columns = Array(1, 2))
       }
-    })
+    }
+    // get CPU encoding info
+    val cpuEncodings = withCpuSparkSession(getEncodings)
+    // get GPU encoding info
+    val gpuEncodings = withGpuSparkSession(getEncodings)
+
+    assertResult(cpuEncodings)(gpuEncodings)
+    gpuEncodings.foreach { case (encodingKind, _) =>
+      assert(encodingKind.toUpperCase.contains("DICTIONARY"))
+    }
   }
 }
