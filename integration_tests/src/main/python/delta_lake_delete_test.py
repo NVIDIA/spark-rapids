@@ -88,7 +88,7 @@ def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
 @ignore_order
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.skipif(is_before_spark_340(), reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
-@pytest.mark.xfail(is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8654")
+@pytest.mark.skipif(is_databricks_runtime(), reason="Separate test exists for Databricks")
 def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
@@ -99,13 +99,32 @@ def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
     with_cpu_session(setup_tables)
-    disable_conf = copy_and_update(delta_writes_enabled_conf,
-            {"spark.rapids.sql.command.DeleteCommand": "true",
-             "spark.rapids.sql.command.DeleteCommandEdge": "true",
-             "spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+    disable_conf = copy_and_update(delta_delete_enabled_conf,
+        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
 
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
                               "ExecutedCommandExec", disable_conf)
+
+@allow_non_gpu("LocalTableScanExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.skipif(not is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8654")
+def test_delta_deletion_vector_fallback_databricks(spark_tmp_path, use_cdf):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_dest_tables(spark, data_path,
+                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                          use_cdf=use_cdf, enable_deletion_vectors=True)
+    def write_func(spark, path):
+        delete_sql="DELETE FROM delta.`{}`".format(path)
+        spark.sql(delete_sql)
+    with_cpu_session(setup_tables)
+    disable_conf = copy_and_update(delta_delete_enabled_conf,
+        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+
+    assert_gpu_fallback_write(write_func, read_delta_path, data_path,
+                              "LocalTableScanExec", disable_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

@@ -19,12 +19,13 @@ package com.nvidia.spark.rapids.delta
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeleteCommand, GpuDeltaLog}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
+import com.nvidia.spark.rapids.delta.shims.DeleteCommandMetaShim
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class DeleteCommandMeta(
-    deleteCmd: DeleteCommand,
+    val deleteCmd: DeleteCommand,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
@@ -35,6 +36,7 @@ class DeleteCommandMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    DeleteCommandMetaShim.tagForGpu(this)
     RapidsDeltaUtils.tagForDeltaWrite(this, deleteCmd.target.schema, deleteCmd.deltaLog,
       Map.empty, SparkSession.active)
   }
