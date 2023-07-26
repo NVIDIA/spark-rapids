@@ -83,6 +83,11 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
     fallbackCpuClassList.foreach(fallbackCpuClass => assertDidFallBack(gpuPlans, fallbackCpuClass))
   }
 
+  /**
+   * This method is used by the Python integration tests.
+   * The method checks the schemata used in the GPU and CPU executed plans and compares it to the
+   * expected schemata to make sure we are not reading more data than needed
+   */
   def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit = {
     import org.apache.spark.sql.execution.FileSourceScanExec
     import org.apache.spark.sql.types.StructType
@@ -104,9 +109,12 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
            case otherType: StructType =>
              assert(gpuScanSchema.sameType(otherType))
              val expectedStructType = CatalystSqlParser.parseDataType(expectedSchema)
-             assert(gpuScanSchema.sameType(expectedStructType))
-             assert(cpuScanSchema.sameType(expectedStructType))
-           case _ => assert(false)
+             assert(gpuScanSchema.sameType(expectedStructType),
+               s"Type GPU schema ${gpuScanSchema.toDDL} doesn't match $expectedSchema")
+             assert(cpuScanSchema.sameType(expectedStructType),
+               s"Type CPU schema ${cpuScanSchema.toDDL} doesn't match $expectedSchema")
+           case otherType => assert(false, s"The expected type $cpuScanSchema" +
+             s" doesn't match the actual type $otherType")
          }
     }
   }
