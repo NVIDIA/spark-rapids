@@ -268,6 +268,20 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
   }
 }
 
+trait GpuBinaryExpression_Any_Scalar extends GpuBinaryExpression {
+  protected val anyScalarExceptionMessage: String =
+    s"$prettyName: LHS can be a column or scalar and " +
+        s"RHS has to be a scalar (got left: $left, right: $right)"
+
+  override final def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException(anyScalarExceptionMessage)
+  }
+
+  override final def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException(anyScalarExceptionMessage)
+  }
+}
+
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
 trait CudfBinaryExpression extends GpuBinaryExpression {
@@ -422,6 +436,92 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
     }
   }
 }
+
+trait GpuTernaryExpression_Any_Scalar_Scalar extends GpuTernaryExpression {
+  protected val anyScalarScalarErrorMessage: String =
+    s"$prettyName: first argument can be a column or a scalar, second and third arguments " +
+        s"have to be scalars (got first: $first, second: $second, third: $third)"
+
+  final override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+}
+
+trait GpuTernaryExpression_Scalar_Any_Scalar extends GpuTernaryExpression {
+  protected val scalarAnyScalarExceptionMessage: String =
+    s"$prettyName: first argument has to be a scalar, second argument can be a column " +
+        s"or a scalar, and third argument has to be a scalar " +
+        s"(got first: $first, second: $second, third: $third)"
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuScalar,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuScalar,
+      val1: GpuScalar,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuScalar,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuScalar,
+      val2: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+}
+
 
 trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression
     with GpuExpression with ShimExpression {
