@@ -624,6 +624,10 @@ _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op]
 
+_gen_data_for_collect_set_op_floats = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', RepeatSeqGen(struct_array_gen, length=15))]]
+
 _gen_data_for_collect_set_op_nested = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested + _array_of_array_gen]
@@ -697,6 +701,15 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_set('b'))))
+    
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats, ids=idfn)
+def test_hash_groupby_collect_set_fallback_on_nested_floats(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_set('b'))))
 
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
@@ -739,6 +752,13 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100)
             .agg(f.sort_array(f.collect_set('b'))))
 
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats, ids=idfn)
+def test_hash_reduction_collect_set_fallback_on_nested_floats(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .agg(f.sort_array(f.collect_set('b'))))
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU

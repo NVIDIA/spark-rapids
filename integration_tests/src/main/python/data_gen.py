@@ -1070,11 +1070,11 @@ all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, su
 
 all_basic_struct_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_floats)])
 
+struct_array_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens)])
+
 struct_array_gen_no_nans = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
 
 struct_array_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_floats)])
-
-struct_array_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
 
 # Some struct gens, but not all because of nesting
 nonempty_struct_gens_sample = [all_basic_struct_gen,
