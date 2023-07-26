@@ -109,7 +109,7 @@ def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.skipif(not is_databricks122_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8654")
+@pytest.mark.skipif(not is_databricks122_or_later(), reason="Deletion vectors are new in Databricks 12.2")
 def test_delta_deletion_vector_fallback_databricks(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
