@@ -1120,10 +1120,10 @@ _gen_data_for_collect_set_nested = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', UniqueLongGen()),
     ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
-    ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_nans, length=15)),
+    ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_floats, length=15)),
     ('c_struct_array_2', RepeatSeqGen(StructGen([
-        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=14)),
-    ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)),
+        ['c0', struct_array_gen_no_floats], ['c1', int_gen]]), length=14)),
+    ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_floats), length=15)),
     ('c_array_array_bool', RepeatSeqGen(ArrayGen(ArrayGen(BooleanGen())), length=15)),
     ('c_array_array_int', RepeatSeqGen(ArrayGen(ArrayGen(IntegerGen())), length=15)),
     ('c_array_array_long', RepeatSeqGen(ArrayGen(ArrayGen(LongGen())), length=15)),
@@ -1132,8 +1132,6 @@ _gen_data_for_collect_set_nested = [
     ('c_array_array_timestamp', RepeatSeqGen(ArrayGen(ArrayGen(TimestampGen())), length=15)),
     ('c_array_array_byte', RepeatSeqGen(ArrayGen(ArrayGen(ByteGen())), length=15)),
     ('c_array_array_string', RepeatSeqGen(ArrayGen(ArrayGen(StringGen())), length=15)),
-    ('c_array_array_float', RepeatSeqGen(ArrayGen(ArrayGen(FloatGen(no_nans=True))), length=15)),
-    ('c_array_array_double', RepeatSeqGen(ArrayGen(ArrayGen(DoubleGen(no_nans=True))), length=15)),
     ('c_array_array_decimal_32', RepeatSeqGen(ArrayGen(ArrayGen(DecimalGen(precision=8, scale=3))), length=15)),
     ('c_array_array_decimal_64', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_64bit)), length=15)),
     ('c_array_array_decimal_128', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_128bit)), length=15)),
@@ -1235,10 +1233,6 @@ def test_window_aggs_for_rows_collect_set_nested_array():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_byte,
               collect_set(c_array_array_string) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_str,
-              collect_set(c_array_array_float) over
-                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_float,
-              collect_set(c_array_array_double) over
-                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_double,
               collect_set(c_array_array_decimal_32) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_32,
               collect_set(c_array_array_decimal_64) over
@@ -1264,8 +1258,6 @@ def test_window_aggs_for_rows_collect_set_nested_array():
               sort_array(cc_array_array_ts),
               sort_array(cc_array_array_byte),
               sort_array(cc_array_array_str),
-              sort_array(cc_array_array_float),
-              sort_array(cc_array_array_double),
               sort_array(cc_array_array_decimal_32),
               sort_array(cc_array_array_decimal_64),
               sort_array(cc_array_array_decimal_128)

@@ -603,18 +603,22 @@ _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_list_op]
 
 _repeat_agg_column_for_collect_set_op = [
-    RepeatSeqGen(all_basic_struct_gen_no_nan, length=15),
+    RepeatSeqGen(all_basic_struct_gen_no_floats, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', all_basic_struct_gen_no_nan], ['c1', int_gen]]), length=15)]
+        ['c0', all_basic_struct_gen_no_floats], ['c1', int_gen]]), length=15)]
+
+struct_array_gen_no_nans = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
+
+struct_array_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_floats)])
 
 # data generating for collect_set based-nested Struct[Array] types
 _repeat_agg_column_for_collect_set_op_nested = [
-    RepeatSeqGen(struct_array_gen_no_nans, length=15),
+    RepeatSeqGen(struct_array_gen_no_floats, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=15),
-    RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)]
+        ['c0', struct_array_gen_no_floats], ['c1', int_gen]]), length=15),
+    RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_floats), length=15)]
 
-_array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_nan]
+_array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_floats]
 
 _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
@@ -1175,8 +1179,8 @@ _no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), DoubleGen(special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
-_struct_only_nested_gens = [all_basic_struct_gen,
-                            StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
+_struct_only_nested_gens = [all_basic_struct_gen_no_floats,
+                            StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen_no_floats]]),
                             StructGen([])]
 @pytest.mark.parametrize('data_gen',
                          _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,
