@@ -786,6 +786,13 @@ object RapidsBufferCatalog extends Logging {
     closeImpl()
   }
 
+  /**
+   * Only used in unit tests, it returns the number of buffers in the catalog.
+   */
+  def numBuffers: Int = {
+    _singleton.numBuffers
+  }
+
   private def closeImpl(): Unit = synchronized {
     if (_singleton != null) {
       _singleton.close()

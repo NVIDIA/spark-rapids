@@ -290,6 +290,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       override def getFileExtension(context: TaskAttemptContext): String = {
         CodecConfig.from(context).getCodec.getExtension + ".parquet"
       }
+
+      override def partitionFlushSize(context: TaskAttemptContext): Long =
+        context.getConfiguration.getLong("write.parquet.row-group-size-bytes",
+          128L * 1024L * 1024L) // 128M
     }
   }
 }
@@ -306,9 +310,9 @@ class GpuParquetWriter(
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
-  override def scanTableBeforeWrite(table: Table): Unit = {
-    (0 until table.getNumberOfColumns).foreach { i =>
-      val col = table.getColumn(i)
+  override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
+    val cols = GpuColumnVector.extractBases(batch)
+    cols.foreach { col =>
       // if col is a day
       if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
@@ -320,12 +324,14 @@ class GpuParquetWriter(
     }
   }
 
-  override def transform(batch: ColumnarBatch): Option[ColumnarBatch] = {
-    val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
-      new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
-        .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+  override def transformAndClose(batch: ColumnarBatch): ColumnarBatch = {
+    withResource(batch) { _ =>
+      val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
+        new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
+            .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+      }
+      new ColumnarBatch(transformedCols)
     }
-    Some(new ColumnarBatch(transformedCols))
   }
 
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
