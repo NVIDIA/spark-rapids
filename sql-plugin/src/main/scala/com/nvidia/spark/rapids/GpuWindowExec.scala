@@ -694,9 +694,10 @@ object GroupedAggregations {
       case RowFrame =>
         withResource(getRowBasedLower(frame)) { lower =>
           withResource(getRowBasedUpper(frame)) { upper =>
-            WindowOptions.builder()
-                .minPeriods(1)
-                .window(lower, upper).build()
+            val builder = WindowOptions.builder().minPeriods(1)
+            if (isUnbounded(frame.lower)) builder.unboundedPreceding() else builder.preceding(lower)
+            if (isUnbounded(frame.upper)) builder.unboundedFollowing() else builder.following(upper)
+            builder.build
           }
         }
       case RangeFrame =>
@@ -750,6 +751,11 @@ object GroupedAggregations {
           }
         }
     }
+  }
+
+  private def isUnbounded(boundary: Expression): Boolean = boundary match {
+    case special: GpuSpecialFrameBoundary => special.isUnbounded
+    case _ => false
   }
 
   private def getRowBasedLower(windowFrameSpec : GpuSpecifiedWindowFrame): Scalar = {
