@@ -29,7 +29,7 @@ package com.nvidia.spark.rapids
 
 import java.io.DataInputStream
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DType, DeviceMemoryBuffer, HostMemoryBuffer}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DeviceMemoryBuffer, DType, HostMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.BloomFilter
 

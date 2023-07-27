@@ -106,15 +106,15 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
     "might_contain with literal bloom filter buffer",
     spark => spark.range(1, 1).asInstanceOf[DataFrame]) {
     df =>
-        try {
-          installSqlFuncs(df.sparkSession)
-          df.sparkSession.sql(
-            """SELECT might_contain(
-              |X'00000001000000050000000343A2EC6EA8C117E2D3CDB767296B144FC5BFBCED9737F267',
-              |cast(201 as long))""".stripMargin)
-        } finally {
-          uninstallSqlFuncs(df.sparkSession)
-        }
+      try {
+        installSqlFuncs(df.sparkSession)
+        df.sparkSession.sql(
+          """SELECT might_contain(
+            |X'00000001000000050000000343A2EC6EA8C117E2D3CDB767296B144FC5BFBCED9737F267',
+            |cast(201 as long))""".stripMargin)
+      } finally {
+        uninstallSqlFuncs(df.sparkSession)
+      }
   }
 
   ALLOW_NON_GPU_testSparkResultsAreEqual(
@@ -122,17 +122,17 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
     spark => spark.range(1, 1).asInstanceOf[DataFrame],
     Seq("ObjectHashAggregateExec", "ShuffleExchangeExec")) {
     df =>
-        try {
-          installSqlFuncs(df.sparkSession)
-          df.sparkSession.sql(
-            """
-              |SELECT might_contain(null, null) both_null,
-              |       might_contain(null, 1L) null_bf,
-              |       might_contain((SELECT bloom_filter_agg(cast(id as long)) from range(1, 10000)),
-              |            null) null_value
-         """.stripMargin)
-        } finally {
-          uninstallSqlFuncs(df.sparkSession)
-        }
+      try {
+        installSqlFuncs(df.sparkSession)
+        df.sparkSession.sql(
+          """
+            |SELECT might_contain(null, null) both_null,
+            |       might_contain(null, 1L) null_bf,
+            |       might_contain((SELECT bloom_filter_agg(cast(id as long)) from range(1, 10000)),
+            |            null) null_value
+          """.stripMargin)
+      } finally {
+        uninstallSqlFuncs(df.sparkSession)
+      }
   }
 }
