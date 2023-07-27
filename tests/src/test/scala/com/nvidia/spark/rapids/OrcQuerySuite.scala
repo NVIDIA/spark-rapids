@@ -24,9 +24,9 @@ import com.nvidia.spark.rapids.Arm.withResourceIfAllowed
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
-import org.apache.orc.{OrcFile, Reader}
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.orc.OrcFile
 
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.rapids.{MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
