@@ -468,6 +468,15 @@ object GpuOverrides extends Logging {
     case _ => false
   }
 
+  private[this] def isArrayOfStructType(dataType: DataType) = dataType match {
+    case ArrayType(elementType, _) =>
+      elementType match {
+        case StructType(_) => true
+        case _ => false
+      }
+    case _ => false
+  }
+
   // this listener mechanism is global and is intended for use by unit tests only
   private lazy val listeners: ListBuffer[GpuOverridesListener] =
     new ListBuffer[GpuOverridesListener]()
@@ -2038,12 +2047,14 @@ object GpuOverrides extends Logging {
       "Sort order",
       ExprChecks.projectOnly(
         (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
-         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
+         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+           .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
           (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
-           TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
+           TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+             .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2055,6 +2066,10 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
                 s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
             }
+          }
+          if (isArrayOfStructType(sortOrder.dataType)) {
+            willNotWorkOnGpu("STRUCT is not supported as a child type for ARRAY, " +
+              s"actual data type: ${sortOrder.dataType}")
           }
         }
 
@@ -3627,7 +3642,8 @@ object GpuOverrides extends Logging {
       "Range partitioning",
       PartChecks(RepeatingParamCheck("order_key",
         (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
-         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
+         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+           .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =

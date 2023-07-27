@@ -71,6 +71,15 @@ def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             "SortExec")
 
+@allow_non_gpu('SortExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('child1', sub_gen)])) for sub_gen in orderable_gens], ids=idfn)
+@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_first(), f.col('a').asc_nulls_last(),
+                                   f.col('a').desc(), f.col('a').desc_nulls_first(), f.col('a').desc_nulls_last()], ids=idfn)
+def test_single_orderby_fallback_for_array_of_struct(data_gen, order):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            "SortExec")
+
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
     pytest.param(200)
