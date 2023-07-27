@@ -1001,7 +1001,9 @@ case class GpuFromUnixTime(
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpressionArgsAnyScalar with TimeZoneAwareExpression with ImplicitCastInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar
+    with TimeZoneAwareExpression
+    with ImplicitCastInputTypes {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
