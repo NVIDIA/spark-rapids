@@ -328,7 +328,7 @@ object GpuFileFormatWriter extends Logging {
         concurrentOutputWriterSpec match {
           case Some(spec) =>
             new GpuDynamicPartitionDataConcurrentWriter(
-              description, taskAttemptContext, committer, spec)
+              description, taskAttemptContext, committer, spec, TaskContext.get())
           case _ =>
             new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
         }

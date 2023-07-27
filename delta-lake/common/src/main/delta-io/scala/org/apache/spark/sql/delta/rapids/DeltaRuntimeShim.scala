@@ -21,6 +21,7 @@ import scala.util.Try
 import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -32,6 +33,8 @@ trait DeltaRuntimeShim {
   def stringFromStringUdf(f: String => String): UserDefinedFunction
   def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean
 }
 
 object DeltaRuntimeShim {
@@ -75,4 +78,7 @@ object DeltaRuntimeShim {
 
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
     shimInstance.fileFormatFromLog(deltaLog)
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
+    shimInstance.getTightBoundColumnOnFileInitDisabled(spark)
 }
