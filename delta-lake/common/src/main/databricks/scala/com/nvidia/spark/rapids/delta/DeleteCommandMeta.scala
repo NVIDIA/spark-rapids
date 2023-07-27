@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge}
+import com.databricks.sql.transaction.tahoe.commands.{DeleteCommandEdge, DeleteCommand}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeleteCommand, GpuDeltaLog}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
 import com.nvidia.spark.rapids.delta.shims.DeleteCommandMetaShim
