@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.nvidia.spark.rapids.delta.DeleteCommandMeta
+import com.nvidia.spark.rapids.delta.{DeleteCommandMeta,DeleteCommandEdgeMeta}
 
 object DeleteCommandMetaShim {
   def tagForGpu(meta: DeleteCommandMeta): Unit = {}
+  def tagForGpu(meta: DeleteCommandEdgeMeta): Unit = {}
 }

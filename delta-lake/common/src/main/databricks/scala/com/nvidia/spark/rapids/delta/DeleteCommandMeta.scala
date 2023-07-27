@@ -61,6 +61,7 @@ class DeleteCommandEdgeMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    DeleteCommandMetaShim.tagForGpu(this)
     RapidsDeltaUtils.tagForDeltaWrite(this, deleteCmd.target.schema, deleteCmd.deltaLog,
       Map.empty, SparkSession.active)
   }
