@@ -27,6 +27,7 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {
+    super.beforeEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
     if (!Rmm.isInitialized) {
@@ -43,9 +44,13 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   override def afterEach(): Unit = {
+    super.afterEach()
+    SparkSession.getActiveSession.foreach(_.stop())
+    SparkSession.clearActiveSession()
     RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
     RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
+    GpuSemaphore.shutdown()
     if (rmmWasInitialized) {
       Rmm.shutdown()
     }

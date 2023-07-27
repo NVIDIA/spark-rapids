@@ -196,6 +196,12 @@ def is_databricks113_or_later():
 def is_databricks122_or_later():
     return is_databricks_version_or_later(12, 2)
 
+def is_supports_delta_lake_deletion_vectors():
+    if is_databricks_runtime():
+        return is_databricks122_or_later()
+    else:
+        return is_spark_340_or_later()
+
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")
     # Allow these formats:

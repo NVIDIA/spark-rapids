@@ -66,6 +66,8 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
   private val EXECUTOR_CORES_KEY = "spark.executor.cores"
+  private val TASK_GPU_AMOUNT_KEY = "spark.task.resource.gpu.amount"
+  private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -157,6 +159,24 @@ object RapidsPluginUtils extends Logging {
           conf.get(EXECUTOR_CORES_KEY).toInt).toString
         conf.set(numThreadsKey, numThreads)
         logWarning(s"$numThreadsKey is set to $numThreads.")
+      }
+    }
+
+    // If spark.task.resource.gpu.amount is larger than 
+    // (spark.executor.resource.gpu.amount / spark.executor.cores) then GPUs will be the limiting
+    // resource for task scheduling.
+    if (conf.contains(TASK_GPU_AMOUNT_KEY) && conf.contains(EXECUTOR_GPU_AMOUNT_KEY)) {
+      val taskGpuAmountSetByUser = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
+      // get worker's all cores num if spark.executor.cores is not set explicitly
+      val executorCores = conf.getOption(EXECUTOR_CORES_KEY)
+          .map(_.toDouble)
+          .getOrElse(Runtime.getRuntime.availableProcessors.toDouble)
+      val executorGpuAmount = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble
+      if (executorCores != 0 && taskGpuAmountSetByUser > executorGpuAmount / executorCores) {
+        logWarning("The current setting of spark.task.resource.gpu.amount " + 
+        s"($taskGpuAmountSetByUser) is not ideal to get the best performance from the " + 
+        "RAPIDS Accelerator plugin. It's recommended to be 1/{executor core count} unless " + 
+        "you have a special use case.")
       }
     }
   }
