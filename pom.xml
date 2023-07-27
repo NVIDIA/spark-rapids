@@ -1184,6 +1184,7 @@
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
+                        <exclude>thirdparty/parquet-testing/**</exclude>
                     </excludes>
                 </configuration>
             </plugin>

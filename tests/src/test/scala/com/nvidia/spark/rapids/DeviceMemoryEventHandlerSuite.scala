@@ -18,16 +18,15 @@ package com.nvidia.spark.rapids
 
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.when
-import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar
 
-class DeviceMemoryEventHandlerSuite extends AnyFunSuite with MockitoSugar {
+class DeviceMemoryEventHandlerSuite extends RmmSparkRetrySuiteBase with MockitoSugar {
 
   test("a failed allocation should be retried if we spilled enough") {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
-    when(mockStore.currentSize).thenReturn(1024)
-    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024))
+    when(mockStore.currentSpillableSize).thenReturn(1024)
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024L))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -40,8 +39,8 @@ class DeviceMemoryEventHandlerSuite extends AnyFunSuite with MockitoSugar {
   test("when we deplete the store, retry up to max failed OOM retries") {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
-    when(mockStore.currentSize).thenReturn(0)
-    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(0))
+    when(mockStore.currentSpillableSize).thenReturn(0)
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(0L))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -56,8 +55,8 @@ class DeviceMemoryEventHandlerSuite extends AnyFunSuite with MockitoSugar {
   test("we reset our OOM state after a successful retry") {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
-    when(mockStore.currentSize).thenReturn(0)
-    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(0))
+    when(mockStore.currentSpillableSize).thenReturn(0)
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(0L))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -75,8 +74,8 @@ class DeviceMemoryEventHandlerSuite extends AnyFunSuite with MockitoSugar {
   test("a negative allocation cannot be retried and handler throws") {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
-    when(mockStore.currentSize).thenReturn(1024)
-    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024))
+    when(mockStore.currentSpillableSize).thenReturn(1024)
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024L))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -89,8 +88,8 @@ class DeviceMemoryEventHandlerSuite extends AnyFunSuite with MockitoSugar {
   test("a negative retry count is invalid") {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
-    when(mockStore.currentSize).thenReturn(1024)
-    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024))
+    when(mockStore.currentSpillableSize).thenReturn(1024)
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024L))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
