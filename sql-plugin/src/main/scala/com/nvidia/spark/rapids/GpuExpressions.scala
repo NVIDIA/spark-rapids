@@ -268,6 +268,16 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
   }
 }
 
+/**
+ * Expressions subclassing this trait guarantee that they implement:
+ *   doColumnar(GpuScalar, GpuScalar)
+ *   doColumnar(GpuColumnVector, GpuScalar)
+ *
+ * The default implementation throws for all other permutations.
+ *
+ * The binary expression must fallback to the CPU for the doColumnar cases
+ * that would throw. The default implementation here should never execute.
+ */
 trait GpuBinaryExpressionArgsAnyScalar extends GpuBinaryExpression {
   protected val anyScalarExceptionMessage: String =
     s"$prettyName: LHS can be a column or scalar and " +
@@ -437,6 +447,16 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
   }
 }
 
+/**
+ * Expressions subclassing this trait guarantee that they implement:
+ *   doColumnar(GpuScalar, GpuScalar, GpuScalar)
+ *   doColumnar(GpuColumnVector, GpuScalar, GpuScalar)
+ *
+ * The default implementation throws for all other permutations.
+ *
+ * The ternary expression must fallback to the CPU for the doColumnar cases
+ * that would throw. The default implementation here should never execute.
+ */
 trait GpuTernaryExpressionArgsAnyScalarScalar extends GpuTernaryExpression {
   protected val anyScalarScalarErrorMessage: String =
     s"$prettyName: first argument can be a column or a scalar, second and third arguments " +
@@ -479,6 +499,16 @@ trait GpuTernaryExpressionArgsAnyScalarScalar extends GpuTernaryExpression {
     throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
 }
 
+/**
+ * Expressions subclassing this trait guarantee that they implement:
+ *   doColumnar(GpuScalar, GpuScalar, GpuScalar)
+ *   doColumnar(GpuScalar, GpuColumnVector, GpuScalar)
+ *
+ * The default implementation throws for all other permutations.
+ *
+ * The ternary expression must fallback to the CPU for the doColumnar cases
+ * that would throw. The default implementation here should never execute.
+ */
 trait GpuTernaryExpressionArgsScalarAnyScalar extends GpuTernaryExpression {
   protected val scalarAnyScalarExceptionMessage: String =
     s"$prettyName: first argument has to be a scalar, second argument can be a column " +
