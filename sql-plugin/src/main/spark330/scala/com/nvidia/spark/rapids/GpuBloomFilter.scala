@@ -29,13 +29,19 @@ package com.nvidia.spark.rapids
 
 import java.io.DataInputStream
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DeviceMemoryBuffer, DType, HostMemoryBuffer}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DType, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.BloomFilter
 
-import org.apache.spark.sql.types.BinaryType
+import org.apache.spark.sql.types.{BinaryType, NullType}
 
-/** GPU version of Spark's BloomFilterImpl */
+/**
+ * GPU version of Spark's BloomFilterImpl.
+ * @param numHashes number of hash functions to use in the Bloom filter
+ * @param buffer device buffer containing the Bloom filter data in the Spark Bloom filter
+ *               serialization format. The device buffer will be closed when this GpuBloomFilter
+ *               instance is closed.
+ */
 class GpuBloomFilter(val numHashes: Int, buffer: DeviceMemoryBuffer) extends AutoCloseable {
   private val spillableBuffer = SpillableBuffer(buffer, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
   private val numFilterBits = buffer.getLength * 8
@@ -48,10 +54,7 @@ class GpuBloomFilter(val numHashes: Int, buffer: DeviceMemoryBuffer) extends Aut
   def mightContainLong(col: ColumnVector): ColumnVector = {
     require(col.getType == DType.INT64, s"expected longs, got ${col.getType}")
     withResource(spillableBuffer.getDeviceBuffer()) { buffer =>
-      buffer.incRefCount()
-      withResource(new BloomFilter(numHashes, numFilterBits, buffer)) { filter =>
-        filter.probe(col)
-      }
+      BloomFilter.probe(numHashes, numFilterBits, buffer, col)
     }
   }
 
@@ -74,17 +77,14 @@ object GpuBloomFilter {
   private val VERSION_V1 = 1
 
   def apply(s: GpuScalar): GpuBloomFilter = {
-    if (s == null) {
-      null
-    } else {
-      s.dataType match {
-        case BinaryType =>
-          withResource(s.getBase.getListAsColumnView) { childView =>
-            require(childView.getType == DType.UINT8, s"expected UINT8 got ${childView.getType}")
-            deserialize(childView.getData)
-          }
-        case t => throw new IllegalArgumentException(s"Expected binary scalar, found $t")
-      }
+    s.dataType match {
+      case BinaryType if s.isValid =>
+        withResource(s.getBase.getListAsColumnView) { childView =>
+          require(childView.getType == DType.UINT8, s"expected UINT8 got ${childView.getType}")
+          deserialize(childView.getData)
+        }
+      case BinaryType | NullType => null
+      case t => throw new IllegalArgumentException(s"Expected binary or null scalar, found $t")
     }
   }
 

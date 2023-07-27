@@ -60,7 +60,9 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
 
   private def buildData(spark: SparkSession): DataFrame = {
     import spark.implicits._
-    (Seq(Long.MinValue, 0, Long.MaxValue) ++ (1L to 10000L)).toDF("col")
+    (Seq(Some(Long.MinValue), Some(0L), Some(Long.MaxValue), None) ++
+        (1L to 10000L).map(x => Some(x)) ++
+        (1L to 100L).map(_ => None)).toDF("col")
   }
 
   for (numEstimated <- Seq(4096L, 4194304L, Long.MaxValue,
@@ -98,5 +100,39 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
           }
         })
     }
+  }
+
+  testSparkResultsAreEqual(
+    "might_contain with literal bloom filter buffer",
+    spark => spark.range(1, 1).asInstanceOf[DataFrame]) {
+    df =>
+        try {
+          installSqlFuncs(df.sparkSession)
+          df.sparkSession.sql(
+            """SELECT might_contain(
+              |X'00000001000000050000000343A2EC6EA8C117E2D3CDB767296B144FC5BFBCED9737F267',
+              |cast(201 as long))""".stripMargin)
+        } finally {
+          uninstallSqlFuncs(df.sparkSession)
+        }
+  }
+
+  ALLOW_NON_GPU_testSparkResultsAreEqual(
+    "might_contain with all NULL inputs",
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    Seq("ObjectHashAggregateExec", "ShuffleExchangeExec")) {
+    df =>
+        try {
+          installSqlFuncs(df.sparkSession)
+          df.sparkSession.sql(
+            """
+              |SELECT might_contain(null, null) both_null,
+              |       might_contain(null, 1L) null_bf,
+              |       might_contain((SELECT bloom_filter_agg(cast(id as long)) from range(1, 10000)),
+              |            null) null_value
+         """.stripMargin)
+        } finally {
+          uninstallSqlFuncs(df.sparkSession)
+        }
   }
 }

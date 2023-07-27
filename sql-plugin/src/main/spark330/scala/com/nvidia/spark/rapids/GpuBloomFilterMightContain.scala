@@ -84,11 +84,11 @@ case class GpuBloomFilterMightContain(
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (bloomFilter == null) {
-      null
+      GpuColumnVector.fromNull(batch.numRows(), dataType)
     } else {
       withResource(valueExpression.columnarEval(batch)) { value =>
-        if (value == null) {
-          null
+        if (value == null || value.dataType == NullType) {
+          GpuColumnVector.fromNull(batch.numRows(), dataType)
         } else {
           GpuColumnVector.from(bloomFilter.mightContainLong(value.getBase), BooleanType)
         }
