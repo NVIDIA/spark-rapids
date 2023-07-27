@@ -50,7 +50,7 @@ class DeleteCommandMeta(
 }
 
 class DeleteCommandEdgeMeta(
-    deleteCmd: DeleteCommandEdge,
+    val deleteCmd: DeleteCommandEdge,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
