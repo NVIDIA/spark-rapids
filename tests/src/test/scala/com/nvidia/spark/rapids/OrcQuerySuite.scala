@@ -20,12 +20,13 @@ import java.io.File
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.Arm.withResourceIfAllowed
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.orc.{OrcFile, Reader}
-
 import org.apache.spark.{SparkConf, SparkContext}
+
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.rapids.{MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
@@ -129,20 +130,13 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
         // check the compress type using ORC jar
         val orcFilePath = new Path(maybeOrcFile.get.getAbsolutePath)
         val conf = OrcFile.readerOptions(new Configuration())
-        var reader: Reader = null
-        try {
-          reader = OrcFile.createReader(orcFilePath, conf)
+
+        // the reader is not a AutoCloseable for Spark CDH, so use `withResourceIfAllowed`
+        // 321cdh uses lower ORC: orc-core-1.5.1.7.1.7.1000-141.jar
+        // 330cdh uses lower ORC: orc-core-1.5.1.7.1.8.0-801.jar
+        withResourceIfAllowed(OrcFile.createReader(orcFilePath, conf)) { reader =>
           // check
           assert(expectedType === reader.getCompressionKind.name)
-        } finally {
-          // close reader if needed
-          reader match {
-            case closeableReader: AutoCloseable => closeableReader.close()
-            // the reader is not a AutoCloseable for Spark CDH
-            // 321cdh uses orc-core-1.5.1.7.1.7.1000-141.jar
-            // 330cdh uses orc-core-1.5.1.7.1.8.0-801.jar
-            case _ => // do nothing for 321cdh 330cdh Sparks
-          }
         }
       }
     }

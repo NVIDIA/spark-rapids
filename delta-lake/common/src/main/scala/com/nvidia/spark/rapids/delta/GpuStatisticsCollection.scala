@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.delta.shims.{ShimDeltaColumnMapping, ShimDeltaUDF, ShimUsesMetadataFields}
 
-import org.apache.spark.sql.Column
+import org.apache.spark.sql.{Column, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.functions.{count, lit, max, min, struct, substring, sum, when}
@@ -37,10 +37,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** GPU version of Delta Lake's StatisticsCollection. */
 trait GpuStatisticsCollection extends ShimUsesMetadataFields {
+  protected def spark: SparkSession
   def tableDataSchema: StructType
   def dataSchema: StructType
   val numIndexedCols: Int
   val stringPrefixLength: Int
+
+  protected def deletionVectorsSupported: Boolean
 
   // Build a mapping of a field path to a field index within the parent struct
   lazy val explodedDataSchema: Map[Seq[String], Int] =
@@ -70,7 +73,16 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
    */
   lazy val statsCollector: Column = {
     val prefixLength = stringPrefixLength
-    struct(
+
+    // On file initialization/stat recomputation TIGHT_BOUNDS is always set to true
+    val tightBoundsColOpt = if (deletionVectorsSupported &&
+        !RapidsDeltaUtils.getTightBoundColumnOnFileInitDisabled(spark)) {
+      Some(lit(true).as("tightBounds"))
+    } else {
+      None
+    }
+
+    val statCols = Seq(
       count(new Column("*")) as NUM_RECORDS,
       collectStats(MIN, statCollectionSchema) {
         // Truncate string min values as necessary
@@ -95,8 +107,9 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields {
       collectStats(NULL_COUNT, statCollectionSchema) {
         case (c, _, true) => sum(when(c.isNull, 1).otherwise(0))
         case (_, _, false) => count(new Column("*"))
-      }
-    ) as 'stats
+      }) ++ tightBoundsColOpt
+
+    struct(statCols: _*).as('stats)
   }
 
   /**

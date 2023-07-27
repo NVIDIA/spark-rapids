@@ -24,7 +24,7 @@ import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
 import org.apache.hadoop.fs.FileUtil
-import org.scalatest.Assertion
+import org.scalatest.{Assertion, BeforeAndAfterAll}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
@@ -148,10 +148,15 @@ object SparkSessionHolder extends Logging {
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends AnyFunSuite {
+trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
+
+  override def afterAll(): Unit = {
+    super.afterAll()
+    TrampolineUtil.cleanupAnyExistingSession()
+  }
 
   def enableCsvConf(conf: SparkConf): SparkConf = {
     conf
@@ -908,9 +913,9 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
     compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
   }
 
-  def testExpectedGpuException[T <: Throwable](
+  def testExpectedGpuException(
     testName: String,
-    exceptionClass: Class[T],
+    exceptionClass: Class[_],
     df: SparkSession => DataFrame,
     conf: SparkConf = new SparkConf(),
     repart: Integer = 1,
@@ -936,10 +941,21 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
         }, testConf)
       })
       t match {
-        case Failure(e) if e.getClass == exceptionClass => // Good
-        case Failure(e) => throw e
+        case Failure(e) => assertResult(exceptionClass)(getRootCause(e).getClass)
         case _ => fail("Expected an exception")
       }
+    }
+  }
+
+  private def getRootCause(t: Throwable): Throwable = {
+    if (t == null) {
+      t
+    } else {
+      var current = t
+      while (current.getCause != null) {
+        current = current.getCause
+      }
+      current
     }
   }
 
@@ -2144,7 +2160,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite {
     }
   }
 
-  def withTempPath(func: File => Unit): Unit = {
+  def withTempPath[B](func: File => B): B = {
     val rootTmpDir = System.getProperty("java.io.tmpdir")
     val dirFile = new File(rootTmpDir, "spark-test-" + UUID.randomUUID)
     Files.createDirectories(dirFile.toPath)
