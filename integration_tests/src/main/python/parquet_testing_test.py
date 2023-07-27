@@ -20,6 +20,7 @@ from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_pre
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
+from spark_session import is_before_spark_330
 import warnings
 
 _rebase_confs = {
@@ -62,6 +63,8 @@ _xfail_files = {
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
     "repeated_no_annotation.parquet": "https://github.com/NVIDIA/spark-rapids/issues/8631",
 }
+if is_before_spark_330():
+    _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"
 
 def locate_parquet_testing_files():
     """
