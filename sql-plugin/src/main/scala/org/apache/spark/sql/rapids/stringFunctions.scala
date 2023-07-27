@@ -722,13 +722,6 @@ trait HasGpuStringReplace {
     }
   }
 
-  def doStringReplace(
-      strExpr: GpuColumnVector,
-      searchExpr: GpuColumnVector,
-      replaceExpr: GpuColumnVector): ColumnVector = {
-    strExpr.getBase.stringReplace(searchExpr.getBase, replaceExpr.getBase)
-  }
-
   def doStringReplaceMulti(
     strExpr: GpuColumnVector,
     search: Seq[String],
@@ -741,9 +734,6 @@ trait HasGpuStringReplace {
   }
 }
 
-// This could support more than Any_Scalar_Scalar, but it doesn't for performance/coverage
-// reasons. Its TypeSig is ensuring that `searchExpr` and `replaceExpr` are literals, so
-// we will fallback and throw.
 case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
