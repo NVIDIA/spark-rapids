@@ -398,6 +398,10 @@ properly without it. These tests assume Delta Lake is not configured and are dis
 If Spark has been configured to support Delta Lake then these tests can be enabled by adding the
 `--delta_lake` option to the command.
 
+### Enabling large data tests
+Some tests are testing large data which will take a long time. By default, these tests are disabled.
+These tests can be enabled by adding the `--large_data_test` option to the command.
+
 ## Writing tests
 
 There are a number of libraries provided to help someone write new tests.
