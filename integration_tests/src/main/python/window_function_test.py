@@ -1137,6 +1137,14 @@ _gen_data_for_collect_set_nested = [
     ('c_array_array_decimal_128', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_128bit)), length=15)),
 ]
 
+_gen_data_for_collect_set_nest_floats_fallback = [
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', UniqueLongGen()),
+    ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
+    ('c_array_array_float', RepeatSeqGen(ArrayGen(ArrayGen(FloatGen(no_nans=True))), length=15)),
+    ('c_array_array_double', RepeatSeqGen(ArrayGen(ArrayGen(DoubleGen(no_nans=True))), length=15)),
+]
+
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
 def test_window_aggs_for_rows_collect_set():
@@ -1265,6 +1273,30 @@ def test_window_aggs_for_rows_collect_set_nested_array():
         """)
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
+# Fall back to CPU if type is nested and contains floats or doubles in the type tree.
+# Because NaNs in nested types are not supported yet. 
+# See https://github.com/NVIDIA/spark-rapids/issues/8808
+@ignore_order(local=True)
+@allow_non_gpu("ProjectExec", "CollectSet", "WindowExec")
+def test_window_aggs_for_rows_collect_set_nested_array():
+    conf = copy_and_update(_float_conf, {
+        "spark.rapids.sql.castFloatToString.enabled": "true",
+        "spark.rapids.sql.expression.SortArray": "false"
+    })
+
+    def do_it(spark):
+        df = gen_df(spark, _gen_data_for_collect_set_nest_floats_fallback, length=512)
+        df.createOrReplaceTempView("window_collect_table")
+        return spark.sql(
+            """select a, b,
+              collect_set(c_array_array_float) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_float,
+              collect_set(c_array_array_double) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_double
+        from window_collect_table
+        """)
+        
+    assert_gpu_fallback_collect(do_it, 'CollectSet', conf=conf)
 
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally

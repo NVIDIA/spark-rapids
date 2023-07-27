@@ -701,15 +701,19 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_set('b'))))
-    
+
+# Fall back to CPU if type is nested and contains floats or doubles in the type tree.
+# Because NaNs in nested types are not supported yet. 
+# See https://github.com/NVIDIA/spark-rapids/issues/8808   
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats, ids=idfn)
 def test_hash_groupby_collect_set_fallback_on_nested_floats(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
-            .agg(f.sort_array(f.collect_set('b'))))
+            .agg(f.sort_array(f.collect_set('b'))),
+            'CollectSet')
 
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
@@ -752,13 +756,17 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100)
             .agg(f.sort_array(f.collect_set('b'))))
 
+# Fall back to CPU if type is nested and contains floats or doubles in the type tree.
+# Because NaNs in nested types are not supported yet. 
+# See https://github.com/NVIDIA/spark-rapids/issues/8808
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats, ids=idfn)
 def test_hash_reduction_collect_set_fallback_on_nested_floats(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
-            .agg(f.sort_array(f.collect_set('b'))))
+            .agg(f.sort_array(f.collect_set('b'))),
+            'CollectSet')
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU
