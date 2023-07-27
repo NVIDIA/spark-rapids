@@ -453,7 +453,7 @@ case class GpuMapEntries(child: Expression) extends GpuUnaryExpression with Expe
 }
 
 case class GpuSortArray(base: Expression, ascendingOrder: Expression)
-    extends GpuBinaryExpression_Any_Scalar with ExpectsInputTypes {
+    extends GpuBinaryExpressionArgsAnyScalar with ExpectsInputTypes {
 
   override def left: Expression = base
 

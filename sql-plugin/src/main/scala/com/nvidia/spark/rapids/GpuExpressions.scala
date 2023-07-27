@@ -268,7 +268,7 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
   }
 }
 
-trait GpuBinaryExpression_Any_Scalar extends GpuBinaryExpression {
+trait GpuBinaryExpressionArgsAnyScalar extends GpuBinaryExpression {
   protected val anyScalarExceptionMessage: String =
     s"$prettyName: LHS can be a column or scalar and " +
         s"RHS has to be a scalar (got left: $left, right: $right)"
@@ -437,7 +437,7 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
   }
 }
 
-trait GpuTernaryExpression_Any_Scalar_Scalar extends GpuTernaryExpression {
+trait GpuTernaryExpressionArgsAnyScalarScalar extends GpuTernaryExpression {
   protected val anyScalarScalarErrorMessage: String =
     s"$prettyName: first argument can be a column or a scalar, second and third arguments " +
         s"have to be scalars (got first: $first, second: $second, third: $third)"
@@ -479,7 +479,7 @@ trait GpuTernaryExpression_Any_Scalar_Scalar extends GpuTernaryExpression {
     throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
 }
 
-trait GpuTernaryExpression_Scalar_Any_Scalar extends GpuTernaryExpression {
+trait GpuTernaryExpressionArgsScalarAnyScalar extends GpuTernaryExpression {
   protected val scalarAnyScalarExceptionMessage: String =
     s"$prettyName: first argument has to be a scalar, second argument can be a column " +
         s"or a scalar, and third argument has to be a scalar " +

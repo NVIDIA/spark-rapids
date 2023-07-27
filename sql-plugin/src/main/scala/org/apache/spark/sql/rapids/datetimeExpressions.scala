@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpression_Any_Scalar, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -298,7 +298,7 @@ case class GpuDateFormatClass(timestamp: Expression,
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpression_Any_Scalar
+  extends GpuBinaryExpressionArgsAnyScalar
       with TimeZoneAwareExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = StringType
@@ -801,7 +801,7 @@ case class RegexReplace(search: String, replace: String)
  * first converting to microseconds and then dividing by the downScaleFactor
  */
 abstract class GpuToTimestamp
-  extends GpuBinaryExpression_Any_Scalar with TimeZoneAwareExpression with ExpectsInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar with TimeZoneAwareExpression with ExpectsInputTypes {
 
   import GpuToTimestamp._
 
@@ -1001,7 +1001,7 @@ case class GpuFromUnixTime(
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpression_Any_Scalar with TimeZoneAwareExpression with ImplicitCastInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar with TimeZoneAwareExpression with ImplicitCastInputTypes {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
@@ -1065,7 +1065,7 @@ class FromUTCTimestampExprMeta(
 }
 
 case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
-  extends GpuBinaryExpression_Any_Scalar
+  extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
       with NullIntolerant {
 

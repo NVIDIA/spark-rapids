@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{DataType, StringType}
 
 case class GpuGetJsonObject(json: Expression, path: Expression)
-    extends GpuBinaryExpression_Any_Scalar
+    extends GpuBinaryExpressionArgsAnyScalar
         with ExpectsInputTypes {
   override def left: Expression = json
   override def right: Expression = path
