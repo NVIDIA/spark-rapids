@@ -2057,6 +2057,7 @@ object GpuOverrides extends Logging {
             }
           }
         }
+
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
           sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
