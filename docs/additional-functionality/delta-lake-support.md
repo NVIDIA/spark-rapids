@@ -38,6 +38,7 @@ Delta Lake writes:
 - Delta Lake version 2.4.0 on Apache Spark 3.4.x
 - Delta Lake on Databricks 10.4 LTS
 - Delta Lake on Databricks 11.3 LTS
+- Delta Lake on Databricks 12.2 LTS
 
 Delta Lake writes will not be accelerated on Spark 3.1.x or earlier.
 
@@ -49,7 +50,8 @@ operation which is typically triggered via the DataFrame `write` API, e.g.:
 `data.write.format("delta").save(...)`.
 
 Table creation from selection, table insertion from SQL, and table merges are not currently
-GPU accelerated. These operations will fallback to the CPU.
+GPU accelerated. These operations will fallback to the CPU. Writes against tables that have
+deletion vectors enabled will also fallback to the CPU.
 
 #### Automatic Optimization of Writes
 
