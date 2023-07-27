@@ -388,7 +388,7 @@ case class ExponentialDistribution(
     val g = r.nextDouble()
     val logged = math.log(1.0 - g)
     val adjusted = logged * stdDev
-    // This adjusted value targets 0.0 right now and will got negative from there.
+    // This adjusted value targets 0.0 right now and will go negative from there.
     math.max(min, math.min(max, math.ceil(adjusted + target).toLong))
   }
 }
