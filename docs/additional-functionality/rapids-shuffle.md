@@ -32,6 +32,7 @@ in our plugin:
 | 3.4.1           | com.nvidia.spark.rapids.spark341.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 | Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
+| Databricks 12.2 | com.nvidia.spark.rapids.spark332db.RapidsShuffleManager  |
 
 ## Multi-Threaded Mode
 
