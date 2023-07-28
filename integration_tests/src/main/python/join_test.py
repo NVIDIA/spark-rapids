@@ -14,13 +14,13 @@
 
 import pytest
 from _pytest.mark.structures import ParameterSet
-from pyspark.sql.functions import broadcast
+from pyspark.sql.functions import broadcast, col
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
-from spark_session import with_cpu_session, with_spark_session, is_databricks113_or_later
+from spark_session import with_cpu_session, is_before_spark_330
 
 pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
@@ -929,3 +929,40 @@ def test_hash_join_different_key_integral_types(left_gen, right_gen, join_type):
         "spark.rapids.sql.test.subPartitioning.enabled": True
     })
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
+
+
+def check_bloom_filter_join(confs):
+    def do_join(spark):
+        left = spark.range(100000)
+        right = spark.range(10).withColumn("id2", col("id").cast("string"))
+        return right.filter("cast(id2 as bigint) % 3 = 0").join(left, left.id == right.id, "inner")
+    all_confs = copy_and_update(confs, { "spark.sql.autoBroadcastJoinThreshold": "1",
+              "spark.sql.optimizer.runtime.bloomFilter.applicationSideScanSizeThreshold": 1,
+              "spark.sql.optimizer.runtime.bloomFilter.creationSideThreshold": "100GB",
+              "spark.sql.optimizer.runtime.bloomFilter.enabled": "true"})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=all_confs)
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join():
+    check_bloom_filter_join(confs={})
+
+@allow_non_gpu("FilterExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_cpu_probe():
+    check_bloom_filter_join(confs={"spark.rapids.sql.expression.BloomFilterMightContain": "false"})
+
+@allow_non_gpu("ObjectHashAggregateExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_cpu_build():
+    check_bloom_filter_join(confs={"spark.rapids.sql.expression.BloomFilterAggregate": "false"})
+
+@allow_non_gpu("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.parametrize("agg_replace_mode", ["partial", "final"])
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_cpu_build(agg_replace_mode):
+    check_bloom_filter_join(confs={"spark.rapids.sql.expression.BloomFilterAggregate": "false",
+                                   "spark.rapids.sql.hashAgg.replaceMode": agg_replace_mode})
