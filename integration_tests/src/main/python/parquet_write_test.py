@@ -154,15 +154,16 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen):
             data_path,
             conf=writer_confs)
 
-# we are limiting TimestampGen to avoid overflowing the INT96 value
-# see https://github.com/rapidsai/cudf/issues/8070
 @pytest.mark.parametrize('data_gen', [TimestampGen(end=datetime(1677, 9, 22, tzinfo=timezone.utc)),
                                       TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc))], ids=idfn)
-def test_catch_int96_overflow(spark_tmp_path, data_gen):
+def test_fix_for_int96_overflow(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
-    assert_spark_exception(lambda: with_gpu_session(
-        lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf = confs)
 
 
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
@@ -262,9 +263,9 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
     assert e_info.match(r".*SparkUpgradeException.*")
 
 # TODO - we are limiting the INT96 values, see https://github.com/rapidsai/cudf/issues/8070
-@pytest.mark.parametrize('ts_write_data_gen', 
-                        [('INT96', TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))), 
-                         ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))), 
+@pytest.mark.parametrize('ts_write_data_gen',
+                        [('INT96', TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
+                         ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
                          ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
@@ -458,8 +459,8 @@ def test_write_map_nullable(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path)
 
-@pytest.mark.parametrize('ts_write_data_gen', [('INT96', limited_int96()), 
-                                               ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))), 
+@pytest.mark.parametrize('ts_write_data_gen', [('INT96', limited_int96()),
+                                               ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))),
                                                ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('date_time_rebase_write', ["CORRECTED"])
 @pytest.mark.parametrize('date_time_rebase_read', ["EXCEPTION", "CORRECTED"])
