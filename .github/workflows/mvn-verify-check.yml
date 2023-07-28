@@ -91,6 +91,12 @@ jobs:
           distribution: adopt
           java-version: 8
 
+      - name: check runtime
+        run: |
+          env | grep JAVA
+          export JAVA_HOME=${JAVA_HOME_8_X64}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME"
+
       - name: package tests check
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B package
@@ -114,6 +120,12 @@ jobs:
         with:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
+
+      - name: check runtime
+        run: |
+          env | grep JAVA
+          export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME"
 
       - name: Build JDK
         run: >
@@ -139,6 +151,12 @@ jobs:
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
+
+      - name: check runtime
+        run: |
+          env | grep JAVA
+          export JAVA_HOME=${JAVA_HOME_11_X64}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME"
 
       - name: Install with Maven ${{ matrix.maven-version }}
         run: >
