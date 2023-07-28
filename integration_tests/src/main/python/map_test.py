@@ -91,8 +91,10 @@ def get_map_value_gens(precision=18, scale=0):
                           for value in get_map_value_gens()],
                          ids=idfn)
 def test_get_map_value_string_keys(data_gen):
+    index_gen = StringGen()
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, [("a", data_gen), ("ix", index_gen)]).selectExpr(
+                'a[ix]',
                 'a["key_0"]',
                 'a["key_1"]',
                 'a[null]',
@@ -111,8 +113,10 @@ numeric_key_map_gens = [MapGen(key, value(), max_length=6)
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
 def test_get_map_value_numeric_keys(data_gen):
+    key_gen = data_gen._key_gen
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, [("a", data_gen), ("ix", key_gen)]).selectExpr(
+                'a[ix]',
                 'a[0]',
                 'a[1]',
                 'a[null]',
