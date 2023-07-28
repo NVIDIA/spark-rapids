@@ -273,7 +273,7 @@ def test_single_nested_orderby_with_skew(data_gen, stable_sort):
 # be relatively large (1 MiB across all tasks) and the target size to be small (16 KiB). This means we
 # should see around 64 batches of data. So this is the most valid if there are less than 64 tasks
 # in the cluster, but it should still work even then.
-@pytest.mark.parametrize('data_gen', [long_gen, StructGen([('child0', long_gen)])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [long_gen, StructGen([('child0', long_gen)]), ArrayGen(byte_gen)], ids=idfn)
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 def test_large_orderby(data_gen, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
