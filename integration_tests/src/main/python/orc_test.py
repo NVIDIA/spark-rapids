@@ -919,7 +919,7 @@ def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf=all_confs)
-    gpu_file_path = data_path + "/CPU"
+    gpu_file_path = data_path + "/GPU"
     sqls = ["SELECT * FROM my_large_table",
             "SELECT * FROM my_large_table WHERE c2 = 5",
             "SELECT COUNT(*) FROM my_large_table WHERE c3 IS NOT NULL",
