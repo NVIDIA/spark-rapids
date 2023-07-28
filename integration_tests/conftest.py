@@ -56,3 +56,6 @@ def pytest_addoption(parser):
         "--force_parquet_testing_tests", action="store_true", default=False,
         help="if true forces parquet-testing tests to fail if input data cannot be found"
     )
+    parser.addoption(
+        "--large_data_test", action='store_true', default=False, help="if enable tests with large data"
+    )

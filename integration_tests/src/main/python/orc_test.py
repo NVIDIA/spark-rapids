@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_writes_are_equal_collect
+    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -902,3 +902,32 @@ def test_orc_with_null_column(spark_tmp_path, reader_confs):
     gpu_file_path = data_path + "/GPU"
     reader = read_orc_df(gpu_file_path)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark), conf=all_confs)
+
+@ignore_order
+@large_data_test
+@pytest.mark.parametrize("reader_confs", reader_opt_confs, ids=idfn)
+def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
+    data_path = spark_tmp_path + "/ORC_DATA"
+    all_confs = reader_confs
+    data = [(i, None, None, None, None) for i in range(1000000)]
+    def gen_null_df(spark):
+        return spark.createDataFrame(
+            data,
+            "c1 int, c2 long, c3 float, c4 double, c5 boolean")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_null_df(spark).write.orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        conf=all_confs)
+    gpu_file_path = data_path + "/CPU"
+    sqls = ["SELECT * FROM my_large_table",
+            "SELECT * FROM my_large_table WHERE c2 = 5",
+            "SELECT COUNT(*) FROM my_large_table WHERE c3 IS NOT NULL",
+            "SELECT * FROM my_large_table WHERE c4 IS NULL",
+            "SELECT * FROM my_large_table WHERE c5 IS NULL",
+            ]
+    for sql in sqls:
+        assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: spark.read.orc(gpu_file_path),
+            "my_large_table",
+            sql)

@@ -218,6 +218,10 @@ def pytest_runtest_setup(item):
         if not item.config.getoption('delta_lake'):
             pytest.skip('delta lake tests not configured to run')
 
+    if item.get_closest_marker('large_data_test'):
+        if not item.config.getoption('large_data_test'):
+            pytest.skip('tests for large data not configured to run')
+
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
