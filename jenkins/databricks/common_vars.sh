@@ -26,7 +26,7 @@ export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 # Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
-PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
+PYTHON_SITE_PACKAGES=${PYTHON_SITE_PACKAGES:-"$HOME/.local/lib/${PYTHON_VERSION}/site-packages"}
 
 # Get the correct py4j file.
 PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
