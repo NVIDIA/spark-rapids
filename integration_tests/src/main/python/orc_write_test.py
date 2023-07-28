@@ -15,11 +15,11 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_spark_cdh, is_spark_321cdh, with_gpu_session, with_cpu_session
+from spark_session import is_before_spark_320, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
-from pyspark.sql.functions import lit, col
+from pyspark.sql.functions import col, lit
 from pyspark.sql.types import *
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
@@ -298,7 +298,7 @@ def test_orc_do_not_lowercase_columns(spark_tmp_path):
         with_cpu_session(lambda spark: spark.read.orc(data_path + "/CPU").schema["acol"])
         assert False
     except KeyError as e:
-        assert ("No StructField named acol" in str(e))
+        assert "No StructField named acol" in str(e)
     try:
         # reading lowercase causes exception
         with_gpu_session(lambda spark: spark.read.orc(data_path + "/GPU").schema["acol"])
