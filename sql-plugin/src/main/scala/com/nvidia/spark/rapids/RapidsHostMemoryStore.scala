@@ -28,10 +28,8 @@ import com.nvidia.spark.rapids.format.TableMeta
  * @param pageableMemoryPoolSize maximum size in bytes for the internal pageable memory pool
  */
 class RapidsHostMemoryStore(
-    maxSize: Long,
-    pageableMemoryPoolSize: Long)
+    maxSize: Long)
     extends RapidsBufferStore(StorageTier.HOST) {
-  private[this] var haveLoggedMaxExceeded = false
 
   override def getMaxSize: Option[Long] = Some(maxSize)
 
@@ -46,11 +44,6 @@ class RapidsHostMemoryStore(
       }
     }
 
-    if (!haveLoggedMaxExceeded) {
-      logWarning(s"Exceeding host spill max of $pageableMemoryPoolSize bytes to accommodate " +
-          s"a buffer of $size bytes. Consider increasing pageable memory store size.")
-      haveLoggedMaxExceeded = true
-    }
     HostMemoryBuffer.allocate(size, false)
   }
 
