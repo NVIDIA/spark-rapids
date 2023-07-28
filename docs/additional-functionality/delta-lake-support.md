@@ -17,12 +17,13 @@ This document details the Delta Lake features that are supported.
 
 Delta Lake scans of the underlying Parquet files are presented in the query as normal Parquet
 reads, so the Parquet reads will be accelerated in the same way raw Parquet file reads are
-accelerated.
+accelerated. Reads against tables that have deletion vectors enabled will fallback to the CPU.
 
 ### Metadata Queries
 
 Reads of Delta Lake metadata, i.e.: the Delta log detailing the history of snapshots, will not
 be GPU accelerated. The CPU will continue to process metadata queries on Delta Lake tables.
+
 
 ## Writing Delta Lake Tables
 
