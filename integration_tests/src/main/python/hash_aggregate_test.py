@@ -621,13 +621,13 @@ _repeat_agg_column_for_collect_set_op_nested = [
 struct_array_gen_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen 
                                         in enumerate([ArrayGen(double_gen), ArrayGen(float_gen)])])
 
-floats_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate([float_gen, double_gen])])
+struct_gen_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate([float_gen, double_gen])])
 
 _repeat_agg_column_for_collect_set_op_nested_floats = [
     RepeatSeqGen(struct_array_gen_floats, length=15),
     RepeatSeqGen(StructGen([
         ['c0', struct_array_gen_floats], ['c1', int_gen]]), length=15),
-    RepeatSeqGen(ArrayGen(floats_struct_gen), length=15),
+    RepeatSeqGen(ArrayGen(struct_gen_floats), length=15),
     RepeatSeqGen(ArrayGen(ArrayGen(float_gen)), length=15),
     RepeatSeqGen(ArrayGen(ArrayGen(double_gen)), length=15)]
 

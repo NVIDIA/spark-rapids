@@ -3260,9 +3260,9 @@ object GpuOverrides extends Logging {
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL +
               TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Structs containing " +
-              s"float/double array will not be supported.") +
+              s"float/double will not be supported.") +
               TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Arrays containing " +
-              s"floats/doubles array will not be supported.")).nested(),
+              s"floats/doubles will not be supported.")).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
