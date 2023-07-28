@@ -618,6 +618,19 @@ _repeat_agg_column_for_collect_set_op_nested = [
         ['c0', struct_array_gen_no_floats], ['c1', int_gen]]), length=15),
     RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_floats), length=15)]
 
+struct_array_gen_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen 
+                                        in enumerate([ArrayGen(double_gen), ArrayGen(float_gen)])])
+
+floats_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate([float_gen, double_gen])])
+
+_repeat_agg_column_for_collect_set_op_nested_floats = [
+    RepeatSeqGen(struct_array_gen_floats, length=15),
+    RepeatSeqGen(StructGen([
+        ['c0', struct_array_gen_floats], ['c1', int_gen]]), length=15),
+    RepeatSeqGen(ArrayGen(floats_struct_gen), length=15),
+    RepeatSeqGen(ArrayGen(ArrayGen(float_gen)), length=15),
+    RepeatSeqGen(ArrayGen(ArrayGen(double_gen)), length=15)]
+
 _array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_floats]
 
 _gen_data_for_collect_set_op = [[
@@ -631,6 +644,10 @@ _gen_data_for_collect_set_op_floats = [[
 _gen_data_for_collect_set_op_nested = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested + _array_of_array_gen]
+
+_gen_data_for_collect_set_op_nested_floats = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested_floats]
 
 _all_basic_gens_with_all_nans_cases = all_basic_gens + [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]]
 
@@ -707,7 +724,8 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 # See https://github.com/NVIDIA/spark-rapids/issues/8808   
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats, ids=idfn)
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats + 
+                         _gen_data_for_collect_set_op_nested_floats, ids=idfn)
 def test_hash_groupby_collect_set_fallback_on_nested_floats(data_gen):
     assert_gpu_fallback_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -761,7 +779,7 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 # See https://github.com/NVIDIA/spark-rapids/issues/8808
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats, ids=idfn)
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats + _gen_data_for_collect_set_op_nested_floats, ids=idfn)
 def test_hash_reduction_collect_set_fallback_on_nested_floats(data_gen):
     assert_gpu_fallback_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
