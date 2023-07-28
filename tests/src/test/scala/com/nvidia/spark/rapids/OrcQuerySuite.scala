@@ -158,7 +158,7 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  private def getOrcFilePostfix(compression: String): String =
+  private def getOrcFileSuffix(compression: String): String =
     if (Seq("NONE", "UNCOMPRESSED").contains(compression)) {
       ".orc"
     } else {
@@ -179,7 +179,7 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
         // ORC use NONE for UNCOMPRESSED
         if (expectedType == "UNCOMPRESSED") expectedType = "NONE"
         val maybeOrcFile = file.listFiles()
-            .find(_.getName.endsWith(getOrcFilePostfix(expectedType)))
+            .find(_.getName.endsWith(getOrcFileSuffix(expectedType)))
         assert(maybeOrcFile.isDefined)
 
         // check the compress type using ORC jar
@@ -215,7 +215,7 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
       checkCompressType(None, Some(orcCompress))
     }
 
-    // make paris, e.g.: [("UNCOMPRESSED", "NONE"), ("NONE", "SNAPPY"), ("SNAPPY", "ZSTD") ... ]
+    // make pairs, e.g.: [("UNCOMPRESSED", "NONE"), ("NONE", "SNAPPY"), ("SNAPPY", "ZSTD") ... ]
     val pairs = supportedWriteCompressTypes.sliding(2).toList.map(pair => (pair.head, pair.last))
 
     // "compression" overwrite "orc.compress"
