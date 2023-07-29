@@ -2167,4 +2167,8 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     if (!dirFile.delete()) throw new IOException(s"Delete $dirFile failed!")
     try func(dirFile) finally FileUtil.fullyDelete(dirFile)
   }
+
+  def isCdh321: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 2, 1) == 0
+
+  def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
 }
