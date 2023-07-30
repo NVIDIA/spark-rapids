@@ -3028,6 +3028,22 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
       }),
+    expr[Conv](
+      desc = "Convert string representing a number from one base to another",
+      ExprChecks.projectOnly(
+        outputCheck = TypeSig.STRING,
+        paramCheck = Seq(
+          ParamCheck(name = "num", cudf = TypeSig.STRING, spark = TypeSig.STRING),
+          ParamCheck(name = "from_base", cudf = TypeSig.integral, spark = TypeSig.integral),
+          ParamCheck(name = "num", cudf = TypeSig.STRING, spark = TypeSig.STRING),
+        ),
+        sparkOutputSig = TypeSig.STRING),
+        (a, conf, p, r) => new TernaryExprMeta[Conv](a, conf, p, r) {
+          override def convertToGpu(
+            num: Expression,
+            from_base: Expression,
+            to_base: Expression): GpuExpression = GpuConv(num, from_base, to_base)
+        }),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +

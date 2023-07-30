@@ -2222,3 +2222,30 @@ case class GpuStringInstr(str: Expression, substr: Expression)
     }
   }
 }
+
+case class GpuConv(num: Expression, from_base: Expression, to_base: Expression)
+  extends GpuTernaryExpression {
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector = ???
+
+  override def doColumnar(val0: GpuScalar, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector = ???
+
+  override def doColumnar(val0: GpuScalar, val1: GpuScalar, val2: GpuColumnVector): ColumnVector = ???
+
+  override def doColumnar(val0: GpuScalar, val1: GpuColumnVector, val2: GpuScalar): ColumnVector = ???
+
+  override def doColumnar(val0: GpuColumnVector, val1: GpuScalar, val2: GpuColumnVector): ColumnVector = ???
+
+  override def doColumnar(val0: GpuColumnVector, val1: GpuScalar, val2: GpuScalar): ColumnVector = ???
+
+  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuScalar): ColumnVector = ???
+
+  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar, val2: GpuScalar): ColumnVector = ???
+
+  override def first: Expression = num
+
+  override def second: Expression = from_base
+
+  override def third: Expression = to_base
+
+  override def dataType: DataType = StringType
+}
