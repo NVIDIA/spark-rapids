@@ -132,9 +132,7 @@ def test_get_map_value_numeric_keys(data_gen):
 @pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
 def test_basic_scalar_map_get_map_value(key_gen):
     def query_map_scalar(spark):
-        df = unary_op_df(spark, key_gen).selectExpr('map(0, "zero", 1, "one")[a]')
-        df.explain()
-        return df
+        return unary_op_df(spark, key_gen).selectExpr('map(0, "zero", 1, "one")[a]')
     assert_gpu_and_cpu_are_equal_collect(
         query_map_scalar, {"spark.rapids.sql.explain": "NONE",
                            # this is set to True so we don't fall back due to float/double -> int
@@ -152,14 +150,6 @@ def test_map_scalars_supported_key_types(key_gen):
         # when k, v are expressions, but it doesn't do this for a scalar subquery.
         return spark.sql('select t.key, (select first(m) from map_tbl where map_tbl.key=map_tbl.key)[key] from map_tbl t')
     assert_gpu_and_cpu_are_equal_collect(query_map_scalar, {"spark.rapids.sql.explain": "NONE"})
-
-
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
-def test_cpu_fallback_map_scalars(key_gen):
-    def query_map_scalar(spark):
-        return unary_op_df(spark, key_gen).selectExpr('map(0, "zero", 1, "one")[a]')
-    assert_gpu_fallback_collect(query_map_scalar, "ProjectExec", {"spark.rapids.sql.explain": "NONE"})
 
 
 @pytest.mark.parametrize('data_gen',
