@@ -3030,20 +3030,14 @@ object GpuOverrides extends Logging {
       }),
     expr[Conv](
       desc = "Convert string representing a number from one base to another",
-      ExprChecks.projectOnly(
+      pluginChecks = ExprChecks.projectOnly(
         outputCheck = TypeSig.STRING,
         paramCheck = Seq(
           ParamCheck(name = "num", cudf = TypeSig.STRING, spark = TypeSig.STRING),
           ParamCheck(name = "from_base", cudf = TypeSig.integral, spark = TypeSig.integral),
-          ParamCheck(name = "num", cudf = TypeSig.STRING, spark = TypeSig.STRING),
-        ),
+          ParamCheck(name = "to_base",   cudf = TypeSig.integral, spark = TypeSig.integral)),
         sparkOutputSig = TypeSig.STRING),
-        (a, conf, p, r) => new TernaryExprMeta[Conv](a, conf, p, r) {
-          override def convertToGpu(
-            num: Expression,
-            from_base: Expression,
-            to_base: Expression): GpuExpression = GpuConv(num, from_base, to_base)
-        }),
+        (a, conf, p, r) => new GpuConvMeta(a, conf, p, r)),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3284,7 +3278,7 @@ object GpuOverrides extends Logging {
 
         override def tagAggForGpu(): Unit = {
           // Fall back to CPU if type is nested and contains floats or doubles in the type tree.
-          // Because NaNs in nested types are not supported yet. 
+          // Because NaNs in nested types are not supported yet.
           // See https://github.com/NVIDIA/spark-rapids/issues/8808
           if (c.child.dataType != FloatType && c.child.dataType != DoubleType &&
               isOrContainsFloatingPoint(c.child.dataType)) {

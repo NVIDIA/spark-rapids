@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -2223,23 +2223,72 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   }
 }
 
+
+
+class GpuConvMeta(
+  expr: Conv,
+  conf: RapidsConf,
+  parent: Option[RapidsMeta[_,_,_]],
+  rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = (expr.fromBaseExpr, expr.toBaseExpr) match {
+    case (Literal(_, IntegerType), Literal(_, IntegerType)) => ()
+    case _ =>
+      willNotWorkOnGpu("only literal from_base and to_base are supported")
+  }
+
+  override def convertToGpu(
+    numStr: Expression,
+    fromBase: Expression,
+    toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase)
+}
+
+
 case class GpuConv(num: Expression, from_base: Expression, to_base: Expression)
   extends GpuTernaryExpression {
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector = ???
 
-  override def doColumnar(val0: GpuScalar, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector = ???
+  override def doColumnar(
+    v1: GpuColumnVector,
+    v2: GpuColumnVector,
+    v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException();
+  }
 
-  override def doColumnar(val0: GpuScalar, val1: GpuScalar, val2: GpuColumnVector): ColumnVector = ???
+  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
 
-  override def doColumnar(val0: GpuScalar, val1: GpuColumnVector, val2: GpuScalar): ColumnVector = ???
+  override def doColumnar(v1: GpuScalar, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuScalar, val2: GpuColumnVector): ColumnVector = ???
+  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuScalar, val2: GpuScalar): ColumnVector = ???
+  override def doColumnar(v1: GpuColumnVector, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
 
-  override def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuScalar): ColumnVector = ???
+  override def doColumnar(v1: GpuColumnVector, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
 
-  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar, val2: GpuScalar): ColumnVector = ???
+  override def doColumnar(
+    numRows: Int,
+    str: GpuScalar,
+    fromBase: GpuScalar,
+    toBase: GpuScalar): ColumnVector = {
+      throw new UnsupportedOperationException()
+    }
+
+  override def doColumnar(
+    str: GpuColumnVector,
+    fromBase: GpuScalar,
+    toBase: GpuScalar
+  ): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
 
   override def first: Expression = num
 
