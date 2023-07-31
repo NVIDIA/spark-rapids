@@ -43,7 +43,6 @@ def test_hive_empty_simple_udf():
         "SELECT i, emptysimple(s, 'const_string') FROM hive_simple_udf_test_table",
         conf={'spark.rapids.sql.rowBasedUDF.enabled': 'true'})
 
-@pytest.mark.skipif(is_databricks122_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/8318')
 def test_hive_empty_generic_udf():
     with_spark_session(skip_if_no_hive)
     def evalfn(spark):
