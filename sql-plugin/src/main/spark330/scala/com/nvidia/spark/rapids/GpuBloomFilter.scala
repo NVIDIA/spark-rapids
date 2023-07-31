@@ -27,9 +27,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import java.io.DataInputStream
-
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DeviceMemoryBuffer, DType, HostMemoryBuffer}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DeviceMemoryBuffer, DType}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.BloomFilter
 
@@ -37,14 +35,12 @@ import org.apache.spark.sql.types.{BinaryType, NullType}
 
 /**
  * GPU version of Spark's BloomFilterImpl.
- * @param numHashes number of hash functions to use in the Bloom filter
  * @param buffer device buffer containing the Bloom filter data in the Spark Bloom filter
- *               serialization format. The device buffer will be closed when this GpuBloomFilter
- *               instance is closed.
+ *               serialization format, including the header. The buffer will be closed by
+ *               this GpuBloomFilter instance.
  */
-class GpuBloomFilter(val numHashes: Int, buffer: DeviceMemoryBuffer) extends AutoCloseable {
+class GpuBloomFilter(buffer: DeviceMemoryBuffer) extends AutoCloseable {
   private val spillableBuffer = SpillableBuffer(buffer, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-  private val numFilterBits = buffer.getLength * 8
 
   /**
    * Given an input column of longs, return a boolean column with the same row count where each
@@ -54,7 +50,7 @@ class GpuBloomFilter(val numHashes: Int, buffer: DeviceMemoryBuffer) extends Aut
   def mightContainLong(col: ColumnVector): ColumnVector = {
     require(col.getType == DType.INT64, s"expected longs, got ${col.getType}")
     withResource(spillableBuffer.getDeviceBuffer()) { buffer =>
-      BloomFilter.probe(numHashes, numFilterBits, buffer, col)
+      BloomFilter.probe(buffer, col)
     }
   }
 
@@ -73,9 +69,6 @@ object GpuBloomFilter {
   // 12           N*8   Bloom filter data buffer as longs
   private val HEADER_SIZE = 12
 
-  // version numbers from BloomFilter.Version enum
-  private val VERSION_V1 = 1
-
   def apply(s: GpuScalar): GpuBloomFilter = {
     s.dataType match {
       case BinaryType if s.isValid =>
@@ -91,37 +84,13 @@ object GpuBloomFilter {
   def deserialize(data: BaseDeviceMemoryBuffer): GpuBloomFilter = {
     // Sanity check bloom filter header
     val totalLen = data.getLength
-    val bufferLen = totalLen - HEADER_SIZE
+    val bitBufferLen = totalLen - HEADER_SIZE
     require(totalLen >= HEADER_SIZE, s"header size is $totalLen")
-    require(bufferLen % 8 == 0, "buffer length not a multiple of 8")
-    val numHashes = withResource(HostMemoryBuffer.allocate(HEADER_SIZE, false)) { hostHeader =>
-      hostHeader.copyFromMemoryBuffer(0, data, 0, HEADER_SIZE, Cuda.DEFAULT_STREAM)
-      parseHeader(hostHeader, bufferLen)
-    }
-    // TODO: Can we avoid this copy?  Would either need the ability to release data buffers
-    //       from scalars or make scalars spillable.
-    val filterBuffer = DeviceMemoryBuffer.allocate(bufferLen)
+    require(bitBufferLen % 8 == 0, "buffer length not a multiple of 8")
+    val filterBuffer = DeviceMemoryBuffer.allocate(totalLen)
     closeOnExcept(filterBuffer) { buf =>
-      buf.copyFromDeviceBufferAsync(0, data, HEADER_SIZE, buf.getLength, Cuda.DEFAULT_STREAM)
+      buf.copyFromDeviceBufferAsync(0, data, 0, buf.getLength, Cuda.DEFAULT_STREAM)
     }
-    new GpuBloomFilter(numHashes, filterBuffer)
-  }
-
-  /**
-   * Parses the Spark Bloom filter serialization header performing sanity checks
-   * and retrieving the number of hash functions used for the filter.
-   * @param buffer serialized header data
-   * @param dataLen size of the serialized Bloom filter data without header
-   * @return number of hash functions used in the Bloom filter
-   */
-  private def parseHeader(buffer: HostMemoryBuffer, dataLen: Long): Int = {
-    val in = new DataInputStream(new HostMemoryInputStream(buffer, buffer.getLength))
-    val version = in.readInt
-    require(version == VERSION_V1, s"unsupported serialization format version $version")
-    val numHashes = in.readInt()
-    val sizeFromHeader = in.readInt() * 8L
-    require(dataLen == sizeFromHeader,
-      s"data size from header is $sizeFromHeader, received $dataLen")
-    numHashes
+    new GpuBloomFilter(filterBuffer)
   }
 }
