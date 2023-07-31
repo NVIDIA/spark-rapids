@@ -118,13 +118,15 @@ supported_key_gens = \
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
 def test_get_map_value_numeric_keys(data_gen):
+    key_gen = data_gen._key_gen
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: gen_df(spark, [("a", data_gen)]).selectExpr(
-                'a[0]',
-                'a[1]',
-                'a[null]',
-                'a[-9]',
-                'a[999]'))
+        lambda spark: gen_df(spark, [("a", data_gen), ("ix", key_gen)]).selectExpr(
+            'a[ix]',
+            'a[0]',
+            'a[1]',
+            'a[null]',
+            'a[-9]',
+            'a[999]'))
 
 
 @pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
