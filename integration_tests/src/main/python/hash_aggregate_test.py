@@ -603,26 +603,51 @@ _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_list_op]
 
 _repeat_agg_column_for_collect_set_op = [
-    RepeatSeqGen(all_basic_struct_gen, length=15),
+    RepeatSeqGen(all_basic_struct_gen_no_floats, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15)]
+        ['c0', all_basic_struct_gen_no_floats], ['c1', int_gen]]), length=15)]
+
+struct_array_gen_no_nans = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
+
+struct_array_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_floats)])
 
 # data generating for collect_set based-nested Struct[Array] types
 _repeat_agg_column_for_collect_set_op_nested = [
-    RepeatSeqGen(struct_array_gen_no_nans, length=15),
+    RepeatSeqGen(struct_array_gen_no_floats, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=15),
-    RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)]
+        ['c0', struct_array_gen_no_floats], ['c1', int_gen]]), length=15),
+    RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_floats), length=15)]
 
-_array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_nan]
+struct_array_gen_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen 
+                                        in enumerate([ArrayGen(double_gen), ArrayGen(float_gen)])])
+
+struct_gen_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate([float_gen, double_gen])])
+
+_repeat_agg_column_for_collect_set_op_nested_floats = [
+    RepeatSeqGen(struct_array_gen_floats, length=15),
+    RepeatSeqGen(StructGen([
+        ['c0', struct_array_gen_floats], ['c1', int_gen]]), length=15),
+    RepeatSeqGen(ArrayGen(struct_gen_floats), length=15),
+    RepeatSeqGen(ArrayGen(ArrayGen(float_gen)), length=15),
+    RepeatSeqGen(ArrayGen(ArrayGen(double_gen)), length=15)]
+
+_array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_floats]
 
 _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op]
 
+_gen_data_for_collect_set_op_floats = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', RepeatSeqGen(struct_array_gen, length=15))]]
+
 _gen_data_for_collect_set_op_nested = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested + _array_of_array_gen]
+
+_gen_data_for_collect_set_op_nested_floats = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested_floats]
 
 _all_basic_gens_with_all_nans_cases = all_basic_gens + [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]]
 
@@ -688,12 +713,25 @@ def test_hash_groupby_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
 def test_hash_groupby_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_set('b'))))
+
+# Fall back to CPU if type is nested and contains floats or doubles in the type tree.
+# Because NaNs in nested types are not supported yet. 
+# See https://github.com/NVIDIA/spark-rapids/issues/8808   
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats + 
+                         _gen_data_for_collect_set_op_nested_floats, ids=idfn)
+def test_hash_groupby_collect_set_fallback_on_nested_floats(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_set('b'))),
+            'CollectSet')
 
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
@@ -731,12 +769,22 @@ def test_hash_reduction_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8716')
 def test_hash_reduction_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .agg(f.sort_array(f.collect_set('b'))))
 
+# Fall back to CPU if type is nested and contains floats or doubles in the type tree.
+# Because NaNs in nested types are not supported yet. 
+# See https://github.com/NVIDIA/spark-rapids/issues/8808
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'CollectSet')
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_floats + _gen_data_for_collect_set_op_nested_floats, ids=idfn)
+def test_hash_reduction_collect_set_fallback_on_nested_floats(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .agg(f.sort_array(f.collect_set('b'))),
+            'CollectSet')
 
 # Note, using sort_array() on the CPU, because sort_array() does not yet
 # support sorting certain nested/arbitrary types on the GPU
@@ -1177,8 +1225,8 @@ _no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), DoubleGen(special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
-_struct_only_nested_gens = [all_basic_struct_gen,
-                            StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
+_struct_only_nested_gens = [all_basic_struct_gen_no_floats,
+                            StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen_no_floats]]),
                             StructGen([])]
 @pytest.mark.parametrize('data_gen',
                          _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,

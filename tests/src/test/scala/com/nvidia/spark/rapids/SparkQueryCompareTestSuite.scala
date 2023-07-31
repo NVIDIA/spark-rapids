@@ -15,15 +15,17 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{File, IOException}
 import java.nio.file.Files
 import java.sql.{Date, Timestamp}
-import java.util.{Locale, TimeZone}
+import java.util.{Locale, TimeZone, UUID}
 
-import org.scalatest.{Assertion, BeforeAndAfterAll}
-import org.scalatest.funsuite.AnyFunSuite
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
+
+import org.apache.hadoop.fs.FileUtil
+import org.scalatest.{Assertion, BeforeAndAfterAll}
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -2157,4 +2159,16 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       false
     }
   }
+
+  def withTempPath[B](func: File => B): B = {
+    val rootTmpDir = System.getProperty("java.io.tmpdir")
+    val dirFile = new File(rootTmpDir, "spark-test-" + UUID.randomUUID)
+    Files.createDirectories(dirFile.toPath)
+    if (!dirFile.delete()) throw new IOException(s"Delete $dirFile failed!")
+    try func(dirFile) finally FileUtil.fullyDelete(dirFile)
+  }
+
+  def isCdh321: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 2, 1) == 0
+
+  def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
 }
