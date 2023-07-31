@@ -214,6 +214,11 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
     }
   }
 
+  /**
+   * `Null` is returned for invalid ordinals.
+   */
+  override def nullable: Boolean = true
+
   override def dataType: DataType = child.dataType.asInstanceOf[MapType].valueType
 
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, keyType)
