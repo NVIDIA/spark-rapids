@@ -215,7 +215,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     withResource(spy(new RapidsDeviceMemoryStore)) { deviceStore =>
       val mockStore = mock[RapidsBufferStore]
       withResource(
-        new RapidsHostMemoryStore(10000, 1000)) { hostStore =>
+        new RapidsHostMemoryStore(10000)) { hostStore =>
         deviceStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         val catalog = new RapidsBufferCatalog(deviceStore)

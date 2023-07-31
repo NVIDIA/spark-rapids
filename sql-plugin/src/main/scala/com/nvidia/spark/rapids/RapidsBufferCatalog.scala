@@ -747,11 +747,12 @@ object RapidsBufferCatalog extends Logging {
       deviceStorage.setSpillStore(gdsStorage)
     } else {
       val hostSpillStorageSize = if (rapidsConf.hostSpillStorageSize == -1) {
-        rapidsConf.pinnedPoolSize + rapidsConf.pageablePoolSize
+        // + 1 GiB by default to match backwards compatibility
+        rapidsConf.pinnedPoolSize + (1024 * 1024 * 1024)
       } else {
         rapidsConf.hostSpillStorageSize
       }
-      hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize, rapidsConf.pageablePoolSize)
+      hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize)
       diskStorage = new RapidsDiskStore(diskBlockManager)
       deviceStorage.setSpillStore(hostStorage)
       hostStorage.setSpillStore(diskStorage)
