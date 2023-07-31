@@ -29,6 +29,28 @@ orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, doubl
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
         decimal_gens
 
+all_nulls_string_gen = SetValuesGen(StringType(), [None])
+empty_or_null_string_gen = SetValuesGen(StringType(), [None, ""])
+all_empty_string_gen = SetValuesGen(StringType(), [""])
+all_nulls_array_gen = SetValuesGen(ArrayType(StringType()), [None])
+all_empty_array_gen = SetValuesGen(ArrayType(StringType()), [[]])
+all_array_empty_string_gen = SetValuesGen(ArrayType(StringType()), [["", ""]])
+mixed_empty_nulls_array_gen = SetValuesGen(ArrayType(StringType()), [None, [], [None], [""], [None, ""]])
+mixed_empty_nulls_map_gen = SetValuesGen(MapType(StringType(), StringType()), [{}, None, {"A": ""}, {"B": None}])
+all_nulls_map_gen = SetValuesGen(MapType(StringType(), StringType()), [None])
+all_empty_map_gen = SetValuesGen(MapType(StringType(), StringType()), [{}])
+
+orc_write_odd_empty_strings_gens_sample = [all_nulls_string_gen, 
+        empty_or_null_string_gen, 
+        all_empty_string_gen,
+        all_nulls_array_gen,
+        all_empty_array_gen,
+        all_array_empty_string_gen,
+        mixed_empty_nulls_array_gen, 
+        mixed_empty_nulls_map_gen,
+        all_nulls_map_gen,
+        all_empty_map_gen]
+
 orc_write_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_write_basic_gens)])
 
 orc_write_struct_gens_sample = [orc_write_basic_struct_gen,
@@ -63,6 +85,17 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
+
+@pytest.mark.parametrize('orc_gen', orc_write_odd_empty_strings_gens_sample, ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_write_round_trip_corner(spark_tmp_path, orc_gen, orc_impl):
+    gen_list = [('_c0', orc_gen)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: gen_df(spark, gen_list, 128000, num_slices=1).write.orc(path),
             lambda spark, path: spark.read.orc(path),
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
