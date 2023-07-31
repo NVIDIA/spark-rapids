@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
     assert_gpu_fallback_collect
 from data_gen import *
 from conftest import is_databricks_runtime
-from marks import incompat, allow_non_gpu
+from marks import allow_non_gpu
 from spark_session import is_before_spark_330, is_databricks104_or_later, is_databricks113_or_later, is_spark_33X, is_spark_340_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
@@ -103,25 +103,53 @@ def test_get_map_value_string_keys(data_gen):
                 'a["key_5"]'))
 
 
-numeric_key_gens = [key(nullable=False) if key in [FloatGen, DoubleGen, DecimalGen]
-                    else key(nullable=False, min_val=0, max_val=100)
-                    for key in [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DecimalGen]]
+numeric_key_gens = [
+    key(nullable=False) if key in [FloatGen, DoubleGen, DecimalGen]
+    else key(nullable=False, min_val=0, max_val=100)
+    for key in [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DecimalGen]]
 
 numeric_key_map_gens = [MapGen(key, value(), max_length=6)
                         for key in numeric_key_gens for value in get_map_value_gens()]
 
+supported_key_gens = \
+    [key(nullable=False)
+     for key in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, DateGen, TimestampGen, StringGen]]
+
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
 def test_get_map_value_numeric_keys(data_gen):
-    key_gen = data_gen._key_gen
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: gen_df(spark, [("a", data_gen), ("ix", key_gen)]).selectExpr(
-                'a[ix]',
+            lambda spark: gen_df(spark, [("a", data_gen)]).selectExpr(
                 'a[0]',
                 'a[1]',
                 'a[null]',
                 'a[-9]',
                 'a[999]'))
+
+
+@pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
+def test_basic_scalar_map_get_map_value(key_gen):
+    def query_map_scalar(spark):
+        df = unary_op_df(spark, key_gen).selectExpr('map(0, "zero", 1, "one")[a]')
+        df.explain()
+        return df
+    assert_gpu_and_cpu_are_equal_collect(
+        query_map_scalar, {"spark.rapids.sql.explain": "NONE",
+                           # this is set to True so we don't fall back due to float/double -> int
+                           # casting (because the keys of the scalar map are integers)
+                           "spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
+
+
+@pytest.mark.parametrize('key_gen', supported_key_gens, ids=idfn)
+def test_map_scalars_supported_key_types(key_gen):
+    def query_map_scalar(spark):
+        gen_df(spark, [("key", key_gen)]).createOrReplaceTempView("tbl")
+        spark.sql('select key, map(key, "value") as m from tbl').createOrReplaceTempView("map_tbl")
+        # perform a scalar subquery to exercise the GetMapValue(scalar, vector) API
+        # note that map(k, v, ...)[k] is automatically translated by spark to a CaseWhen
+        # when k, v are expressions, but it doesn't do this for a scalar subquery.
+        return spark.sql('select t.key, (select first(m) from map_tbl where map_tbl.key=map_tbl.key)[key] from map_tbl t')
+    assert_gpu_and_cpu_are_equal_collect(query_map_scalar, {"spark.rapids.sql.explain": "NONE"})
 
 
 @allow_non_gpu('ProjectExec')
