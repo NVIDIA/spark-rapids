@@ -226,16 +226,44 @@ dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
 +----------+-----+
 |         a|count|
 +----------+-----+
-| 0~{5)Uek>|34414|
-|,J~pA-KqBn|34030|
-|#"IlU%=azD|13651|
-|9=o`YbIDy{|13444|
-|xqW\HOC.;L| 2107|
-|F&1rC%ge3P| 2089|
-|bK%|@|fs9a|  129|
-|(Z=9IR8h83|  128|
-|Eb9fEBb-]B|    5|
-|T<oMow6W_L|    3|
+|,J~pA-KqBn|38286|
+| 0~{5)Uek>|24279|
+|9=o`YbIDy{|24122|
+|F&1rC%ge3P| 6147|
+|#"IlU%=azD| 5977|
+|xqW\HOC.;L|  591|
+|bK%|@|fs9a|  547|
+|(Z=9IR8h83|   26|
+|T<oMow6W_L|   24|
+|Eb9fEBb-]B|    1|
++----------+-----+
+```
+
+### ExponentialDistribution
+
+`ExponentialDistribution` takes a target seed value and a standard deviation to provide a way
+to insert an exponential skew. The target seed is the seed that is most likely to show up and
+the standard deviation is `1/rate`. The median should be one standard deviation below the
+target.
+
+```scala
+val dataTable = DBGen().addTable("data", "a string", 100000)
+dataTable("a").setSeedMapping(ExponentialDistribution(50, 1.0)).setSeedRange(0, 100)
+dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
++----------+-----+
+|         a|count|
++----------+-----+
+|,J~pA-KqBn|63428|
+| 0~{5)Uek>|23026|
+|#"IlU%=azD| 8602|
+|xqW\HOC.;L| 3141|
+|(Z=9IR8h83| 1164|
+|Eb9fEBb-]B|  412|
+|do)6AwiT_T|  129|
+||i2l\J)u8I|   62|
+|VZav:oU#g[|   23|
+|kFR]RZ9pu||    8|
+| aMZ({x5#1|    5|
 +----------+-----+
 ```
 
@@ -258,17 +286,18 @@ val dataTable = DBGen().addTable("data", "a string", 100000)
 dataTable("a").setSeedMapping(MultiDistribution(Seq(
   (10.0, NormalDistribution(50, 1.0)),
   (1.0, FlatDistribution())))).setSeedRange(0, 100)
+dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
 +----------+-----+
 |         a|count|
 +----------+-----+
-| 0~{5)Uek>|31727|
-|,J~pA-KqBn|29461|
-|9=o`YbIDy{|12910|
-|#"IlU%=azD|12840|
-|F&1rC%ge3P| 2103|
-|xqW\HOC.;L| 2080|
-|(Z=9IR8h83|  214|
-|bK%|@|fs9a|  185|
+|,J~pA-KqBn|33532|
+| 0~{5)Uek>|23093|
+|9=o`YbIDy{|22131|
+|F&1rC%ge3P| 5711|
+|#"IlU%=azD| 5646|
+|xqW\HOC.;L|  659|
+|bK%|@|fs9a|  615|
+|(Z=9IR8h83|  120|
 |n&]AosAQJf|  111|
 ||H6h"R!7CH|  110|
 |-bVd8htg"^|  108|
@@ -276,11 +305,11 @@ dataTable("a").setSeedMapping(MultiDistribution(Seq(
 | aMZ({x5#1|  107|
 |Qb#XoQx[{Z|  107|
 |5C&<?S31Kp|  106|
+|T<oMow6W_L|  106|
 |)Wf2']8yFm|  105|
 |_qo)|Ti2}n|  105|
 |S1Jdbn_hda|  104|
 |\SANbeK.?`|  103|
-|yba?^,?zP`|  103|
 +----------+-----+
 only showing top 20 rows
 ```
