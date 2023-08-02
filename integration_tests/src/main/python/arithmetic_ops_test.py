@@ -22,6 +22,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import *
 import pyspark.sql.functions as f
+import pyspark.sql.utils
 from datetime import timedelta
 
 # No overflow gens here because we just focus on verifying the fallback to CPU when
@@ -638,6 +639,7 @@ def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'bround(a)',
+                'bround(1.234, 2)',
                 'bround(a, -1)',
                 'bround(a, 1)',
                 'bround(a, 2)',
@@ -650,10 +652,33 @@ def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'round(a)',
+                'round(1.234, 2)',
                 'round(a, -1)',
                 'round(a, 1)',
                 'round(a, 2)',
                 'round(a, 10)'))
+
+
+@incompat
+@approximate_float
+@pytest.mark.parametrize('data_gen', [int_gen], ids=idfn)
+def test_illegal_args_round(data_gen):
+    def check_analysis_exception(spark, sql_text):
+        try:
+            gen_df(spark, [("a", data_gen), ("b", int_gen)], length=10).selectExpr(sql_text)
+            raise Exception("round/bround should not plan with invalid arguments %s" % sql_text)
+        except pyspark.sql.utils.AnalysisException as e:
+            pass
+
+    def doit(spark):
+        check_analysis_exception(spark, "round(1.2345, b)")
+        check_analysis_exception(spark, "round(a, b)")
+        check_analysis_exception(spark, "bround(1.2345, b)")
+        check_analysis_exception(spark, "bround(a, b)")
+
+    with_cpu_session(lambda spark: doit(spark))
+    with_gpu_session(lambda spark: doit(spark))
+
 
 @incompat
 @approximate_float
