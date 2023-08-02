@@ -217,6 +217,9 @@ void checkoutCode(String url, String sha) {
                                 [$class: 'SubmoduleOption', disableSubmodules: false, shallow: true, parentCredentials: true]]
         ]
     )
+    if (!common.isSubmoduleInit(this)) {
+        error "Failed to clone submodule : thirdparty/parquet-testing"
+    }
 
     stash(name: 'source_tree', includes: '**,.git/**', useDefaultExcludes: false)
 }
