@@ -51,8 +51,10 @@ class ShimParquetRowConverter(
       parquetType,
       catalystType,
       convertTz,
-      RebaseSpec(LegacyBehaviorPolicy.withName(datetimeRebaseMode)), // no need to rebase, so set originTimeZone as default
-      RebaseSpec(LegacyBehaviorPolicy.withName(int96RebaseMode)), // no need to rebase, so set originTimeZone as default
+      // no need to rebase, so set originTimeZone as default
+      RebaseSpec(LegacyBehaviorPolicy.withName(datetimeRebaseMode)),
+      // no need to rebase, so set originTimeZone as default
+      RebaseSpec(LegacyBehaviorPolicy.withName(int96RebaseMode)),
       updater)
 
 class ShimVectorizedColumnReader(
