@@ -20,45 +20,18 @@
 #   TEST_TAGS=xxx
 # More details please refer to './integration_tests/run_pyspark_from_build.sh'.
 # Note, 'setup.sh' should be executed first to setup proper environment.
+#
+# This file runs pytests with Jenkins parallel jobs.
 
 set -xe
 
-SPARK_VER=${SPARK_VER:-$(< /databricks/spark/VERSION)}
-export SPARK_SHIM_VER=${SPARK_SHIM_VER:-spark${SPARK_VER//.}db}
-
-# Setup SPARK_HOME if need
-if [[ -z "$SPARK_HOME" ]]; then
-    # Configure spark environment on Databricks
-    export SPARK_HOME=$DB_HOME/spark
-fi
-
-SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
-
-# Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
-export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-# Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
-PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
-
-# Get the correct py4j file.
-PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
-# Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
-# Note that Koala is deprecated for DB10.4+ and it is recommended to use Pandas API on Spark instead.
-export PYTHONPATH=$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
+# 'setup.sh' already be executed before running this script
+db_script_path="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# Init common variables like SPARK_HOME, spark configs
+source $db_script_path/common_vars.sh
 
 # Disable parallel test as multiple tests would be executed by leveraging external parallelism, e.g. Jenkins parallelism
 export TEST_PARALLEL=${TEST_PARALLEL:-0}
-
-if [[ "$TEST" == "cache_test" || "$TEST" == "cache_test.py" ]]; then
-    export PYSP_TEST_spark_sql_cache_serializer='com.nvidia.spark.ParquetCachedBatchSerializer'
-fi
-
-TEST_TYPE=${TEST_TYPE:-"nightly"}
-
-if [[ -n "$LOCAL_JAR_PATH" ]]; then
-    export LOCAL_JAR_PATH=$LOCAL_JAR_PATH
-fi
 
 set +e
 # Run integration testing

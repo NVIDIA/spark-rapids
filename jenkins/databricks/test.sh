@@ -33,6 +33,9 @@
 #   1. Check if any more dependencies need to be added to the apt/pip install commands.
 #   2. If you had to go beyond the above steps to support the new runtime, then update the
 #      instructions accordingly.
+#
+# This file parallely runs pytests with python-xdist(e.g., TEST_PARALLEL=4).
+
 set -ex
 
 SOURCE_PATH="/home/ubuntu/spark-rapids"
@@ -40,42 +43,13 @@ SOURCE_PATH="/home/ubuntu/spark-rapids"
 
 # Install python packages for integration tests
 source jenkins/databricks/setup.sh
+# Init common variables like SPARK_HOME, spark configs
+source jenkins/databricks/common_vars.sh
 
-SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${BASE_SPARK_VERSION//./}db}
 SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM//\-SNAPSHOT/}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
-
-# Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
-export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-# Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
-PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
-
-export SPARK_HOME=/databricks/spark
-# change to not point at databricks confs so we don't conflict with their settings
-export SPARK_CONF_DIR=$PWD
-# Get the correct py4j file.
-PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
-# Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
-# Note that Koala is deprecated for DB10.4+ and it is recommended to use Pandas API on Spark instead.
-export PYTHONPATH=$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
-
-## 'spark.foo=1,spark.bar=2,...' to 'export PYSP_TEST_spark_foo=1 export PYSP_TEST_spark_bar=2'
-if [ -n "$SPARK_CONF" ]; then
-    CONF_LIST=${SPARK_CONF//','/' '}
-    for CONF in ${CONF_LIST}; do
-        KEY=${CONF%%=*}
-        VALUE=${CONF#*=}
-        ## run_pyspark_from_build.sh requires 'export PYSP_TEST_spark_foo=1' as the spark configs
-        export PYSP_TEST_${KEY//'.'/'_'}=$VALUE
-    done
-
-    ## 'spark.foo=1,spark.bar=2,...' to '--conf spark.foo=1 --conf spark.bar=2 --conf ...'
-    SPARK_CONF="--conf ${SPARK_CONF/','/' --conf '}"
-fi
 
 IS_SPARK_321_OR_LATER=0
 [[ "$(printf '%s\n' "3.2.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.2.1" ]] && IS_SPARK_321_OR_LATER=1
@@ -86,8 +60,6 @@ IS_SPARK_321_OR_LATER=0
 # - DELTA_LAKE_ONLY: delta_lake tests only
 # - MULTITHREADED_SHUFFLE: shuffle tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
-TEST_TYPE="nightly"
-PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
