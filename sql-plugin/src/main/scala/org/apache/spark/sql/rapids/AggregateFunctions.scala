@@ -387,6 +387,12 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMergeLists"
 }
 
+/**
+  * Spark handles NaN's equality by different way for non-nested float/double and float/double 
+  * in nested types. When we use non-nested versions of floats and doubles, NaN values are 
+  * considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+  * on the CPU. So we set NaNEquality dynamically here.
+  */
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
@@ -1965,7 +1971,11 @@ case class GpuCollectSet(
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_set"
-
+  
+  // Spark handles NaN's equality by different way for non-nested float/double and float/double 
+  // in nested types. When we use non-nested versions of floats and doubles, NaN values are 
+  // considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+  // on the CPU. So we set NaNEquality dynamically here.
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = dataType match {
     case FloatType | DoubleType => 

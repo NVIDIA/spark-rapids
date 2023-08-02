@@ -3264,21 +3264,6 @@ object GpuOverrides extends Logging {
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
-        private def isNestedArrayType(dt: DataType): Boolean = {
-          dt match {
-            case StructType(fields) =>
-              fields.exists { field =>
-                field.dataType match {
-                  case sdt: StructType => isNestedArrayType(sdt)
-                  case _: ArrayType => true
-                  case _ => false
-                }
-              }
-            case ArrayType(et, _) => et.isInstanceOf[ArrayType] || et.isInstanceOf[StructType]
-            case _ => false
-          }
-        }
-
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
 
