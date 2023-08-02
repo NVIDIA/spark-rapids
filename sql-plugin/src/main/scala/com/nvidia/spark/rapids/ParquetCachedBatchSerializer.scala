@@ -53,7 +53,6 @@ import org.apache.spark.sql.columnar.CachedBatch
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, ShimCurrentBatchIterator}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.PCBSSchemaHelper
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -645,7 +644,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         recordReader = columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
           cacheAttributes.toStructType,
           new ParquetToSparkSchemaConverter(hadoopConf), None /*convertTz*/ ,
-          LegacyBehaviorPolicy.CORRECTED))
+          "CORRECTED"))
       }
     }
 
@@ -1135,8 +1134,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           // at least a single block
           val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
           val outputFile: OutputFile = new ByteArrayOutputFile(stream)
-          conf.setConfString(SparkShimImpl.parquetRebaseWriteKey,
-            LegacyBehaviorPolicy.CORRECTED.toString)
+          conf.setConfString(SparkShimImpl.parquetRebaseWriteKey, "CORRECTED")
           if (cachedAttributes.isEmpty) {
             // The schema is empty, most probably it is because of the edge case where there
             // are no columns in the Dataframe but has rows so let's create an empty CachedBatch
@@ -1270,8 +1268,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     hadoopConf.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
     hadoopConf.setBoolean(SQLConf.CASE_SENSITIVE.key, false)
 
-    hadoopConf.set(SparkShimImpl.parquetRebaseWriteKey,
-      LegacyBehaviorPolicy.CORRECTED.toString)
+    hadoopConf.set(SparkShimImpl.parquetRebaseWriteKey, "CORRECTED")
 
     hadoopConf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,
       SQLConf.ParquetOutputTimestampType.TIMESTAMP_MICROS.toString)

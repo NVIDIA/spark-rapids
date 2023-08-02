@@ -45,8 +45,8 @@ class ShimParquetRowConverter(
     parquetType: GroupType,
     catalystType: StructType,
     convertTz: Option[ZoneId],
-    datetimeRebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.CORRECTED
-    int96RebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.EXCEPTION
+    datetimeRebaseMode: String,  // always LegacyBehaviorPolicy.CORRECTED
+    int96RebaseMode: String,  // always LegacyBehaviorPolicy.EXCEPTION
     int96CDPHive3Compatibility: Boolean,
     updater: ParentContainerUpdater
 ) extends ParquetRowConverter(
@@ -54,8 +54,8 @@ class ShimParquetRowConverter(
       parquetType,
       catalystType,
       convertTz,
-      RebaseSpec(datetimeRebaseMode), // no need to rebase, so set originTimeZone as default
-      RebaseSpec(int96RebaseMode), // no need to rebase, so set originTimeZone as default
+      RebaseSpec(LegacyBehaviorPolicy.withName(datetimeRebaseMode)), // no need to rebase, so set originTimeZone as default
+      RebaseSpec(LegacyBehaviorPolicy.withName(int96RebaseMode)), // no need to rebase, so set originTimeZone as default
       updater)
 
 class ShimVectorizedColumnReader(

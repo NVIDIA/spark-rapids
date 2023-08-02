@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.parquet.{NoopUpdater, ParquetToSparkSchemaConverter}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.ShimParquetRowConverter
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -35,15 +34,15 @@ class ParquetRecordMaterializer(
    catalystSchema: StructType,
    schemaConverter: ParquetToSparkSchemaConverter,
    convertTz: Option[ZoneId],
-   datetimeRebaseMode: LegacyBehaviorPolicy.Value) extends RecordMaterializer[InternalRow] {
+   datetimeRebaseMode: String) extends RecordMaterializer[InternalRow] {
 
   private val rootConverter = new ShimParquetRowConverter(
     schemaConverter,
     parquetSchema,
     catalystSchema,
     convertTz,
-    datetimeRebaseMode, // always LegacyBehaviorPolicy.CORRECTED
-    LegacyBehaviorPolicy.EXCEPTION,
+    datetimeRebaseMode, // always "CORRECTED"
+    "EXCEPTION",
     false,
     NoopUpdater)
 
