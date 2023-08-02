@@ -390,12 +390,24 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      val collectSet = ReductionAggregation.collectSet(
-        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      val collectSet = dataType match {
+        case FloatType | DoubleType =>
+          ReductionAggregation.collectSet(
+            NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+        case _: DataType => 
+          ReductionAggregation.collectSet(
+            NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      }
       col.reduce(collectSet, DType.LIST)
     }
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+  override lazy val groupByAggregate: GroupByAggregation = dataType match {
+    case FloatType | DoubleType =>
+      GroupByAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+    case _: DataType =>
+      GroupByAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+  }
   override val name: String = "CudfCollectSet"
 }
 
@@ -1955,9 +1967,14 @@ case class GpuCollectSet(
   override def prettyName: String = "collect_set"
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
-    RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = dataType match {
+    case FloatType | DoubleType => 
+      RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+        NaNEquality.ALL_EQUAL).onColumn(inputs.head._2)
+    case _ => 
+      RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
         NaNEquality.UNEQUAL).onColumn(inputs.head._2)
+  }
 }
 
 trait CpuToGpuAggregateBufferConverter {
