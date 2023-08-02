@@ -3465,8 +3465,8 @@ object GpuOverrides extends Logging {
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Nil, None),
       (a, conf, p, r) =>
@@ -3536,7 +3536,8 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++ SparkShimImpl.getExprs
+        ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
+        BloomFilterShims.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
