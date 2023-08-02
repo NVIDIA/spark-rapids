@@ -453,7 +453,7 @@ case class GpuMapEntries(child: Expression) extends GpuUnaryExpression with Expe
 }
 
 case class GpuSortArray(base: Expression, ascendingOrder: Expression)
-    extends GpuBinaryExpression with ExpectsInputTypes {
+    extends GpuBinaryExpressionArgsAnyScalar with ExpectsInputTypes {
 
   override def left: Expression = base
 
@@ -481,13 +481,6 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
       TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-        "the sort_array operator to work")
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): cudf.ColumnVector =
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-        "the sort_array operator to work")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)

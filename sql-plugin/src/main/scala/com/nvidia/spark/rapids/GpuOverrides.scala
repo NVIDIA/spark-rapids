@@ -2461,14 +2461,7 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
           TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all)),
-      (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (isLit(in.left) && (!isLit(in.right))) {
-            willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
-              "is not currently unsupported.")
-          }
-        }
-      }),
+      (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r){}),
     GpuElementAtMeta.elementAtRule(false),
     expr[MapKeys](
       "Returns an unordered array containing the keys of the map",
@@ -2570,12 +2563,6 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          // do not support literal arrays as LHS
-          if (extractLit(in.left).isDefined) {
-            willNotWorkOnGpu("Literal arrays are not supported for array_contains")
-          }
-        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
