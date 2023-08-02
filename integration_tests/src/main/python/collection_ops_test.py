@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ from data_gen import *
 from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
+import pyspark.sql.utils
+from spark_session import with_cpu_session, with_gpu_session
 
 nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_128bit),
                StructGen([("a", LongGen()), ("b", decimal_gen_128bit)]),
@@ -153,6 +155,23 @@ def test_sort_array_lit(data_gen):
         lambda spark: unary_op_df(spark, data_gen, length=10).select(
             f.sort_array(f.lit(array_lit), True),
             f.sort_array(f.lit(array_lit), False)))
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(IntegerGen())], ids=idfn)
+def test_illegal_args_sort_array(data_gen):
+    def check_analysis_exception(spark, sql_text):
+        try:
+            gen_df(spark, [("a", data_gen), ("b", boolean_gen)], length=10).selectExpr(sql_text)
+            raise Exception("sort_array should not plan with invalid arguments %s" % sql_text)
+        except pyspark.sql.utils.AnalysisException as e:
+            pass
+
+    def doit(spark):
+        check_analysis_exception(spark, "sort_array(a, b)")
+        check_analysis_exception(spark, "sort_array(array(), b)")
+
+    with_cpu_session(lambda spark: doit(spark))
+    with_gpu_session(lambda spark: doit(spark))
 
 
 def test_sort_array_normalize_nans():

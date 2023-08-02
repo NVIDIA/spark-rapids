@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecializedGetters}
 import org.apache.spark.sql.hive.{DeferredObjectAdapter, HiveInspectors}
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
+import org.apache.spark.sql.hive.rapids.shims.GpuRowBasedHiveGenericUDFShim
 import org.apache.spark.sql.types.DataType
 
 /** Common implementation across row-based Hive UDFs */
@@ -177,7 +178,8 @@ case class GpuRowBasedHiveGenericUDF(
     val length = children.length
     while (i < length) {
       val idx = i
-      deferredObjects(i).set(() => childRowAccessors(idx)(childrenRow))
+      GpuRowBasedHiveGenericUDFShim.setDeferredObject(
+        deferredObjects(i), childRowAccessors, idx, childrenRow)
       i += 1
     }
     unwrapper(function.evaluate(deferredObjects.asInstanceOf[Array[DeferredObject]]))
