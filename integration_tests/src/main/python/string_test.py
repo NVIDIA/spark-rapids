@@ -571,10 +571,11 @@ def test_like_complex_escape():
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
 
 
-@pytest.mark.parametrize('from_base', [10])
-@pytest.mark.parametrize('to_base', [10])
-def test_conv_dec_to_hex(from_base, to_base):
-    gen = mk_str_gen('[0-9]{1,18}')
+@pytest.mark.parametrize('from_base', [10, 16], ids=idfn)
+@pytest.mark.parametrize('to_base', [10, 16], ids=idfn)
+@pytest.mark.parametrize('pattern', ['[0-9]{1,18}', '[0-9a-fA-F]{1,15}'])
+def test_conv_dec_to_hex(from_base, to_base, pattern):
+    gen = mk_str_gen(pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))
     )

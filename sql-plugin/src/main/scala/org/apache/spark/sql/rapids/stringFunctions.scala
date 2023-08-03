@@ -18,15 +18,13 @@ package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
 import java.util.Optional
-
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
-
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -2289,12 +2287,8 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
     toBase: GpuScalar
   ): ColumnVector = {
     (fromBase.getValue, toBase.getValue) match {
-      case (10, 10) =>
-        withResource(
-          GpuCast.doCast(str.getBase, StringType, LongType, false, false, false)
-        ) { case cv =>
-          GpuCast.doCast(cv, LongType, StringType, false, false, false)
-        }
+      case (fromRadix: Int, toRadix: Int) =>
+        CastStrings.changeRadix(str.getBase, fromRadix, toRadix)
       case _ => throw new UnsupportedOperationException()
     }
   }
