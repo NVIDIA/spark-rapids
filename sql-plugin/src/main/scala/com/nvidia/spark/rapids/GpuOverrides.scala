@@ -3037,7 +3037,8 @@ object GpuOverrides extends Logging {
           ParamCheck(name = "from_base", cudf = TypeSig.integral, spark = TypeSig.integral),
           ParamCheck(name = "to_base",   cudf = TypeSig.integral, spark = TypeSig.integral)),
         sparkOutputSig = TypeSig.STRING),
-        (a, conf, p, r) => new GpuConvMeta(a, conf, p, r)),
+        (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
+          new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +

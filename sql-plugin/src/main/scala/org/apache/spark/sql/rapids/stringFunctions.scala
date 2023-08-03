@@ -2232,9 +2232,10 @@ class GpuConvMeta(
   rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = (expr.fromBaseExpr, expr.toBaseExpr) match {
-    case (Literal(_, IntegerType), Literal(_, IntegerType)) => ()
+    case (Literal(fromBaseVal, IntegerType), Literal(toBaseVal, IntegerType))
+      if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
     case _ =>
-      willNotWorkOnGpu("only literal from_base and to_base are supported")
+      willNotWorkOnGpu("only literal 10 or 16 for from_base and to_base are supported")
   }
 
   override def convertToGpu(
@@ -2244,7 +2245,7 @@ class GpuConvMeta(
 }
 
 
-case class GpuConv(num: Expression, from_base: Expression, to_base: Expression)
+case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
   extends GpuTernaryExpression {
 
   override def doColumnar(
@@ -2287,14 +2288,22 @@ case class GpuConv(num: Expression, from_base: Expression, to_base: Expression)
     fromBase: GpuScalar,
     toBase: GpuScalar
   ): ColumnVector = {
-    throw new UnsupportedOperationException()
+    (fromBase.getValue, toBase.getValue) match {
+      case (10, 10) =>
+        withResource(
+          GpuCast.doCast(str.getBase, StringType, LongType, false, false, false)
+        ) { case cv =>
+          GpuCast.doCast(cv, LongType, StringType, false, false, false)
+        }
+      case _ => throw new UnsupportedOperationException()
+    }
   }
 
   override def first: Expression = num
 
-  override def second: Expression = from_base
+  override def second: Expression = fromBase
 
-  override def third: Expression = to_base
+  override def third: Expression = toBase
 
   override def dataType: DataType = StringType
 }
