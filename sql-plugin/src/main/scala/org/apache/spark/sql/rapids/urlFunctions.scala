@@ -41,7 +41,7 @@ object GpuParseUrl {
   private val FILE = "FILE"
   private val AUTHORITY = "AUTHORITY"
   private val USERINFO = "USERINFO"
-  private val REGEXPREFIX = """(&|^|\?)"""
+  private val REGEXPREFIX = """(&|^)"""
   private val REGEXSUBFIX = "=([^&]*)"
 }
 
@@ -69,6 +69,8 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def getPattern(key: UTF8String): RegexProgram = {
+    // SPARK-44500: in spark, the key is treated as a regex. 
+    // In plugin we quote the key to be sure that we treat it as a literal value.
     val regex = REGEXPREFIX + key.toString + REGEXSUBFIX
     new RegexProgram(regex)
   }
@@ -94,19 +96,26 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def reMatch(url: ColumnVector, partToExtract: String): ColumnVector = {
-    val regex = """^(([^:/?#]+):)(//((([^:]*:?[^\@]*)\@)?(\[[0-9A-Za-z%.:]*\]|[^/?#:]*)""" + 
-                """(:[0-9]+)?))?(([^?#]*)(\?([^#]*))?)(#(.*))?"""
+    // scalastyle:off line.size.limit
+    // val regex = """(([^:/?#]+):)(//((([^:]*:?[^\@]*)\@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(:[0-9]+)?))?(([^?#]*)(\?([^#]*))?)(#(.*))?"""
+               //      0        0      1   2       2 3                            3            1  4      45       5 6   6
+    val regex = """^(?:([^:/?#]+):(?://((?:([^@]+)@)(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(?::[0-9]+)?))?([^?#]*)(\?[^#]*)?(#.*)?)$"""
+    // scalastyle:on
     val prog = new RegexProgram(regex)
     withResource(url.extractRe(prog)) { table: Table =>
       partToExtract match {
-        case HOST => table.getColumn(6).incRefCount()
-        case PATH => table.getColumn(9).incRefCount()
-        case QUERY => table.getColumn(10).incRefCount()
-        case REF => table.getColumn(12).incRefCount()
-        case PROTOCOL => table.getColumn(1).incRefCount()
-        case FILE => table.getColumn(8).incRefCount()
-        case AUTHORITY => table.getColumn(3).incRefCount()
-        case USERINFO => table.getColumn(5).incRefCount()
+        case HOST => table.getColumn(3).incRefCount()
+        case PATH => table.getColumn(4).incRefCount()
+        case QUERY => table.getColumn(5).incRefCount()
+        case REF => table.getColumn(6).incRefCount()
+        case PROTOCOL => table.getColumn(0).incRefCount()
+        case FILE => {
+          val path = table.getColumn(4)
+          val query = table.getColumn(5)
+          ColumnVector.stringConcatenate(Array(path, query))
+        }
+        case AUTHORITY => table.getColumn(1).incRefCount()
+        case USERINFO => table.getColumn(2).incRefCount()
         case _ => throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
       }
     }    
@@ -120,10 +129,17 @@ case class GpuParseUrl(children: Seq[Expression],
     }
   }
 
-  // private def isHost(cv: ColumnVector): ColumnVector = {
-  //   // TODO: Valid if it is a valid host name, including ipv4, ipv6 and hostname
-  //   cv
-  // }
+  private def unsetInvalidHost(cv: ColumnVector): ColumnVector = {
+    // TODO: Valid if it is a valid host name, including ipv4, ipv6 and hostname
+    // current it only exclude utf8 string
+    val regex = """^([?[a-zA-Z0-9\-.]+|\[[0-9A-Za-z%.:]*\])$"""
+    val prog = new RegexProgram(regex)
+    withResource(cv.matchesRe(prog)) { isMatch =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+        isMatch.ifElse(cv, nullScalar)
+      }
+    }
+  }
 
   def doColumnar(numRows: Int, url: GpuScalar, partToExtract: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(url, numRows, StringType)) { urlCol =>
@@ -138,11 +154,11 @@ case class GpuParseUrl(children: Seq[Expression],
       reMatch(valid, part)
     }
     if (part == HOST) {
-      // withResource(matched) { _ =>
-      //   isHost(matched)
-      // }
-      withResource(matched) { _ =>
-        emptyToNulls(matched)
+      val valided = withResource(matched) { _ =>
+        unsetInvalidHost(matched)
+      }
+      withResource(valided) { _ =>
+        emptyToNulls(valided)
       }
     } else if (part == QUERY || part == REF) {
       val resWithNulls = withResource(matched) { _ =>
@@ -161,15 +177,17 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar, key: GpuScalar): ColumnVector = {
-    val query = partToExtract.getValue.asInstanceOf[UTF8String].toString
-    if (query != QUERY) {
+    val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
+    if (part != QUERY) {
       // return a null columnvector
       return ColumnVector.fromStrings(null, null)
     }
-    val matched = reMatch(url.getBase, query)
+    val querys = withResource(reMatch(url.getBase, QUERY)) { matched =>
+      matched.substring(1)
+    }
     val keyStr = key.getValue.asInstanceOf[UTF8String]
-    val queryValue = withResource(matched) { _ =>
-      withResource(matched.extractRe(getPattern(keyStr))) { table: Table =>
+    val queryValue = withResource(querys) { _ =>
+      withResource(querys.extractRe(getPattern(keyStr))) { table: Table =>
         table.getColumn(1).incRefCount()
       }
     }

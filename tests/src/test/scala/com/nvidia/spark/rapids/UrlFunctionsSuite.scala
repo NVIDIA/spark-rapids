@@ -49,9 +49,9 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://j.mp",
       "ftp://foo.bar/baz",
       "http://foo.bar/?q=Test%20URL-encoded%20stuff",
-      // "http://مثال.إختبار",
-      // "http://例子.测试",
-      // "http://उदाहरण.परीक्षा",
+      "http://مثال.إختبار",
+      "http://例子.测试",
+      "http://उदाहरण.परीक्षा",
       "http://-.~_!$&'()*+,;=:%40:80%2f::::::@example.com",
       "http://1337.net",
       "http://a.b-c.de",
@@ -160,15 +160,27 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
   def utf8UrlCases(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
-      "http://✪df.ws/123",
-      "http://➡.ws/䨹",
-      "http://⌘.ws",
-      "http://⌘.ws/",
-      "http://foo.com/unicode_(✪)_in_parens",
-      "http://☺.damowmow.com/",
-      "http://مثال.إختبار",
-      "http://例子.测试",
-      "http://उदाहरण.परीक्षा"
+      "http://user✪info@sp✪ark.apa✪che.org/pa✪th?que✪ry=1#R✪ef",
+      "http://@✪df.ws/123",
+      "http://@➡.ws/䨹",
+      "http://@⌘.ws",
+      "http://@⌘.ws/",
+      "http://@foo.com/unicode_(✪)_in_parens",
+      "http://@☺.damowmow.com/",
+      "http://@xxx☺.damowmow.com/",
+      "http://@مثال.إختبار/index.html?query=1#Ref",
+      "http://@例子.测试/index.html?query=1#Ref",
+      "http://@उदाहरण.परीक्षा/index.html?query=1#Ref"
+      // "http://user✪info@✪df.ws/123",
+      // "http://user✪info@➡.ws/䨹",
+      // "http://user✪info@⌘.ws",
+      // "http://user✪info@⌘.ws/",
+      // "http://user✪info@foo.com/unicode_(✪)_in_parens",
+      // "http://user✪info@☺.damowmow.com/",
+      // "http://user✪info@xxx☺.damowmow.com/",
+      // "http://user✪info@مثال.إختبار/index.html?query=1#Ref",
+      // "http://user✪info@例子.测试/index.html?query=1#Ref",
+      // "http://user✪info@उदाहरण.परीक्षा/index.html?query=1#Ref"
     ).map(UTF8String.fromString(_).toString()).toDF("urls")
   }
 
@@ -230,9 +242,9 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     parseUrls             
   }
 
-  // testSparkResultsAreEqual("Test parse_url utf-8 cases", utf8UrlCases) {
-  //   parseUrls             
-  // }
+  testSparkResultsAreEqual("Test parse_url utf-8 cases", utf8UrlCases) {
+    parseUrls             
+  }
 
   // testSparkResultsAreEqual("Test parse_url unsupport cases", unsupportedUrlCases) {
   //   parseUrls

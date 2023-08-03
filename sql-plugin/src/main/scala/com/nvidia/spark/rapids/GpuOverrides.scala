@@ -3129,7 +3129,7 @@ object GpuOverrides extends Logging {
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
-        val failOnError = SQLConf.get.ansiEnabled
+        val failOnError = a.failOnError
         override def convertToGpu(): GpuExpression = {
           GpuParseUrl(childExprs.map(_.convertToGpu()), failOnError)
         }
