@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.unsafe.types.UTF8String
 
 class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
   def validUrlEdgeCasesDf(session: SparkSession): DataFrame = {
@@ -30,21 +29,21 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://foo.com/blah_blah_(wikipedia)_(again)",
       "http://www.example.com/wpstyle/?p=364",
       "https://www.example.com/foo/?bar=baz&inga=42&quux",
-      // "http://✪df.ws/123",
+      "http://✪df.ws/123",
       "http://userid:password@example.com:8080",
       "http://userid:password@example.com:8080/",
       "http://userid:password@example.com",
       "http://userid:password@example.com/",
       "http://142.42.1.1/",
       "http://142.42.1.1:8080/",
-      // "http://➡.ws/䨹",
-      // "http://⌘.ws",
-      // "http://⌘.ws/",
+      "http://➡.ws/䨹",
+      "http://⌘.ws",
+      "http://⌘.ws/",
       "http://foo.com/blah_(wikipedia)#cite-1",
       "http://foo.com/blah_(wikipedia)_blah#cite-1",
-      // "http://foo.com/unicode_(✪)_in_parens",
+      "http://foo.com/unicode_(✪)_in_parens",
       "http://foo.com/(something)?after=parens",
-      // "http://☺.damowmow.com/",
+      "http://☺.damowmow.com/",
       "http://code.google.com/events/#&product=browser",
       "http://j.mp",
       "ftp://foo.bar/baz",
@@ -56,7 +55,7 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://1337.net",
       "http://a.b-c.de",
       "http://223.255.255.254",
-      // "https://foo_bar.example.com/",
+      "https://foo_bar.example.com/",
       // "http://",
       // "http://.",
       // "http://..",
@@ -157,37 +156,9 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     ).toDF("urls")
   }
 
-  def utf8UrlCases(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[String](
-      "http://user✪info@sp✪ark.apa✪che.org/pa✪th?que✪ry=1#R✪ef",
-      "http://@✪df.ws/123",
-      "http://@➡.ws/䨹",
-      "http://@⌘.ws",
-      "http://@⌘.ws/",
-      "http://@foo.com/unicode_(✪)_in_parens",
-      "http://@☺.damowmow.com/",
-      "http://@xxx☺.damowmow.com/",
-      "http://@مثال.إختبار/index.html?query=1#Ref",
-      "http://@例子.测试/index.html?query=1#Ref",
-      "http://@उदाहरण.परीक्षा/index.html?query=1#Ref"
-      // "http://user✪info@✪df.ws/123",
-      // "http://user✪info@➡.ws/䨹",
-      // "http://user✪info@⌘.ws",
-      // "http://user✪info@⌘.ws/",
-      // "http://user✪info@foo.com/unicode_(✪)_in_parens",
-      // "http://user✪info@☺.damowmow.com/",
-      // "http://user✪info@xxx☺.damowmow.com/",
-      // "http://user✪info@مثال.إختبار/index.html?query=1#Ref",
-      // "http://user✪info@例子.测试/index.html?query=1#Ref",
-      // "http://user✪info@उदाहरण.परीक्षा/index.html?query=1#Ref"
-    ).map(UTF8String.fromString(_).toString()).toDF("urls")
-  }
-
   def unsupportedUrlCases(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
-      "https://foo_bar.example.com/",
       "http://",
       "http://.",
       "http://..",
@@ -242,13 +213,9 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     parseUrls             
   }
 
-  testSparkResultsAreEqual("Test parse_url utf-8 cases", utf8UrlCases) {
-    parseUrls             
+  testSparkResultsAreEqual("Test parse_url unsupport cases", unsupportedUrlCases) {
+    parseUrls
   }
-
-  // testSparkResultsAreEqual("Test parse_url unsupport cases", unsupportedUrlCases) {
-  //   parseUrls
-  // }
 
   testSparkResultsAreEqual("Test parse_url with query and key", urlWithQueryKey) {
     frame => frame.selectExpr(

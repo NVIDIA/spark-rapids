@@ -43,6 +43,18 @@ object GpuParseUrl {
   private val USERINFO = "USERINFO"
   private val REGEXPREFIX = """(&|^)"""
   private val REGEXSUBFIX = "=([^&]*)"
+  // scalastyle:off line.size.limit
+  //                                a  0          0 b    1  c  d  2               2 d 3                              3ce         e 1b 4        45         5 6     6 a
+  // val regex                = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  private val HOST_REGEX      = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  private val PATH_REGEX      = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?([^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  private val QUERY_REGEX     = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(\?[^#]*)?(?:#.*)?)$"""
+  private val REF_REGEX       = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(#.*)?)$"""
+  private val PROTOCOL_REGEX  = """^(?:([^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  private val FILE_REGEX      = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?((?:[^?#]*)(?:\?[^#]*)?)(?:#.*)?)$"""
+  private val AUTHORITY_REGEX = """^(?:(?:[^:/?#]+):(?://((?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  private val USERINFO_REGEX  = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:([^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  // scalastyle:on
 }
 
 case class GpuParseUrl(children: Seq[Expression], 
@@ -96,30 +108,49 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def reMatch(url: ColumnVector, partToExtract: String): ColumnVector = {
-    // scalastyle:off line.size.limit
-    // val regex = """(([^:/?#]+):)(//((([^:]*:?[^\@]*)\@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(:[0-9]+)?))?(([^?#]*)(\?([^#]*))?)(#(.*))?"""
-               //      0        0      1   2       2 3                            3            1  4      45       5 6   6
-    val regex = """^(?:([^:/?#]+):(?://((?:([^@]+)@)(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(?::[0-9]+)?))?([^?#]*)(\?[^#]*)?(#.*)?)$"""
-    // scalastyle:on
+    val regex = partToExtract match {
+      case HOST => HOST_REGEX
+      case PATH => PATH_REGEX
+      case QUERY => QUERY_REGEX
+      case REF => REF_REGEX
+      case PROTOCOL => PROTOCOL_REGEX
+      case FILE => FILE_REGEX
+      case AUTHORITY => AUTHORITY_REGEX
+      case USERINFO => USERINFO_REGEX
+      case _ => throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
+    }
     val prog = new RegexProgram(regex)
     withResource(url.extractRe(prog)) { table: Table =>
-      partToExtract match {
-        case HOST => table.getColumn(3).incRefCount()
-        case PATH => table.getColumn(4).incRefCount()
-        case QUERY => table.getColumn(5).incRefCount()
-        case REF => table.getColumn(6).incRefCount()
-        case PROTOCOL => table.getColumn(0).incRefCount()
-        case FILE => {
-          val path = table.getColumn(4)
-          val query = table.getColumn(5)
-          ColumnVector.stringConcatenate(Array(path, query))
-        }
-        case AUTHORITY => table.getColumn(1).incRefCount()
-        case USERINFO => table.getColumn(2).incRefCount()
-        case _ => throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
-      }
-    }    
+      table.getColumn(0).incRefCount()
+    }
   }
+
+  // private def reMatch_old(url: ColumnVector, partToExtract: String): ColumnVector = {
+  // scalastyle:off line.size.limit
+  //   // val regex = """(([^:/?#]+):)(//((([^:]*:?[^\@]*)\@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(:[0-9]+)?))?(([^?#]*)(\?([^#]*))?)(#(.*))?"""
+  //   //              a  0        0 b    1c  d  2               2 d 3                            3ce         e 1b 4      45       5 6   6 a
+  //   // val regex = """^(?:([^:/?#]+):(?://((?:(?:([^@]*)@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?([^?#]*)(\?[^#]*)?(#.*)?)$"""
+  //   val regex = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
+  // scalastyle:on
+  //   val prog = new RegexProgram(regex)
+  //   withResource(url.extractRe(prog)) { table: Table =>
+  //     partToExtract match {
+  //       case HOST => table.getColumn(3).incRefCount()
+  //       case PATH => table.getColumn(4).incRefCount()
+  //       case QUERY => table.getColumn(5).incRefCount()
+  //       case REF => table.getColumn(6).incRefCount()
+  //       case PROTOCOL => table.getColumn(0).incRefCount()
+  //       case FILE => {
+  //         val path = table.getColumn(4)
+  //         val query = table.getColumn(5)
+  //         ColumnVector.stringConcatenate(Array(path, query))
+  //       }
+  //       case AUTHORITY => table.getColumn(1).incRefCount()
+  //       case USERINFO => table.getColumn(2).incRefCount()
+  //       case _ => throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
+  //     }
+  //   }    
+  // }
 
   private def emptyToNulls(cv: ColumnVector): ColumnVector = {
     withResource(ColumnVector.fromStrings("")) { empty =>
@@ -196,11 +227,11 @@ case class GpuParseUrl(children: Seq[Expression],
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (children.size == 2) {
       val Seq(url, partToExtract) = children
-      withResourceIfAllowed(url.columnarEval(batch)) { val0 =>
-        withResourceIfAllowed(partToExtract.columnarEval(batch)) { val1 =>
+      withResourceIfAllowed(url.columnarEvalAny(batch)) { val0 =>
+        withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { val1 =>
           (val0, val1) match {
             case (v0: GpuColumnVector, v1: GpuScalar) =>
               GpuColumnVector.from(doColumnar(v0, v1), dataType)
@@ -213,9 +244,9 @@ case class GpuParseUrl(children: Seq[Expression],
       // 3-arg, i.e. QUERY with key
       assert(children.size == 3)
       val Seq(url, partToExtract, key) = children
-      withResourceIfAllowed(url.columnarEval(batch)) { val0 =>
-        withResourceIfAllowed(partToExtract.columnarEval(batch)) { val1 =>
-          withResourceIfAllowed(key.columnarEval(batch)) { val2 =>
+      withResourceIfAllowed(url.columnarEvalAny(batch)) { val0 =>
+        withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { val1 =>
+          withResourceIfAllowed(key.columnarEvalAny(batch)) { val2 =>
             (val0, val1, val2) match {
               case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) =>
                 GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
