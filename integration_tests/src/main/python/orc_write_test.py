@@ -15,11 +15,11 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_spark_cdh, is_spark_321cdh
+from spark_session import is_before_spark_320, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
-from pyspark.sql.functions import lit
+from pyspark.sql.functions import col, lit
 from pyspark.sql.types import *
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
@@ -314,3 +314,27 @@ def test_orc_write_column_name_with_dots(spark_tmp_path):
         lambda spark, path:  gen_df(spark, gens).coalesce(1).write.orc(path),
         lambda spark, path: spark.read.orc(path),
         data_path)
+
+
+# test case from:
+# https://github.com/apache/spark/blob/v3.4.0/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/orc/OrcQuerySuite.scala#L371
+@ignore_order
+def test_orc_do_not_lowercase_columns(spark_tmp_path):
+    data_path = spark_tmp_path + "/ORC_DATA"
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        # column is uppercase
+        lambda spark, path: spark.range(0, 1000).select(col("id").alias("Acol")).write.orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path)
+    try:
+        # reading lowercase causes exception
+        with_cpu_session(lambda spark: spark.read.orc(data_path + "/CPU").schema["acol"])
+        assert False
+    except KeyError as e:
+        assert "No StructField named acol" in str(e)
+    try:
+        # reading lowercase causes exception
+        with_gpu_session(lambda spark: spark.read.orc(data_path + "/GPU").schema["acol"])
+        assert False
+    except KeyError as e:
+        assert "No StructField named acol" in str(e)

@@ -47,7 +47,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = spy(new RapidsBufferCatalog(devStore))
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
@@ -87,7 +87,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) {
@@ -129,7 +129,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
@@ -178,7 +178,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>

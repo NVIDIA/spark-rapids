@@ -576,7 +576,7 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
 
 // Due to SPARK-39226, the dataType of round-like functions differs by Spark versions.
 abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: DataType)
-  extends GpuBinaryExpression with Serializable with ImplicitCastInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
   override def right: Expression = scale
@@ -759,16 +759,6 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
     } else {
       lhs.round(scale, roundMode)
     }
-  }
-
-  override def doColumnar(value: GpuColumnVector, scale: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-      "the round operator to work")
-  }
-
-  override def doColumnar(value: GpuScalar, scale: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-      "the round operator to work")
   }
 
   override def doColumnar(numRows: Int, value: GpuScalar, scale: GpuScalar): ColumnVector = {
