@@ -436,7 +436,7 @@ def test_regexp_replace_character_set_negated():
                 'regexp_replace(a, "[^\n]", "1")'),
         conf=_regexp_conf)
 
-def test_regexp_extract_good():
+def test_regexp_extract():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}/?[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
@@ -450,32 +450,6 @@ def test_regexp_extract_good():
                 'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)$", 3)',
                 'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)',
                 'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)$", 3)'),
-        conf=_regexp_conf)
-    
-def test_regexp_extract_utf8():
-    gen = mk_str_gen('[你我他✪]{1,3}[0-9]{1,3}/?[一二三四]{1,3}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                'regexp_extract(a, "([0-9]+)", 1)',
-                'regexp_extract(a, "([0-9])([abcd]+)", 1)',
-                'regexp_extract(a, "([0-9])([abcd]+)", 2)',
-                'regexp_extract(a, "^([你我他✪]*)([0-9]*)([一二三四]*)$", 1)',
-                'regexp_extract(a, "^([你我他✪]*)([0-9]*)([一二三四]*)$", 2)',
-                'regexp_extract(a, "^([你我他✪]*)([0-9]*)([一二三四]*)$", 3)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)", 3)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)$", 3)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)$", 3)'),
-        conf=_regexp_conf)
-
-# ^([^:/?#]+):(//)?(([^:]*:?[^\x40]*)\x40)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(:[0-9]+)?([^?#]*)(\?[^#]*)?(#.*)?$
-
-def test_regexp_extract_url():
-    gen = mk_str_gen('[你我他✪]{1,3}[0-9]{1,3}/?[一二三四]{1,3}')
-    query = r"""regexp_extract(a, r'^([^:/?#]+):(//)?(([^:]*:?[^\x40]*)\x40)?([0-9A-Za-z%.:\[\]]*|[^/#:?]*)(:[0-9]+)?$', 1)"""
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen).selectExpr(
-                query),
         conf=_regexp_conf)
 
 def test_regexp_extract_no_match():

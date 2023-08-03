@@ -125,33 +125,6 @@ case class GpuParseUrl(children: Seq[Expression],
     }
   }
 
-  // private def reMatch_old(url: ColumnVector, partToExtract: String): ColumnVector = {
-  // scalastyle:off line.size.limit
-  //   // val regex = """(([^:/?#]+):)(//((([^:]*:?[^\@]*)\@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*)(:[0-9]+)?))?(([^?#]*)(\?([^#]*))?)(#(.*))?"""
-  //   //              a  0        0 b    1c  d  2               2 d 3                            3ce         e 1b 4      45       5 6   6 a
-  //   // val regex = """^(?:([^:/?#]+):(?://((?:(?:([^@]*)@)?(\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?([^?#]*)(\?[^#]*)?(#.*)?)$"""
-  //   val regex = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
-  // scalastyle:on
-  //   val prog = new RegexProgram(regex)
-  //   withResource(url.extractRe(prog)) { table: Table =>
-  //     partToExtract match {
-  //       case HOST => table.getColumn(3).incRefCount()
-  //       case PATH => table.getColumn(4).incRefCount()
-  //       case QUERY => table.getColumn(5).incRefCount()
-  //       case REF => table.getColumn(6).incRefCount()
-  //       case PROTOCOL => table.getColumn(0).incRefCount()
-  //       case FILE => {
-  //         val path = table.getColumn(4)
-  //         val query = table.getColumn(5)
-  //         ColumnVector.stringConcatenate(Array(path, query))
-  //       }
-  //       case AUTHORITY => table.getColumn(1).incRefCount()
-  //       case USERINFO => table.getColumn(2).incRefCount()
-  //       case _ => throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
-  //     }
-  //   }    
-  // }
-
   private def emptyToNulls(cv: ColumnVector): ColumnVector = {
     withResource(ColumnVector.fromStrings("")) { empty =>
       withResource(ColumnVector.fromStrings(null)) { nulls =>
@@ -161,9 +134,18 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def unsetInvalidHost(cv: ColumnVector): ColumnVector = {
-    // TODO: Valid if it is a valid host name, including ipv4, ipv6 and hostname
-    // current it only exclude utf8 string
-    val regex = """^([?[a-zA-Z0-9\-.]+|\[[0-9A-Za-z%.:]*\])$"""
+    // scalastyle:off line.size.limit
+    // HostName parsing:
+    // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
+    // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
+    // toplabel      = alpha | alpha *( alphanum | "-" ) alphanum
+    val hostname_regex = """^(((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)|"""
+    // TODO: ipv6_regex
+    val ipv6_regex = """\[[0-9A-Za-z%.:]*\]|"""
+    // TODO: ipv4_regex
+    val ipv4_regex = """([0-9.]*))$"""
+    // scalastyle:on
+    val regex = hostname_regex + ipv6_regex + ipv4_regex
     val prog = new RegexProgram(regex)
     withResource(cv.matchesRe(prog)) { isMatch =>
       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
