@@ -371,6 +371,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.WeekDay"></a>spark.rapids.sql.expression.WeekDay|`weekday`|Returns the day of the week (0 = Monday...6=Sunday)|true|None|
 <a name="sql.expression.WindowExpression"></a>spark.rapids.sql.expression.WindowExpression| |Calculates a return value for every input row of a table based on a group (or "window") of rows|true|None|
 <a name="sql.expression.WindowSpecDefinition"></a>spark.rapids.sql.expression.WindowSpecDefinition| |Specification of a window function, indicating the partitioning-expression, the row ordering, and the width of the window|true|None|
+<a name="sql.expression.XxHash64"></a>spark.rapids.sql.expression.XxHash64|`xxhash64`|xxhash64 hash operator|true|None|
 <a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|`year`|Returns the year from a date or timestamp|true|None|
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression| |Aggregate expression|true|None|
 <a name="sql.expression.ApproximatePercentile"></a>spark.rapids.sql.expression.ApproximatePercentile|`percentile_approx`, `approx_percentile`|Approximate percentile|true|This is not 100% compatible with the Spark version because the GPU implementation of approx_percentile is not bit-for-bit compatible with Apache Spark|

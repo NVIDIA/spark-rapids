@@ -99,6 +99,37 @@ def test_write_round_trip(spark_tmp_path, parquet_gens):
             data_path,
             conf=writer_confs)
 
+all_nulls_string_gen = SetValuesGen(StringType(), [None])
+empty_or_null_string_gen = SetValuesGen(StringType(), [None, ""])
+all_empty_string_gen = SetValuesGen(StringType(), [""])
+all_nulls_array_gen = SetValuesGen(ArrayType(StringType()), [None])
+all_empty_array_gen = SetValuesGen(ArrayType(StringType()), [[]])
+all_array_empty_string_gen = SetValuesGen(ArrayType(StringType()), [["", ""]])
+mixed_empty_nulls_array_gen = SetValuesGen(ArrayType(StringType()), [None, [], [None], [""], [None, ""]])
+mixed_empty_nulls_map_gen = SetValuesGen(MapType(StringType(), StringType()), [{}, None, {"A": ""}, {"B": None}])
+all_nulls_map_gen = SetValuesGen(MapType(StringType(), StringType()), [None])
+all_empty_map_gen = SetValuesGen(MapType(StringType(), StringType()), [{}])
+
+par_write_odd_empty_strings_gens_sample = [all_nulls_string_gen, 
+        empty_or_null_string_gen, 
+        all_empty_string_gen,
+        all_nulls_array_gen,
+        all_empty_array_gen,
+        all_array_empty_string_gen,
+        mixed_empty_nulls_array_gen, 
+        mixed_empty_nulls_map_gen,
+        all_nulls_map_gen,
+        all_empty_map_gen]
+
+@pytest.mark.parametrize('par_gen', par_write_odd_empty_strings_gens_sample, ids=idfn)
+def test_write_round_trip_corner(spark_tmp_path, par_gen):
+    gen_list = [('_c0', par_gen)]
+    data_path = spark_tmp_path + '/PAR_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: gen_df(spark, gen_list, 128000, num_slices=1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path)
+
 @pytest.mark.parametrize('parquet_gens', [[
     limited_timestamp(),
     ArrayGen(limited_timestamp(), max_length=10),

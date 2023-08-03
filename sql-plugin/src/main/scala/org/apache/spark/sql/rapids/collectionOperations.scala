@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
-import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -48,18 +47,21 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
 
   override def nullable: Boolean = children.exists(_.nullable)
 
-  override def columnarEval(batch: ColumnarBatch): Any = dataType match {
-    // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
-    case dt if children.isEmpty => GpuScalar.from(null, dt)
-    // For single column concat, we pass the result of child node to avoid extra cuDF call.
-    case _ if children.length == 1 => children.head.columnarEval(batch)
-    case StringType => stringConcat(batch)
-    case ArrayType(_, _) => listConcat(batch)
-    case _ => throw new IllegalArgumentException(s"unsupported dataType $dataType")
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val res = dataType match {
+      // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
+      case dt if children.isEmpty => GpuScalar.from(null, dt)
+      // For single column concat, we pass the result of child node to avoid extra cuDF call.
+      case _ if children.length == 1 => children.head.columnarEval(batch)
+      case StringType => stringConcat(batch)
+      case ArrayType(_, _) => listConcat(batch)
+      case _ => throw new IllegalArgumentException(s"unsupported dataType $dataType")
+    }
+    GpuExpressionsUtils.resolveColumnVector(res, batch.numRows())
   }
 
   private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
+    withResource(children.safeMap(_.columnarEval(batch).getBase())) {cols =>
       // run string concatenate
       GpuColumnVector.from(
         cudf.ColumnVector.stringConcatenate(cols.toArray[ColumnView]), StringType)
@@ -67,7 +69,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   }
 
   private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
+    withResource(children.safeMap(_.columnarEval(batch).getBase())) {cols =>
       // run list concatenate
       GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(cols: _*), dataType)
     }
@@ -89,19 +91,20 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
 
   override def nullable: Boolean = children.exists(_.nullable)
 
-  override def columnarEval(batch: ColumnarBatch): Any = (dataType, children.length) match {
-    // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
-    case (dt, 0) => GpuColumnVector.fromNull(batch.numRows(), dt)
-    // For single column concat, we pass the result of child node to avoid extra cuDF call.
-    case (_, 1) => children.head.columnarEval(batch)
-    case (_, _) => {
-      withResource(children.safeMap(columnarEvalToColumn(_, batch).getBase())) {cols =>
-        withResource(cudf.ColumnVector.listConcatenateByRow(cols: _*)) {structs =>
-          GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, structs)
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+    (dataType, children.length) match {
+      // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
+      case (dt, 0) => GpuColumnVector.fromNull(batch.numRows(), dt)
+      // For single column concat, we pass the result of child node to avoid extra cuDF call.
+      case (_, 1) => children.head.columnarEval(batch)
+      case (_, _) => {
+        withResource(children.safeMap(_.columnarEval(batch).getBase())) {cols =>
+          withResource(cudf.ColumnVector.listConcatenateByRow(cols: _*)) {structs =>
+            GpuCreateMap.createMapFromKeysValuesAsStructs(dataType, structs)
+          }
         }
       }
     }
-  }
 }
 
 object GpuElementAtMeta {
@@ -450,7 +453,7 @@ case class GpuMapEntries(child: Expression) extends GpuUnaryExpression with Expe
 }
 
 case class GpuSortArray(base: Expression, ascendingOrder: Expression)
-    extends GpuBinaryExpression with ExpectsInputTypes {
+    extends GpuBinaryExpressionArgsAnyScalar with ExpectsInputTypes {
 
   override def left: Expression = base
 
@@ -478,13 +481,6 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
       TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-        "the sort_array operator to work")
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): cudf.ColumnVector =
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-        "the sort_array operator to work")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
@@ -791,30 +787,30 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
   @transient private lazy val arrayElementTypes =
     children.map(_.dataType.asInstanceOf[ArrayType].elementType)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector  = {
+    val res = if (children.isEmpty) {
+      GpuScalar(new GenericArrayData(Array.empty[Any]), dataType)
+    } else {
+      // Prepare input columns
+      val inputs = children.safeMap { expr =>
+        expr.columnarEval(batch).getBase
+      }
 
-    if (children.isEmpty) {
-      return GpuScalar(new GenericArrayData(Array.empty[Any]), dataType)
-    }
+      val cleanedInputs = withResource(inputs) { inputs =>
+        normalizeNulls(inputs)
+      }
 
-    // Prepare input columns
-    val inputs = children.safeMap { expr =>
-      GpuExpressionsUtils.columnarEvalToColumn(expr, batch).getBase
-    }
+      val padded = withResource(cleanedInputs) { cleanedInputs =>
+        padArraysToMaxLength(cleanedInputs)
+      }
 
-    val cleanedInputs = withResource(inputs) { inputs =>
-      normalizeNulls(inputs)
-    }
-
-    val padded = withResource(cleanedInputs) { cleanedInputs =>
-      padArraysToMaxLength(cleanedInputs)
-    }
-
-    withResource(padded) { _ =>
-      closeOnExcept(zipArrays(padded)) { ret =>
-        GpuColumnVector.from(ret, dataType)
+      withResource(padded) { _ =>
+        closeOnExcept(zipArrays(padded)) { ret =>
+          GpuColumnVector.from(ret, dataType)
+        }
       }
     }
+    GpuExpressionsUtils.resolveColumnVector(res, batch.numRows())
   }
 
   /**
@@ -963,9 +959,9 @@ trait GpuArrayBinaryLike extends GpuComplexTypeMergingExpression with NullIntole
   def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector
   def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(left.columnarEvalAny(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
         (lhs, rhs) match {
           case (l: GpuColumnVector, r: GpuColumnVector) =>
             GpuColumnVector.from(doColumnar(l, r), dataType)
@@ -1453,13 +1449,13 @@ case class GpuSequence(start: Expression, stop: Expression, stepOpt: Option[Expr
   // can throw exceptions such as "Illegal sequence boundaries: step > 0 but start > stop"
   override def hasSideEffects: Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(columnarEvalToColumn(start, batch)) { startGpuCol =>
-      withResource(stepOpt.map(columnarEvalToColumn(_, batch))) { stepGpuColOpt =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(start.columnarEval(batch)) { startGpuCol =>
+      withResource(stepOpt.map(_.columnarEval(batch))) { stepGpuColOpt =>
         val startCol = startGpuCol.getBase
 
         // 1 Compute the sequence size for each row.
-        val (sizeCol, stepCol) = withResource(columnarEvalToColumn(stop, batch)) { stopGpuCol =>
+        val (sizeCol, stepCol) = withResource(stop.columnarEval(batch)) { stopGpuCol =>
           val stopCol = stopGpuCol.getBase
           val steps = stepGpuColOpt.map(_.getBase.incRefCount())
               .getOrElse(defaultStepsFunc(startCol, stopCol))

@@ -25,10 +25,11 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
 
-import org.apache.spark.{SparkConf, SparkException}
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
+import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 
 /**
  * Tests for writing Parquet files with the GPU.
@@ -116,7 +117,9 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("set max records per file no partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+    val conf = new SparkConf()
+        .set("spark.sql.files.maxRecordsPerFile", "50")
+        .set(RapidsConf.SQL_ENABLED.key, "true")
     val tempFile = File.createTempFile("maxRecords", ".parquet")
     val assertRowCount50 = assertResult(50) _
 
@@ -139,7 +142,10 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("set max records per file with partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+    val conf = new SparkConf()
+        .set("spark.rapids.sql.batchSizeBytes", "1") // forces multiple batches per partition
+        .set("spark.sql.files.maxRecordsPerFile", "50")
+        .set(RapidsConf.SQL_ENABLED.key, "true")
     val tempFile = File.createTempFile("maxRecords", ".parquet")
     val assertRowCount50 = assertResult(50) _
 
@@ -166,8 +172,10 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
     Seq(("40", 40), ("200", 80)).foreach{ case (maxRecordsPerFile, expectedRecordsPerFile) =>
       val conf = new SparkConf()
+        .set("spark.rapids.sql.batchSizeBytes", "1") // forces multiple batches per partition
         .set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
         .set("spark.sql.maxConcurrentOutputFileWriters", "30")
+        .set(RapidsConf.SQL_ENABLED.key, "true")
       try {
         SparkSessionHolder.withSparkSession(conf, spark => {
           import spark.implicits._
@@ -194,9 +202,44 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  test("set maxRecordsPerFile with partition concurrently fallback") {
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+
+    Seq(("40", 40), ("200", 80)).foreach { case (maxRecordsPerFile, expectedRecordsPerFile) =>
+      val conf = new SparkConf()
+          .set("spark.rapids.sql.batchSizeBytes", "1") // forces multiple batches per partition
+          .set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
+          .set("spark.sql.maxConcurrentOutputFileWriters", "10")
+          .set(RapidsConf.SQL_ENABLED.key, "true")
+      try {
+        SparkSessionHolder.withSparkSession(conf, spark => {
+          import spark.implicits._
+          val df = (1 to 1600).map(i => (i, i % 20)).toDF()
+          df
+              .repartition(1)
+              .write
+              .mode("overwrite")
+              .partitionBy("_2")
+              .parquet(tempFile.getAbsolutePath())
+          // check the whole number of rows
+          assertResult(1600)(spark.read.parquet(tempFile.getAbsolutePath()).count())
+          // check number of rows in each file
+          listAllFiles(tempFile)
+              .map(f => f.getAbsolutePath())
+              .filter(p => p.endsWith("parquet"))
+              .map(p => {
+                assertResult(expectedRecordsPerFile)(spark.read.parquet(p).count())
+              })
+        })
+      } finally {
+        fullyDelete(tempFile)
+      }
+    }
+  }
+
   testExpectedGpuException(
     "Old dates in EXCEPTION mode",
-    classOf[SparkException],
+    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
     oldDatesDf,
     new SparkConf().set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")) {
     val tempFile = File.createTempFile("oldDates", "parquet")
@@ -207,9 +250,10 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+
   testExpectedGpuException(
     "Old timestamps millis in EXCEPTION mode",
-    classOf[SparkException],
+    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
@@ -224,7 +268,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps in EXCEPTION mode",
-    classOf[SparkException],
+    SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass,
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
@@ -251,6 +295,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assert(insert.metrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).value > 0)
         assert(insert.metrics(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME).value > 0)
       } finally {
+        spark.sql("DROP TABLE IF EXISTS t")
         spark.sql("DROP TABLE IF EXISTS tempmetricstable")
       }
     }, new SparkConf().set("spark.sql.sources.commitProtocolClass", slowCommitClass))

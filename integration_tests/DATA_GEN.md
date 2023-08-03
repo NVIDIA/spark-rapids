@@ -165,10 +165,6 @@ dataTable.toDF(spark).groupBy("a").count.show
 +----------+-------+
 ```
 
-Unfortunately generating data skew is not done yet, and will come later on, but
-for now we can also generate unique values. This is especially helpful if you
-want to simulate something like a fact table for a join.
-
 Please note that for nested types, like structs and arrays, the seeds passed into
 the parent type has little to no impact on the resulting output, except for nulls.
 It is the child columns that have their own distributions that need to be taken
@@ -213,6 +209,110 @@ Please note that this does not work well with structs or other nested types
 because the seeds passed into the parents do not control what the children
 generate. See [Multi-Column Keys](#multi-column-keys) for info on how to work
 around this.
+
+### NormalDistribution
+
+Often data is distributed in a normal or Gaussian like distribution. 
+`NormalDistribution` takes a mean and a standard deviation to provide a way to
+insert some basic skew into your data. Please note that this will clamp
+the produced values to the configured seed range, so if seed range is not large
+enough to hold several standard deviations of values from the mean the
+actual distribution will be off.
+
+```scala
+val dataTable = DBGen().addTable("data", "a string", 100000)
+dataTable("a").setSeedMapping(NormalDistribution(50, 1.0)).setSeedRange(0, 100)
+dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
++----------+-----+
+|         a|count|
++----------+-----+
+|,J~pA-KqBn|38286|
+| 0~{5)Uek>|24279|
+|9=o`YbIDy{|24122|
+|F&1rC%ge3P| 6147|
+|#"IlU%=azD| 5977|
+|xqW\HOC.;L|  591|
+|bK%|@|fs9a|  547|
+|(Z=9IR8h83|   26|
+|T<oMow6W_L|   24|
+|Eb9fEBb-]B|    1|
++----------+-----+
+```
+
+### ExponentialDistribution
+
+`ExponentialDistribution` takes a target seed value and a standard deviation to provide a way
+to insert an exponential skew. The target seed is the seed that is most likely to show up and
+the standard deviation is `1/rate`. The median should be one standard deviation below the
+target.
+
+```scala
+val dataTable = DBGen().addTable("data", "a string", 100000)
+dataTable("a").setSeedMapping(ExponentialDistribution(50, 1.0)).setSeedRange(0, 100)
+dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
++----------+-----+
+|         a|count|
++----------+-----+
+|,J~pA-KqBn|63428|
+| 0~{5)Uek>|23026|
+|#"IlU%=azD| 8602|
+|xqW\HOC.;L| 3141|
+|(Z=9IR8h83| 1164|
+|Eb9fEBb-]B|  412|
+|do)6AwiT_T|  129|
+||i2l\J)u8I|   62|
+|VZav:oU#g[|   23|
+|kFR]RZ9pu||    8|
+| aMZ({x5#1|    5|
++----------+-----+
+```
+
+### MultiDistribution
+
+There are times when you might want to combine more than one distribution. Like 
+having a `NormalDistribution` along with a `FlatDistribution` so that the data
+is skewed, but there is still nearly full coverage of the seed range. Of you could
+combine two `NormalDistribution` instances to have two different sized bumps at
+different key ranges. `MultiDistribution` allows you to do this. It takes a
+`Seq` of weight/`LocationToSeedMapping` pairs. The weights are relative to 
+each other and determine how often on mapping will be used vs another. If
+you wanted a `NormalDistribution` to be used 10 times as often as a 
+`FlatDistribution` you would give the normal a weight of 10 and the flat a 
+weight of 1.
+
+
+```scala
+val dataTable = DBGen().addTable("data", "a string", 100000)
+dataTable("a").setSeedMapping(MultiDistribution(Seq(
+  (10.0, NormalDistribution(50, 1.0)),
+  (1.0, FlatDistribution())))).setSeedRange(0, 100)
+dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
++----------+-----+
+|         a|count|
++----------+-----+
+|,J~pA-KqBn|33532|
+| 0~{5)Uek>|23093|
+|9=o`YbIDy{|22131|
+|F&1rC%ge3P| 5711|
+|#"IlU%=azD| 5646|
+|xqW\HOC.;L|  659|
+|bK%|@|fs9a|  615|
+|(Z=9IR8h83|  120|
+|n&]AosAQJf|  111|
+||H6h"R!7CH|  110|
+|-bVd8htg"^|  108|
+|u2^.x?oJBb|  107|
+| aMZ({x5#1|  107|
+|Qb#XoQx[{Z|  107|
+|5C&<?S31Kp|  106|
+|T<oMow6W_L|  106|
+|)Wf2']8yFm|  105|
+|_qo)|Ti2}n|  105|
+|S1Jdbn_hda|  104|
+|\SANbeK.?`|  103|
++----------+-----+
+only showing top 20 rows
+```
 
 ## Multi-Column Keys
 

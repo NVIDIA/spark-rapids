@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuCast, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -143,9 +143,9 @@ abstract class GpuTimeMath(
 
   val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
         (lhs, rhs) match {
           case (l, intvlS: GpuScalar)
               if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
@@ -197,10 +197,10 @@ case class GpuDateAddInterval(start: Expression,
 
   override def dataType: DataType = DateType
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
 
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) {
         case intvlS: GpuScalar if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
           // Scalar does not support 'CalendarInterval' now, so use
           // the Scala value instead.
@@ -298,7 +298,8 @@ case class GpuDateFormatClass(timestamp: Expression,
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar
+      with TimeZoneAwareExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = StringType
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
@@ -313,15 +314,6 @@ case class GpuDateFormatClass(timestamp: Expression,
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("rhs has to be a scalar for the date_format to work")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-        "the date_format to work")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
@@ -809,7 +801,7 @@ case class RegexReplace(search: String, replace: String)
  * first converting to microseconds and then dividing by the downScaleFactor
  */
 abstract class GpuToTimestamp
-  extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar with TimeZoneAwareExpression with ExpectsInputTypes {
 
   import GpuToTimestamp._
 
@@ -829,15 +821,6 @@ abstract class GpuToTimestamp
   val timeParserPolicy = getTimeParserPolicy
 
   val failOnError: Boolean = SQLConf.get.ansiEnabled
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("rhs has to be a scalar for the unixtimestamp to work")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-      "the unixtimestamp to work")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
@@ -1018,15 +1001,9 @@ case class GpuFromUnixTime(
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("rhs has to be a scalar for the from_unixtime to work")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-      "the from_unixtime to work")
-  }
+  extends GpuBinaryExpressionArgsAnyScalar
+    with TimeZoneAwareExpression
+    with ImplicitCastInputTypes {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
@@ -1090,22 +1067,14 @@ class FromUTCTimestampExprMeta(
 }
 
 case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
-  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpressionArgsAnyScalar
+      with ImplicitCastInputTypes
+      with NullIntolerant {
 
   override def left: Expression = timestamp
   override def right: Expression = timezone
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
   override def dataType: DataType = TimestampType
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalStateException(
-      "Cannot have time zone given by a column vector in GpuFromUTCTimestamp")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalStateException(
-      "Cannot have time zone given by a column vector in GpuFromUTCTimestamp")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (rhs.getBase.isValid) {

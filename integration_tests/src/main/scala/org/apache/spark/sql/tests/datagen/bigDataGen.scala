@@ -19,6 +19,7 @@ package org.apache.spark.sql.tests.datagen
 import java.math.{BigDecimal => JavaBigDecimal}
 import java.sql.{Date, Timestamp}
 import java.time.{Instant, LocalDate}
+import java.util
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -28,7 +29,7 @@ import scala.util.Random
 import org.apache.spark.sql.{Column, DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, XXH64}
-import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, DateTimeUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -332,6 +333,123 @@ case class FlatDistribution(colLocSeed: Long = 0L,
 }
 
 /**
+ * A LocationToSeedMapping that generates seeds with a normal distribution around a
+ * given mean, and with a desired standard deviation. Note that the
+ * seeds produced are bound to the seed range requested so if the range is too small
+ * or outside of the expected mean the results will not have the expected distribution
+ * of values.
+ * @param mean the desired mean as a double, defaults to 0
+ * @param stdDev the desired standard deviation defaults to 10
+ */
+case class NormalDistribution(mean: Double = 0.0,
+    stdDev: Double = 10.0,
+    min: Long = Long.MinValue,
+    max: Long = Long.MaxValue,
+    colLocSeed: Long = 0) extends LocationToSeedMapping {
+
+  override def withColumnConf(colConf: ColumnConf): NormalDistribution = {
+    val colLocSeed = colConf.columnLoc.hashLoc
+    NormalDistribution(mean, stdDev, colConf.minSeed, colConf.maxSeed, colLocSeed)
+  }
+
+  override def apply(rowLoc: RowLocation): Long = {
+    val r = DataGen.getRandomFor(rowLoc.hashLoc(colLocSeed))
+    val g = r.nextGaussian() // g has a mean of 0 and a stddev of 1.0
+    val adjusted = mean + (g * stdDev)
+    // If the range of seeds is too small compared to the stddev and mean we will
+    // end up with an invalid distribution, but they asked for it.
+    math.max(min, math.min(max, math.round(adjusted).toLong))
+  }
+}
+
+/**
+ * An exponential distribution that will target a specific seed. That target seed will be the
+ * maximum value in the distribution. values below it will back off exponentially. There will
+ * be no values larger than the target. Note that the seeds produced are bound to the seed range
+ * requested. If the target is not within that range or if the rate is such that a large number
+ * of seeds might appear outside of the range, then the distribution will be off.
+ * @param target the maximum seed value to return, and the most common seed value. Defaults to 0
+ * @param stdDev the standard deviation of the distribution. This is 1/the rate, but we use
+ *               standard deviation for consistency with other mappings. The default is 1.0
+ */
+case class ExponentialDistribution(
+    target: Double = 0.0,
+    stdDev: Double = 1.0,
+    min: Long = Long.MinValue,
+    max: Long = Long.MaxValue,
+    colLocSeed: Long = 0) extends LocationToSeedMapping {
+  override def withColumnConf(colConf: ColumnConf): ExponentialDistribution = {
+    val colLocSeed = colConf.columnLoc.hashLoc
+    ExponentialDistribution(target, stdDev, colConf.minSeed, colConf.maxSeed, colLocSeed)
+  }
+
+  override def apply(rowLoc: RowLocation): Long = {
+    val r = DataGen.getRandomFor(rowLoc.hashLoc(colLocSeed))
+    val g = r.nextDouble()
+    val logged = math.log(1.0 - g)
+    val adjusted = logged * stdDev
+    // This adjusted value targets 0.0 right now and will go negative from there.
+    math.max(min, math.min(max, math.ceil(adjusted + target).toLong))
+  }
+}
+
+object MultiDistribution {
+  /**
+   * Create a LocationToSeedMapping that combines multiple other LocationsToSeed mappings
+   * together based on weights.
+   * @param weightsNMappings The weights and mappings to use. The weights are relative to each
+   *                         other. So if you want two mappings with one applied 5 times more
+   *                         often than the other. You can set the weight of the more desirable
+   *                         one to 5.0 and the other to 1.0.
+   * @return a LocationToSeedMapping that fits the desired distribution.
+   */
+  def apply(weightsNMappings: Seq[(Double, LocationToSeedMapping)]): LocationToSeedMapping = {
+    if (weightsNMappings.length <= 0) {
+      throw new IllegalArgumentException("Need at least one mapping")
+    }
+
+    if (weightsNMappings.exists(_._1 <= 0.0)) {
+      throw new IllegalArgumentException("All weights must be positive")
+    }
+
+    if (weightsNMappings.length == 1) {
+      weightsNMappings.head._2
+    } else {
+      val weightSum = weightsNMappings.map(_._1).sum
+      val normalizedWeights = weightsNMappings.map(_._1 / weightSum)
+      val runningNormalizedWeights = normalizedWeights.tail
+          .scanLeft(normalizedWeights.head)(_ + _).toArray
+      val mappings = weightsNMappings.map(_._2).toArray
+      MultiDistribution(runningNormalizedWeights, mappings, 0)
+    }
+  }
+}
+
+case class MultiDistribution private (normalizedWeights: Array[Double],
+    mappings: Array[LocationToSeedMapping],
+    colLocSeed: Long) extends LocationToSeedMapping {
+  require(normalizedWeights.length == mappings.length,
+    s"${normalizedWeights.toList} vs ${mappings.toList}")
+  require(normalizedWeights.length > 0)
+
+  override def withColumnConf(colConf: ColumnConf): LocationToSeedMapping = {
+    val colLocSeed = colConf.columnLoc.hashLoc
+    val newMappings = mappings.map(_.withColumnConf(colConf))
+    MultiDistribution(normalizedWeights, newMappings, colLocSeed)
+  }
+
+  override def apply(rowLoc: RowLocation): Long = {
+    val r = DataGen.getRandomFor(rowLoc.hashLoc(colLocSeed))
+    val lookingFor = r.nextDouble()
+    var i = 0
+    while (i < (normalizedWeights.length - 1) && normalizedWeights(i) < lookingFor) {
+      i += 1
+    }
+    mappings(i)(rowLoc)
+  }
+}
+
+/**
  * A LocationToSeedMapping that generates a unique seed per row. The order in which the values are
  * generated is some what of a random like order. This should *NOT* be applied to any
  * columns that are under an array because it ues rowNum and assumes that this maps correctly
@@ -581,6 +699,35 @@ abstract class DataGen(var conf: ColumnConf,
   }
 
   def get(name: String): Option[DataGen] = None
+}
+
+/**
+ * A special GeneratorFunction that just returns the computed seed. This is helpful for
+ * debugging distributions or if you want long values without any abstraction in between.
+ */
+case class SeedPassThrough(mapping: LocationToSeedMapping = null) extends GeneratorFunction {
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    SeedPassThrough(mapping)
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalStateException("Value range is not supported")
+
+  override def apply(rowLoc: RowLocation): Any =
+    mapping(rowLoc)
+}
+
+/**
+ * A special GeneratorFunction that just returns the row number. This can be helpful for
+ * visualizing what is happening.
+ */
+case object RowNumPassThrough extends GeneratorFunction {
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    RowNumPassThrough
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalStateException("Value range is not supported")
+
+  override def apply(rowLoc: RowLocation): Any = rowLoc.rowNum
 }
 
 /**
@@ -1410,6 +1557,71 @@ class ArrayGen(child: DataGen,
   }
 }
 
+case class MapGenFunc(
+    key: GeneratorFunction,
+    value: GeneratorFunction,
+    lengthGen: LengthGeneratorFunction = null,
+    mapping: LocationToSeedMapping = null) extends GeneratorFunction {
+
+  override def apply(rowLoc: RowLocation): Any = {
+    val len = lengthGen(rowLoc)
+    val jMap = new util.HashMap[Any, Any](len * 2)
+    val childRowLoc = rowLoc.withNewChild()
+    var i = 0
+    while (i < len) {
+      childRowLoc.setLastChildIndex(i)
+      val keyData = key(childRowLoc)
+      val valueData = value(childRowLoc)
+      jMap.put(keyData, valueData)
+      i += 1
+    }
+    ArrayBasedMapData(jMap, n => n, n => n)
+  }
+
+  override def withLengthGeneratorFunction(lengthGen: LengthGeneratorFunction): GeneratorFunction =
+    MapGenFunc(key, value, lengthGen, mapping)
+
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): GeneratorFunction =
+    MapGenFunc(key, value, lengthGen, mapping)
+
+  override def withValueRange(min: Any, max: Any): GeneratorFunction =
+    throw new IllegalArgumentException("value ranges are not supported for maps")
+}
+
+class MapGen(key: DataGen,
+    value: DataGen,
+    conf: ColumnConf,
+    defaultValueRange: Option[(Any, Any)])
+    extends DataGen(conf, defaultValueRange) {
+  require(!key.nullable, "Map keys cannot contain nulls")
+
+  override def setCorrelatedKeyGroup(keyGroup: Long,
+      minSeed: Long,
+      maxSeed: Long,
+      seedMapping: LocationToSeedMapping): DataGen = {
+    super.setCorrelatedKeyGroup(keyGroup, minSeed, maxSeed, seedMapping)
+    key.setCorrelatedKeyGroup(keyGroup, minSeed, maxSeed, seedMapping)
+    value.setCorrelatedKeyGroup(keyGroup, minSeed, maxSeed, seedMapping)
+    this
+
+  }
+
+  override protected def getValGen: GeneratorFunction = MapGenFunc(key.getGen, value.getGen)
+
+  override def dataType: DataType = MapType(key.dataType, value.dataType, value.nullable)
+
+  override def get(name: String): Option[DataGen] = {
+    if ("key".equalsIgnoreCase(name)) {
+      Some(key)
+    } else if ("value".equalsIgnoreCase(name)) {
+      Some(value)
+    } else {
+      None
+    }
+  }
+}
+
+
 object ColumnGen {
   private def genInternal(rowNumber: Column,
       dataType: DataType,
@@ -1637,6 +1849,9 @@ object DefaultTypeMapping extends TypeMapping {
       st.forall(child => subTypeMapping.canMap(child.dataType, subTypeMapping))
     case at: ArrayType =>
       subTypeMapping.canMap(at.elementType, subTypeMapping)
+    case mt: MapType =>
+      subTypeMapping.canMap(mt.keyType, subTypeMapping) &&
+          subTypeMapping.canMap(mt.valueType, subTypeMapping)
     case _ => false
   }
 
@@ -1679,6 +1894,13 @@ object DefaultTypeMapping extends TypeMapping {
       val childConf = conf.forNextColumn(at.containsNull)
       val child = subTypeMapping.map(at.elementType, childConf, defaultRanges, subTypeMapping)
       (new ArrayGen(child._1, conf, defaultRanges.get(dataType)), child._2)
+    case mt: MapType =>
+      val keyChildConf = conf.forNextColumn(false)
+      val keyInfo = subTypeMapping.map(mt.keyType, keyChildConf, defaultRanges, subTypeMapping)
+      val valueChildConf = keyInfo._2.forNextColumn(mt.valueContainsNull)
+      val valueInfo = subTypeMapping.map(mt.valueType, valueChildConf, defaultRanges,
+        subTypeMapping)
+      (new MapGen(keyInfo._1, valueInfo._1, conf, defaultRanges.get(mt)), valueInfo._2)
     case other =>
       throw new IllegalArgumentException(s"$other is not a supported type yet")
   }

@@ -37,7 +37,7 @@ package org.apache.spark.sql.rapids.shims
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
@@ -75,9 +75,9 @@ case class GpuTimeAdd(start: Expression,
 
   override def dataType: DataType = start.dataType
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
         // lhs is start, rhs is interval
         (lhs, rhs) match {
           case (l, intervalS: GpuScalar) =>

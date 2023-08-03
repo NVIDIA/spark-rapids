@@ -32,6 +32,7 @@ in our plugin:
 | 3.4.1           | com.nvidia.spark.rapids.spark341.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 | Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
+| Databricks 12.2 | com.nvidia.spark.rapids.spark332db.RapidsShuffleManager  |
 
 ## Multi-Threaded Mode
 
@@ -386,10 +387,10 @@ guide for Databricks. The following are extra steps required to enable UCX.
 ```
 #!/bin/bash
 sudo apt install -y wget libnuma1 &&
-wget https://github.com/openucx/ucx/releases/download/v1.14.0/ucx-1.14.0-ubuntu18.04-mofed5-cuda11.tar.bz2 &&
-tar -xvf ucx-1.14.0-ubuntu18.04-mofed5-cuda11.tar.bz2 &&
+wget https://github.com/openucx/ucx/releases/download/v1.14.0/ucx-1.14.0-ubuntu20.04-mofed5-cuda11.tar.bz2 &&
+tar -xvf ucx-1.14.0-ubuntu20.04-mofed5-cuda11.tar.bz2 &&
 sudo dpkg -i ucx-1.14.0.deb ucx-cuda-1.14.0.deb &&
-rm ucx-1.14.0-ubuntu18.04-mofed5-cuda11.tar.bz2 ucx-1.14.0.deb ucx-cuda-1.14.0.deb
+rm ucx-1.14.0-ubuntu20.04-mofed5-cuda11.tar.bz2 ucx-1.14.0.deb ucx-cuda-1.14.0.deb
 ```
 
 Save the script in DBFS and add it to the "Init Scripts" list:

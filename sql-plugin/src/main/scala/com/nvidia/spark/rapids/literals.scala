@@ -696,10 +696,14 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
     case _ => value.toString
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     // Returns a Scalar instead of the value to support the scalar of nested type, and
     // simplify the handling of result from a `expr.columnarEval`.
     GpuScalar(value, dataType)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {

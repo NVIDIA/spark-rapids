@@ -171,6 +171,10 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
 
         compressionExtension + ".orc"
       }
+
+      override def partitionFlushSize(context: TaskAttemptContext): Long = {
+        context.getConfiguration.getLong("orc.stripe.size", 64L * 1024L * 1024L) // 64M
+      }
     }
   }
 }

@@ -399,13 +399,13 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
   private[this] lazy val intermediateResultType =
     DecimalMultiplyChecks.intermediateResultType(lhsType, rhsType, dataType)
 
-  def regularMultiply(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+  def regularMultiply(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     val ret = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
           legacyCastToString = false, stringToDateAnsiModeEnabled = false)
       }
@@ -441,12 +441,12 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
     }
   }
 
-  def longMultiply(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+  def longMultiply(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
     }
     val retTab = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
       }
       withResource(castRhs) { castRhs =>
@@ -470,7 +470,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
     GpuColumnVector.from(retCol, dataType)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (useLongMultiply) {
       longMultiply(batch)
     } else {
@@ -849,13 +849,13 @@ trait GpuDecimalDivideBase extends GpuExpression {
     }
   }
 
-  def regularDivide(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+  def regularDivide(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     val ret = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
             legacyCastToString = false, stringToDateAnsiModeEnabled = false)
@@ -876,12 +876,12 @@ trait GpuDecimalDivideBase extends GpuExpression {
     }
   }
 
-  def longDivide(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+  def longDivide(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
     }
     val retTab = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           fixed.castTo(DType.create(DType.DTypeEnum.DECIMAL128, fixed.getType.getScale))
         }
@@ -914,7 +914,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
     GpuColumnVector.from(retCol, outputType)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (useLongDivision) {
       longDivide(batch)
     } else {
@@ -1246,7 +1246,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
     case _ => throw new IllegalStateException(s"Unexpected inputs: $r, $c")
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
 
     val result = children.foldLeft[Any](null) { (r, c) =>
