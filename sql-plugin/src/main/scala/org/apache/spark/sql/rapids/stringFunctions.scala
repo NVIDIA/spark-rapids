@@ -18,13 +18,16 @@ package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
 import java.util.Optional
+
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -2015,7 +2018,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
     v1: GpuColumnVector,
     v2: GpuColumnVector,
     v3: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException();
+    throw new UnsupportedOperationException()
   }
 
   override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuColumnVector): ColumnVector = {
