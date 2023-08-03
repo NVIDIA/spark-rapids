@@ -104,14 +104,14 @@ def _assert_equal(cpu, gpu, float_check, path):
 def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""
     try:
-      _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
+        _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
     except:
-      sys.stdout.writelines(difflib.unified_diff(
-          a=[f"{x}\n" for x in cpu],
-          b=[f"{x}\n" for x in gpu],
-          fromfile='CPU OUTPUT',
-          tofile='GPU OUTPUT'))
-      raise
+        sys.stdout.writelines(difflib.unified_diff(
+            a=[f"{x}\n" for x in cpu],
+            b=[f"{x}\n" for x in gpu],
+            fromfile='CPU OUTPUT',
+            tofile='GPU OUTPUT'))
+        raise
 
 def _has_incompat_conf(conf):
     return ('spark.rapids.sql.incompatibleOps.enabled' in conf and
