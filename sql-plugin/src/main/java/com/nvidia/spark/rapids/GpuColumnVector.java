@@ -84,14 +84,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     TableDebug.get().debug(name, col);
   }
 
-  private static String hexString(byte[] bytes) {
-    StringBuilder str = new StringBuilder();
-    for (byte b : bytes) {
-      str.append(String.format("%02x", b&0xff));
-    }
-    return str.toString();
-  }
-
   /**
    * Print to standard error the contents of a column. Note that this should never be
    * called from production code, as it is very slow.  Also note that this is not production
