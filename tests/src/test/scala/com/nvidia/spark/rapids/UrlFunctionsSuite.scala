@@ -79,10 +79,10 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       ":// should fail",
       "http://foo.bar/foo(bar)baz quux",
       "ftps://foo.bar/",
-      // "http://-error-.invalid/",
+      "http://-error-.invalid/",
       "http://a.b--c.de/",
-      // "http://-a.b.co",
-      // "http://a.b-.co",
+      "http://-a.b.co",
+      "http://a.b-.co",
       "http://0.0.0.0",
       "http://10.1.1.0",
       "http://10.1.1.255",
@@ -90,9 +90,9 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       // "http://1.1.1.1.1",
       // "http://123.123.123",
       "http://3628126748",
-      // "http://.www.foo.bar/",
+      "http://.www.foo.bar/",
       "http://www.foo.bar./",
-      // "http://.www.foo.bar./",
+      "http://.www.foo.bar./",
       "http://10.1.1.1",
       "http://10.1.1.254"
     ).toDF("urls")
@@ -169,13 +169,8 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "///a",
       "///",
       "foo.com",
-      "http://-error-.invalid/",
-      "http://-a.b.co",
-      "http://a.b-.co",
       "http://1.1.1.1.1",
-      "http://123.123.123",
-      "http://.www.foo.bar/",
-      "http://.www.foo.bar./"
+      "http://123.123.123"
     ).toDF("urls")
   }
 
