@@ -41,6 +41,9 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 
 object LegacyBehaviorPolicyShim {
+  val CORRECTED_STR: String =  LegacyBehaviorPolicy.CORRECTED.toString
+  val EXCEPTION_STR: String =  LegacyBehaviorPolicy.EXCEPTION.toString
+
   def isLegacyTimeParserPolicy(): Boolean = {
     SQLConf.get.legacyTimeParserPolicy == LegacyBehaviorPolicy.LEGACY
   }

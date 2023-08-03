@@ -18,6 +18,7 @@ package org.apache.spark.sql.execution.datasources.parquet.rapids
 
 import java.time.ZoneId
 
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
 import org.apache.parquet.io.api.{GroupConverter, RecordMaterializer}
 import org.apache.parquet.schema.MessageType
 
@@ -42,7 +43,7 @@ class ParquetRecordMaterializer(
     catalystSchema,
     convertTz,
     datetimeRebaseMode, // always LegacyBehaviorPolicy.CORRECTED
-    "EXCEPTION",
+    LegacyBehaviorPolicyShim.EXCEPTION_STR,
     false,
     NoopUpdater)
 
