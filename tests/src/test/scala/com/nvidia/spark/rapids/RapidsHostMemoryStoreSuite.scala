@@ -61,7 +61,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
     val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = spy(new RapidsBufferCatalog(devStore))
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           assertResult(0)(hostStore.currentSize)
           assertResult(hostStoreMaxSize)(hostStore.numBytesFree)
@@ -99,7 +99,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
     val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           hostStore.setSpillStore(mockStore)
@@ -134,7 +134,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
     val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           hostStore.setSpillStore(mockStore)
@@ -177,7 +177,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
       when(mockStore.getMaxSize).thenAnswer(_ => None)
       when(mockStore.copyBuffer(any(), any())).thenReturn(mockBuff)
       when(mockStore.tier) thenReturn (StorageTier.DISK)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
         devStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         var bigHandle: RapidsBufferHandle = null

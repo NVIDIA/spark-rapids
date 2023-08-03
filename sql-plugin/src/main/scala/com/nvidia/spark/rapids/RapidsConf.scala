@@ -337,13 +337,6 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
-    .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
-      "Use 0 to disable the pool.")
-    .startupOnly()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.GiB.toBytes(1))
-
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -2172,8 +2165,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
-
-  lazy val pageablePoolSize: Long = get(PAGEABLE_POOL_SIZE)
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 

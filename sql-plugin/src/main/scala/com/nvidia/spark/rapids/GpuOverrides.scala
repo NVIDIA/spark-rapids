@@ -468,6 +468,15 @@ object GpuOverrides extends Logging {
     case _ => false
   }
 
+  private[this] def isArrayOfStructType(dataType: DataType) = dataType match {
+    case ArrayType(elementType, _) =>
+      elementType match {
+        case StructType(_) => true
+        case _ => false
+      }
+    case _ => false
+  }
+
   // this listener mechanism is global and is intended for use by unit tests only
   private lazy val listeners: ListBuffer[GpuOverridesListener] =
     new ListBuffer[GpuOverridesListener]()
@@ -2037,11 +2046,15 @@ object GpuOverrides extends Logging {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
+         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+           .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
+           TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+             .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2053,6 +2066,10 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
                 s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
             }
+          }
+          if (isArrayOfStructType(sortOrder.dataType)) {
+            willNotWorkOnGpu("STRUCT is not supported as a child type for ARRAY, " +
+              s"actual data type: ${sortOrder.dataType}")
           }
         }
 
@@ -2444,14 +2461,7 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
           TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all)),
-      (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (isLit(in.left) && (!isLit(in.right))) {
-            willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
-              "is not currently unsupported.")
-          }
-        }
-      }),
+      (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r){}),
     GpuElementAtMeta.elementAtRule(false),
     expr[MapKeys](
       "Returns an unordered array containing the keys of the map",
@@ -2553,12 +2563,6 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          // do not support literal arrays as LHS
-          if (extractLit(in.left).isDefined) {
-            willNotWorkOnGpu("Literal arrays are not supported for array_contains")
-          }
-        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
@@ -3259,23 +3263,20 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL +
-              TypeSig.STRUCT +
-              TypeSig.ARRAY).nested(),
+              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Structs containing " +
+              s"float/double will not be supported.") +
+              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Arrays containing " +
+              s"floats/doubles will not be supported.")).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
-        private def isNestedArrayType(dt: DataType): Boolean = {
-          dt match {
-            case StructType(fields) =>
-              fields.exists { field =>
-                field.dataType match {
-                  case sdt: StructType => isNestedArrayType(sdt)
-                  case _: ArrayType => true
-                  case _ => false
-                }
-              }
-            case ArrayType(et, _) => et.isInstanceOf[ArrayType] || et.isInstanceOf[StructType]
-            case _ => false
+        override def tagAggForGpu(): Unit = {
+          // Fall back to CPU if type is nested and contains floats or doubles in the type tree.
+          // Because NaNs in nested types are not supported yet. 
+          // See https://github.com/NVIDIA/spark-rapids/issues/8808
+          if (c.child.dataType != FloatType && c.child.dataType != DoubleType &&
+              isOrContainsFloatingPoint(c.child.dataType)) {
+            willNotWorkOnGpu("Float/Double in nested type is not supported")
           }
         }
 
@@ -3464,8 +3465,8 @@ object GpuOverrides extends Logging {
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Nil, None),
       (a, conf, p, r) =>
@@ -3535,7 +3536,8 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++ SparkShimImpl.getExprs
+        ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
+        BloomFilterShims.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -3624,7 +3626,9 @@ object GpuOverrides extends Logging {
     part[RangePartitioning](
       "Range partitioning",
       PartChecks(RepeatingParamCheck("order_key",
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
+         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+           .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =

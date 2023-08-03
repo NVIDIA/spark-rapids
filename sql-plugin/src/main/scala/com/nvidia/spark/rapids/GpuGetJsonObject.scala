@@ -22,22 +22,15 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{DataType, StringType}
 
-case class GpuGetJsonObject(json: Expression, path: Expression) extends GpuBinaryExpression with
-  ExpectsInputTypes {
+case class GpuGetJsonObject(json: Expression, path: Expression)
+    extends GpuBinaryExpressionArgsAnyScalar
+        with ExpectsInputTypes {
   override def left: Expression = json
   override def right: Expression = path
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType)
   override def nullable: Boolean = true
   override def prettyName: String = "get_json_object"
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException("JSON path must be a scalar value")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException("JSON path must be a scalar value")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     lhs.getBase().getJSONObject(rhs.getBase)
