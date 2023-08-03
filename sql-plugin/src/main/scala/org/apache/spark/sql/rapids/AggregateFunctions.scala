@@ -392,6 +392,7 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
  * in nested types. When we use non-nested versions of floats and doubles, NaN values are 
  * considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
  * on the CPU. So we set NaNEquality dynamically in CudfCollectSet and CudfMergeSets.
+ * Note that dataType is ArrayType(child.dataType) here.
  */
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
