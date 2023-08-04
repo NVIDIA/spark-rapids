@@ -356,6 +356,7 @@ for (i=0;i<10;i++) {
     sh "git submodule status"
     sh "git submodule update --init"
     sh "git submodule status"
+    sh "git submodule deinit --all"
 }
     if (!common.isSubmoduleInit(this)) {
         error "Failed to clone submodule : thirdparty/parquet-testing"
