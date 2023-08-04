@@ -18,15 +18,14 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuUnboundToUnboundWindowWithFixer, _}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
-
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, ExprId, Expression, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
@@ -1108,6 +1107,7 @@ abstract class GpuSum(
     extends GpuAggregateFunction
         with ImplicitCastInputTypes
         with GpuBatchedRunningWindowWithFixer
+        with GpuUnboundToUnboundWindowWithFixer
         with GpuAggregateWindowFunction
         with GpuRunningWindowFunction
         with Serializable {
@@ -1134,9 +1134,13 @@ abstract class GpuSum(
 
   // Copied from Sum
   override def nullable: Boolean = true
+
   override def dataType: DataType = resultType
+
   override def children: Seq[Expression] = child :: Nil
+
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
+
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu sum")
 
@@ -1152,7 +1156,7 @@ abstract class GpuSum(
   }
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+                                  inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.sum().onColumn(inputs.head._2)
 
   override def windowOutput(result: ColumnVector): ColumnVector = result.incRefCount()
@@ -1165,7 +1169,7 @@ abstract class GpuSum(
     windowInputProjection
 
   override def groupByScanAggregation(
-      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+                                       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
     Seq(AggAndReplace(GroupByScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
@@ -1176,6 +1180,10 @@ abstract class GpuSum(
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
     cols.head.incRefCount()
+  }
+
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer = {
+    new SumUnboundedToUnboundedFixer(errorOnOverflow = true /* TODO */)
   }
 }
 

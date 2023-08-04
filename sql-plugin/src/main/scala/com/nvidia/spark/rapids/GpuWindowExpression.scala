@@ -1313,6 +1313,85 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
 }
 
 /**
+ * Fixes up a sum operation for unbounded preceding to unbounded following
+ * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
+ */
+class SumUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
+    extends BatchedUnboundedToUnboundedWindowFixer {
+
+  private val OVERFLOW_MESSSAGE =
+    "One or more rows overflow for Add operation in SumUnboundedToUnboundedFixer"
+
+  private var previousValue: Option[Scalar] = None
+
+  override def reset(): Unit = {
+    previousValue = None
+  }
+
+  override def updateState(scalar: Scalar): Unit = {
+    if (scalar.isValid) {
+      previousValue match {
+        case None =>
+          previousValue = Some(scalar.incRefCount())
+        case Some(prev) =>
+          prev.getType.getTypeId match {
+            case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
+                 DType.DTypeEnum.DECIMAL128 =>
+              val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
+              previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
+            case DType.DTypeEnum.INT8 =>
+              val newValue: Int = scalar.getByte + prev.getByte
+              if (errorOnOverflow && newValue > Byte.MaxValue) {
+                throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
+              }
+              previousValue = Some(Scalar.fromByte(newValue.toByte))
+            case DType.DTypeEnum.INT16 =>
+              val newValue = scalar.getShort + prev.getShort
+              if (errorOnOverflow && newValue > Short.MaxValue) {
+                throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
+              }
+              previousValue = Some(Scalar.fromShort(newValue.toShort))
+            case DType.DTypeEnum.INT32 =>
+              // TODO overflow check
+              previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
+            case DType.DTypeEnum.INT64 =>
+              // TODO overflow check
+              previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
+            case DType.DTypeEnum.FLOAT32 =>
+              // TODO overflow check
+              previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
+            case DType.DTypeEnum.FLOAT64 =>
+              // TODO overflow check
+              previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
+            case other =>
+              throw new IllegalStateException(s"unhandled type: $other")
+          }
+        }
+    }
+  }
+
+  override def close(): Unit = {
+    reset()
+  }
+
+  override def fixUp(
+      samePartitionMask: Either[ColumnVector, Boolean],
+      column: ColumnVector): ColumnVector = {
+    assert(previousValue.nonEmpty)
+    val scalar = previousValue.get
+    samePartitionMask match {
+      case scala.Left(cv) =>
+        cv.ifElse(scalar, column)
+      case scala.Right(true) =>
+        ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+      case _ =>
+        column.incRefCount()
+    }
+  }
+}
+
+
+/**
  * Rank is more complicated than DenseRank to fix. This is because there are gaps in the
  * rank values. The rank value of each group is row number of the first row in the group.
  * So values in the same partition group but not the same ordering are fixed by adding

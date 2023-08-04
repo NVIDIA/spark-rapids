@@ -1762,7 +1762,7 @@ class GpuCachedDoublePassWindowIterator(
     }
   }
 
-  private lazy val fixerIndexMap: Map[Int, FixerPair] =
+  private lazy val fixerIndexMap: Map[Int, FixerPair] = {
     boundWindowOps.zipWithIndex.flatMap {
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
         func match {
@@ -1774,6 +1774,7 @@ class GpuCachedDoublePassWindowIterator(
         }
       case _ => None
     }.toMap
+  }
 
   // Do any post processing fixup for the batch before it is sent out the door
   def postProcess(cb: ColumnarBatch): ColumnarBatch = {
