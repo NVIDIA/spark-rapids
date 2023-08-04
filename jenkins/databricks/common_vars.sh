@@ -15,6 +15,9 @@
 # limitations under the License.
 #
 
+SPARK_VER=${SPARK_VER:-$(< /databricks/spark/VERSION)}
+export SPARK_SHIM_VER=${SPARK_SHIM_VER:-spark${SPARK_VER//.}db}
+
 # Setup SPARK_HOME if need
 if [[ -z "$SPARK_HOME" ]]; then
     # Configure spark environment on Databricks
