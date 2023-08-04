@@ -1337,6 +1337,7 @@ class SumUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
           prev.getType.getTypeId match {
             case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
                  DType.DTypeEnum.DECIMAL128 =>
+              // TODO overflow check
               val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
               previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
             case DType.DTypeEnum.INT8 =>
