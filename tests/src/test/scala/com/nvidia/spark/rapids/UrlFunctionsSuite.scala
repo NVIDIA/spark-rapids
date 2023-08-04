@@ -57,9 +57,9 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://223.255.255.254",
       "https://foo_bar.example.com/",
       // "http://",
-      // "http://.",
-      // "http://..",
-      // "http://../",
+      "http://.",
+      "http://..",
+      "http://../",
       "http://?",
       "http://??",
       "http://??/",
@@ -87,11 +87,11 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://10.1.1.0",
       "http://10.1.1.255",
       "http://224.1.1.1",
-      // "http://1.1.1.1.1",
-      // "http://123.123.123",
+      "http://1.1.1.1.1",
+      "http://123.123.123",
       "http://3628126748",
       "http://.www.foo.bar/",
-      "http://www.foo.bar./",
+      "http://www.foo.bar./", 
       "http://.www.foo.bar./",
       "http://10.1.1.1",
       "http://10.1.1.254"
@@ -160,17 +160,27 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     import session.sqlContext.implicits._
     Seq[String](
       "http://",
-      "http://.",
-      "http://..",
-      "http://../",
+      // "http://.",
+      // "http://..",
+      // "http://../",
       "http://##",
       "http://##/",
       "//a",
       "///a",
       "///",
-      "foo.com",
-      "http://1.1.1.1.1",
-      "http://123.123.123"
+      "foo.com"
+      // "http://www.foo.bar.",
+      // "http://1.1.1.1.1",
+      // "http://123.123.123",
+      // "http://223.255.255.254",
+      // "http://142.42.1.1/",
+      // "http://142.42.1.1:8080/",
+      // "http://0.0.0.0",
+      // "http://10.1.1.0",
+      // "http://10.1.1.255",
+      // "http://224.1.1.1",
+      // "http://10.1.1.1",
+      // "http://10.1.1.254"
     ).toDF("urls")
   }
 

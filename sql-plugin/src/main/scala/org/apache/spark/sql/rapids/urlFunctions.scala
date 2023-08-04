@@ -135,17 +135,17 @@ case class GpuParseUrl(children: Seq[Expression],
 
   private def unsetInvalidHost(cv: ColumnVector): ColumnVector = {
     // scalastyle:off line.size.limit
-    // HostName parsing:
+    // HostName parsing followed rules in java URI lib:
     // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
     // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
     // toplabel      = alpha | alpha *( alphanum | "-" ) alphanum
-    val hostname_regex = """^(((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)|"""
-    // TODO: ipv6_regex
-    val ipv6_regex = """\[[0-9A-Za-z%.:]*\]|"""
+    val hostname_regex = """((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)"""
     // TODO: ipv4_regex
-    val ipv4_regex = """([0-9.]*))$"""
+    val ipv4_regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
+    // TODO: ipv6_regex
+    val ipv6_regex = """(\[[0-9A-Za-z%\.:]*\])"""
     // scalastyle:on
-    val regex = hostname_regex + ipv6_regex + ipv4_regex
+    val regex = "^(" + hostname_regex + "|" + ipv4_regex + "|" + ipv6_regex + ")$"
     val prog = new RegexProgram(regex)
     withResource(cv.matchesRe(prog)) { isMatch =>
       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
