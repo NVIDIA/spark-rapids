@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuBasicSum}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -163,6 +163,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     val windowExpr = if (allBatched) {
       val batchedOps = GpuWindowExec.splitBatchedOps(fixedUpWindowOps)
       batchedOps.getWindowExec(
+        conf,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
         input,
@@ -250,18 +251,21 @@ case class BatchedOps(running: Seq[NamedExpression],
       child)(cpuPartitionSpec, cpuOrderSpec)
 
   private def getDoublePassWindowExec(
+      conf: RapidsConf,
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec =
     GpuCachedDoublePassWindowExec(
+      conf,
       getDoublePassExpressionsWithRunningAsPassthrough,
       gpuPartitionSpec,
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec)
 
   def getWindowExec(
+      conf: RapidsConf,
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
@@ -272,13 +276,13 @@ case class BatchedOps(running: Seq[NamedExpression],
       val running = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
         cpuPartitionSpec, cpuOrderSpec)
       if (hasDoublePass) {
-        getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, running,
+        getDoublePassWindowExec(conf, gpuPartitionSpec, gpuOrderSpec, running,
           cpuPartitionSpec, cpuOrderSpec)
       } else {
         running
       }
     } else {
-      getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+      getDoublePassWindowExec(conf, gpuPartitionSpec, gpuOrderSpec, child,
         cpuPartitionSpec, cpuOrderSpec)
     }
   }
@@ -1712,6 +1716,7 @@ class FixerPair(op: GpuUnboundToUnboundWindowWithFixer) extends AutoCloseable {
  * be sorted by both partitioning and ordering.
  */
 class GpuCachedDoublePassWindowIterator(
+    conf: RapidsConf,
     input: Iterator[ColumnarBatch],
     override val boundWindowOps: Seq[GpuExpression],
     override val boundPartitionSpec: Seq[GpuExpression],
@@ -1765,10 +1770,25 @@ class GpuCachedDoublePassWindowIterator(
   private lazy val fixerIndexMap: Map[Int, FixerPair] =
     boundWindowOps.zipWithIndex.flatMap {
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
+
+        val okToFix = func match {
+          // TODO make this more generic to include other window functions
+          // that aggregate floating-point inputs, but not for Count
+          case f: GpuBasicSum =>
+            f.child.dataType match {
+              case DataTypes.FloatType | DataTypes.DoubleType =>
+                conf.isUnboundedFloatOptimizationEnabled
+              case _ => true
+            }
+          case _ =>
+            true
+        }
+
         func match {
-          case f: GpuUnboundToUnboundWindowWithFixer =>
+          case f: GpuUnboundToUnboundWindowWithFixer if okToFix =>
             Some((index, new FixerPair(f)))
-          case GpuAggregateExpression(f: GpuUnboundToUnboundWindowWithFixer, _, _, _, _) =>
+          case GpuAggregateExpression(f: GpuUnboundToUnboundWindowWithFixer, _, _, _, _)
+              if okToFix =>
             Some((index, new FixerPair(f)))
           case _ => None
         }
@@ -1974,6 +1994,7 @@ class GpuCachedDoublePassWindowIterator(
  * Currently this only works for unbounded to unbounded windows, but could be extended to more.
  */
 case class GpuCachedDoublePassWindowExec(
+    rapidsConf: RapidsConf,
     windowOps: Seq[NamedExpression],
     gpuPartitionSpec: Seq[Expression],
     gpuOrderSpec: Seq[SortOrder],
@@ -1993,7 +2014,7 @@ case class GpuCachedDoublePassWindowExec(
     val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
 
     child.executeColumnar().mapPartitions { iter =>
-      new GpuCachedDoublePassWindowIterator(iter, boundWindowOps, boundPartitionSpec,
+      new GpuCachedDoublePassWindowIterator(rapidsConf, iter, boundWindowOps, boundPartitionSpec,
         boundOrderSpec, output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
     }
   }
