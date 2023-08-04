@@ -156,6 +156,14 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     ).toDF("urls")
   }
 
+  def urlWithRegexLikeQuery(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[String](
+      "http://foo/bar?abc=BAD&a.c=GOOD",
+      "http://foo/bar?a.c=GOOD&abc=BAD"
+    ).toDF("urls")
+  }
+
   def unsupportedUrlCases(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
@@ -225,6 +233,22 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("Test parse_url with query and key", urlWithQueryKey) {
     frame => frame.selectExpr(
       "urls",
-      "parse_url(urls, 'QUERY', 'foo') as QUERY")
+      "parse_url(urls, 'QUERY', 'foo') as QUERY",
+      "parse_url(urls, 'QUERY', 'baz') as QUERY")
+  }
+
+  test("Test parse_url with regex like query") {
+    withGpuSparkSession(spark => {
+      val frame = urlWithRegexLikeQuery(spark)
+      val result = frame.selectExpr(
+        "urls",
+        "parse_url(urls, 'QUERY', 'a.c') as QUERY")
+      import spark.implicits._
+      val expected = Seq(
+        ("http://foo/bar?abc=BAD&a.c=GOOD", "GOOD"),
+        ("http://foo/bar?a.c=GOOD&abc=BAD", "GOOD")
+      ).toDF("urls", "QUERY")
+      assert(result.collect().deep == expected.collect().deep)
+    })
   }
 }

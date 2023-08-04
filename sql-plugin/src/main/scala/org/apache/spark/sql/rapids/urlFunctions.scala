@@ -41,8 +41,8 @@ object GpuParseUrl {
   private val FILE = "FILE"
   private val AUTHORITY = "AUTHORITY"
   private val USERINFO = "USERINFO"
-  private val REGEXPREFIX = """(&|^)"""
-  private val REGEXSUBFIX = "=([^&]*)"
+  private val REGEXPREFIX = """(&|^)("""
+  private val REGEXSUBFIX = "=)([^&]*)"
   // scalastyle:off line.size.limit
   //                                a  0          0 b    1  c  d  2               2 d 3                              3ce         e 1b 4        45         5 6     6 a
   // val regex                = """^(?:(?:[^:/?#]+):(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]*\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#.*)?)$"""
@@ -80,10 +80,16 @@ case class GpuParseUrl(children: Seq[Expression],
     super[ExpectsInputTypes].checkInputDataTypes()
   }
 
+  private def escapeRegex(str: String): String = {
+    // Escape all regex special characters. It is a workaround for /Q and /E not working
+    // in cudf regex, can use Pattern.quote(str) instead after they are supported.
+    str.replaceAll("""[\^$.⎮?*+(){}-]""", "\\\\$0")
+  }
+
   private def getPattern(key: UTF8String): RegexProgram = {
     // SPARK-44500: in spark, the key is treated as a regex. 
     // In plugin we quote the key to be sure that we treat it as a literal value.
-    val regex = REGEXPREFIX + key.toString + REGEXSUBFIX
+    val regex = REGEXPREFIX + escapeRegex(key.toString) + REGEXSUBFIX
     new RegexProgram(regex)
   }
 
@@ -143,6 +149,12 @@ case class GpuParseUrl(children: Seq[Expression],
     // TODO: ipv4_regex
     val ipv4_regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
     // TODO: ipv6_regex
+    //   IPv6address = hexseq [ ":" IPv4address ]
+    //                 | hexseq [ "::" [ hexpost ] ]
+    //                 | "::" [ hexpost ]
+    //   hexpost     = hexseq | hexseq ":" IPv4address | IPv4address
+    //   hexseq      = hex4 *( ":" hex4)
+    //   hex4        = 1*4HEXDIG
     val ipv6_regex = """(\[[0-9A-Za-z%\.:]*\])"""
     // scalastyle:on
     val regex = "^(" + hostname_regex + "|" + ipv4_regex + "|" + ipv6_regex + ")$"
@@ -201,7 +213,7 @@ case class GpuParseUrl(children: Seq[Expression],
     val keyStr = key.getValue.asInstanceOf[UTF8String]
     val queryValue = withResource(querys) { _ =>
       withResource(querys.extractRe(getPattern(keyStr))) { table: Table =>
-        table.getColumn(1).incRefCount()
+        table.getColumn(2).incRefCount()
       }
     }
     withResource(queryValue) { _ =>
