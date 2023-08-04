@@ -132,7 +132,7 @@ def test_prune_partition_column_when_filter_fallback_project(spark_tmp_path, pru
 
 # This method creates two tables and saves them to partitioned Parquet/ORC files. The file is then
 # read in using the read function that is passed in
-def create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, func, conf):
+def create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, func, conf, table_name):
     full_name_type = StructGen([('first', StringGen()), ('middle', StringGen()), ('last', StringGen())])
     name_type = StructGen([('first', StringGen()), ('last', StringGen())])
     contacts_data_gen = StructGen([
@@ -155,8 +155,8 @@ def create_contacts_table_and_read(is_partitioned, format, data_path, expected_s
         else:
             return gen
 
-    with_cpu_session(lambda spark: contact_gen_df(spark, contacts_data_gen, 1).write.format(format).save(data_path + "/contacts/p=1"))
-    with_cpu_session(lambda spark: contact_gen_df(spark, brief_contacts_data_gen, 2).write.format(format).save(data_path + "/contacts/p=2"))
+    with_cpu_session(lambda spark: contact_gen_df(spark, contacts_data_gen, 1).write.format(format).save(data_path + f"/{table_name}/p=1"))
+    with_cpu_session(lambda spark: contact_gen_df(spark, brief_contacts_data_gen, 2).write.format(format).save(data_path + f"/{table_name}/p=2"))
 
     # Schema to read in.
     read_schema = contacts_data_gen.data_type.add("p", IntegerType(), True) if is_partitioned else contacts_data_gen.data_type
@@ -173,21 +173,22 @@ def create_contacts_table_and_read(is_partitioned, format, data_path, expected_s
 # https://github.com/NVIDIA/spark-rapids/issues/8712
 # https://github.com/NVIDIA/spark-rapids/issues/8713
 # https://github.com/NVIDIA/spark-rapids/issues/8714
-@pytest.mark.parametrize('query_and_expected_schemata', [("select friends.middle, friends from contacts where p=1", "struct<friends:array<struct<first:string,middle:string,last:string>>>"),
-                                                         pytest.param(("select name.middle, address from contacts where p=2", "struct<name:struct<middle:string>,address:string>"), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8788')),
-                                                         ("select name.first from contacts where name.first = 'Jane'", "struct<name:struct<first:string>>")])
+@pytest.mark.parametrize('query_and_expected_schemata', [("select friends.middle, friends from {} where p=1", "struct<friends:array<struct<first:string,middle:string,last:string>>>"),
+                                                         pytest.param(("select name.middle, address from {} where p=2", "struct<name:struct<middle:string>,address:string>"), marks=pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/8788')),
+                                                         ("select name.first from {} where name.first = 'Jane'", "struct<name:struct<first:string>>")])
 @pytest.mark.parametrize('is_partitioned', [True, False])
 @pytest.mark.parametrize('format', ["parquet", "orc"])
-def test_select_complex_field(format, spark_tmp_path, query_and_expected_schemata, is_partitioned):
+def test_select_complex_field(format, spark_tmp_path, query_and_expected_schemata, is_partitioned, spark_tmp_table_factory):
+    table_name = spark_tmp_table_factory.get()
     query, expected_schemata = query_and_expected_schemata
     data_path = spark_tmp_path + "/DATA"
     def read_temp_view(schema):
         def do_it(spark):
-            spark.read.format(format).schema(schema).load(data_path + "/contacts").createOrReplaceTempView("contacts")
-            return spark.sql(query)
+            spark.read.format(format).schema(schema).load(data_path + f"/{table_name}").createOrReplaceTempView(table_name)
+            return spark.sql(query.format(table_name))
         return do_it
     conf={"spark.sql.parquet.enableVectorizedReader": "true"}
-    create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf)
+    create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf, table_name)
 
 # https://github.com/NVIDIA/spark-rapids/issues/8715
 @pytest.mark.parametrize('select_and_expected_schemata', [("friend.First", "struct<friends:array<struct<first:string>>>"),
@@ -195,14 +196,15 @@ def test_select_complex_field(format, spark_tmp_path, query_and_expected_schemat
 @pytest.mark.skipif(is_before_spark_320(), reason='https://issues.apache.org/jira/browse/SPARK-34638')
 @pytest.mark.parametrize('is_partitioned', [True, False])
 @pytest.mark.parametrize('format', ["parquet", "orc"])
-def test_nested_column_prune_on_generator_output(format, spark_tmp_path, select_and_expected_schemata, is_partitioned):
+def test_nested_column_prune_on_generator_output(format, spark_tmp_path, select_and_expected_schemata, is_partitioned, spark_tmp_table_factory):
+    table_name = spark_tmp_table_factory.get()
     query, expected_schemata = select_and_expected_schemata
     data_path = spark_tmp_path + "/DATA"
     def read_temp_view(schema):
         def do_it(spark):
-            spark.read.format(format).schema(schema).load(data_path + "/contacts").createOrReplaceTempView("contacts")
+            spark.read.format(format).schema(schema).load(data_path + f"/{table_name}").createOrReplaceTempView(table_name)
             return spark.table("contacts").select(f.explode(f.col("friends")).alias("friend")).select(query)
         return do_it
     conf = {"spark.sql.caseSensitive": "false",
             "spark.sql.parquet.enableVectorizedReader": "true"}
-    create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf)
+    create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf, table_name)
