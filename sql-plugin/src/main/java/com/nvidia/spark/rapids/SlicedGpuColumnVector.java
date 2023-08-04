@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.DType;
+import ai.rapids.cudf.HostColumnVectorCore;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;
@@ -157,11 +159,75 @@ public class SlicedGpuColumnVector extends ColumnVector {
     return wrap.getBase();
   }
 
+  public RapidsHostColumnVector getWrap() {
+    return wrap;
+  }
+
   public int getStart() {
     return start;
   }
 
   public int getEnd() {
     return end;
+  }
+
+  private static long getSizeOf(HostColumnVectorCore cv, int start, int end) {
+    long total = 0;
+    if (end > start) {
+      ai.rapids.cudf.HostMemoryBuffer validity = cv.getValidity();
+      if (validity != null) {
+        // This is the same as ColumnView.getValidityBufferSize
+        // number of bytes required = Math.ceil(number of bits / 8)
+        long actualBytes = ((long) (end - start) + 7) >> 3;
+        // padding to the multiplies of the padding boundary(64 bytes)
+        total += ((actualBytes + 63) >> 6) << 6;
+      }
+      ai.rapids.cudf.HostMemoryBuffer off = cv.getOffsets();
+      if (off != null) {
+        total += (end - start + 1) * 4L;
+        int newStart = (int) cv.getStartListOffset(start);
+        int newEnd = (int) cv.getEndListOffset(end - 1);
+
+        ai.rapids.cudf.HostMemoryBuffer data = cv.getData();
+        if ((data != null) && (newEnd > newStart)) {
+          if (DType.STRING.equals(cv.getType())) {
+            total += newEnd - newStart;
+          } else {
+            throw new IllegalStateException("HOW CAN A " + cv.getType() +
+                " HAVE DATA AND OFFSETS? " + cv);
+          }
+        }
+
+        for (int i = 0; i < cv.getNumChildren(); i++) {
+          total += getSizeOf(cv.getChildColumnView(i), newStart, newEnd);
+        }
+      } else {
+        ai.rapids.cudf.HostMemoryBuffer data = cv.getData();
+        if (data != null) {
+          total += (long) (cv.getType().getSizeInBytes()) * (end - start);
+        }
+
+        for (int i = 0; i < cv.getNumChildren(); i++) {
+          total += getSizeOf(cv.getChildColumnView(i), start, end);
+        }
+      }
+    }
+    return total;
+  }
+
+  public static long getTotalHostMemoryUsed(ColumnarBatch batch) {
+    long sum = 0;
+    if (batch.numCols() > 0) {
+      for (int i = 0; i < batch.numCols(); i++) {
+        ColumnVector tmp = batch.column(i);
+        if (tmp instanceof SlicedGpuColumnVector) {
+          SlicedGpuColumnVector scv = (SlicedGpuColumnVector) tmp;
+          sum += getSizeOf(scv.getBase(), scv.getStart(), scv.getEnd());
+        } else {
+          throw new RuntimeException(tmp + " is not supported for this");
+        }
+      }
+    }
+    return sum;
   }
 }
