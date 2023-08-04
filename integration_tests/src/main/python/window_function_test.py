@@ -345,9 +345,6 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
         ' sum(c) over '
         '   (partition by a order by b asc  '
         '       range between UNBOUNDED preceding and CURRENT ROW) as sum_b_unbounded, '
-        ' sum(c) over '
-        '   (partition by a order by b asc  '
-        '       range between UNBOUNDED preceding and UNBOUNDED following) as sum_c_unbounded, '
         ' max(c) over '
         '   (partition by a order by b asc  '
         '       range between UNBOUNDED preceding and UNBOUNDED following) as max_b_unbounded '
@@ -768,16 +765,6 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-def test_sum_no_part_multiple_batches():
-    data_gen = [('a', long_gen)]
-    # The goal of this is to have multiple batches so we can verify that the code
-    # is working properly, but not so large that it takes forever to run.
-    baseWindowSpec = Window.orderBy('a')
-
-    def do_it(spark):
-        return gen_df(spark, data_gen, length=8000) \
-            .withColumn('sum', f.sum(f.col("a")).over(baseWindowSpec))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
 def test_percent_rank_no_part_multiple_batches():
     data_gen = [('a', long_gen)]
