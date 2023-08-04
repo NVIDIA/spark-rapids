@@ -1317,7 +1317,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
  * Fixes up a sum operation for unbounded preceding to unbounded following
  * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
  */
-class SumUnboundedToUnboundedFixer(failOnError: Boolean)
+class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
     extends BatchedUnboundedToUnboundedWindowFixer {
 
   private val OVERFLOW_MESSSAGE =
@@ -1387,8 +1387,26 @@ class SumUnboundedToUnboundedFixer(failOnError: Boolean)
   override def fixUp(
       samePartitionMask: Either[ColumnVector, Boolean],
       column: ColumnVector): ColumnVector = {
-    assert(previousValue.nonEmpty)
-    val scalar = previousValue.get
+
+    val scalar: Scalar = previousValue match {
+      case Some(x) =>
+        x
+      case _ => resultType match {
+        case DataTypes.ByteType => Scalar.fromNull(DType.INT8)
+        case DataTypes.ShortType => Scalar.fromNull(DType.INT16)
+        case DataTypes.IntegerType => Scalar.fromNull(DType.INT32)
+        case DataTypes.LongType => Scalar.fromNull(DType.INT64)
+        case DataTypes.FloatType => Scalar.fromNull(DType.FLOAT32)
+        case DataTypes.DoubleType => Scalar.fromNull(DType.FLOAT64)
+        case d: DecimalType =>
+          // TODO need to know exact type here .. infer from precision and scale?
+          Scalar.fromNull(
+            DType.fromNative(DType.DTypeEnum.DECIMAL128.getNativeId, d.scale))
+        case _ =>
+          throw new IllegalStateException()
+      }
+    }
+
     samePartitionMask match {
       case scala.Left(cv) =>
         cv.ifElse(scalar, column)

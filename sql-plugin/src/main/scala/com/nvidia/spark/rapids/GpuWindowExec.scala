@@ -1774,9 +1774,15 @@ class GpuCachedDoublePassWindowIterator(
           // that aggregate floating-point inputs, but not for Count
           case f: GpuBasicSum =>
             f.child.dataType match {
+              case DataTypes.ByteType | DataTypes.ShortType | DataTypes.IntegerType |
+                 DataTypes.LongType | _: DecimalType=>
+                true
               case DataTypes.FloatType | DataTypes.DoubleType =>
                 conf.isUnboundedFloatOptimizationEnabled
-              case _ => true
+              // TODO add interval types
+              case _ =>
+                // unsupported type
+                false
             }
           case _ =>
             true
