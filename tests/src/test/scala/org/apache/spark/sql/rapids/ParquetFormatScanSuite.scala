@@ -24,8 +24,8 @@ import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.concurrent.duration._
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{GpuColumnVector, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetWriter
@@ -46,6 +46,8 @@ import org.apache.spark.util.Utils
  * A lot of this testing code is based off of similar Spark tests.
  */
 class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually {
+  private val debugPrinter = cudf.TableDebug.get();
+
   implicit class RecordConsumerDSL(consumer: RecordConsumer) {
     def message(f: => Unit): Unit = {
       consumer.startMessage()
@@ -1130,7 +1132,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           })
 
           withResource(cudf.Table.readParquet(new File(testPath))) { table =>
-            GpuColumnVector.debug("DIRECT READ", table)
+            debugPrinter.debug("DIRECT READ", table)
           }
 
           val data = spark.read.parquet(testPath).collect()
@@ -1166,7 +1168,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           })
 
           withResource(cudf.Table.readParquet(new File(testPath))) { table =>
-            GpuColumnVector.debug("DIRECT READ", table)
+            debugPrinter.debug("DIRECT READ", table)
           }
 
           val data = spark.read.parquet(testPath).collect()
@@ -1209,7 +1211,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           })
 
           withResource(cudf.Table.readParquet(new File(testPath))) { table =>
-            GpuColumnVector.debug("DIRECT READ", table)
+            debugPrinter.debug("DIRECT READ", table)
           }
 
           val data = spark.read.parquet(testPath).collect()
@@ -1251,7 +1253,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           })
 
           withResource(cudf.Table.readParquet(new File(testPath))) { table =>
-            GpuColumnVector.debug("DIRECT READ", table)
+            debugPrinter.debug("DIRECT READ", table)
           }
 
           val data = spark.read.parquet(testPath).collect()
@@ -1293,7 +1295,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           })
 
           withResource(cudf.Table.readParquet(new File(testPath))) { table =>
-            GpuColumnVector.debug("DIRECT READ", table)
+            debugPrinter.debug("DIRECT READ", table)
           }
 
           val data = spark.read.parquet(testPath).collect()
@@ -1434,7 +1436,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           })
 
           withResource(cudf.Table.readParquet(new File(testPath))) { table =>
-            GpuColumnVector.debug("DIRECT READ", table)
+            debugPrinter.debug("DIRECT READ", table)
           }
 
           val data = spark.read.parquet(testPath).collect()
