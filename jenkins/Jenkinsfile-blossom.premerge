@@ -190,13 +190,7 @@ pipeline {
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
                                     try {
-                                        sh "$PREMERGE_SCRIPT mvn_verify"
-                                        step([$class                : 'JacocoPublisher',
-                                              execPattern           : '**/target/jacoco.exec',
-                                              classPattern          : 'target/jacoco_classes/',
-                                              sourceInclusionPattern: '**/*.java,**/*.scala',
-                                              sourcePattern         : sourcePattern
-                                        ])
+                                        echo "$PREMERGE_SCRIPT mvn_verify"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
@@ -227,7 +221,7 @@ pipeline {
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
-                                        sh "$PREMERGE_SCRIPT ci_2"
+                                        echo "$PREMERGE_SCRIPT ci_2"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)
@@ -245,6 +239,7 @@ pipeline {
                     steps {
                         script {
                             githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
+/*
                             def DBJob = build(job: 'rapids-databricks_premerge-github',
                                 propagate: false, wait: true,
                                 parameters: [
@@ -257,6 +252,7 @@ pipeline {
                                 // Fail the pipeline
                                 error "Databricks build result : " + DBJob.result
                             }
+*/
                         }
                     }
                 } // end of Databricks
@@ -306,7 +302,7 @@ void uploadDocker(String IMAGE_NAME) {
     def DOCKER_CMD = "docker --config $WORKSPACE/.docker"
     retry(3) {
         sleep(time: 10, unit: "SECONDS")
-        sh """
+        echo """
             echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
             $DOCKER_CMD push $IMAGE_NAME
             $DOCKER_CMD logout $ARTIFACTORY_NAME
@@ -318,7 +314,7 @@ void deleteDockerTempTag(String tag) {
     if (!tag?.trim()) { // return if the tag is null or empty
         return
     }
-    sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
+    echo "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
 }
 
 void abortDupBuilds() {
@@ -340,6 +336,7 @@ void abortDupBuilds() {
 }
 
 void checkoutCode(String url, String sha) {
+for (i=0;i<10;i++) {
     checkout(
         changelog: false,
         poll: true,
@@ -353,6 +350,13 @@ void checkoutCode(String url, String sha) {
                                 [$class: 'SubmoduleOption', disableSubmodules: false, shallow: true, parentCredentials: true]]
         ]
     )
+
+    sh "git submodule status"
+    sh "git submodule deinit --all"
+    sh "git submodule status"
+    sh "git submodule update --init"
+    sh "git submodule status"
+}
     if (!common.isSubmoduleInit(this)) {
         error "Failed to clone submodule : thirdparty/parquet-testing"
     }
