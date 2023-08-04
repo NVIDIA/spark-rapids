@@ -240,6 +240,19 @@ def test_decimal_running_sum_window_no_part(data_gen):
         'from window_agg_table',
         conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_running_sum_window_no_part_unbounded(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as sum_b_asc '
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
 @ignore_order

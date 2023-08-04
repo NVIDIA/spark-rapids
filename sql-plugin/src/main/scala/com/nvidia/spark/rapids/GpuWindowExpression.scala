@@ -1342,13 +1342,13 @@ class SumUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
               previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
             case DType.DTypeEnum.INT8 =>
               val newValue: Int = scalar.getByte + prev.getByte
-              if (errorOnOverflow && newValue > Byte.MaxValue) {
+              if (errorOnOverflow && (newValue < Byte.MinValue || newValue > Byte.MaxValue)) {
                 throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
               }
               previousValue = Some(Scalar.fromByte(newValue.toByte))
             case DType.DTypeEnum.INT16 =>
               val newValue = scalar.getShort + prev.getShort
-              if (errorOnOverflow && newValue > Short.MaxValue) {
+              if (errorOnOverflow && (newValue < Short.MinValue || newValue > Short.MaxValue)) {
                 throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
               }
               previousValue = Some(Scalar.fromShort(newValue.toShort))
