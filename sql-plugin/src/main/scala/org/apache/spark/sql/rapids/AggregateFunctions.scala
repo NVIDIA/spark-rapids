@@ -1181,7 +1181,7 @@ abstract class GpuSum(
   }
 
   override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer = {
-    new SumUnboundedToUnboundedFixer(errorOnOverflow = true /* TODO */)
+    new SumUnboundedToUnboundedFixer(failOnErrorOverride)
   }
 }
 

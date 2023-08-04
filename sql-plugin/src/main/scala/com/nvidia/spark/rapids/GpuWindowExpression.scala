@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.MathUtils
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -1316,7 +1317,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
  * Fixes up a sum operation for unbounded preceding to unbounded following
  * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
  */
-class SumUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
+class SumUnboundedToUnboundedFixer(failOnError: Boolean)
     extends BatchedUnboundedToUnboundedWindowFixer {
 
   private val OVERFLOW_MESSSAGE =
@@ -1335,35 +1336,43 @@ class SumUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
           previousValue = Some(scalar.incRefCount())
         case Some(prev) =>
           prev.getType.getTypeId match {
-            case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
-                 DType.DTypeEnum.DECIMAL128 =>
-              // TODO overflow check
-              val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
-              previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
             case DType.DTypeEnum.INT8 =>
               val newValue: Int = scalar.getByte + prev.getByte
-              if (errorOnOverflow && (newValue < Byte.MinValue || newValue > Byte.MaxValue)) {
+              if (failOnError && (newValue < Byte.MinValue || newValue > Byte.MaxValue)) {
                 throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
               }
               previousValue = Some(Scalar.fromByte(newValue.toByte))
             case DType.DTypeEnum.INT16 =>
               val newValue = scalar.getShort + prev.getShort
-              if (errorOnOverflow && (newValue < Short.MinValue || newValue > Short.MaxValue)) {
+              if (failOnError && (newValue < Short.MinValue || newValue > Short.MaxValue)) {
                 throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
               }
               previousValue = Some(Scalar.fromShort(newValue.toShort))
             case DType.DTypeEnum.INT32 =>
-              // TODO overflow check
-              previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
+              if (failOnError) {
+                previousValue = Some(Scalar.fromInt(MathUtils.addExact(
+                  scalar.getInt, prev.getInt)))
+              } else {
+                previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
+              }
             case DType.DTypeEnum.INT64 =>
-              // TODO overflow check
-              previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
+              if (failOnError) {
+                previousValue = Some(Scalar.fromLong(MathUtils.addExact(
+                  scalar.getLong, prev.getLong)))
+              } else {
+                previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
+              }
             case DType.DTypeEnum.FLOAT32 =>
-              // TODO overflow check
               previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
             case DType.DTypeEnum.FLOAT64 =>
-              // TODO overflow check
               previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
+            case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
+                 DType.DTypeEnum.DECIMAL128 =>
+              val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
+              previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
+
+            // TODO interval types
+
             case other =>
               throw new IllegalStateException(s"unhandled type: $other")
           }
