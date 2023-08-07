@@ -556,8 +556,8 @@ class RapidsBufferCatalog(
             // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
             // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
             // all launched GPU work, otherwise crashes or data corruption could occur.
-            // A more performant implementation would be to synchronize on the thread that created
-            // the buffer via events.
+           // A more performant implementation would be to synchronize on the thread that read
+           // the buffer via events.
             // https://github.com/NVIDIA/spark-rapids/issues/8610
             Cuda.deviceSynchronize()
             buffersToFree.safeFree()
