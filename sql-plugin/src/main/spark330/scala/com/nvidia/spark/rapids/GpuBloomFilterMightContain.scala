@@ -44,11 +44,13 @@ case class GpuBloomFilterMightContain(
   extends ShimBinaryExpression with GpuExpression with AutoCloseable {
 
   @transient private lazy val bloomFilter: GpuBloomFilter = {
-    Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-    withResourceIfAllowed(bloomFilterExpression.columnarEvalAny(new ColumnarBatch(Array.empty))) {
+    val ret = withResourceIfAllowed(
+      bloomFilterExpression.columnarEvalAny(new ColumnarBatch(Array.empty))) {
       case s: GpuScalar => GpuBloomFilter(s)
       case x => throw new IllegalStateException(s"Expected GPU scalar, found $x")
     }
+    Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+    ret
   }
 
   override def nullable: Boolean = true
