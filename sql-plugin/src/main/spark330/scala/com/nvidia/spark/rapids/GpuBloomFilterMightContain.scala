@@ -98,6 +98,9 @@ case class GpuBloomFilterMightContain(
     }
   }
 
+  // This is disabled until https://github.com/NVIDIA/spark-rapids/issues/8945 can be fixed
+  override def disableTieredProjectCombine: Boolean = true
+
   override def close(): Unit = {
     if (bloomFilter != null) {
       bloomFilter.close()

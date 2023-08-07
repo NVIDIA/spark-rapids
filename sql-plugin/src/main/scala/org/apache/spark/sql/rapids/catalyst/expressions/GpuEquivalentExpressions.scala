@@ -22,7 +22,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 import scala.annotation.tailrec
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{GpuAlias, GpuBloomFilterMightContain, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
+import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, CaseWhen, Coalesce, Expression, If, LeafExpression, PlanExpression}
@@ -193,10 +193,8 @@ class GpuEquivalentExpressions {
     val skip = expr.isInstanceOf[LeafExpression] ||
       expr.isInstanceOf[GpuLeafExpression] ||
       expr.isInstanceOf[GpuUnevaluable] ||
-      // GpuBloomFilterMightContain is a work around because it requires a scalar as input,
-      // and tiered project can mess that up.
-      expr.isInstanceOf[GpuBloomFilterMightContain] ||
-      (expr.isInstanceOf[GpuExpression] && expr.asInstanceOf[GpuExpression].hasSideEffects) ||
+      (expr.isInstanceOf[GpuExpression] &&
+          expr.asInstanceOf[GpuExpression].disableTieredProjectCombine) ||
       // `LambdaVariable` is usually used as a loop variable, which can't be evaluated ahead of the
       // loop. So we can't evaluate sub-expressions containing `LambdaVariable` at the beginning.
       expr.find(_.isInstanceOf[LambdaVariable]).isDefined ||
