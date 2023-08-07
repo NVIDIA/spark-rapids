@@ -1386,7 +1386,7 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
       samePartitionMask: Either[ColumnVector, Boolean],
       column: ColumnVector): ColumnVector = {
 
-    val scalar: Scalar = previousValue match {
+    def makeScalar(): Scalar = previousValue match {
       case Some(value) =>
         value
       case _ => resultType match {
@@ -1412,9 +1412,9 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
 
     samePartitionMask match {
       case scala.Left(cv) =>
-        cv.ifElse(scalar, column)
+        cv.ifElse(makeScalar(), column)
       case scala.Right(true) =>
-        ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+        ColumnVector.fromScalar(makeScalar(), column.getRowCount.toInt)
       case _ =>
         column.incRefCount()
     }
