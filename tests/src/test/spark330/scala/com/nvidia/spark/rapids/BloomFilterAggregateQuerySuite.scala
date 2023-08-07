@@ -104,15 +104,9 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
 
   private def getPlanValidator(exec: String): (SparkPlan, SparkPlan) => Unit = {
     def searchPlan(p: SparkPlan): Boolean = {
-      if (ExecutionPlanCaptureCallback.didFallBack(p, exec)) {
-        true
-      } else if (p.children.exists(searchPlan)) {
-        true
-      } else if (p.subqueries.exists(searchPlan)) {
-        true
-      } else {
-        false
-      }
+      ExecutionPlanCaptureCallback.didFallBack(p, exec) ||
+        p.children.exists(searchPlan) ||
+        p.subqueries.exists(searchPlan)
     }
     (_, gpuPlan) => {
       val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(gpuPlan)
@@ -121,10 +115,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
   }
 
   // test with GPU bloom build, GPU bloom probe
-  for (numEstimated <- Seq(4096L, 4194304L,
-    SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
-    for (numBits <- Seq(4096L, 4194304L,
-      SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
+  for (numEstimated <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
+    for (numBits <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
       testSparkResultsAreEqual(
         s"might_contain GPU build GPU probe estimated=$numEstimated numBits=$numBits",
         buildData
@@ -133,7 +125,7 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
   }
 
   // test with CPU bloom build, GPU bloom probe
-  for (numEstimated <- Seq(4096L, 4194304L,
+  for (numEstimated <- Seq(4096L, 4194304L, Long.MaxValue,
     SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
     for (numBits <- Seq(4096L, 4194304L,
       SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
@@ -147,7 +139,7 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
   }
 
   // test with GPU bloom build, CPU bloom probe
-  for (numEstimated <- Seq(4096L, 4194304L,
+  for (numEstimated <- Seq(4096L, 4194304L, Long.MaxValue,
     SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
     for (numBits <- Seq(4096L, 4194304L,
       SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
@@ -162,10 +154,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
 
   // test with partial/final-only GPU bloom build, CPU bloom probe
   for (mode <- Seq("partial", "final")) {
-    for (numEstimated <- Seq(4096L, 4194304L,
-      SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
-      for (numBits <- Seq(4096L, 4194304L,
-        SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
+    for (numEstimated <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
+      for (numBits <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
         ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
           s"might_contain GPU $mode build CPU probe estimated=$numEstimated numBits=$numBits",
           buildData,
