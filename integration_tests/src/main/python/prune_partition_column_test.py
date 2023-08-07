@@ -203,7 +203,7 @@ def test_nested_column_prune_on_generator_output(format, spark_tmp_path, select_
     def read_temp_view(schema):
         def do_it(spark):
             spark.read.format(format).schema(schema).load(data_path + f"/{table_name}").createOrReplaceTempView(table_name)
-            return spark.table("contacts").select(f.explode(f.col("friends")).alias("friend")).select(query)
+            return spark.table(table_name).select(f.explode(f.col("friends")).alias("friend")).select(query)
         return do_it
     conf = {"spark.sql.caseSensitive": "false",
             "spark.sql.parquet.enableVectorizedReader": "true"}
