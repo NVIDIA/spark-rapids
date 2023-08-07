@@ -1389,8 +1389,8 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
       column: ColumnVector): ColumnVector = {
 
     val scalar: Scalar = previousValue match {
-      case Some(x) =>
-        x
+      case Some(value) =>
+        value
       case _ => resultType match {
         case DataTypes.ByteType => Scalar.fromNull(DType.INT8)
         case DataTypes.ShortType => Scalar.fromNull(DType.INT16)
@@ -1399,9 +1399,14 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
         case DataTypes.FloatType => Scalar.fromNull(DType.FLOAT32)
         case DataTypes.DoubleType => Scalar.fromNull(DType.FLOAT64)
         case d: DecimalType =>
-          // TODO need to know exact type here .. infer from precision and scale?
-          Scalar.fromNull(
-            DType.fromNative(DType.DTypeEnum.DECIMAL128.getNativeId, d.scale))
+          val dt = if (d.precision > DType.DECIMAL64_MAX_PRECISION) {
+            DType.DTypeEnum.DECIMAL128.getNativeId
+          } else if (d.precision > DType.DECIMAL32_MAX_PRECISION) {
+            DType.DTypeEnum.DECIMAL64.getNativeId
+          } else {
+            DType.DTypeEnum.DECIMAL32.getNativeId
+          }
+          Scalar.fromNull(DType.fromNative(dt, d.scale))
         case _ =>
           throw new IllegalStateException()
       }
