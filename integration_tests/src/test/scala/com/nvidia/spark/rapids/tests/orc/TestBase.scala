@@ -29,6 +29,9 @@ import org.apache.spark.sql.SparkSession
 abstract class TestBase extends AnyFunSuite {
   lazy val spark: SparkSession = SparkSession.builder
       .master("local[1]")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.sql.queryExecutionListeners",
+        "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
       .getOrCreate()
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {

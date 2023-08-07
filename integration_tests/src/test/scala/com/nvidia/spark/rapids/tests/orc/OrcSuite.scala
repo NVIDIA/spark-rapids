@@ -17,45 +17,73 @@
 package com.nvidia.spark.rapids.tests.orc
 
 import java.io.File
+import java.nio.file.Files
 import java.util.Objects
 
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.orc.{BinaryColumnStatistics, BooleanColumnStatistics, CollectionColumnStatistics, ColumnStatistics, DateColumnStatistics, DecimalColumnStatistics, DoubleColumnStatistics, IntegerColumnStatistics, OrcFile, StringColumnStatistics, TimestampColumnStatistics}
 import org.apache.orc.impl.{ColumnStatisticsImpl, RecordReaderImpl}
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.tests.datagen.DBGen
 
 class OrcSuite extends TestBase {
   test("Statistics tests for ORC files written by GPU") {
-    assume(true)
-    val rowsNum: Long = 1024 * 1024
+    assume(false, "blocked by cuDF issue: " +
+        "https://github.com/rapidsai/cudf/issues/13793")
+    val rowsNum: Long = 1024L * 1024L
 
-    def getStats: SparkSession => OrcStat = { spark =>
-      withTempPath { tmpDir =>
+    val testDataPath = Files.createTempDirectory("spark-rapids-orc-suite").toFile
 
+    def writeTestDataOnCpu(): Unit = {
+      withCpuSparkSession { spark =>
         // define table
         val tab = DBGen().addTable("tab", statTestSchema, rowsNum)
         tab("c03").setNullProbability(0.5)
         tab("c08").setNullProbability(0.5)
         tab("c14").setNullProbability(0.5)
 
-        // write to ORC file
-        tab.toDF(spark).coalesce(1).write.mode("overwrite").orc(tmpDir.getAbsolutePath)
-
-        // get Stats
-        getStatsFromFile(tmpDir)
+        // write to ORC file on CPU
+        tab.toDF(spark).coalesce(1).write.mode("overwrite")
+            .orc(testDataPath.getAbsolutePath)
       }
     }
 
-    // get CPU/GUP stats, assert
-    val cpuStats = withCpuSparkSession(getStats)
-    val gpuStats = withGpuSparkSession(getStats)
-    assertResult(cpuStats)(gpuStats)
+    def getStats: SparkSession => OrcStat = { spark =>
+      withTempPath { writePath =>
+        // write to ORC file
+        spark.read.orc(testDataPath.getAbsolutePath).coalesce(1)
+            .write.mode("overwrite").orc(writePath.getAbsolutePath)
+
+        // get Stats
+        getStatsFromFile(writePath)
+      }
+    }
+
+    try {
+      // generate test data on CPU
+      writeTestDataOnCpu()
+
+      // write data and get stats on CPU
+      val cpuStats = withCpuSparkSession(getStats)
+
+      // write data and get stats on GPU
+      ExecutionPlanCaptureCallback.startCapture()
+      val gpuStats = withGpuSparkSession(getStats)
+      val plan = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+      ExecutionPlanCaptureCallback.assertContains(plan(0), "GpuDataWritingCommandExec")
+
+      // compare stats
+      assertResult(cpuStats)(gpuStats)
+    } finally {
+      fullyDelete(testDataPath)
+    }
   }
 
   /**
