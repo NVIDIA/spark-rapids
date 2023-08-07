@@ -1324,10 +1324,6 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
 
   private var previousValue: Option[Scalar] = None
 
-  override def reset(): Unit = {
-    previousValue = None
-  }
-
   override def updateState(scalar: Scalar): Unit = {
     if (scalar.isValid) {
       previousValue match {
@@ -1378,10 +1374,6 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
     }
   }
 
-  override def close(): Unit = {
-    reset()
-  }
-
   override def fixUp(
       samePartitionMask: Either[ColumnVector, Boolean],
       column: ColumnVector): ColumnVector = {
@@ -1418,6 +1410,15 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
       case _ =>
         column.incRefCount()
     }
+  }
+
+  override def close(): Unit = {
+    reset()
+  }
+
+  override def reset(): Unit = {
+    previousValue.foreach(_.close())
+    previousValue = None
   }
 }
 
