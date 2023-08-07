@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapCoGroupsInPandasExec
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -134,7 +135,7 @@ case class GpuFlatMapCoGroupsInPandasExec(
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     // Python wraps the resulting columns in a single struct column.
     val pythonOutputSchema = StructType(
-      StructField("out_struct", StructType.fromAttributes(output)) :: Nil)
+      StructField("out_struct", DataTypeUtilsShim.fromAttributes(output)) :: Nil)
 
     // Resolve the argument offsets and related attributes.
     val GroupArgs(leftDedupAttrs, leftArgOffsets, leftGroupingOffsets) =
@@ -163,8 +164,8 @@ case class GpuFlatMapCoGroupsInPandasExec(
           chainedFunc,
           PythonEvalType.SQL_COGROUPED_MAP_PANDAS_UDF,
           Array(leftArgOffsets ++ rightArgOffsets),
-          StructType.fromAttributes(leftDedupAttrs),
-          StructType.fromAttributes(rightDedupAttrs),
+          DataTypeUtilsShim.fromAttributes(leftDedupAttrs),
+          DataTypeUtilsShim.fromAttributes(rightDedupAttrs),
           sessionLocalTimeZone,
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
