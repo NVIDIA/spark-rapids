@@ -1770,8 +1770,8 @@ class GpuCachedDoublePassWindowIterator(
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
 
         val okToFix = func match {
-          // TODO make this more generic to include other window functions
-          // that aggregate floating-point inputs, but not for Count
+          // we may want to make this check more generic when we add unbounded fixers for other
+          // aggregate functions that operate on floating-point inputs
           case f: GpuBasicSum =>
             f.child.dataType match {
               case DataTypes.ByteType | DataTypes.ShortType | DataTypes.IntegerType |
@@ -1779,9 +1779,7 @@ class GpuCachedDoublePassWindowIterator(
                 true
               case DataTypes.FloatType | DataTypes.DoubleType =>
                 conf.isUnboundedFloatOptimizationEnabled
-              // TODO add interval types
               case _ =>
-                // unsupported type
                 false
             }
           case _ =>

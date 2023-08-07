@@ -1369,9 +1369,6 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
                  DType.DTypeEnum.DECIMAL128 =>
               val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
               previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
-
-            // TODO interval types
-
             case other =>
               throw new IllegalStateException(s"unhandled type: $other")
           }
