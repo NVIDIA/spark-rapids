@@ -64,15 +64,15 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://??",
       "http://??/",
       "http://#",
-      // "http://##",
-      // "http://##/",
+      "http://##",
+      "http://##/",
       "http://foo.bar?q=Spaces should be encoded",
-      "//",
-      // "//a",
-      // "///a",
-      // "///",
+      // "//",
+      "//a",
+      "///a",
+      "///",
       "http:///a",
-      // "foo.com",
+      "foo.com",
       "rdar://1234",
       "h://test",
       "http:// shouldfail.com",
@@ -168,27 +168,7 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     import session.sqlContext.implicits._
     Seq[String](
       "http://",
-      // "http://.",
-      // "http://..",
-      // "http://../",
-      "http://##",
-      "http://##/",
-      "//a",
-      "///a",
-      "///",
-      "foo.com"
-      // "http://www.foo.bar.",
-      // "http://1.1.1.1.1",
-      // "http://123.123.123",
-      // "http://223.255.255.254",
-      // "http://142.42.1.1/",
-      // "http://142.42.1.1:8080/",
-      // "http://0.0.0.0",
-      // "http://10.1.1.0",
-      // "http://10.1.1.255",
-      // "http://224.1.1.1",
-      // "http://10.1.1.1",
-      // "http://10.1.1.254"
+      "//"
     ).toDF("urls")
   }
 
@@ -204,11 +184,6 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "parse_url(urls, 'AUTHORITY') as AUTHORITY",
       "parse_url(urls, 'USERINFO') as USERINFO")
   }
-
-  // def disableGpuRegex(): SparkConf = {
-  //   new SparkConf()
-  //     .set("spark.rapids.sql.regexp.enabled", "false")
-  // }
 
   testSparkResultsAreEqual("Test parse_url edge cases from internet", validUrlEdgeCasesDf) {
     parseUrls            
