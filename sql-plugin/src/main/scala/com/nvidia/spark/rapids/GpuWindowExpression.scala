@@ -28,7 +28,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.util.MathUtils
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -1350,15 +1349,15 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
               previousValue = Some(Scalar.fromShort(newValue.toShort))
             case DType.DTypeEnum.INT32 =>
               if (failOnError) {
-                previousValue = Some(Scalar.fromInt(MathUtils.addExact(
+                previousValue = Some(Scalar.fromInt(Math.addExact(
                   scalar.getInt, prev.getInt)))
               } else {
                 previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
               }
             case DType.DTypeEnum.INT64 =>
-              if (failOnError) {
-                previousValue = Some(Scalar.fromLong(MathUtils.addExact(
-                  scalar.getLong, prev.getLong)))
+                if (failOnError) {
+                  previousValue = Some(Scalar.fromLong(Math.addExact(
+                    scalar.getLong, prev.getLong)))
               } else {
                 previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
               }
