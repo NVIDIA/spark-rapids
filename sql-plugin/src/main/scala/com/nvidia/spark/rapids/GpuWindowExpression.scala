@@ -1334,43 +1334,45 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
         case None =>
           previousValue = Some(scalar.incRefCount())
         case Some(prev) =>
-          prev.getType.getTypeId match {
-            case DType.DTypeEnum.INT8 =>
-              val newValue: Int = scalar.getByte + prev.getByte
-              if (failOnError && (newValue < Byte.MinValue || newValue > Byte.MaxValue)) {
-                throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
-              }
-              previousValue = Some(Scalar.fromByte(newValue.toByte))
-            case DType.DTypeEnum.INT16 =>
-              val newValue = scalar.getShort + prev.getShort
-              if (failOnError && (newValue < Short.MinValue || newValue > Short.MaxValue)) {
-                throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
-              }
-              previousValue = Some(Scalar.fromShort(newValue.toShort))
-            case DType.DTypeEnum.INT32 =>
-              if (failOnError) {
-                previousValue = Some(Scalar.fromInt(Math.addExact(
-                  scalar.getInt, prev.getInt)))
-              } else {
-                previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
-              }
-            case DType.DTypeEnum.INT64 =>
+          withResource(prev) { _ =>
+            prev.getType.getTypeId match {
+              case DType.DTypeEnum.INT8 =>
+                val newValue: Int = scalar.getByte + prev.getByte
+                if (failOnError && (newValue < Byte.MinValue || newValue > Byte.MaxValue)) {
+                  throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
+                }
+                previousValue = Some(Scalar.fromByte(newValue.toByte))
+              case DType.DTypeEnum.INT16 =>
+                val newValue = scalar.getShort + prev.getShort
+                if (failOnError && (newValue < Short.MinValue || newValue > Short.MaxValue)) {
+                  throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
+                }
+                previousValue = Some(Scalar.fromShort(newValue.toShort))
+              case DType.DTypeEnum.INT32 =>
+                if (failOnError) {
+                  previousValue = Some(Scalar.fromInt(Math.addExact(
+                    scalar.getInt, prev.getInt)))
+                } else {
+                  previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
+                }
+              case DType.DTypeEnum.INT64 =>
                 if (failOnError) {
                   previousValue = Some(Scalar.fromLong(Math.addExact(
                     scalar.getLong, prev.getLong)))
-              } else {
-                previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
-              }
-            case DType.DTypeEnum.FLOAT32 =>
-              previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
-            case DType.DTypeEnum.FLOAT64 =>
-              previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
-            case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
-                 DType.DTypeEnum.DECIMAL128 =>
-              val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
-              previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
-            case other =>
-              throw new IllegalStateException(s"unhandled type: $other")
+                } else {
+                  previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
+                }
+              case DType.DTypeEnum.FLOAT32 =>
+                previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
+              case DType.DTypeEnum.FLOAT64 =>
+                previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
+              case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
+                   DType.DTypeEnum.DECIMAL128 =>
+                val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
+                previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
+              case other =>
+                throw new IllegalStateException(s"unhandled type: $other")
+            }
           }
         }
     }

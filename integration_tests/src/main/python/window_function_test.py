@@ -249,7 +249,7 @@ def test_decimal_running_sum_window_no_part(data_gen):
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_decimal_running_sum_window_no_part_unbounded(data_gen):
+def test_numeric_running_sum_window_no_part_unbounded(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
         'window_agg_table',
