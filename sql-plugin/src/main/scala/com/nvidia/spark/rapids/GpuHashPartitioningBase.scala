@@ -56,8 +56,7 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
           partitionInternalAndClose(batch)
         }
       }
-      val ret = sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
-      ret.zipWithIndex.filter(_._1 != null)
+      sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
     }
   }
 }
