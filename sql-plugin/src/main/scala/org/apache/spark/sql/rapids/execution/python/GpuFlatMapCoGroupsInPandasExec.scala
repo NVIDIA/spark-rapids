@@ -28,8 +28,8 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapCoGroupsInPandasExec
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -105,7 +105,7 @@ case class GpuFlatMapCoGroupsInPandasExec(
   extends SparkPlan with ShimBinaryExecNode with GpuPythonExecBase {
 
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+  private val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
   private val pandasFunction = udf.asInstanceOf[GpuPythonUDF].func
   private val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
 

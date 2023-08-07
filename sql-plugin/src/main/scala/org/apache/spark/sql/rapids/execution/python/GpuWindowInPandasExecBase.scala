@@ -34,8 +34,8 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuWindowInPandasExecMetaBase(
@@ -422,7 +422,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     val udfWindowBoundTypesStr = pyFuncs.indices
       .map(expId => frameWindowBoundTypes(exprIndex2FrameIndex(expId)).value)
       .mkString(",")
-    val pythonRunnerConf: Map[String, String] = ArrowUtils.getPythonRunnerConfMap(conf) +
+    val pythonRunnerConf: Map[String, String] = ArrowUtilsShim.getPythonRunnerConfMap(conf) +
       (windowBoundTypeConf -> udfWindowBoundTypesStr)
 
     // 4) Filter child output attributes down to only those that are UDF inputs.
