@@ -966,9 +966,7 @@ def test_bloom_filter_disabled_by_default(is_multi_column):
                             is_multi_column=is_multi_column)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize("is_multi_column", [
-    False,
-    pytest.param(True, marks=pytest.mark.xfail(reason="badness"))], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
 def test_bloom_filter_join(is_multi_column):
@@ -978,9 +976,7 @@ def test_bloom_filter_join(is_multi_column):
 
 @allow_non_gpu("FilterExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
-@pytest.mark.parametrize("is_multi_column", [
-    False,
-    pytest.param(True, marks=pytest.mark.xfail(reason="badness"))], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
 def test_bloom_filter_join_cpu_probe(is_multi_column):
@@ -1005,9 +1001,7 @@ def test_bloom_filter_join_cpu_build(is_multi_column):
 @allow_non_gpu("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
 @pytest.mark.parametrize("agg_replace_mode", ["partial", "final"])
-@pytest.mark.parametrize("is_multi_column", [
-    False,
-    pytest.param(True, marks=pytest.mark.xfail(reason="badness"))], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
 def test_bloom_filter_join_split_cpu_build(agg_replace_mode, is_multi_column):

@@ -65,7 +65,7 @@ case class GpuBloomFilterAggregate(
 
   override val updateAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterUpdate(numHashes, numBits))
 
-  override val mergeAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterMerge)
+  override val mergeAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterMerge())
 
   private lazy val bloomAttr: AttributeReference = AttributeReference("bloomFilter", dataType)()
 
@@ -108,7 +108,7 @@ case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggre
   override val name: String = "gpu_bloom_filter_update"
 }
 
-object GpuBloomFilterMerge extends CudfAggregate {
+case class GpuBloomFilterMerge() extends CudfAggregate {
   override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
     BloomFilter.merge(col)
   }
