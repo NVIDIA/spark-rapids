@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.net.URISyntaxException
-
 import ai.rapids.cudf.{ColumnVector, DType, RegexProgram, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -96,21 +94,12 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def reValid(url: ColumnVector): ColumnVector = {
-    // TODO: Validite the url
-    val regex = """^[^ ]*$"""
-    val prog = new RegexProgram(regex)
-    withResource(url.matchesRe(prog)) { isMatch =>
-      if (failOnErrorOverride) {
-        withResource(isMatch.all()) { allMatch =>
-          if (!allMatch.getBoolean) {
-            val invalidUrl = UTF8String.fromString(url.toString())
-            val exception = new URISyntaxException("", "")
-            throw RapidsErrorUtils.invalidUrlException(invalidUrl, exception)
-          }
+    // Simply check if urls contain spaces for now, most validations will be done when extracting.
+    withResource(Scalar.fromString(" ")) { blank =>
+      withResource(url.stringContains(blank)) { isMatch =>
+        withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+          isMatch.ifElse(nullScalar, url)
         }
-      }
-      withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-        isMatch.ifElse(url, nullScalar)
       }
     }
   }
@@ -147,6 +136,10 @@ case class GpuParseUrl(children: Seq[Expression],
     // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
     // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
     // toplabel      = alpha | alpha *( alphanum | "-" ) alphanum
+    
+    // Note: Spark allow an empty authority component only when it's followed by a non-empty path, 
+    // query component, or fragment component. But in plugin, parse_url just simply allow empty 
+    // authority component without checking if it is followed something or not.
     val hostnameRegex = """((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)"""
     // ipv4_regex
     val ipv4Regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
@@ -159,7 +152,7 @@ case class GpuParseUrl(children: Seq[Expression],
         isMatch.ifElse(cv, nullScalar)
       }
     }
-    // match the simple ipv6 address, valid ipv6 only when necessary
+    // match the simple ipv6 address, valid ipv6 only when necessary cause the regex is very long
     val simpleIpv6Prog = new RegexProgram(simpleIpv6Regex)
     withResource(cv.matchesRe(simpleIpv6Prog)) { isMatch =>
       val anyIpv6 = withResource(isMatch.any()) { a =>

@@ -23,15 +23,12 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import java.net.URISyntaxException
-
 import org.apache.spark.SparkDateTimeException
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
-import org.apache.spark.unsafe.types.UTF8String
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
 
@@ -86,9 +83,5 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
 
   def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
     Some(TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments"))
-  }
-
-  def invalidUrlException(url: UTF8String, e: URISyntaxException): Throwable = {
-    QueryExecutionErrors.invalidUrlError(url, e)
   }
 }

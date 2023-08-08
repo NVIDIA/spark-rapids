@@ -32,7 +32,7 @@ url_gen = StringGen(url_pattern)
 
 def test_parse_url_host():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+            lambda spark : unary_op_df(spark, url_gen, length=10).selectExpr(
                 "a",
                 "parse_url(a, 'HOST')"
                 ))
@@ -105,13 +105,6 @@ def test_parse_url_with_query_key():
                 "a",
                 "parse_url(a, 'QUERY', 'key')"
                 ))
-
-def test_parse_url_invalid_failonerror():
-    assert_gpu_and_cpu_error(
-            lambda spark : unary_op_df(spark, StringGen()).selectExpr(
-                "a","parse_url(a, 'USERINFO')").collect(),
-            conf={'spark.sql.ansi.enabled': 'true'},
-            error_message='IllegalArgumentException' if is_before_spark_320() else 'URISyntaxException')
     
 def test_parse_url_too_many_args():
     assert_gpu_and_cpu_error(

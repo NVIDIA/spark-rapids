@@ -3146,6 +3146,13 @@ object GpuOverrides extends Logging {
           Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
         val failOnError = a.failOnError
+
+        override def tagExprForGpu(): Unit = {
+          if (failOnError) {
+            willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
+          }
+        }
+
         override def convertToGpu(): GpuExpression = {
           GpuParseUrl(childExprs.map(_.convertToGpu()), failOnError)
         }

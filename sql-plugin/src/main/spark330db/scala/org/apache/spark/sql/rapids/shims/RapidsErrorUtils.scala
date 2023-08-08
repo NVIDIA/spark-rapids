@@ -20,8 +20,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import java.net.URISyntaxException
-
 import org.apache.spark.SparkDateTimeException
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
