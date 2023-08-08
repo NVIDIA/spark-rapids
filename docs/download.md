@@ -19,21 +19,39 @@ that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
 ## Release v23.08.0
-Hardware Requirements:
+### Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Models: NVIDIA P100, V100, T4, A2/A10/A30/A100, L4 and H100 GPUs
+	GPU Models: NVIDIA P100, V100, T4, A10/A100, L4 and H100 GPUs
 
-Software Requirements:
+### Software Requirements:
 
 	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
 
 	NVIDIA Driver*: 470+
 
-	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4, 3.3.0, 3.3.1, 3.3.2, 3.4.0 Databricks 10.4 ML LTS or 11.3 ML LTS Runtime and GCP Dataproc 2.0, Dataproc 2.1
-
 	Python 3.6+, Scala 2.12, Java 8, Java 17
+
+	Supported Spark versions:
+		Apache Spark 3.1.1, 3.1.2, 3.1.3 
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2
+		Apache Spark 3.4.0, 3.4.1
+	
+	Supported Databricks runtime versions: 
+		Azure:
+			Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
+			Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+			Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		AWS: 
+			Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
+			Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+			Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+	
+	Supported Dataproc versions:
+		GCP Dataproc 2.0
+		GCP Dataproc 2.1
 
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
@@ -47,7 +65,7 @@ for your hardware's minimum driver version.
 
 This package is built against CUDA 11.8, all CUDA 11.x and 12.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
-on V100, T4, A2, A10, A30, A100, L4 and H100  GPUs with CUDA 11.8-12.0.  For those using other types of GPUs 
+on V100, T4, A10, A100, L4 and H100 GPUs with CUDA 11.8-12.0.  For those using other types of GPUs 
 which do not have CUDA forward compatibility (for example, GeForce), CUDA 11.8 or later is required.
 
 ### Verify signature
@@ -69,7 +87,7 @@ New functionality and performance improvements for this release include:
 * Corner case evaluation for data formats, operators and expressions
 * Qualification and Profiling tool:
   * Profiling tool now supports Azure Databricks and AWS Databricks.
-  * Qualification tool can provide advise on unaccelerated operations.
+  * Qualification tool can provide advice on unaccelerated operations.
   * Improve user experience through CLI design.
   * Qualification tool offers configuration and migration recommendations.
   

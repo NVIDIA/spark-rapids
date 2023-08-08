@@ -10,25 +10,22 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.3.0, 3.3.1 or 3.3.2 of
-Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
-be internal the code for those plans can change even between bug fix releases. As a part of our
-process, we try to stay on top of these changes and release updates as quickly as possible.
+Please see [Software Requirements](download.md#software-requirements) section for complete list of Apache Spark versions supported by RAPIDS plugin. The plugin replaces parts of the physical plan that Apache Spark considers internal. The code for these plans can change, even between bug fix releases. As a part of our process, we try to stay on top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 10.4, 11.3](get-started/getting-started-databricks.md)
-- [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
+- [Databricks Runtime](get-started/getting-started-databricks.md)
+- [Google Cloud Dataproc](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through
   [CDS 3.2](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-spark-3-overview.html)
   and [CDS 3.3](https://docs.cloudera.com/cdp-private-cloud-base/7.1.8/cds-3/topics/spark-spark-3-overview.html).
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
-replaces parts of the physical plan that Apache Spark considers to be internal the code for those
+replaces parts of the physical plan that Apache Spark considers to be internal. The code for these
 plans can change from one distribution to another. We are working with most cloud service providers
 to set up testing and validation on their distributions.
 
@@ -39,8 +36,7 @@ release.
 
 ### What hardware is supported?
 
-The plugin is tested and supported on P100, V100, T4, A2, A10, A30, A100 and L4 datacenter GPUs.  It is possible
-to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
+Please see [Hardware Requirements](download.md#hardware-requirements) section for the list of GPUs that the RAPIDS plugin has been tested on. It is possible to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
 does not support [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
 and will need CUDA 11.5 installed. If not, the following error will be displayed:
