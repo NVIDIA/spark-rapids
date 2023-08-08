@@ -60,7 +60,7 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
       case s: GpuScalar =>
         // For a scalar in we want a scalar out.
         if (!s.isValid) {
-          GpuScalar.from(null, dt)
+          GpuScalar(null, dt)
         } else {
           withResource(s.getBase.getChildrenFromStructScalar) { children =>
             GpuScalar.wrap(children(ordinal).getScalarElement(0), dt)

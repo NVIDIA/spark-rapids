@@ -436,6 +436,11 @@ object GpuScalar extends Logging {
             withResource(s.getListAsColumnView) { elementView =>
               GpuColumnVector.typeConversionAllowed(elementView, elementType)
             }
+          case MapType(keyType, valueType, _) =>
+            withResource(s.getListAsColumnView) { elementView =>
+              GpuColumnVector.typeConversionAllowed(elementView,
+                StructType(Seq(StructField("key", keyType), StructField("value", valueType))))
+            }
           case BinaryType =>
             withResource(s.getListAsColumnView) { childView =>
               DType.UINT8.equals(childView.getType)
