@@ -163,6 +163,12 @@ trait GpuExpression extends Expression {
       case c: GpuExpression => c.hasSideEffects
       case _ => false // This path should never really happen
     }
+
+  /**
+   * If this returns true then tiered project will stop looking to combine expressions when
+   * this is seen.
+   */
+  def disableTieredProjectCombine: Boolean = hasSideEffects
 }
 
 abstract class GpuLeafExpression extends GpuExpression with ShimExpression {

@@ -27,9 +27,8 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 
 /**
  * A helper class to pack the group related items for the Python input.
@@ -455,9 +454,9 @@ class CoGroupedIterator(
   // the cuDF Arrow writer and the communication protocol.
   // We don't want to create multiple empty batches, instead leverage the ref count.
   private lazy val emptyLeftBatch: ColumnarBatch =
-    GpuColumnVector.emptyBatch(StructType.fromAttributes(leftSchema))
+    GpuColumnVector.emptyBatch(DataTypeUtilsShim.fromAttributes(leftSchema))
   private lazy val emptyRightBatch: ColumnarBatch =
-    GpuColumnVector.emptyBatch(StructType.fromAttributes(rightSchema))
+    GpuColumnVector.emptyBatch(DataTypeUtilsShim.fromAttributes(rightSchema))
 
   // Suppose runs inside a task context.
   TaskContext.get().addTaskCompletionListener[Unit] { _ =>

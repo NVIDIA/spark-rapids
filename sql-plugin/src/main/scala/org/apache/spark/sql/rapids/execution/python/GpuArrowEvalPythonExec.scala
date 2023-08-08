@@ -34,7 +34,7 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
+import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -274,7 +274,7 @@ case class GpuArrowEvalPythonExec(
     // On Databricks when projecting only one column from a Python UDF output where containing
     // multiple result columns, there will be only one attribute in the 'resultAttrs' for the
     // projecting output, but the output schema for this Python UDF contains multiple columns.
-    val pythonOutputSchema = StructType.fromAttributes(udfs.map(_.resultAttribute))
+    val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfs.map(_.resultAttribute))
 
     val childOutput = child.output
     val targetBatchSize = batchSize
