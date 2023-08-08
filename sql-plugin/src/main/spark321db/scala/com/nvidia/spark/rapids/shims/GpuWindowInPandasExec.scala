@@ -33,6 +33,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuArrowPythonRunner, GpuPythonHelper, GpuPythonUDF, GpuWindowInPandasExecBase, GroupingIterator}
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -187,7 +188,7 @@ case class GpuWindowInPandasExec(
     // where containing multiple result columns, there will be only one item in the
     // 'windowExpression' for the projecting output, but the output schema for this Python
     // UDF contains multiple columns.
-    val pythonOutputSchema = StructType.fromAttributes(udfExpressions.map(_.resultAttribute))
+    val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
 
     // 8) Start processing.

@@ -32,6 +32,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -250,7 +251,7 @@ case class GpuAggregateInPandasExec(
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
-          StructType.fromAttributes(pyOutAttributes),
+          DataTypeUtilsShim.fromAttributes(pyOutAttributes),
           () => queue.finish())
 
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)

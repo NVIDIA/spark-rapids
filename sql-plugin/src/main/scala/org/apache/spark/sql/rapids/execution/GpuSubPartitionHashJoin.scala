@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.InnerLike
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -559,7 +560,7 @@ abstract class BaseSubHashJoinIterator(
 
 trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
 
-  protected lazy val buildSchema: StructType = StructType.fromAttributes(buildPlan.output)
+  protected lazy val buildSchema: StructType = DataTypeUtilsShim.fromAttributes(buildPlan.output)
 
   def doJoinBySubPartition(
       builtIter: Iterator[ColumnarBatch],
