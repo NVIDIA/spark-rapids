@@ -26,10 +26,10 @@ import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.orc.{OrcFile, StripeInformation}
 import org.apache.orc.impl.RecordReaderImpl
-
 import org.apache.spark.{SparkConf, SparkContext}
+
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.rapids.{MyDenseVector, MyDenseVectorUDT}
+import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
 
 /**
@@ -157,8 +157,12 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
     }
     // get CPU encoding info
     val cpuEncodings = withCpuSparkSession(getEncodings)
+
     // get GPU encoding info
+    ExecutionPlanCaptureCallback.startCapture()
     val gpuEncodings = withGpuSparkSession(getEncodings)
+    val plan = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+    ExecutionPlanCaptureCallback.assertContains(plan(0), "GpuDataWritingCommandExec")
 
     assertResult(cpuEncodings)(gpuEncodings)
     gpuEncodings.foreach { case (encodingKind, _) =>
@@ -279,8 +283,9 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
 
         // Create the DataFrame
         val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
-        df.coalesce(1).write.mode("overwrite")
-            .orc(tmpDir.getAbsolutePath)
+
+        // write to a ORC file
+        df.coalesce(1).write.mode("overwrite").orc(tmpDir.getAbsolutePath)
 
         // get columns encodings
         // Only pass the String Ids
@@ -290,8 +295,12 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
 
     // get CPU encoding info
     val cpuEncodings = withCpuSparkSession(getEncodings)
+
     // get GPU encoding info
+    ExecutionPlanCaptureCallback.startCapture()
     val gpuEncodings = withGpuSparkSession(getEncodings)
+    val plan = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+    ExecutionPlanCaptureCallback.assertContains(plan(0), "GpuDataWritingCommandExec")
 
     assertResult(cpuEncodings)(gpuEncodings)
     gpuEncodings.foreach { case (encodingKind, _) =>
