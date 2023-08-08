@@ -37,6 +37,9 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 
 class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
+  val bloomFilterEnabledConf = new SparkConf()
+    .set("spark.rapids.sql.expression.BloomFilterMightContain", "true")
+    .set("spark.rapids.sql.expression.BloomFilterAggregate", "true")
   val funcId_bloom_filter_agg = new FunctionIdentifier("bloom_filter_agg")
   val funcId_might_contain = new FunctionIdentifier("might_contain")
 
@@ -119,7 +122,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
     for (numBits <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
       testSparkResultsAreEqual(
         s"might_contain GPU build GPU probe estimated=$numEstimated numBits=$numBits",
-        buildData
+        buildData,
+        conf = bloomFilterEnabledConf.clone()
       )(doBloomFilterTest(numEstimated, numBits))
     }
   }
@@ -133,7 +137,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
         s"might_contain CPU build GPU probe estimated=$numEstimated numBits=$numBits",
         buildData,
         Seq("ObjectHashAggregateExec", "ShuffleExchangeExec"),
-        conf = new SparkConf().set("spark.rapids.sql.expression.BloomFilterAggregate", "false")
+        conf = bloomFilterEnabledConf.clone()
+          .set("spark.rapids.sql.expression.BloomFilterAggregate", "false")
       )(doBloomFilterTest(numEstimated, numBits))(getPlanValidator("ObjectHashAggregateExec"))
     }
   }
@@ -147,7 +152,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
         s"might_contain GPU build CPU probe estimated=$numEstimated numBits=$numBits",
         buildData,
         Seq("LocalTableScanExec", "ProjectExec", "ShuffleExchangeExec"),
-        conf = new SparkConf().set("spark.rapids.sql.expression.BloomFilterMightContain", "false")
+        conf = bloomFilterEnabledConf.clone()
+          .set("spark.rapids.sql.expression.BloomFilterMightContain", "false")
       )(doBloomFilterTest(numEstimated, numBits))(getPlanValidator("ProjectExec"))
     }
   }
@@ -160,7 +166,7 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
           s"might_contain GPU $mode build CPU probe estimated=$numEstimated numBits=$numBits",
           buildData,
           Seq("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec"),
-          conf = new SparkConf()
+          conf = bloomFilterEnabledConf.clone()
             .set("spark.rapids.sql.expression.BloomFilterMightContain", "false")
             .set("spark.rapids.sql.hashAgg.replaceMode", mode)
         )(doBloomFilterTest(numEstimated, numBits))(getPlanValidator("ObjectHashAggregateExec"))
@@ -170,7 +176,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual(
     "might_contain with literal bloom filter buffer",
-    spark => spark.range(1, 1).asInstanceOf[DataFrame]) {
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    conf=bloomFilterEnabledConf.clone()) {
     df =>
       withExposedSqlFuncs(df.sparkSession) { spark =>
         spark.sql(
@@ -182,7 +189,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual(
     "might_contain with all NULL inputs",
-    spark => spark.range(1, 1).asInstanceOf[DataFrame]) {
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    conf=bloomFilterEnabledConf.clone()) {
     df =>
       withExposedSqlFuncs(df.sparkSession) { spark =>
         spark.sql(
@@ -197,7 +205,8 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual(
     "bloom_filter_agg with empty input",
-    spark => spark.range(1, 1).asInstanceOf[DataFrame]) {
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    conf=bloomFilterEnabledConf.clone()) {
     df =>
       withExposedSqlFuncs(df.sparkSession) { spark =>
         spark.sql("""SELECT bloom_filter_agg(cast(id as long)) from range(1, 1)""")

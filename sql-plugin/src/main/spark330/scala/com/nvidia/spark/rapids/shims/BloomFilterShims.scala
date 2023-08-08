@@ -46,7 +46,7 @@ object BloomFilterShims {
         (a, conf, p, r) => new BinaryExprMeta[BloomFilterMightContain](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuBloomFilterMightContain(lhs, rhs)
-        }),
+        }).disabledByDefault("Bloom filter join acceleration is experimental"),
       GpuOverrides.expr[BloomFilterAggregate](
         "Bloom filter build",
         ExprChecksImpl(Map(
@@ -62,8 +62,7 @@ object BloomFilterShims {
               a.estimatedNumItemsExpression.eval().asInstanceOf[Number].longValue,
               a.numBitsExpression.eval().asInstanceOf[Number].longValue)
           }
-        }
-      )
+        }).disabledByDefault("Bloom filter join acceleration is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }
