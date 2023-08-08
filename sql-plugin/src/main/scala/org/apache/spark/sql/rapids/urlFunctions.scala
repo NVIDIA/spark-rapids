@@ -82,9 +82,10 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def escapeRegex(str: String): String = {
-    // Escape all regex special characters. It is a workaround for /Q and /E not working
+    // Escape all regex special characters in \^$.⎮?*+(){}-[]
+    // It is a workaround for /Q and /E not working
     // in cudf regex, can use Pattern.quote(str) instead after they are supported.
-    str.replaceAll("""[\^$.⎮?*+(){}-]""", "\\\\$0")
+    str.replaceAll("""[\^$.|?*+()\[\]-]""", "\\$0")
   }
 
   private def getPattern(key: UTF8String): RegexProgram = {
@@ -146,23 +147,65 @@ case class GpuParseUrl(children: Seq[Expression],
     // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
     // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
     // toplabel      = alpha | alpha *( alphanum | "-" ) alphanum
-    val hostname_regex = """((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)"""
-    // TODO: ipv4_regex
-    val ipv4_regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
-    // TODO: ipv6_regex
-    //   IPv6address = hexseq [ ":" IPv4address ]
-    //                 | hexseq [ "::" [ hexpost ] ]
-    //                 | "::" [ hexpost ]
-    //   hexpost     = hexseq | hexseq ":" IPv4address | IPv4address
-    //   hexseq      = hex4 *( ":" hex4)
-    //   hex4        = 1*4HEXDIG
-    val ipv6_regex = """(\[[0-9A-Za-z%\.:]*\])"""
+    val hostnameRegex = """((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)"""
+    // ipv4_regex
+    val ipv4Regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
+    val simpleIpv6Regex = """(\[[0-9A-Za-z%.:]*\])"""
     // scalastyle:on
-    val regex = "^(" + hostname_regex + "|" + ipv4_regex + "|" + ipv6_regex + ")$"
+    val regex = "^(" + hostnameRegex + "|" + ipv4Regex + "|" + simpleIpv6Regex + ")$"
     val prog = new RegexProgram(regex)
-    withResource(cv.matchesRe(prog)) { isMatch =>
+    val HostnameIpv4Res = withResource(cv.matchesRe(prog)) { isMatch =>
       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
         isMatch.ifElse(cv, nullScalar)
+      }
+    }
+    // match the simple ipv6 address, valid ipv6 only when necessary
+    val simpleIpv6Prog = new RegexProgram(simpleIpv6Regex)
+    withResource(cv.matchesRe(simpleIpv6Prog)) { isMatch =>
+      val anyIpv6 = withResource(isMatch.any()) { a =>
+        a.isValid && a.getBoolean
+      }
+      if (anyIpv6) {
+        withResource(HostnameIpv4Res) { _ =>
+          unsetInvalidIpv6Host(HostnameIpv4Res, isMatch)
+        }
+      } else {
+        HostnameIpv4Res
+      }
+    }
+  }
+
+  private def unsetInvalidIpv6Host(cv: ColumnVector, simpleMatched: ColumnVector): ColumnVector = {
+    // scalastyle:off line.size.limit
+    // regex basically copied from https://stackoverflow.com/questions/53497/regular-expression-that-matches-valid-ipv6-addresses
+    // spilt the ipv6 regex into 8 parts to avoid the regex size limit
+    val ipv6Regex1 = """(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4})"""         // 1:2:3:4:5:6:7:8
+    val ipv6Regex2 = """(([0-9a-fA-F]{1,4}:){1,7}:)"""                        // 1::                              1:2:3:4:5:6:7::
+    val ipv6Regex3 = """(([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4})"""        // 1::8             1:2:3:4:5:6::8  1:2:3:4:5:6::8
+    val ipv6Regex4 = """(([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2})""" // 1::7:8           1:2:3:4:5::7:8  1:2:3:4:5::8
+    val ipv6Regex5 = """(([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3})""" // 1::6:7:8         1:2:3:4::6:7:8  1:2:3:4::8
+    val ipv6Regex6 = """(([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4})""" // 1::5:6:7:8       1:2:3::5:6:7:8  1:2:3::8
+    val ipv6Regex7 = """(([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5})""" // 1::4:5:6:7:8     1:2::4:5:6:7:8  1:2::8
+    val ipv6Regex8 = """([0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6}))"""      // 1::3:4:5:6:7:8   1::3:4:5:6:7:8  1::8
+    val ipv6Regex9 = """(:((:[0-9a-fA-F]{1,4}){1,7}|:))"""                    // ::2:3:4:5:6:7:8  ::2:3:4:5:6:7:8 ::8       ::
+    val ipv6Regex10 = """fe80:((:([0-9a-fA-F]{1,4})?){1,4})?%[0-9a-zA-Z]+|"""   // fe80::7:8%eth0   fe80::7:8%1     (link-local IPv6 addresses with zone index)
+    val ipv6Regex11 = """::(ffff(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])""" 
+    // ::255.255.255.255   ::ffff:255.255.255.255  ::ffff:0:255.255.255.255  (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
+    val ipv6Regex12 = """([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])"""
+    // 2001:db8:3:4::192.0.2.33  64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
+    // scalastyle:on
+    val regex = "^" + ipv6Regex1 + "|" + ipv6Regex2 + "|" + ipv6Regex3 + "|" + ipv6Regex4 + "|" + 
+        ipv6Regex5 + ipv6Regex6 + "|" + ipv6Regex7 + "|" + ipv6Regex8 + "|" + ipv6Regex9 + 
+        ipv6Regex10 + ipv6Regex11 + ipv6Regex12 + "$"
+
+    val prog = new RegexProgram(regex)
+
+    val invalidIpv6 = withResource(cv.matchesRe(prog)) { matched =>
+      matched.not()
+    }
+    withResource(invalidIpv6) { _ =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+        invalidIpv6.ifElse(cv, nullScalar)
       }
     }
   }

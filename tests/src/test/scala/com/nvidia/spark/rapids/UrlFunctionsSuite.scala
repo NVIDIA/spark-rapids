@@ -164,6 +164,44 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     ).toDF("urls")
   }
 
+  def urlIpv6Host(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[String](
+      "http://[1:2:3:4:5:6:7:8]",
+      "http://[1::]",
+      "http://[1:2:3:4:5:6:7::]",
+      "http://[1::8]",
+      "http://[1:2:3:4:5:6::8]",
+      "http://[1:2:3:4:5:6::8]",
+      "http://[1::7:8]",
+      "http://[1:2:3:4:5::7:8]",
+      "http://[1:2:3:4:5::8]",
+      "http://[1::6:7:8]",
+      "http://[1:2:3:4::6:7:8]",
+      "http://[1:2:3:4::8]",
+      "http://[1::5:6:7:8]",
+      "http://[1:2:3::5:6:7:8]",
+      "http://[1:2:3::8]",
+      "http://[1::4:5:6:7:8]",
+      "http://[1:2::4:5:6:7:8]",
+      "http://[1:2::8]",
+      "http://[1::3:4:5:6:7:8]",
+      "http://[1::3:4:5:6:7:8]",
+      "http://[1::8]",
+      "http://[::2:3:4:5:6:7:8]",
+      "http://[::2:3:4:5:6:7:8]",
+      "http://[::8]",
+      "http://[::]",
+      "http://[fe80::7:8%eth0]",
+      "http://[fe80::7:8%1]",
+      "http://[::255.255.255.255]",
+      "http://[::ffff:255.255.255.255]",
+      "http://[::ffff:0:255.255.255.255]",
+      "http://[2001:db8:3:4::192.0.2.33]",
+      "http://[64:ff9b::192.0.2.33]"
+    ).toDF("urls")
+  }
+
   def unsupportedUrlCases(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
@@ -198,6 +236,10 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test parse_url cases from java URI library", urlCasesFromJavaUriLib) {
+    parseUrls             
+  }
+
+  testSparkResultsAreEqual("Test parse_url ipv6 host", urlIpv6Host) {
     parseUrls             
   }
 
