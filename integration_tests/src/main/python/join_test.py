@@ -966,11 +966,14 @@ def test_bloom_filter_disabled_by_default(is_multi_column):
                             is_multi_column=is_multi_column)
 
 @ignore_order(local=True)
+@pytest.mark.parametrize("batch_size", ['1g', '1000'], ids=idfn)
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
-def test_bloom_filter_join(is_multi_column):
-    check_bloom_filter_join(confs=bloom_filter_exprs_enabled,
+def test_bloom_filter_join(batch_size, is_multi_column):
+    conf = copy_and_update(bloom_filter_exprs_enabled,
+                           {"spark.rapids.sql.batchSizeBytes": batch_size})
+    check_bloom_filter_join(confs=conf,
                             expected_classes="GpuBloomFilterMightContain,GpuBloomFilterAggregate",
                             is_multi_column=is_multi_column)
 
