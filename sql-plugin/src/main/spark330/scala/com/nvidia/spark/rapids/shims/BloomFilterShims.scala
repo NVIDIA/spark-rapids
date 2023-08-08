@@ -53,8 +53,10 @@ object BloomFilterShims {
           (ReductionAggExprContext,
             ContextChecks(TypeSig.BINARY, TypeSig.BINARY,
               Seq(ParamCheck("child", TypeSig.LONG, TypeSig.LONG),
-                ParamCheck("estimatedItems", TypeSig.lit(TypeEnum.LONG), TypeSig.LONG),
-                ParamCheck("numBits", TypeSig.lit(TypeEnum.LONG), TypeSig.LONG)))))),
+                ParamCheck("estimatedItems",
+                  TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG)),
+                ParamCheck("numBits",
+                  TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
         (a, conf, p, r) => new ExprMeta[BloomFilterAggregate](a, conf, p, r) {
           override def convertToGpu(): GpuExpression = {
             GpuBloomFilterAggregate(
