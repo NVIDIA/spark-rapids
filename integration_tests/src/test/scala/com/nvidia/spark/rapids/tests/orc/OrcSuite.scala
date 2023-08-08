@@ -37,7 +37,7 @@ class OrcSuite extends TestBase {
   test("Statistics tests for ORC files written by GPU") {
     assume(false, "blocked by cuDF issue: " +
         "https://github.com/rapidsai/cudf/issues/13793")
-    val rowsNum: Long = 1024L * 1024L
+    val rowsNum: Long = 1024 * 1024
 
     val testDataPath = Files.createTempDirectory("spark-rapids-orc-suite").toFile
 
@@ -239,17 +239,9 @@ class OrcSuite extends TestBase {
         float
       >,
       c15 array<
-        map<
-          struct<
-            c15_01 date,
-            c15_02 short
-          >,
-          struct<
-            c15_01 date,
-            c15_02 array<
-              long
-            >
-          >
+        struct<
+          c15_01 date,
+          c15_02 array<short>
         >
       >
     >
