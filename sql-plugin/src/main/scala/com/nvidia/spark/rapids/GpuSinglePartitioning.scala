@@ -44,11 +44,10 @@ case object GpuSinglePartitioning extends GpuExpression with ShimExpression
     } else {
       // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
       // slice will produce.
-      val sliced = sliceInternalGpuOrCpuAndClose(
+      sliceInternalGpuOrCpuAndClose(
         batch.numRows,
         Array(0),
         GpuColumnVector.extractColumns(batch))
-      sliced.zipWithIndex.filter(_._1 != null)
     }
   }
 
