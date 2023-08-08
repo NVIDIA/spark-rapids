@@ -140,6 +140,9 @@ def test_basic_scalar_map_get_map_value(key_gen):
                            "spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
 
 
+# TODO: this test is causing failures in distributed environments skipping for the short run
+# and will likely be rewritten
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/8922")
 @pytest.mark.parametrize('key_gen', supported_key_gens, ids=idfn)
 def test_map_scalars_supported_key_types(key_gen):
     def query_map_scalar(spark):

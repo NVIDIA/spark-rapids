@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.util.{Date, Locale}
 
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
 import org.apache.commons.lang3.time.FastDateFormat
 
 import org.apache.spark.sql.catalyst.util.{DateTimeFormatterHelper, DateTimeUtils, LegacyDateFormats}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils._
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy._
+
 
 // Copied from org/apache/spark/sql/catalyst/util/DateFormatter
 // for https://github.com/NVIDIA/spark-rapids/issues/6026
@@ -173,7 +173,7 @@ object DateFormatter {
       locale: Locale = defaultLocale,
       legacyFormat: LegacyDateFormat = LENIENT_SIMPLE_DATE_FORMAT,
       isParsing: Boolean): DateFormatter = {
-    if (SQLConf.get.legacyTimeParserPolicy == LEGACY) {
+    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy()) {
       getLegacyFormatter(format.getOrElse(defaultPattern), locale, legacyFormat)
     } else {
       val df = format
