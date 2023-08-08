@@ -17,14 +17,13 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims._
 
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
@@ -51,30 +50,29 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
   override def sql: String =
     child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
 
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    withResourceIfAllowed(child.columnarEvalAny(batch)) { input =>
-      val dt = dataType
-      input match {
-        case cv: GpuColumnVector =>
-          withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
-            GpuColumnVector.from(view.copyToColumnVector(), dt)
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    val dt = dataType
+    withResourceIfAllowed(child.columnarEvalAny(batch)) {
+      case cv: GpuColumnVector =>
+        withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
+          GpuColumnVector.from(view.copyToColumnVector(), dt)
+        }
+      case s: GpuScalar =>
+        // For a scalar in we want a scalar out.
+        if (!s.isValid) {
+          GpuScalar(null, dt)
+        } else {
+          withResource(s.getBase.getChildrenFromStructScalar) { children =>
+            GpuScalar.wrap(children(ordinal).getScalarElement(0), dt)
           }
-        case null =>
-          GpuColumnVector.fromNull(batch.numRows(), dt)
-        // Literal struct values are wrapped in GpuScalar
-        case s: GpuScalar =>
-          s.getValue match {
-            case null =>
-              GpuColumnVector.fromNull(batch.numRows(), dt)
-            case ir: InternalRow =>
-              val tmp = ir.get(ordinal, dt)
-              withResource(GpuScalar.from(tmp, dt)) { scalar =>
-                GpuColumnVector.from(scalar, batch.numRows(), dt)
-              }
-          }
-      }
+        }
+      case other =>
+        throw new IllegalArgumentException(s"Got an unexpected type out of columnarEvalAny $other")
     }
   }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
 }
 
 /**
