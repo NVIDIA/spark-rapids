@@ -29,9 +29,9 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, GetStructField, PlanExpression}
 import org.apache.spark.sql.catalyst.trees.TreePattern.OUTER_REFERENCE
@@ -49,7 +49,7 @@ case class GpuBloomFilterMightContain(
       case s: GpuScalar => GpuBloomFilter(s)
       case x => throw new IllegalStateException(s"Expected GPU scalar, found $x")
     }
-    Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+    onTaskCompletionIfNotTest(close())
     ret
   }
 

@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -418,7 +419,7 @@ case class GpuProjectAstExec(
             }
           }
 
-        Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+        onTaskCompletionIfNotTest(close())
 
         override def hasNext: Boolean = {
           if (cbIter.hasNext) {

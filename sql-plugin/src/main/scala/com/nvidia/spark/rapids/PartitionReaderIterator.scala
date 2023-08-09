@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.TaskContext
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
@@ -28,7 +29,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 class PartitionReaderIterator(reader: PartitionReader[ColumnarBatch])
     extends Iterator[ColumnarBatch] with AutoCloseable {
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  onTaskCompletionIfNotTest(close())
 
   var hasNextResult: Option[Boolean] = None
 

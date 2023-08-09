@@ -20,8 +20,8 @@ import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
 
-import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
@@ -42,7 +42,7 @@ trait TaskAutoCloseableResource extends AutoCloseable {
     resources.clear()
   }
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  onTaskCompletionIfNotTest(close())
 }
 
 /**

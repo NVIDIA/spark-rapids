@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
-import org.apache.spark.TaskContext
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -39,7 +40,7 @@ class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] =
     }
   }
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
+  onTaskCompletionIfNotTest(closeCurrentBatch())
 
   override def hasNext: Boolean = {
     closeCurrentBatch()

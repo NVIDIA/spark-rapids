@@ -17,6 +17,7 @@ package org.apache.spark.sql.rapids.shims
 
 import java.io.{FileNotFoundException, IOException}
 
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import org.apache.parquet.io.ParquetDecodingException
 
 import org.apache.spark.{Partition => RDDPartition, SparkUpgradeException, TaskContext}
@@ -187,7 +188,7 @@ class GpuFileScanRDD(
     }
 
     // Register an on-task-completion callback to close the input stream.
-    context.addTaskCompletionListener[Unit](_ => iterator.close())
+    onTaskCompletion(context)(iterator.close())
 
     iterator.asInstanceOf[Iterator[InternalRow]] // This is an erasure hack.
   }

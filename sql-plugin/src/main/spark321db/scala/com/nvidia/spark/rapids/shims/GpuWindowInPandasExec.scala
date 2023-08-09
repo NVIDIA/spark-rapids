@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.TaskContext
@@ -194,7 +195,7 @@ case class GpuWindowInPandasExec(
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(context)(query.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator

@@ -22,6 +22,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -170,7 +171,7 @@ case class GpuAggregateInPandasExec(
     child.executeColumnar().mapPartitionsInternal { inputIter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(queue.close())
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)

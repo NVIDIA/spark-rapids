@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.TableWriter
-import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuBoundReference, GpuColumnVector, RapidsBufferCatalog, RapidsDeviceMemoryStore}
+import com.nvidia.spark.rapids.{ColumnarOutputWriter, ColumnarOutputWriterFactory, GpuBoundReference, GpuColumnVector, RapidsBufferCatalog, RapidsDeviceMemoryStore, ScalableTaskCompletion}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
 import org.apache.hadoop.conf.Configuration
@@ -98,6 +98,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
   }
 
   def resetMocks(): Unit = {
+    ScalableTaskCompletion.reset()
     allCols = null
     partSpec = null
     dataSpec = null

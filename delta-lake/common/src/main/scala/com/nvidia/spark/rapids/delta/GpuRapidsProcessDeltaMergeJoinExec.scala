@@ -22,8 +22,8 @@ import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
@@ -239,7 +239,7 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
   private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME, NoopMetric)
   private[this] val numOutputRows = metrics.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric)
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  onTaskCompletionIfNotTest(close())
 
   override def hasNext: Boolean = {
     nextBatch = nextBatch.orElse(processNextBatch())

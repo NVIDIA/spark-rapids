@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.concurrent.{TimeLimitedTests, TimeLimits}
@@ -32,6 +31,7 @@ class GpuSemaphoreSuite extends AnyFunSuite
   val timeLimit = Span(10, Seconds)
 
   override def beforeEach(): Unit = {
+    ScalableTaskCompletion.reset()
     GpuSemaphore.shutdown()
     // semaphore tests depend on a SparkEnv being available
     val activeSession = SparkSession.getActiveSession
@@ -44,6 +44,7 @@ class GpuSemaphoreSuite extends AnyFunSuite
   }
 
   override def afterEach(): Unit = {
+    ScalableTaskCompletion.reset()
     GpuSemaphore.shutdown()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
@@ -67,14 +68,5 @@ class GpuSemaphoreSuite extends AnyFunSuite
     GpuSemaphore.acquireIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
-  }
-
-  test("Completion listener registered on first acquire") {
-    val context = mockContext(1)
-    GpuSemaphore.acquireIfNecessary(context)
-    verify(context, times(1)).addTaskCompletionListener[Unit](any())
-    GpuSemaphore.acquireIfNecessary(context)
-    GpuSemaphore.acquireIfNecessary(context)
-    verify(context, times(1)).addTaskCompletionListener[Unit](any())
   }
 }
