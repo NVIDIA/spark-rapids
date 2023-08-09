@@ -147,7 +147,7 @@ spilled data size to improve performance.
 Note: AQE's Coalescing Post Shuffle Partitions feature could have different behaviors in different 
 Spark 3.x versions. For example, in Spark 3.1.3, `spark.sql.adaptive.coalescePartitions.minPartitionNum`
 by default is set to `spark.sql.shuffle.partitions`(default value=200). However in Spark 3.2 or 3.3, 
-`minPartitionNum` does not exist any more. So always check the correct version of Spark doc.
+`minPartitionNum` does not exist any more. So always check the correct version of the Spark documentation.
 
 ### 5. Reduce columnar batch size and file reader batch size
 
