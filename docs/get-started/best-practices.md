@@ -52,7 +52,7 @@ The Spark executor log will contain a message like the following when using the 
 INFO GpuDeviceManager: Initializing RMM ASYNC pool size = 17840.349609375 MB on gpuId 0
 ```
 
-### 3. Identify which SQL, job and stage runs OOM
+### 3. Identify which SQL, job and stage is involved in the error
 
 The relationship between SQL/job/stage are: Stage belongs to a Job which belongs to SQL.
 Firstly check Spark UI to identify the problematic SQL ID, Job ID, and Stage ID.
