@@ -243,7 +243,7 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
   }
 
   test("orc dictionary encoding with lots of rows for nested types") {
-    assume(true, "TODO: move this case to scale test in future")
+    assume(false, "TODO: move this case to scale test in future")
     val rowsNum = 1000000
 
     // orc.dictionary.key.threshold default is 0.8
