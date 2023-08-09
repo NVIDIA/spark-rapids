@@ -1013,9 +1013,6 @@ all_basic_gens = all_basic_gens_no_null + [null_gen]
 all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
-all_basic_gens_no_floats = [byte_gen, short_gen, int_gen, long_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
-
 # Many Spark versions have issues sorting large decimals,
 # see https://issues.apache.org/jira/browse/SPARK-40089.
 orderable_decimal_gen_128bit = decimal_gen_128bit
@@ -1048,8 +1045,6 @@ single_level_array_gens_no_null = [ArrayGen(sub_gen) for sub_gen in all_basic_ge
 
 single_level_array_gens_no_nan = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_nan + decimal_gens]
 
-single_level_array_gens_no_floats = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_floats + decimal_gens]
-
 single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
 
 map_string_string_gen = [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
@@ -1068,13 +1063,9 @@ all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 
 all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_nan)])
 
-all_basic_struct_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_floats)])
-
 struct_array_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens)])
 
 struct_array_gen_no_nans = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
-
-struct_array_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_floats)])
 
 # Some struct gens, but not all because of nesting
 nonempty_struct_gens_sample = [all_basic_struct_gen,
