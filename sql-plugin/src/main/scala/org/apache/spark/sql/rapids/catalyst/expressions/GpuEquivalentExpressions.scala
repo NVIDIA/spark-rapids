@@ -193,7 +193,8 @@ class GpuEquivalentExpressions {
     val skip = expr.isInstanceOf[LeafExpression] ||
       expr.isInstanceOf[GpuLeafExpression] ||
       expr.isInstanceOf[GpuUnevaluable] ||
-      (expr.isInstanceOf[GpuExpression] && expr.asInstanceOf[GpuExpression].hasSideEffects) ||
+      (expr.isInstanceOf[GpuExpression] &&
+          expr.asInstanceOf[GpuExpression].disableTieredProjectCombine) ||
       // `LambdaVariable` is usually used as a loop variable, which can't be evaluated ahead of the
       // loop. So we can't evaluate sub-expressions containing `LambdaVariable` at the beginning.
       expr.find(_.isInstanceOf[LambdaVariable]).isDefined ||

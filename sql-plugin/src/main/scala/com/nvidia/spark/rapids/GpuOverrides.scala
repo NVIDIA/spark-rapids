@@ -3274,22 +3274,10 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL +
-              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Structs containing " +
-              s"float/double will not be supported.") +
-              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Arrays containing " +
-              s"floats/doubles will not be supported.")).nested(),
+              TypeSig.STRUCT +
+              TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
-
-        override def tagAggForGpu(): Unit = {
-          // Fall back to CPU if type is nested and contains floats or doubles in the type tree.
-          // Because NaNs in nested types are not supported yet.
-          // See https://github.com/NVIDIA/spark-rapids/issues/8808
-          if (c.child.dataType != FloatType && c.child.dataType != DoubleType &&
-              isOrContainsFloatingPoint(c.child.dataType)) {
-            willNotWorkOnGpu("Float/Double in nested type is not supported")
-          }
-        }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)

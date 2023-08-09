@@ -30,6 +30,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
 
 
 object BloomFilterShims {
@@ -45,7 +46,25 @@ object BloomFilterShims {
         (a, conf, p, r) => new BinaryExprMeta[BloomFilterMightContain](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuBloomFilterMightContain(lhs, rhs)
-        })
+        }).disabledByDefault("Bloom filter join acceleration is experimental"),
+      GpuOverrides.expr[BloomFilterAggregate](
+        "Bloom filter build",
+        ExprChecksImpl(Map(
+          (ReductionAggExprContext,
+            ContextChecks(TypeSig.BINARY, TypeSig.BINARY,
+              Seq(ParamCheck("child", TypeSig.LONG, TypeSig.LONG),
+                ParamCheck("estimatedItems",
+                  TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG)),
+                ParamCheck("numBits",
+                  TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
+        (a, conf, p, r) => new ExprMeta[BloomFilterAggregate](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression = {
+            GpuBloomFilterAggregate(
+              childExprs.head.convertToGpu(),
+              a.estimatedNumItemsExpression.eval().asInstanceOf[Number].longValue,
+              a.numBitsExpression.eval().asInstanceOf[Number].longValue)
+          }
+        }).disabledByDefault("Bloom filter join acceleration is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }

@@ -387,26 +387,54 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMergeLists"
 }
 
+/**
+ * Spark handles NaN's equality by different way for non-nested float/double and float/double 
+ * in nested types. When we use non-nested versions of floats and doubles, NaN values are 
+ * considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+ * on the CPU. So we set NaNEquality dynamically in CudfCollectSet and CudfMergeSets.
+ * Note that dataType is ArrayType(child.dataType) here.
+ */
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      val collectSet = ReductionAggregation.collectSet(
-        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      val collectSet = dataType match {
+        case ArrayType(FloatType | DoubleType, _) =>
+          ReductionAggregation.collectSet(
+            NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+        case _: DataType => 
+          ReductionAggregation.collectSet(
+            NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+      }
       col.reduce(collectSet, DType.LIST)
     }
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+  override lazy val groupByAggregate: GroupByAggregation = dataType match {
+    case ArrayType(FloatType | DoubleType, _) =>
+      GroupByAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+    case _: DataType =>
+      GroupByAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+  }
   override val name: String = "CudfCollectSet"
 }
 
 class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      val mergeSets = ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      val mergeSets = dataType match {
+        case ArrayType(FloatType | DoubleType, _) =>
+          ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+        case _: DataType =>
+          ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+      }
       col.reduce(mergeSets, DType.LIST)
     }
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+  override lazy val groupByAggregate: GroupByAggregation = dataType match {
+    case ArrayType(FloatType | DoubleType, _) =>
+      GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+    case _: DataType =>
+      GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+  }
   override val name: String = "CudfMergeSets"
 }
 
@@ -1953,11 +1981,20 @@ case class GpuCollectSet(
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_set"
-
+  
+  // Spark handles NaN's equality by different way for non-nested float/double and float/double 
+  // in nested types. When we use non-nested versions of floats and doubles, NaN values are 
+  // considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+  // on the CPU. So we set NaNEquality dynamically here.
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
-    RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = child.dataType match {
+    case FloatType | DoubleType => 
+      RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
         NaNEquality.UNEQUAL).onColumn(inputs.head._2)
+    case _ => 
+      RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+        NaNEquality.ALL_EQUAL).onColumn(inputs.head._2)
+  }
 }
 
 trait CpuToGpuAggregateBufferConverter {
