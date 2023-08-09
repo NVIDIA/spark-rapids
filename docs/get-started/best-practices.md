@@ -140,9 +140,9 @@ We can adjust the above parameters to increase the # of tasks/partitions for thi
 reduce the memory pressure for each task. For example, we can start with increasing 
 `spark.sql.shuffle.partitions` (2x,4x,8x,etc.).
 
-Even though there is no OOM issue but if we found lots of spilling based on SQL plan metrics from 
-Spark UI in this shuffle stage, increasing the # of tasks/partitions could decrease the spilling 
-data size to improve performance.
+Even without an OOM error, if the SQL plan metrics show lots of spilling from the
+Spark UI in this stage, increasing the number  of tasks/partitions could decrease the
+spilled data size to improve performance.
 
 Note: AQE's Coalescing Post Shuffle Partitions feature could have different behaviors in different 
 Spark 3.x versions. For example, in Spark 3.1.3, `spark.sql.adaptive.coalescePartitions.minPartitionNum`
