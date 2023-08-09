@@ -83,8 +83,8 @@ If it is a shuffle stage, then the number of tasks/partitions is normally determ
 feature (Such as parameters `spark.sql.adaptive.coalescePartitions.minPartitionSize`, 
 `spark.sql.adaptive.advisoryPartitionSizeInBytes` etc.).
 
-We can adjust the above parameters to increase the # of tasks/partitions for this shuffle stage to 
-reduce the memory pressure for each task. For example, we can start with increasing 
+We can adjust the above parameters to increase the number of tasks/partitions for this shuffle
+stage to  reduce the memory pressure for each task. For example, we can start with increasing 
 `spark.sql.shuffle.partitions` (2x,4x,8x,etc.).
 
 Even without an OOM error, if the SQL plan metrics show lots of spilling from the
