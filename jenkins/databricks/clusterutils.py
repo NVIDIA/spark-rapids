@@ -52,7 +52,7 @@ class ClusterUtils(object):
             for path in path_list:
                 templ['init_scripts'].append(
                     {
-                        'dbfs' : {
+                        'workspace' : {
                             'destination' : path
                         }
                     }
