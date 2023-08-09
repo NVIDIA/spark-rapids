@@ -678,7 +678,7 @@ def test_like_null():
             .with_special_case('%SystemDrive%\\Users\\John')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').like('_'))) 
+                f.col('a').like('_')))
 
 def test_like():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
@@ -755,7 +755,7 @@ def test_like_simple_escape():
                 'a like "c_" escape "c"',
                 'a like x "6162632325616263" escape "#"',
                 'a like x "61626325616263" escape "#"'))
- 
+
 def test_like_complex_escape():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
             .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
@@ -784,7 +784,7 @@ def test_like_complex_escape():
 @pytest.mark.parametrize('from_base', [10], ids=idfn)
 @pytest.mark.parametrize('to_base', [16], ids=idfn)
 @pytest.mark.parametrize('pattern', ['[0-9]{1,18}', '[0-9a-fA-F]{1,15}'])
-def test_conv_dec_to_hex(from_base, to_base, pattern):
+def test_conv_dec_to_and_from_hex(from_base, to_base, pattern):
     gen = mk_str_gen(pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))

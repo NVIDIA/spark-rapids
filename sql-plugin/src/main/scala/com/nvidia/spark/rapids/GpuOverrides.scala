@@ -3038,8 +3038,14 @@ object GpuOverrides extends Logging {
         outputCheck = TypeSig.STRING,
         paramCheck = Seq(
           ParamCheck(name = "num", cudf = TypeSig.STRING, spark = TypeSig.STRING),
-          ParamCheck(name = "from_base", cudf = TypeSig.integral, spark = TypeSig.integral),
-          ParamCheck(name = "to_base",   cudf = TypeSig.integral, spark = TypeSig.integral)),
+          ParamCheck(
+            name = "from_base",
+            cudf = TypeSig.integral.withInitialTypesPsNote("only values 10 and 16 are supported"),
+            spark = TypeSig.integral),
+          ParamCheck(
+            name = "to_base",
+            cudf = TypeSig.integral.withInitialTypesPsNote("only values 10 and 16 are supported"),
+            spark = TypeSig.integral)),
         sparkOutputSig = TypeSig.STRING),
         (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
           new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)),
