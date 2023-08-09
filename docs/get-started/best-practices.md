@@ -96,7 +96,7 @@ If the job still hit OOMs, try the following steps.
 
 The default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from `ARENA` for CUDA 
 11.5+. For CUDA 11.4 and older, it will fall back to `ARENA`.
-Using ASYNC allocator can avoid certain memory fragmentation issue.
+Using ASYNC allocator can avoid some memory fragmentation issues.
 
 The Spark executor log should print below messages to indicate how much memory the executor could 
 have used:
