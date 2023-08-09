@@ -72,9 +72,9 @@ If it is a table scan stage on Parquet/ORC tables, then the number of tasks/part
 determined by `spark.sql.files.maxPartitionBytes`. We can decrease its value to increase the
 number of tasks/partitions for this stage so that the memory pressure of each task is less. 
 
-Iceberg or Delta 
-tables may have different settings to control the concurrency in the table scan stage. For example, 
-Iceberg uses `read.split.target-size` to control the split size.
+Iceberg or Delta  tables may have different settings to control the concurrency in the table
+scan stage. For example, Iceberg uses `read.split.target-size` as a table property or read option
+to control the split size.
 
 #### b. Shuffle Stage
 
