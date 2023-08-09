@@ -50,6 +50,40 @@ object GpuParseUrl {
   private val FILE_REGEX      = """^(?:(?:(?:[^:/?#]+):)?(?://(?:(?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?((?:[^?#]*)(?:\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
   private val AUTHORITY_REGEX = """^(?:(?:(?:[^:/?#]+):)?(?://((?:(?:(?:[^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
   private val USERINFO_REGEX  = """^(?:(?:(?:[^:/?#]+):)?(?://(?:(?:(?:([^:]*:?[^\@]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)(?:\?[^#]*)?(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  // HostName parsing followed rules in java URI lib:
+  // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
+  // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
+  // toplabel      = alpha | alpha *( alphanum | "-" ) alphanum
+  val hostnameRegex = """((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)"""
+  val ipv4Regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
+  val simpleIpv6Regex = """(\[[0-9A-Za-z%.:]+])"""
+  // regex basically copied from https://stackoverflow.com/questions/53497/regular-expression-that-matches-valid-ipv6-addresses
+  val ipv6Regex1 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?"""         
+  // 1:2:3:4:5:6:7:8
+  val ipv6Regex2 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?:"""                        
+  // 1::                              1:2:3:4:5:6:7::
+  val ipv6Regex3 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)"""        
+  // 1::8             1:2:3:4:5:6::8  1:2:3:4:5:6::8
+  val ipv6Regex4 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
+  // 1::7:8           1:2:3:4:5::7:8  1:2:3:4:5::8
+  val ipv6Regex5 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
+  // 1::6:7:8         1:2:3:4::6:7:8  1:2:3:4::8
+  val ipv6Regex6 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
+  // 1::5:6:7:8       1:2:3::5:6:7:8  1:2:3::8
+  val ipv6Regex7 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
+  // 1::4:5:6:7:8     1:2::4:5:6:7:8  1:2::8
+  val ipv6Regex8 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:((:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?))"""      
+  // 1::3:4:5:6:7:8   1::3:4:5:6:7:8  1::8
+  val ipv6Regex9 = """(:((:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?|:))"""                    
+  // ::2:3:4:5:6:7:8  ::2:3:4:5:6:7:8 ::8       ::
+  val ipv6Regex10 = """(fe80:((:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)(:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)?(:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)?(:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)?)?%[0-9a-zA-Z]+)"""   
+  // fe80::7:8%eth0   fe80::7:8%1     (link-local IPv6 addresses with zone index)
+  val ipv6Regex11 = """(::((ffff|FFFF)(:00?0?0?)?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)?(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))""" 
+  // ::255.255.255.255   ::ffff:255.255.255.255  ::ffff:0:255.255.255.255  (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
+  val ipv6Regex12 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)(25[0-5]|(2[0-4]|1?[0-9])?[0-9])"""
+  // 2001:db8:3:4::192.0.2.33  64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
+  val ipv6Regex13 = """(0:0:0:0:0:(0|FFFF|ffff):((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
+  // 0:0:0:0:0:0:13.1.68.3
   // scalastyle:on
 }
 
@@ -119,15 +153,6 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def unsetInvalidHost(cv: ColumnVector): ColumnVector = {
-    // scalastyle:off line.size.limit
-    // HostName parsing followed rules in java URI lib:
-    // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
-    // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
-    // toplabel      = alpha | alpha *( alphanum | "-" ) alphanum
-    val hostnameRegex = """((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)+([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z]))\.?)"""
-    val ipv4Regex = """(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9]))"""
-    val simpleIpv6Regex = """(\[[0-9A-Za-z%.:]+])"""
-    // scalastyle:on
     val regex = "^(" + hostnameRegex + "|" + ipv4Regex + "|" + simpleIpv6Regex + ")$"
     val prog = new RegexProgram(regex)
     val HostnameIpv4Res = withResource(cv.matchesRe(prog)) { isMatch =>
@@ -152,54 +177,20 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def unsetInvalidIpv6Host(cv: ColumnVector, simpleMatched: ColumnVector): ColumnVector = {
-    // scalastyle:off line.size.limit
-    // regex basically copied from https://stackoverflow.com/questions/53497/regular-expression-that-matches-valid-ipv6-addresses
-    // spilt the ipv6 regex into 8 parts to avoid the regex size limit
-    val ipv6Regex1 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?"""         
-    // 1:2:3:4:5:6:7:8
-    val ipv6Regex2 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?:"""                        
-    // 1::                              1:2:3:4:5:6:7::
-    val ipv6Regex3 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)"""        
-    // 1::8             1:2:3:4:5:6::8  1:2:3:4:5:6::8
-    val ipv6Regex4 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
-    // 1::7:8           1:2:3:4:5::7:8  1:2:3:4:5::8
-    val ipv6Regex5 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
-    // 1::6:7:8         1:2:3:4::6:7:8  1:2:3:4::8
-    val ipv6Regex6 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
-    // 1::5:6:7:8       1:2:3::5:6:7:8  1:2:3::8
-    val ipv6Regex7 = """(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)""" 
-    // 1::4:5:6:7:8     1:2::4:5:6:7:8  1:2::8
-    val ipv6Regex8 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:((:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?))"""      
-    // 1::3:4:5:6:7:8   1::3:4:5:6:7:8  1::8
-    val ipv6Regex9 = """(:((:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?(:[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?|:))"""                    
-    // ::2:3:4:5:6:7:8  ::2:3:4:5:6:7:8 ::8       ::
-    val ipv6Regex10 = """(fe80:((:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)(:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)?(:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)?(:([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)?)?)?%[0-9a-zA-Z]+)"""   
-    // fe80::7:8%eth0   fe80::7:8%1     (link-local IPv6 addresses with zone index)
-    val ipv6Regex11 = """(::(ffff(:00?0?0?)?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)?(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))""" 
-    // ::255.255.255.255   ::ffff:255.255.255.255  ::ffff:0:255.255.255.255  (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
-    val ipv6Regex12 = """([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:)?:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.)(25[0-5]|(2[0-4]|1?[0-9])?[0-9])"""
-    // 2001:db8:3:4::192.0.2.33  64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
-    // scalastyle:on
     val regex = """^\[(""" + ipv6Regex1 + "|" + ipv6Regex2 + "|" + ipv6Regex3 + "|" + ipv6Regex4 + "|" + 
         ipv6Regex5 + "|" + ipv6Regex6 + "|" + ipv6Regex7 + "|" + ipv6Regex8 + "|" + ipv6Regex9 + "|" +
-        ipv6Regex10 + "|" + ipv6Regex11 + "|" + ipv6Regex12 + """)]$"""
-    // ^\[((([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:){7,7}[0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?)|(([0-9a-fA-F][0-9a-fA-F]?[0-9a-fA-F]?[0-9a-fA-F]?:){1,7}:))]$
+        ipv6Regex10 + "|" + ipv6Regex11 + "|" + ipv6Regex12 + "|" + ipv6Regex13 + """)(%[a-zA-Z0-9]*)?]$"""
+    
     val prog = new RegexProgram(regex)
-
-    GpuColumnVector.debug("cv", cv)
-    GpuColumnVector.debug("simpleMatched", simpleMatched)
 
     val invalidIpv6 = withResource(cv.matchesRe(prog)) { matched =>
       withResource(matched.not()) { invalid =>
-        GpuColumnVector.debug("invalid", invalid)
         simpleMatched.and(invalid)
       }
     }
     withResource(invalidIpv6) { _ =>
       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-        val x = invalidIpv6.ifElse(nullScalar, cv)
-        GpuColumnVector.debug("unsetinvalidIpv6", x)
-        x
+        invalidIpv6.ifElse(nullScalar, cv)
       }
     }
   }

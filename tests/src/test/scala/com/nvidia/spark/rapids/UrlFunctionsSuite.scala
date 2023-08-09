@@ -159,7 +159,6 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
   def urlIpv6Host(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
-      "http://[1:2:3:4:5:6:7:8:9:10]",
       "http://[1:2:3:4:5:6:7:8]",
       "http://[1::]",
       "http://[1:2:3:4:5:6:7::]",
@@ -195,17 +194,6 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     ).toDF("urls")
   }
 
-  def unsupportedUrlCases(session: SparkSession): DataFrame = {
-    // Spark allow an empty authority component only when it's followed by a non-empty path, 
-    // query component, or fragment component. But in plugin, parse_url just simply allow 
-    // empty authority component without checking if it is followed something or not.
-    import session.sqlContext.implicits._
-    Seq[String](
-      "http://",
-      "//"
-    ).toDF("urls")
-  }
-
   def parseUrls(frame: DataFrame): DataFrame = {
     frame.selectExpr(
       "urls",
@@ -237,10 +225,6 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test parse_url ipv6 host", urlIpv6Host) {
     parseUrls             
-  }
-
-  testSparkResultsAreEqual("Test parse_url unsupport cases", unsupportedUrlCases) {
-    parseUrls
   }
 
   testSparkResultsAreEqual("Test parse_url with query and key", urlWithQueryKey) {

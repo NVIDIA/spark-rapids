@@ -463,8 +463,12 @@ In Spark, parse_url is based on java's URI library, while the implementation in 
 These are the known cases where running on the GPU will produce different results to the CPU:
 
 - Spark allow an empty authority component only when it's followed by a non-empty path, 
-    query component, or fragment component. But in plugin, parse_url just simply allow empty 
-    authority component without checking if it is followed something or not. So `parse_url('http://', 'HOST')` will return `null` in Spark, but return `""` in plugin.
+  query component, or fragment component. But in plugin, parse_url just simply allow empty 
+  authority component without checking if it is followed something or not. So `parse_url('http://', 'HOST')` will
+  return `null` in Spark, but return `""` in plugin.
+- If input url has a invalid Ipv6 address, Spark will return `null` for all components, but plugin will parse other
+  components except `HOST` as normal. So `http://userinfo@[1:2:3:4:5:6:7:8:9:10]/path?query=1#Ref`'s result will be 
+  `[null,/path,query=1,Ref,http,/path?query=1,userinfo@[1:2:3:4:5:6:7:8:9:10],userinfo]`
 
 ## Windowing
 
