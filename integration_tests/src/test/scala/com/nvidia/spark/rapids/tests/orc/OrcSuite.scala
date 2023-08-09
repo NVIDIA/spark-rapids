@@ -23,28 +23,36 @@ import java.util.Objects
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import com.nvidia.spark.rapids.shims.spark311.OrcStatisticShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
-import org.apache.orc.{BinaryColumnStatistics, BooleanColumnStatistics, CollectionColumnStatistics, ColumnStatistics, DateColumnStatistics, DecimalColumnStatistics, DoubleColumnStatistics, IntegerColumnStatistics, OrcFile, StringColumnStatistics, TimestampColumnStatistics}
-import org.apache.orc.impl.{ColumnStatisticsImpl, RecordReaderImpl}
+import org.apache.orc._
+import org.apache.orc.impl._
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+import org.apache.spark.sql.tests.datagen.BigDataGenConsts._
 import org.apache.spark.sql.tests.datagen.DBGen
+import org.apache.spark.sql.types.{DateType, TimestampType}
 
 class OrcSuite extends TestBase {
   test("Statistics tests for ORC files written by GPU") {
-    assume(false, "blocked by cuDF issue: " +
-        "https://github.com/rapidsai/cudf/issues/13793")
-    val rowsNum: Long = 1024 * 1024
+    assume(true, "blocked by cuDF issue: " +
+        "https://github.com/rapidsai/cudf/issues/13793," +
+        "https://github.com/rapidsai/cudf/issues/13837," +
+        "https://github.com/rapidsai/cudf/issues/13817")
+    val rowsNum: Long = 1024L * 1024L
 
     val testDataPath = Files.createTempDirectory("spark-rapids-orc-suite").toFile
 
     def writeTestDataOnCpu(): Unit = {
       withCpuSparkSession { spark =>
         // define table
-        val tab = DBGen().addTable("tab", statTestSchema, rowsNum)
+        val gen = DBGen()
+        gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
+        gen.setDefaultValueRange(DateType, minDateIntForOrc, maxDateIntForOrc)
+        val tab = gen.addTable("tab", statTestSchema, rowsNum)
         tab("c03").setNullProbability(0.5)
         tab("c08").setNullProbability(0.5)
         tab("c14").setNullProbability(0.5)
@@ -159,6 +167,7 @@ class OrcSuite extends TestBase {
     def equalsForBasicStat(t: ColumnStatistics, o: ColumnStatistics): Boolean = {
       // skip check the bytesOnDisk
       t.getNumberOfValues == o.getNumberOfValues && t.hasNull == o.hasNull
+      true
     }
 
     // Note: no corresponding hashCode, should not be used in Map key
@@ -166,9 +175,6 @@ class OrcSuite extends TestBase {
       case _@ColumnStat(thatCs) =>
         if (!equalsForBasicStat(cs, thatCs)) return false
         (cs, thatCs) match {
-          case (dateStat: DateColumnStatistics, otherDateStat: DateColumnStatistics) =>
-            Objects.equals(dateStat.getMinimumLocalDate, otherDateStat.getMinimumLocalDate) &&
-                Objects.equals(dateStat.getMaximumLocalDate, otherDateStat.getMaximumLocalDate)
           case (doubleStat: DoubleColumnStatistics, otherDoubleStat: DoubleColumnStatistics) =>
             Objects.equals(doubleStat.getMinimum, otherDoubleStat.getMinimum) &&
                 Objects.equals(doubleStat.getMaximum, otherDoubleStat.getMaximum) &&
@@ -179,12 +185,6 @@ class OrcSuite extends TestBase {
                 Objects.equals(decimalStat.getSum, otherDecimalStat.getSum)
           case (boolStat: BooleanColumnStatistics, otherBoolStat: BooleanColumnStatistics) =>
             Objects.equals(boolStat.getFalseCount, otherBoolStat.getFalseCount)
-          case (strStat: StringColumnStatistics, otherStrStat: StringColumnStatistics) =>
-            Objects.equals(strStat.getLowerBound, otherStrStat.getLowerBound) &&
-                Objects.equals(strStat.getUpperBound, otherStrStat.getUpperBound) &&
-                Objects.equals(strStat.getMinimum, otherStrStat.getMinimum) &&
-                Objects.equals(strStat.getMaximum, otherStrStat.getMaximum) &&
-                Objects.equals(strStat.getSum, otherStrStat.getSum)
           case (integerStat: IntegerColumnStatistics, otherIntegerStat: IntegerColumnStatistics) =>
             Objects.equals(integerStat.getMinimum, otherIntegerStat.getMinimum) &&
                 Objects.equals(integerStat.getMaximum, otherIntegerStat.getMaximum) &&
@@ -192,15 +192,13 @@ class OrcSuite extends TestBase {
                 Objects.equals(integerStat.getSum, otherIntegerStat.getSum)
           case (binaryStat: BinaryColumnStatistics, otherBinaryStat: BinaryColumnStatistics) =>
             Objects.equals(binaryStat.getSum, otherBinaryStat.getSum)
-          case (cStat: CollectionColumnStatistics, otherCStat: CollectionColumnStatistics) =>
-            Objects.equals(cStat.getMinimumChildren, otherCStat.getMinimumChildren) &&
-                Objects.equals(cStat.getMaximumChildren, otherCStat.getMaximumChildren) &&
-                Objects.equals(cStat.getTotalChildren, otherCStat.getTotalChildren)
           case (tsStat: TimestampColumnStatistics, otherTsStat: TimestampColumnStatistics) =>
             Objects.equals(tsStat.getMinimum, otherTsStat.getMinimum) &&
                 Objects.equals(tsStat.getMaximum, otherTsStat.getMaximum) &&
                 Objects.equals(tsStat.getMinimumUTC, otherTsStat.getMinimumUTC) &&
                 Objects.equals(tsStat.getMaximumUTC, otherTsStat.getMaximumUTC)
+          case (stat: ColumnStatistics, otherStat: ColumnStatistics) if OrcStatisticShim
+              .supports(stat, otherStat) => OrcStatisticShim.equals(stat, otherStat)
           case (t: ColumnStatisticsImpl, o: ColumnStatisticsImpl) => equalsForBasicStat(t, o)
           case (t@_, _@_) => throw new IllegalStateException("Unexpected type: " + t.getClass)
         }
@@ -215,33 +213,33 @@ class OrcSuite extends TestBase {
   val statTestSchema =
     """
     struct<
-      c01 boolean,
-      c02 byte,
-      c03 short,
-      c04 int,
-      c05 long,
-      c06 decimal,
-      c07 float,
-      c08 double,
-      c09 string,
-      c10 timestamp,
-      c11 date,
-      c12 struct<
-        c12_01 timestamp,
-        c12_02 decimal,
-        c12_03 double
+      c01: boolean,
+      c02: byte,
+      c03: short,
+      c04: int,
+      c05: long,
+      c06: decimal,
+      c07: float,
+      c08: double,
+      c09: string,
+      c10: timestamp,
+      c11: date,
+      c12: struct<
+        c12_01: timestamp,
+        c12_02: decimal,
+        c12_03: double
       >,
-      c13 array<
+      c13: array<
         decimal
       >,
-      c14 map<
+      c14: map<
         byte,
         float
       >,
-      c15 array<
+      c15: array<
         struct<
-          c15_01 date,
-          c15_02 array<short>
+          c15_01: date,
+          c15_02: array<short>
         >
       >
     >

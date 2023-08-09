@@ -1270,17 +1270,14 @@ class DecimalGen(dt: DecimalType,
 
 /**
  * A value generator for Timestamps
- * @param min default is 0001-01-03.
- * @param max default is 9999-12-31 23:59:59.999999.
+ * @param min min value. If you want to overwrite it, call DBGen.setDefaultValueRange with
+ *            parameter as like BigDataGenConsts.minTimestampForOrc
+ * @param max max value. If you want to overwrite it, call DBGen.setDefaultValueRange with
+ *            parameter as like BigDataGenConsts.maxTimestampForOrc
  */
 case class TimestampGenFunc(mapping: LocationToSeedMapping = null,
-    min: Long = BigDataGenConsts.minTimestamp,
-    max: Long = BigDataGenConsts.maxTimestamp) extends GeneratorFunction {
-
-  if (min < BigDataGenConsts.minTimestamp || max > BigDataGenConsts.maxTimestamp) {
-    throw new IllegalArgumentException(s"min $min < ${BigDataGenConsts.minTimestamp}" +
-        s"(0001-01-03) or $max > ${BigDataGenConsts.maxTimestamp}(9999-12-31)")
-  }
+    min: Long = Long.MinValue,
+    max: Long = Long.MinValue) extends GeneratorFunction {
 
   private lazy val valueRemapping: Long => Long = LongGen.remapRangeFunc(min, max)
 
@@ -1332,31 +1329,32 @@ object BigDataGenConsts {
   private val epoch = LocalDateTime.of(1970, 1, 1, 0, 0, 0, 0)
   private val minDate = LocalDateTime.of(1, 1, 1, 0, 0, 0, 0)
   private val maxDate = LocalDateTime.of(9999, 12, 31, 0, 0, 0, 0)
-  // minDateInt = -719162, diff days of(1970-01-01, 0001-01-01)
-  val minDateInt: Int = Duration.between(epoch, minDate).toDays.toInt
-  // maxDateInt = 2932896, diff days of(1970-01-01, 9999-12-31)
-  val maxDateInt: Int = Duration.between(epoch, maxDate).toDays.toInt
   // same as data_gen.py
   private val minTime = LocalDateTime.of(1, 1, 3, 0, 0, 0, 0)
   // Spark stores timestamps with microsecond precision, no need to specify nanosecond
   private val maxTime = LocalDateTime.of(9999, 12, 31, 23, 59, 59, 999999000)
-  val minTimestamp = Duration.between(epoch, minTime).toMillis * 1000L
-  val maxTimestamp = Duration.between(epoch, maxTime).toMillis * 1000L
+
+  // minDateInt = -719162, diff days of(1970-01-01, 0001-01-01)
+  val minDateIntForOrc: Int = Duration.between(epoch, minDate).toDays.toInt
+  // maxDateInt = 2932896, diff days of(1970-01-01, 9999-12-31)
+  val maxDateIntForOrc: Int = Duration.between(epoch, maxDate).toDays.toInt
+
+  // diff microseconds of(1970-01-01, 0001-01-01)
+  val minTimestampForOrc = Duration.between(epoch, minTime).toMillis * 1000L
+  // diff microseconds of(1970-01-01, 9999-12-31)
+  val maxTimestampForOrc = Duration.between(epoch, maxTime).toMillis * 1000L
 }
 
 /**
  * A value generator for Dates
- * @param min default is 0001-01-01.
- * @param max default is 9999-12-31.
+ * @param min min value. If you want to overwrite it, call DBGen.setDefaultValueRange with
+ *            parameter as like BigDataGenConsts.minDateIntForOrc
+ * @param max max value. If you want to overwrite it, call DBGen.setDefaultValueRange with
+ *            parameter as like BigDataGenConsts.maxDateIntForOrc
  */
 case class DateGenFunc(mapping: LocationToSeedMapping = null,
-    min: Int = BigDataGenConsts.minDateInt,
-    max: Int = BigDataGenConsts.maxDateInt) extends GeneratorFunction {
-
-  if (min < BigDataGenConsts.minDateInt || max > BigDataGenConsts.maxDateInt) {
-    throw new IllegalArgumentException(s"min $min < ${BigDataGenConsts.minDateInt}(0001-01-01) " +
-        s"or $max > ${BigDataGenConsts.maxDateInt}(9999-12-31)")
-  }
+    min: Int = Int.MinValue,
+    max: Int = Int.MaxValue) extends GeneratorFunction {
 
   private lazy val valueRemapping: Long => Int = IntGen.remapRangeFunc(min, max)
 
