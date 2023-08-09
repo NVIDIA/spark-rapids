@@ -456,6 +456,16 @@ Spark stores timestamps internally relative to the JVM time zone.  Converting an
 between time zones is not currently supported on the GPU. Therefore operations involving timestamps
 will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
+## URL parsing
+
+In Spark, parse_url is based on java's URI library, while the implementation in the RAPIDS Accelerator is based on regex extraction. Therefore, the results may be different in some edge cases.
+
+These are the known cases where running on the GPU will produce different results to the CPU:
+
+- Spark allow an empty authority component only when it's followed by a non-empty path, 
+    query component, or fragment component. But in plugin, parse_url just simply allow empty 
+    authority component without checking if it is followed something or not. So `parse_url('http://', 'HOST')` will return `null` in Spark, but return `""` in plugin.
+
 ## Windowing
 
 ### Window Functions
