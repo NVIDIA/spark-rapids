@@ -19,8 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.LegacyBehaviorPolicy
+import org.apache.spark.sql.internal.{LegacyBehaviorPolicy, SQLConf}
 
 object LegacyBehaviorPolicyShim {
   val CORRECTED_STR: String = LegacyBehaviorPolicy.CORRECTED.toString

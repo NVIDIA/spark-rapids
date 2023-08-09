@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{EOFException, IOException, InputStream, OutputStream}
+import java.io.{EOFException, InputStream, IOException, OutputStream}
 import java.net.URI
 import java.nio.charset.StandardCharsets
 

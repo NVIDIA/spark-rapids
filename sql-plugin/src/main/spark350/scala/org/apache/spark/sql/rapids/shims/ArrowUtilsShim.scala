@@ -19,8 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.execution.python.ArrowPythonRunner
+import org.apache.spark.sql.internal.SQLConf
 
 object ArrowUtilsShim {
   def getPythonRunnerConfMap(conf: SQLConf): Map[String, String] =

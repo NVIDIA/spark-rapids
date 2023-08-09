@@ -39,8 +39,6 @@ package org.apache.spark.sql.hive.rapids.shims
 
 import scala.collection.JavaConverters._
 
-import scala.collection.JavaConverters._
-
 import com.nvidia.spark.rapids.{GpuExpression, GpuLiteral, GpuScalar}
 import com.nvidia.spark.rapids.GpuRowBasedUserDefinedFunction
 import org.apache.hadoop.hive.ql.exec.{FunctionRegistry, UDF}

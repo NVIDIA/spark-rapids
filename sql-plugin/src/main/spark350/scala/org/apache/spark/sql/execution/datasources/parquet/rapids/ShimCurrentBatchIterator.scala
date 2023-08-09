@@ -35,8 +35,7 @@ import org.apache.parquet.schema.{GroupType, Type}
 import org.apache.spark.memory.MemoryMode
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.LegacyBehaviorPolicy
+import org.apache.spark.sql.internal.{LegacyBehaviorPolicy, SQLConf}
 import org.apache.spark.sql.types.StructType
 
 object ParquetVectorizedReader {

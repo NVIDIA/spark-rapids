@@ -34,10 +34,10 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
-import org.apache.hadoop.hive.ql.exec.UDF
-import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OptimizedCreateHiveTableAsSelectCommandMeta
+import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}

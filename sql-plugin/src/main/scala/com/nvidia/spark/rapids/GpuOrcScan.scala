@@ -41,15 +41,15 @@ import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, Or
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
+import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
 import org.apache.hadoop.io.Text
 import org.apache.orc.{CompressionKind, DataReader, FileFormatException, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
