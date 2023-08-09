@@ -26,8 +26,8 @@ import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.orc.{OrcFile, StripeInformation}
 import org.apache.orc.impl.RecordReaderImpl
-import org.apache.spark.{SparkConf, SparkContext}
 
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
