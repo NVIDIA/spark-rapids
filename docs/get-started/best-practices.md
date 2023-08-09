@@ -162,5 +162,5 @@ spark.rapids.sql.reader.batchSizeBytes
 
 If you are still getting an OOM exception, please get the Spark eventlog and stack trace from the 
 executor (the whole executor log ideally) and send to spark-rapids-support@nvidia.com , or file a 
-github issue on [spark-rapids github repo](https://github.com/NVIDIA/spark-rapids/issues) if it is 
+Github issue on [spark-rapids github repo](https://github.com/NVIDIA/spark-rapids/issues) if it is 
 not sensitive.
