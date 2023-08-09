@@ -16,19 +16,20 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{EOFException, InputStream, IOException, OutputStream}
+import java.io.{EOFException, IOException, InputStream, OutputStream}
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.shims.NullOutputStreamShim
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants._
 import org.apache.avro.file.SeekableInput
 import org.apache.avro.io.{BinaryData, BinaryDecoder, DecoderFactory}
 import org.apache.avro.mapred.FsInput
-import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
+import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -91,7 +92,7 @@ case class Header(
 object Header {
   /** Compute header size in bytes for serialization */
   def headerSizeInBytes(h: Header): Long = {
-    val out = new CountingOutputStream(NullOutputStream.NULL_OUTPUT_STREAM)
+    val out = new CountingOutputStream(NullOutputStreamShim.INSTANCE)
     AvroFileWriter(out).writeHeader(h)
     out.getByteCount
   }

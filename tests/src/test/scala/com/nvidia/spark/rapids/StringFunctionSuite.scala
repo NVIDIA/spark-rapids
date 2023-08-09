@@ -144,10 +144,13 @@ object TestCodepoints {
     }
   }
   // print out a warning if we're on an unsupported version
-  if (getActiveUnicodeVersion() == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
-    printf("WARNING : Unsupported version of Java (%s). You may encounter unexpected " +
-      "test failures\n", System.getProperties().getProperty("java.specification.version"))
-  }
+  //TODO
+  //[ERROR] [Error] /home/andy/git/nvidia/spark-rapids/tests/src/test/scala/com/nvidia/spark/rapids/StringFunctionSuite.scala:148: type mismatch;
+  // found   : String("WARNING : Unsupported version of Java (%s). You may encounter unexpected test failures\n")
+//  if (getActiveUnicodeVersion() == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
+//    printf("WARNING : Unsupported version of Java (%s). You may encounter unexpected " +
+//      "test failures\n", System.getProperties().getProperty("java.specification.version"))
+//  }
 
   // get the unicode index to use. if we are on an unknown/unsupported version, just
   // default to unicode 12

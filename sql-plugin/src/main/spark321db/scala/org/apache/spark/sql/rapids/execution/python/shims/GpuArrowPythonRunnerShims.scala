@@ -23,10 +23,10 @@ package org.apache.spark.sql.rapids.execution.python.shims
 
 import org.apache.spark.api.python._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 case class GpuArrowPythonRunnerShims(
   conf: org.apache.spark.sql.internal.SQLConf,
   chainedFunc: Seq[ChainedPythonFunctions],
@@ -37,7 +37,7 @@ case class GpuArrowPythonRunnerShims(
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+  val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
   def getRunner(): GpuPythonRunnerBase[ColumnarBatch] = {
     if (zeroConfEnabled && maxBytes > 0L) {

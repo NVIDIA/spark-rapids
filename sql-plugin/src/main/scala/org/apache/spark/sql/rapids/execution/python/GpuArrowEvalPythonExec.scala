@@ -34,9 +34,8 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
+import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -261,7 +260,7 @@ case class GpuArrowEvalPythonExec(
 
   private val batchSize = conf.arrowMaxRecordsPerBatch
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+  private val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()

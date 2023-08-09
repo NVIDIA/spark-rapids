@@ -31,42 +31,11 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python.AggregateInPandasExec
-import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
+import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuAggregateInPandasExecMeta(
-    aggPandas: AggregateInPandasExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends SparkPlanMeta[AggregateInPandasExec](aggPandas, conf, parent, rule) {
 
-  override def replaceMessage: String = "partially run on GPU"
-  override def noReplacementPossibleMessage(reasons: String): String =
-    s"cannot run even partially on the GPU because $reasons"
-
-  private val groupingNamedExprs: Seq[BaseExprMeta[NamedExpression]] =
-    aggPandas.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  private val udfs: Seq[BaseExprMeta[PythonUDF]] =
-    aggPandas.udfExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  private val resultNamedExprs: Seq[BaseExprMeta[NamedExpression]] =
-    aggPandas.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  override val childExprs: Seq[BaseExprMeta[_]] = groupingNamedExprs ++ udfs ++ resultNamedExprs
-
-  override def convertToGpu(): GpuExec =
-    GpuAggregateInPandasExec(
-      groupingNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
-      resultNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans.head.convertIfNeeded()
-    )(aggPandas.groupingExpressions)
-}
 
 /**
  * Physical node for aggregation with group aggregate Pandas UDF.
@@ -138,7 +107,7 @@ case class GpuAggregateInPandasExec(
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+    val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
     val pyOutAttributes = udfExpressions.map(_.resultAttribute)
     val childOutput = child.output
     val resultExprs = resultExpressions

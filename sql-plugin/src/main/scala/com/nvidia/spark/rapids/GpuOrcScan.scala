@@ -37,19 +37,19 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
-import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
+import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
+import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
 import org.apache.hadoop.io.Text
 import org.apache.orc.{CompressionKind, DataReader, FileFormatException, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -2424,7 +2424,7 @@ case class OrcStripeWithMeta(stripe: OrcOutputStripe, ctx: OrcPartitionReaderCon
 
   lazy val stripeLength: Long = {
     // calculate the true stripe footer size
-    val out = new CountingOutputStream(NullOutputStream.NULL_OUTPUT_STREAM)
+    val out = new CountingOutputStream(NullOutputStreamShim.INSTANCE)
     val footerLen = withCodecOutputStream(ctx, out) { protoWriter =>
       protoWriter.writeAndFlush(stripe.footer)
       out.getByteCount

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,15 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.hive.rapids
+/*** spark-rapids-shim-json-lines
+{"spark": "350"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.hive.rapids.shims
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{GpuExpression, GpuLiteral, GpuRowBasedUserDefinedFunction, GpuScalar}
+import com.nvidia.spark.rapids.{GpuExpression, GpuLiteral, GpuScalar}
+import com.nvidia.spark.rapids.GpuRowBasedUserDefinedFunction
 import org.apache.hadoop.hive.ql.exec.{FunctionRegistry, UDF}
 import org.apache.hadoop.hive.ql.udf.{UDFType => HiveUDFType}
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
@@ -31,7 +35,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecializedGetters}
 import org.apache.spark.sql.hive.{DeferredObjectAdapter, HiveInspectors}
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
-import org.apache.spark.sql.hive.rapids.shims.GpuRowBasedHiveGenericUDFShim
 import org.apache.spark.sql.types.DataType
 
 /** Common implementation across row-based Hive UDFs */
@@ -135,7 +138,9 @@ case class GpuRowBasedHiveSimpleUDF(
       method.getGenericReturnType, ObjectInspectorOptions.JAVA))
 
   override protected def evaluateRow(childrenRow: InternalRow): Any = {
-    val inputs = wrap(childRowAccessors.map(_(childrenRow)), wrappers, cached, inputDataTypes)
+    val values: Array[Any] = childRowAccessors.map(_(childrenRow))
+    val row = InternalRow.apply(values: _*)
+    val inputs = wrap(row, wrappers, cached, inputDataTypes)
     val ret = FunctionRegistry.invoke(
       method,
       function,

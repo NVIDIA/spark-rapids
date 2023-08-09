@@ -408,7 +408,8 @@ abstract class GpuBroadcastExchangeExecBase(
 
   val _runId: UUID = UUID.randomUUID()
 
-  override def runId: UUID = _runId
+  //TODO
+//  override def runId: UUID = _runId
 
   @transient
   lazy val relationFuture: Future[Broadcast[Any]] = {
