@@ -21,7 +21,7 @@
 {"spark": "321cdh"}
 {"spark": "330cdh"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark311
+package com.nvidia.spark.rapids.shims
 
 import java.util.Objects
 
@@ -29,9 +29,9 @@ import org.apache.orc._
 
 object OrcStatisticShim {
   def supports(left: ColumnStatistics, right: ColumnStatistics): Boolean = (left, right) match {
-    case (dateStat: DateColumnStatistics, otherDateStat: DateColumnStatistics) => true
-    case (strStat: StringColumnStatistics, otherStrStat: StringColumnStatistics) => true
-    case (l@_, r@_) => false
+    case (_: DateColumnStatistics, _: DateColumnStatistics) => true
+    case (_: StringColumnStatistics, _: StringColumnStatistics) => true
+    case _ => false
   }
 
   def equals(left: ColumnStatistics, right: ColumnStatistics): Boolean = (left, right) match {

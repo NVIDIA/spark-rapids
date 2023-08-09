@@ -23,7 +23,7 @@ import java.util.Objects
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
-import com.nvidia.spark.rapids.shims.spark311.OrcStatisticShim
+import com.nvidia.spark.rapids.shims.OrcStatisticShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
@@ -167,7 +167,6 @@ class OrcSuite extends TestBase {
     def equalsForBasicStat(t: ColumnStatistics, o: ColumnStatistics): Boolean = {
       // skip check the bytesOnDisk
       t.getNumberOfValues == o.getNumberOfValues && t.hasNull == o.hasNull
-      true
     }
 
     // Note: no corresponding hashCode, should not be used in Map key
