@@ -46,8 +46,7 @@ The default value for `spark.rapids.memory.gpu.pool` is changed to `ASYNC` from 
 11.5+. For CUDA 11.4 and older, it will fall back to `ARENA`.
 Using ASYNC allocator can avoid some memory fragmentation issues.
 
-The Spark executor log should print below messages to indicate how much memory the executor could 
-have used:
+The Spark executor log will contain a message like the following when using the ASYNC allocator:
 
 ```
 INFO GpuDeviceManager: Initializing RMM ASYNC pool size = 17840.349609375 MB on gpuId 0
