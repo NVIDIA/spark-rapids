@@ -89,7 +89,7 @@ New functionality and performance improvements for this release include:
   * Profiling tool now supports Azure Databricks and AWS Databricks.
   * Qualification tool can provide advice on unaccelerated operations.
   * Improve user experience through CLI design.
-  * Qualification tool offers configuration and migration recommendations.
+  * Qualification tool provides configuration and migration recommendations for Dataproc and EMR.
   
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
