@@ -65,7 +65,7 @@ pipeline {
         DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
         DATABRICKS_DRIVER = DbUtils.getDriver("$DB_TYPE")
         DATABRICKS_WORKER = DbUtils.getWorker("$DB_TYPE")
-        INIT_SCRIPTS_DIR = "/CICD/init_scripts/${BUILD_TAG}"
+        INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}"
     }
 
     stages {
