@@ -68,9 +68,9 @@ consume huge amounts of memory, such as windowing, collect_list/collect_set, exp
 
 #### a. Table Scan Stage
 
-If it is a table scan stage on Parquet/ORC tables, then the # of tasks/partitions is normally 
-determined by `spark.sql.files.maxPartitionBytes`. We can decrease its value to increase the # of 
-tasks/partitions for this stage so that the memory pressure of each task is less. 
+If it is a table scan stage on Parquet/ORC tables, then the number of tasks/partitions is normally 
+determined by `spark.sql.files.maxPartitionBytes`. We can decrease its value to increase the
+number of tasks/partitions for this stage so that the memory pressure of each task is less. 
 
 Iceberg or Delta 
 tables may have different settings to control the concurrency in the table scan stage. For example, 
