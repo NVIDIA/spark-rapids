@@ -21,6 +21,7 @@ package org.apache.spark.sql.hive.rapids.shims
 
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
@@ -32,8 +33,8 @@ trait HiveProviderCmdShims extends HiveProvider {
     a.funcWrapper.createFunction[UDF]()
   }
 
-  def createFunction(a: HiveGenericUDF): UDF = {
-    a.funcWrapper.createFunction[UDF]()
+  def createFunction(a: HiveGenericUDF): GenericUDF = {
+    a.funcWrapper.createFunction[GenericUDF]()
   }
 
   /**
