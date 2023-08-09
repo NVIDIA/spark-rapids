@@ -31,6 +31,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -283,6 +284,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       } finally {
         cpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    cpuPlans = filterCapturedPlans(cpuPlans)
     assert(cpuPlans.nonEmpty, "Did not capture CPU plan")
     assert(cpuPlans.length == 1, s"Captured more than one CPU plan: ${cpuPlans.mkString("\n")}")
 
@@ -301,10 +303,19 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       } finally {
         gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    gpuPlans = filterCapturedPlans(gpuPlans)
     assert(gpuPlans.nonEmpty, "Did not capture GPU plan")
     assert(gpuPlans.length == 1, s"Captured more than one GPU plan: ${gpuPlans.mkString("\n")}")
 
     (cpuPlans.head, gpuPlans.head)
+  }
+
+  // filter out "uninteresting" plans like view creation, etc.
+  protected def filterCapturedPlans(plans: Array[SparkPlan]): Array[SparkPlan] = {
+    plans.filter {
+      case ExecutedCommandExec(_: CreateViewCommand) => false
+      case _ => true
+    }
   }
 
   def runOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
@@ -332,6 +343,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       } finally {
         cpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    cpuPlans = filterCapturedPlans(cpuPlans)
     assert(cpuPlans.nonEmpty, "Did not capture CPU plan")
     assert(cpuPlans.length == 1, s"Captured more than one CPU plan: ${cpuPlans.mkString("\n")}")
 
@@ -351,6 +363,7 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
       } finally {
         gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    gpuPlans = filterCapturedPlans(gpuPlans)
     assert(gpuPlans.nonEmpty, "Did not capture GPU plan")
     assert(gpuPlans.length == 1, s"Captured more than one GPU plan: ${gpuPlans.mkString("\n")}")
 

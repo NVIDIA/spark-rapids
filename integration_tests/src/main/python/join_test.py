@@ -14,7 +14,7 @@
 
 import pytest
 from _pytest.mark.structures import ParameterSet
-from pyspark.sql.functions import broadcast, col, lit
+from pyspark.sql.functions import broadcast, col
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_emr_runtime
@@ -930,25 +930,86 @@ def test_hash_join_different_key_integral_types(left_gen, right_gen, join_type):
     })
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
 
-bloom_filter_confs = { "spark.sql.autoBroadcastJoinThreshold": "1",
-              "spark.sql.optimizer.runtime.bloomFilter.applicationSideScanSizeThreshold": 1,
-              "spark.sql.optimizer.runtime.bloomFilter.creationSideThreshold": "100GB",
-              "spark.sql.optimizer.runtime.bloomFilter.enabled": "true"}
+bloom_filter_confs = {
+    "spark.sql.autoBroadcastJoinThreshold": "1",
+    "spark.sql.optimizer.runtime.bloomFilter.applicationSideScanSizeThreshold": 1,
+    "spark.sql.optimizer.runtime.bloomFilter.creationSideThreshold": "100GB",
+    "spark.sql.optimizer.runtime.bloomFilter.enabled": "true"
+}
 
-def check_bloom_filter_join_multi_column(confs, expected_classes):
+bloom_filter_exprs_enabled = {
+    "spark.rapids.sql.expression.BloomFilterMightContain": "true",
+    "spark.rapids.sql.expression.BloomFilterAggregate": "true"
+}
+
+def check_bloom_filter_join(confs, expected_classes, is_multi_column):
     def do_join(spark):
-        left = spark.range(100000).withColumn("second_id", col("id") % 5)
-        right = spark.range(10).withColumn("id2", col("id").cast("string")).withColumn("second_id", col("id") % 5)
-        return right.filter("cast(id2 as bigint) % 3 = 0").join(left, (left.id == right.id) & (left.second_id == right.second_id), "inner")
-    all_confs = copy_and_update(confs, bloom_filter_confs)
+        if is_multi_column:
+            left = spark.range(100000).withColumn("second_id", col("id") % 5)
+            right = spark.range(10).withColumn("id2", col("id").cast("string")).withColumn("second_id", col("id") % 5)
+            return right.filter("cast(id2 as bigint) % 3 = 0").join(left, (left.id == right.id) & (left.second_id == right.second_id), "inner")
+        else:
+            left = spark.range(100000)
+            right = spark.range(10).withColumn("id2", col("id").cast("string"))
+            return right.filter("cast(id2 as bigint) % 3 = 0").join(left, left.id == right.id, "inner")
+    all_confs = copy_and_update(bloom_filter_confs, confs)
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, expected_classes, conf=all_confs)
 
+@allow_non_gpu("FilterExec", "ObjectHashAggregateExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_disabled_by_default(is_multi_column):
+    check_bloom_filter_join(confs={},
+                            expected_classes="BloomFilterMightContain,BloomFilterAggregate",
+                            is_multi_column=is_multi_column)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("batch_size", ['1g', '1000'], ids=idfn)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join(batch_size, is_multi_column):
+    conf = copy_and_update(bloom_filter_exprs_enabled,
+                           {"spark.rapids.sql.batchSizeBytes": batch_size})
+    check_bloom_filter_join(confs=conf,
+                            expected_classes="GpuBloomFilterMightContain,GpuBloomFilterAggregate",
+                            is_multi_column=is_multi_column)
+
+@allow_non_gpu("FilterExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_cpu_probe(is_multi_column):
+    conf = copy_and_update(bloom_filter_exprs_enabled,
+                           {"spark.rapids.sql.expression.BloomFilterMightContain": "false"})
+    check_bloom_filter_join(confs=conf,
+                            expected_classes="BloomFilterMightContain,GpuBloomFilterAggregate",
+                            is_multi_column=is_multi_column)
 
 @allow_non_gpu("ObjectHashAggregateExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
 @pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
-def test_multi_column_bloom_filter_join():
-    check_bloom_filter_join_multi_column(confs={},
-                            expected_classes="GpuBloomFilterMightContain")
+def test_bloom_filter_join_cpu_build(is_multi_column):
+    conf = copy_and_update(bloom_filter_exprs_enabled,
+                           {"spark.rapids.sql.expression.BloomFilterAggregate": "false"})
+    check_bloom_filter_join(confs=conf,
+                            expected_classes="GpuBloomFilterMightContain,BloomFilterAggregate",
+                            is_multi_column=is_multi_column)
 
+@allow_non_gpu("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec")
+@ignore_order(local=True)
+@pytest.mark.parametrize("agg_replace_mode", ["partial", "final"])
+@pytest.mark.parametrize("is_multi_column", [False, True], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_split_cpu_build(agg_replace_mode, is_multi_column):
+    conf = copy_and_update(bloom_filter_exprs_enabled,
+                           {"spark.rapids.sql.hashAgg.replaceMode": agg_replace_mode})
+    check_bloom_filter_join(confs=conf,
+                            expected_classes="GpuBloomFilterMightContain,BloomFilterAggregate,GpuBloomFilterAggregate",
+                            is_multi_column=is_multi_column)
