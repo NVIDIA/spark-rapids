@@ -28,59 +28,7 @@ For other unsupported features, please file feature request on
 and the not-supported messages if they are non-senstive data.
 
 ## Performance Tuning
-
-### 1. Use Hive Parquet or ORC tables instead of Hive Text table as the intermediate tables for CTAS
-
-The suggested change is to add `stored as parquet` for each CTAS(`Create Table AS`) queries.
-Alternatively, you can set `hive.default.fileformat=Parquet` to create Parquet files by default.
-Refer to this 
-[Hive Doc](https://cwiki.apache.org/confluence/display/Hive/Configuration+Properties#ConfigurationProperties-hive.default.fileformat) 
-for more details.
-
-This can save the disk space and reduce disk IO for reading/writing those intermediate tables. 
-Of course, this can benefit CPU Spark jobs as well.
-
-### 2. Avoid having too many small files in existing Hive text tables.
-
-The suggested change is to recreate the Hive text tables with many small files to a Hive parquet 
-table with a reasonable file size.
-GPUs process data much more efficiently when they have a large amount of data to process in parallel. 
-Loading data from fewer, large input files will perform better than loading data from many small 
-input files. Ideally input files should be on the order of a few gigabytes rather than megabytes or 
-smaller.
-
-Refer to [Tuning Guide](../tuning-guide.md#input-files) for more details.
-
-### 3. Use NVME as shuffling disks
-
-Dataproc: [Local SSD](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds)
-is recommended for Spark scratch space to improve IO. For example, when creating Dataproc cluster, 
-you can add below:
-
-```
---worker-local-ssd-interface=NVME
---num-secondary-worker-local-ssds=2
---worker-local-ssd-interface=NVME
---secondary-worker-local-ssd-interface=NVME
-```
-
-Refer to [Getting Started on GCP Dataproc](./getting-started-gcp.md) for more details.
-
-On-Prem cluster: Try to use enough NVME or SSDs as shuffling disks to avoid local disk IO bottleneck.
-
-### 4. Spark RAPIDS tuning guide
-
-To understand more Spark RAPIDS related configurations on performance tuning, please refer to 
-[Tuning Guide](../tuning-guide.md) for more details.
-
-### 5. Exclude bad nodes from YARN resource
-
-Just in case there are bad nodes due to hardware failure issues (including GPU failure), we suggest 
-setting `spark.yarn.executor.launch.excludeOnFailure.enabled=true` so that the problematic node can 
-be excluded.
-
-Refer to [Running Spark on YARN](https://spark.apache.org/docs/latest/running-on-yarn.html) for more 
-details.
+Refer to [Tuning Guide](../tuning-guide.md) for more details.
 
 ## How to handle GPU OOM issues
 
