@@ -19,7 +19,7 @@ Based on [Qualification tool](../spark-qualification-tool.md)'s output, you can 
 recommended CPU Spark jobs, especially if those jobs are computation heavy jobs (Large Joins, 
 HashAggregate, Windowing, Sorting).
 
-After those candidate jobs are actually run on GPU using the RAPIDS Accelerator, check Spark driver 
+After those candidate jobs are run on GPU using the RAPIDS Accelerator, check the Spark driver 
 log to find the not-supported messages starting with `!`. Some missing features might be enabled by
 turning on some config, but please firstly understand this config's limitation based on 
 [Configuration](../configs.md). For other unsupported features, please file feature request on 
