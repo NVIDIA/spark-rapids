@@ -40,11 +40,7 @@ The plugin is tested on the following architectures:
 		Apache Spark 3.4.0, 3.4.1
 	
 	Supported Databricks runtime versions: 
-		Azure:
-			Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
-			Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
-			Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
-		AWS: 
+		Azure/AWS:
 			Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
 			Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
 			Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)

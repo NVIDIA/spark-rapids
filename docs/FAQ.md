@@ -39,9 +39,10 @@ release.
 
 ### What hardware is supported?
 
-Please see [Hardware Requirements](download.md#hardware-requirements) section for the list of GPUs that the RAPIDS plugin has been tested on. It is possible to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
-does not support [CUDA forward
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
+Please see [Hardware Requirements](download.md#hardware-requirements) section for the list of GPUs that 
+the RAPIDS plugin has been tested on. It is possible to run the plugin on GeForce desktop hardware with Volta 
+or better architectures. GeForce hardware does not support 
+[CUDA forward compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
 and will need CUDA 11.5 installed. If not, the following error will be displayed:
 
 ```
