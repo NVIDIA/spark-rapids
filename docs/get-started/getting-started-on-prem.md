@@ -8,7 +8,9 @@ parent: Getting-Started
 # Getting Started with RAPIDS Accelerator with on premise cluster or local mode
 ## Spark Deployment Methods
 The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
-the RAPIDS Accelerator for Apache Spark.  Please see [Software Requirements](../download.md#software-requirements) section for complete list of Spark versions supported by RAPIDS plugin. The primary methods to deploy Spark are:
+the RAPIDS Accelerator for Apache Spark. Please see [Software Requirements](../download.md#software-requirements) 
+section for complete list of Spark versions supported by RAPIDS plugin. The primary methods to 
+deploy Spark are:
 * [Local mode](#local-mode) - this is for dev/testing only, not for production
 * [Standalone Mode](#spark-standalone-cluster)
 * [On a YARN cluster](#running-on-yarn)

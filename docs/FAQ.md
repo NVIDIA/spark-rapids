@@ -10,7 +10,10 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-Please see [Software Requirements](download.md#software-requirements) section for complete list of Apache Spark versions supported by RAPIDS plugin. The plugin replaces parts of the physical plan that Apache Spark considers internal. The code for these plans can change, even between bug fix releases. As a part of our process, we try to stay on top of these changes and release updates as quickly as possible.
+Please see [Software Requirements](download.md#software-requirements) section for complete list of 
+Apache Spark versions supported by RAPIDS plugin. The plugin replaces parts of the physical plan that 
+Apache Spark considers internal. The code for these plans can change, even between bug fix releases. 
+As a part of our process, we try to stay on top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 

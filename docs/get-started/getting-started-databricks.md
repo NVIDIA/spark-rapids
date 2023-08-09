@@ -11,7 +11,8 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Supported runtime versions
-Please see [Software Requirements](../download.md#software-requirements) section for complete list of Databricks runtime versions supported by RAPIDS plugin.
+Please see [Software Requirements](../download.md#software-requirements) section for complete list of 
+Databricks runtime versions supported by RAPIDS plugin.
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
