@@ -15,24 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
-{"spark": "340"}
-{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
@@ -46,6 +29,6 @@ object GpuRowBasedHiveGenericUDFShim {
       childRowAccessors: Array[SpecializedGetters => Any],
       idx: Int,
       childrenRow: InternalRow): Unit = {
-    o.set(() => childRowAccessors(idx)(childrenRow))
+    o.set(childRowAccessors(idx)(childrenRow))
   }
 }
