@@ -2627,7 +2627,7 @@ object MakeParquetTableProducer extends Logging {
       clippedParquetSchema: MessageType,
       splits: Array[PartitionedFile],
       debugDumpPrefix: Option[String],
-      debugDumpAlways: Boolean,
+      debugDumpAlways: Boolean
   ): GpuDataProducer[Table] = {
     if (useChunkedReader) {
       ParquetTableReader(conf, chunkSizeByteLimit, opts, buffer, offset, len, metrics,
