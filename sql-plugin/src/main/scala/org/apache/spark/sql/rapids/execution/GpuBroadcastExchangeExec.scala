@@ -406,10 +406,10 @@ abstract class GpuBroadcastExchangeExecBase(
   @transient
   protected val timeout: Long = SQLConf.get.broadcastTimeout
 
-  val _runId: UUID = UUID.randomUUID()
-
-  //TODO
-//  override def runId: UUID = _runId
+  // prior to Spark 3.5.0, runId is defined as `def` rather than `val` so
+  // produces a new ID on each reference. We capture the value once and
+  // cache it here
+  val _runId: UUID = runId
 
   @transient
   lazy val relationFuture: Future[Broadcast[Any]] = {
