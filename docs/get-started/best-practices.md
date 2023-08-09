@@ -32,7 +32,7 @@ and the not-supported messages if they are non-senstive data.
 ### 1. Use Hive Parquet or ORC tables instead of Hive Text table as the intermediate tables for CTAS
 
 The suggested change is to add `stored as parquet` for each CTAS(`Create Table AS`) queries.
-You can set `hive.default.fileformat=Parquet` to create parquet file format table by default.
+Alternatively, you can set `hive.default.fileformat=Parquet` to create Parquet files by default.
 Refer to this 
 [Hive Doc](https://cwiki.apache.org/confluence/display/Hive/Configuration+Properties#ConfigurationProperties-hive.default.fileformat) 
 for more details.
