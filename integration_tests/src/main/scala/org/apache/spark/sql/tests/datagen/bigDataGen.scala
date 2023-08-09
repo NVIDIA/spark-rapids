@@ -1277,7 +1277,7 @@ class DecimalGen(dt: DecimalType,
  */
 case class TimestampGenFunc(mapping: LocationToSeedMapping = null,
     min: Long = Long.MinValue,
-    max: Long = Long.MinValue) extends GeneratorFunction {
+    max: Long = Long.MaxValue) extends GeneratorFunction {
 
   private lazy val valueRemapping: Long => Long = LongGen.remapRangeFunc(min, max)
 

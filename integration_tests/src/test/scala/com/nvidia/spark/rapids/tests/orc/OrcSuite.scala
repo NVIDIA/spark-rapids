@@ -38,7 +38,7 @@ import org.apache.spark.sql.types.{DateType, TimestampType}
 
 class OrcSuite extends TestBase {
   test("Statistics tests for ORC files written by GPU") {
-    assume(true, "blocked by cuDF issue: " +
+    assume(false, "blocked by cuDF issue: " +
         "https://github.com/rapidsai/cudf/issues/13793," +
         "https://github.com/rapidsai/cudf/issues/13837," +
         "https://github.com/rapidsai/cudf/issues/13817")
