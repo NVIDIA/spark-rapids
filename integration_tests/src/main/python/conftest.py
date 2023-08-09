@@ -244,12 +244,20 @@ def pytest_configure(config):
 # have the same seed. Since each worker creates a list of tests independently and then
 # pytest expects this starting list to match for all workers, it is important that the same seed
 # is set for all, either from the environment or as a constant.
-oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1))
-print(f"Starting with OOM injection seed: {oom_random_injection_seed}. " 
-      "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
+# Note that any other test can call `get_seeded_random()` and obtain a seeded Random object
+# to leverage in tests, especially if the random number is used as part of the test arguments
+# (same xdist reason as above)
+test_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_RANDOM_SEED", 1))
+
+print(f"Starting with test random seed: {test_random_seed}. " 
+      "Set env variable SPARK_RAPIDS_TEST_RANDOM_SEED to override.")
+
+# Create a Random object that has been seeded to SPARK_RAPIDS_TEST_RANDOM_SEED
+def get_seeded_random():
+    return random.Random(test_random_seed)
 
 def pytest_collection_modifyitems(config, items):
-    r = random.Random(oom_random_injection_seed)
+    r = get_seeded_random()
     for item in items:
         extras = []
         order = item.get_closest_marker('ignore_order')
