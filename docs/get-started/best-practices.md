@@ -98,7 +98,7 @@ by default is set to `spark.sql.shuffle.partitions`(default value=200). However 
 
 ### 5. Reduce columnar batch size and file reader batch size
 
-Please refer to [Tuning Guide](../tuning-guide.md#columnar-batch-size) to understand below 2 Spark 
+Please refer to the [Tuning Guide](../tuning-guide.md#columnar-batch-size) for details on the following 
 RAPIDS parameters:
 ```
 spark.rapids.sql.batchSizeBytes
