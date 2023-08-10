@@ -20,9 +20,8 @@ import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
-import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
+import com.nvidia.spark.rapids.{PlanShims, PlanUtils, ShimLoader}
 
-import org.apache.spark.rapids.shims.AdaptiveSparkPlanHelperShim
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
@@ -94,12 +93,13 @@ object ExecutionPlanCaptureCallback {
     import org.apache.spark.sql.types.StructType
     import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 
+    val adaptiveSparkPlanHelper = ShimLoader.newAdaptiveSparkPlanHelperShim()
     val cpuFileSourceScanSchemata =
-      AdaptiveSparkPlanHelperShim.collectShim(cpuDf.queryExecution.executedPlan) {
+      adaptiveSparkPlanHelper.collect(cpuDf.queryExecution.executedPlan) {
       case scan: FileSourceScanExec => scan.requiredSchema
     }
     val gpuFileSourceScanSchemata =
-      AdaptiveSparkPlanHelperShim.collectShim(gpuDf.queryExecution.executedPlan) {
+      adaptiveSparkPlanHelper.collect(gpuDf.queryExecution.executedPlan) {
       case scan: GpuFileSourceScanExec => scan.requiredSchema
     }
     assert(cpuFileSourceScanSchemata.size == gpuFileSourceScanSchemata.size,
