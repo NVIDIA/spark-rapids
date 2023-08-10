@@ -18,7 +18,7 @@ package org.apache.spark.sql.tests.datagen
 
 import java.math.{BigDecimal => JavaBigDecimal}
 import java.sql.{Date, Timestamp}
-import java.time.{Duration, Instant, LocalDate, LocalDateTime}
+import java.time.{Instant, LocalDate}
 import java.util
 
 import scala.collection.mutable
@@ -1270,10 +1270,6 @@ class DecimalGen(dt: DecimalType,
 
 /**
  * A value generator for Timestamps
- * @param min min value. If you want to overwrite it, call DBGen.setDefaultValueRange with
- *            parameter as like BigDataGenConsts.minTimestampForOrc
- * @param max max value. If you want to overwrite it, call DBGen.setDefaultValueRange with
- *            parameter as like BigDataGenConsts.maxTimestampForOrc
  */
 case class TimestampGenFunc(mapping: LocationToSeedMapping = null,
     min: Long = Long.MinValue,
@@ -1325,32 +1321,8 @@ class TimestampGen(conf: ColumnConf,
   override def dataType: DataType = TimestampType
 }
 
-object BigDataGenConsts {
-  private val epoch = LocalDateTime.of(1970, 1, 1, 0, 0, 0, 0)
-  private val minDate = LocalDateTime.of(1, 1, 1, 0, 0, 0, 0)
-  private val maxDate = LocalDateTime.of(9999, 12, 31, 0, 0, 0, 0)
-  // same as data_gen.py
-  private val minTime = LocalDateTime.of(1, 1, 3, 0, 0, 0, 0)
-  // Spark stores timestamps with microsecond precision, no need to specify nanosecond
-  private val maxTime = LocalDateTime.of(9999, 12, 31, 23, 59, 59, 999999000)
-
-  // minDateInt = -719162, diff days of(1970-01-01, 0001-01-01)
-  val minDateIntForOrc: Int = Duration.between(epoch, minDate).toDays.toInt
-  // maxDateInt = 2932896, diff days of(1970-01-01, 9999-12-31)
-  val maxDateIntForOrc: Int = Duration.between(epoch, maxDate).toDays.toInt
-
-  // diff microseconds of(1970-01-01, 0001-01-01)
-  val minTimestampForOrc = Duration.between(epoch, minTime).toMillis * 1000L
-  // diff microseconds of(1970-01-01, 9999-12-31)
-  val maxTimestampForOrc = Duration.between(epoch, maxTime).toMillis * 1000L
-}
-
 /**
  * A value generator for Dates
- * @param min min value. If you want to overwrite it, call DBGen.setDefaultValueRange with
- *            parameter as like BigDataGenConsts.minDateIntForOrc
- * @param max max value. If you want to overwrite it, call DBGen.setDefaultValueRange with
- *            parameter as like BigDataGenConsts.maxDateIntForOrc
  */
 case class DateGenFunc(mapping: LocationToSeedMapping = null,
     min: Int = Int.MinValue,
