@@ -210,7 +210,7 @@ rather than megabytes or smaller.
 Note that the GPU can encode Parquet and ORC data much faster than the CPU, so the costs of
 writing large files can be significantly lower.
 
-Use Hive Parquet or ORC tables instead of Hive Text table as the intermediate tables for
+Use Hive Parquet or ORC tables instead of Hive Text tables as the intermediate tables for
 CTAS(`Create Table As Select`) queries. The suggested change is to add `stored as parquet` for CTAS.
 Alternatively, you can set `hive.default.fileformat=Parquet` to create Parquet files by default.
 Refer to this
