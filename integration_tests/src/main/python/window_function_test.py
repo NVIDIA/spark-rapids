@@ -152,8 +152,8 @@ lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         ])]
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen,
-        FloatGen(no_nans=True, special_cases=[]),
-        DoubleGen(no_nans=True, special_cases=[]),
+        FloatGen(no_nans=False, special_cases=[]),
+        DoubleGen(no_nans=False, special_cases=[]),
         DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 

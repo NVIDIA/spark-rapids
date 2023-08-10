@@ -292,7 +292,7 @@ case class BatchedOps(running: Seq[NamedExpression],
   def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
 }
 
-object GpuWindowExec {
+object  GpuWindowExec {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
@@ -1775,7 +1775,7 @@ class GpuCachedDoublePassWindowIterator(
           case f: GpuBasicSum =>
             f.child.dataType match {
               case DataTypes.ByteType | DataTypes.ShortType | DataTypes.IntegerType |
-                 DataTypes.LongType | _: DecimalType=>
+                 DataTypes.LongType | _: DecimalType =>
                 true
               case DataTypes.FloatType | DataTypes.DoubleType =>
                 conf.isUnboundedFloatOptimizationEnabled

@@ -1319,9 +1319,6 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
 class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
     extends BatchedUnboundedToUnboundedWindowFixer {
 
-  private val OVERFLOW_MESSSAGE =
-    "One or more rows overflow for Add operation in SumUnboundedToUnboundedFixer"
-
   private var previousValue: Option[Scalar] = None
 
   override def updateState(scalar: Scalar): Unit = {
@@ -1332,25 +1329,6 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
         case Some(prev) =>
           withResource(prev) { _ =>
             prev.getType.getTypeId match {
-              case DType.DTypeEnum.INT8 =>
-                val newValue: Int = scalar.getByte + prev.getByte
-                if (failOnError && (newValue < Byte.MinValue || newValue > Byte.MaxValue)) {
-                  throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
-                }
-                previousValue = Some(Scalar.fromByte(newValue.toByte))
-              case DType.DTypeEnum.INT16 =>
-                val newValue = scalar.getShort + prev.getShort
-                if (failOnError && (newValue < Short.MinValue || newValue > Short.MaxValue)) {
-                  throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSSAGE)
-                }
-                previousValue = Some(Scalar.fromShort(newValue.toShort))
-              case DType.DTypeEnum.INT32 =>
-                if (failOnError) {
-                  previousValue = Some(Scalar.fromInt(Math.addExact(
-                    scalar.getInt, prev.getInt)))
-                } else {
-                  previousValue = Some(Scalar.fromInt(scalar.getInt + prev.getInt))
-                }
               case DType.DTypeEnum.INT64 =>
                 if (failOnError) {
                   previousValue = Some(Scalar.fromLong(Math.addExact(
@@ -1364,6 +1342,7 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
                 previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
               case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
                    DType.DTypeEnum.DECIMAL128 =>
+                // TODO overflow check
                 val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
                 previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
               case other =>
@@ -1382,9 +1361,6 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
       case Some(value) =>
         value
       case _ => resultType match {
-        case DataTypes.ByteType => Scalar.fromNull(DType.INT8)
-        case DataTypes.ShortType => Scalar.fromNull(DType.INT16)
-        case DataTypes.IntegerType => Scalar.fromNull(DType.INT32)
         case DataTypes.LongType => Scalar.fromNull(DType.INT64)
         case DataTypes.FloatType => Scalar.fromNull(DType.FLOAT32)
         case DataTypes.DoubleType => Scalar.fromNull(DType.FLOAT64)
@@ -1397,8 +1373,8 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
             DType.DTypeEnum.DECIMAL32.getNativeId
           }
           Scalar.fromNull(DType.fromNative(dt, d.scale))
-        case _ =>
-          throw new IllegalStateException()
+        case other =>
+          throw new IllegalStateException(s"unhandled type: $other")
       }
     }
 
