@@ -113,9 +113,23 @@ numeric_key_gens = [
 numeric_key_map_gens = [MapGen(key, value(), max_length=6)
                         for key in numeric_key_gens for value in get_map_value_gens()]
 
+# commonCudfTypes
 supported_key_gens = \
     [key(nullable=False)
-     for key in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, DateGen, TimestampGen, StringGen]]
+     for key in [
+         BooleanGen,
+         ByteGen,
+         ShortGen,
+         IntegerGen,
+         LongGen,
+         FloatGen,
+         DoubleGen,
+         DateGen,
+         TimestampGen,
+         StringGen]]
+
+supported_key_map_to_int_gens = [MapGen(key, value(), max_length=6)
+                                    for key in supported_key_gens for value in [IntegerGen]]
 
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
@@ -129,6 +143,15 @@ def test_get_map_value_numeric_keys(data_gen):
             'a[null]',
             'a[-9]',
             'a[999]'))
+
+
+@pytest.mark.parametrize('data_gen', supported_key_map_to_int_gens, ids=idfn)
+def test_get_map_value_supported_keys(data_gen):
+    key_gen = data_gen._key_gen
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, [("a", data_gen), ("ix", key_gen)])\
+                          .selectExpr('a[ix]'),
+        exist_classes="GpuGetMapValue")
 
 
 @pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
@@ -146,7 +169,6 @@ def test_basic_scalar_map_get_map_value(key_gen):
 
 
 @pytest.mark.parametrize('key_gen', supported_key_gens, ids=idfn)
-@pytest.mark.parametrize('key_ix', [random.randrange(1, 100)], ids=idfn)
 def test_map_scalars_supported_key_types(key_gen, key_ix):
     def query_map_scalar(spark):
         key_df = gen_df(spark, [("key", key_gen)], length=100).orderBy(col("key"))\
