@@ -22,14 +22,15 @@ import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
 
+import org.apache.spark.rapids.shims.AdaptiveSparkPlanHelperShim
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
 
-object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
+object ExecutionPlanCaptureCallback {
   private[this] var shouldCapture: Boolean = false
   private[this] val execPlans: ArrayBuffer[SparkPlan] = ArrayBuffer.empty
 
@@ -93,10 +94,12 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
     import org.apache.spark.sql.types.StructType
     import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 
-    val cpuFileSourceScanSchemata = collect(cpuDf.queryExecution.executedPlan) {
+    val cpuFileSourceScanSchemata =
+      AdaptiveSparkPlanHelperShim.collectShim(cpuDf.queryExecution.executedPlan) {
       case scan: FileSourceScanExec => scan.requiredSchema
     }
-    val gpuFileSourceScanSchemata = collect(gpuDf.queryExecution.executedPlan) {
+    val gpuFileSourceScanSchemata =
+      AdaptiveSparkPlanHelperShim.collectShim(gpuDf.queryExecution.executedPlan) {
       case scan: GpuFileSourceScanExec => scan.requiredSchema
     }
     assert(cpuFileSourceScanSchemata.size == gpuFileSourceScanSchemata.size,
