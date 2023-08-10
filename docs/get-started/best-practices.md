@@ -33,7 +33,7 @@ Refer to [Tuning Guide](../tuning-guide.md) for more details.
 ## How to handle GPU OOM issues
 
 Spark jobs running out of GPU memory is the most common issue because GPU memory is usually much 
-smaller than host memory. Below are some common tips to help avoid GPU OOM issue.
+smaller than host memory. Below are some common tips to help avoid GPU OOM issues.
 
 ### 1. Reduce the number of concurrent tasks per GPU
 
