@@ -3531,6 +3531,14 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
       }),
+    expr[DynamicPruningExpression](
+      "Dynamic pruning expression marker",
+      ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+      (a, conf, p, r) => new UnaryExprMeta[DynamicPruningExpression](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = {
+          GpuDynamicPruningExpression(child)
+        }
+      }),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
