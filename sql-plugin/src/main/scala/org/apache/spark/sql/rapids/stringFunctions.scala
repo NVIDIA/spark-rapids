@@ -1997,11 +1997,15 @@ class GpuConvMeta(
   parent: Option[RapidsMeta[_,_,_]],
   rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
 
-  override def tagExprForGpu(): Unit = (expr.fromBaseExpr, expr.toBaseExpr) match {
-    case (Literal(fromBaseVal, IntegerType), Literal(toBaseVal, IntegerType))
-      if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
-    case _ =>
-      willNotWorkOnGpu("only literal 10 or 16 for from_base and to_base are supported")
+  override def tagExprForGpu(): Unit = {
+    val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
+    val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
+    (fromBaseLit, toBaseLit) match {
+      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
+        if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
+      case _ =>
+        willNotWorkOnGpu("only literal 10 or 16 for from_base and to_base are supported")
+    }
   }
 
   override def convertToGpu(
