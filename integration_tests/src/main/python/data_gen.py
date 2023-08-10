@@ -620,12 +620,13 @@ class TimestampGen(DataGen):
 
 class ArrayGen(DataGen):
     """Generate Arrays of data."""
-    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False):
+    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False, convert_to_tuple=False):
         super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
         self._child_gen = child_gen
         self.all_null = all_null
+        self.convert_to_tuple = convert_to_tuple
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
@@ -639,7 +640,12 @@ class ArrayGen(DataGen):
             if self.all_null:
                 return None
             length = rand.randint(self._min_length, self._max_length)
-            return [self._child_gen.gen() for _ in range(0, length)]
+            result = [self._child_gen.gen() for _ in range(0, length)]
+            # This is needed for map(array, _) tests because python cannot create
+            # a dict(list, _), but it can create a dict(tuple, _)
+            if self.convert_to_tuple:
+                result = tuple(result)
+            return result
         self._start(rand, gen_array)
 
     def contains_ts(self):
