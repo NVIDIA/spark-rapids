@@ -62,7 +62,7 @@ If some tasks completed successfully while some tasks failed with OOM, check the
 types or shuffle bytes read per task to see if there is any data skew.
 
 Check the DAG of the problematic stage to see if there are any suspicious operators which may 
-consume huge amounts of memory, such as windowing, collect_list/collect_set, explode, etc. 
+consume huge amounts of memory, such as windowing, collect_list/collect_set, explode, expand, etc. 
 
 ### 4. Increase the number of tasks/partitions based on the type of the problematic stage
 

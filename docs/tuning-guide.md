@@ -217,6 +217,9 @@ Refer to this
 [Hive Doc](https://cwiki.apache.org/confluence/display/Hive/Configuration+Properties#ConfigurationProperties-hive.default.fileformat)
 for more details.
 
+If the query scans Hive ORC tables, make sure `spark.sql.hive.convertMetastoreOrc=true` to avoid CPU
+fallback.
+
 ## Input Files' column order
 When there are a large number of columns for file formats like Parquet and ORC the size of the 
 contiguous data for each individual column can be very small. This can result in doing lots of very 
