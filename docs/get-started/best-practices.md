@@ -81,7 +81,7 @@ to control the split size.
 If it is a shuffle stage, then the number of tasks/partitions is normally determined by 
 `spark.sql.shuffle.partitions`(default value=200), and also AQE's Coalescing Post Shuffle Partitions
 feature (Such as parameters `spark.sql.adaptive.coalescePartitions.minPartitionSize`, 
-`spark.sql.adaptive.advisoryPartitionSizeInBytes` etc.).
+`spark.sql.adaptive.advisoryPartitionSizeInBytes`, etc.).
 
 We can adjust the above parameters to increase the number of tasks/partitions for this shuffle
 stage to  reduce the memory pressure for each task. For example, we can start with increasing 
