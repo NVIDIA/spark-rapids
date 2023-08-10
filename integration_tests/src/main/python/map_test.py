@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, \
     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
-from conftest import is_databricks_runtime, get_seeded_random
+from conftest import is_databricks_runtime
 from marks import allow_non_gpu
 from spark_session import is_before_spark_330, is_databricks104_or_later, is_databricks113_or_later, is_spark_33X, is_spark_340_or_later
 from pyspark.sql.functions import create_map, col, lit, row_number
@@ -146,7 +146,7 @@ def test_basic_scalar_map_get_map_value(key_gen):
 
 
 @pytest.mark.parametrize('key_gen', supported_key_gens, ids=idfn)
-@pytest.mark.parametrize('key_ix', [get_seeded_random().randrange(1, 100)], ids=idfn)
+@pytest.mark.parametrize('key_ix', [random.randrange(1, 100)], ids=idfn)
 def test_map_scalars_supported_key_types(key_gen, key_ix):
     def query_map_scalar(spark):
         key_df = gen_df(spark, [("key", key_gen)], length=100).orderBy(col("key"))\
