@@ -44,19 +44,19 @@ maps_with_struct_key = [
                       ['child1', IntegerGen()]], nullable=False),
            IntegerGen())]
 
-supported_key_gens = \
+supported_key_map_gens = \
     map_gens_sample + \
     maps_with_binary_value + \
     decimal_64_map_gens + \
     decimal_128_map_gens
 
-not_supported_get_map_value_keys = \
+not_supported_get_map_value_keys_map_gens = \
     maps_with_binary_key + \
     maps_with_array_key + \
     maps_with_struct_key
 
 
-@pytest.mark.parametrize('data_gen', supported_key_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -67,7 +67,7 @@ def test_map_keys(data_gen):
                 'map_keys(a)'))
 
 
-@pytest.mark.parametrize('data_gen', supported_key_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -78,7 +78,7 @@ def test_map_values(data_gen):
                 'map_values(a)'))
 
 
-@pytest.mark.parametrize('data_gen', supported_key_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_entries(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -149,7 +149,7 @@ def test_get_map_value_numeric_keys(data_gen):
             'a[999]'))
 
 
-@pytest.mark.parametrize('data_gen', supported_key_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_get_map_value_supported_keys(data_gen):
     key_gen = data_gen._key_gen
     # first expression is not guaranteed to hit
@@ -162,7 +162,7 @@ def test_get_map_value_supported_keys(data_gen):
 
 
 @allow_non_gpu("ProjectExec")
-@pytest.mark.parametrize('data_gen', not_supported_get_map_value_keys, ids=idfn)
+@pytest.mark.parametrize('data_gen', not_supported_get_map_value_keys_map_gens, ids=idfn)
 def test_get_map_value_fallback_keys(data_gen):
     key_gen = data_gen._key_gen
     assert_gpu_fallback_collect(
@@ -185,8 +185,9 @@ def test_basic_scalar_map_get_map_value(key_gen):
                 "spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
 
 
-@pytest.mark.parametrize('key_gen', supported_key_gens, ids=idfn)
-def test_map_scalars_supported_key_types(key_gen):
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
+def test_map_scalars_supported_key_types(data_gen):
+    key_gen = data_gen._key_gen
     def query_map_scalar(spark):
         key_df = gen_df(spark, [("key", key_gen)], length=100).orderBy(col("key"))\
             .select(col("key"),
