@@ -7,7 +7,9 @@ parent: Getting-Started
 
 # Getting Started with the RAPIDS Accelerator on GCP Dataproc
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache
- Spark and Hadoop service. The quick start guide will go through:
+ Spark and Hadoop service. Please see [Software Requirements](../download.md#software-requirements)
+ section for complete list of Dataproc versions supported by RAPIDS plugin. 
+ The quick start guide will go through:
 
 * [Create a Dataproc Cluster Accelerated by GPUs](#create-a-dataproc-cluster-accelerated-by-gpus)
   * [Create a Dataproc Cluster using T4's](#create-a-dataproc-cluster-using-t4s)
