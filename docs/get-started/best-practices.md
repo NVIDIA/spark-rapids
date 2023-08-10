@@ -24,7 +24,7 @@ log to find the not-supported messages starting with `!`. Some missing features 
 turning on some config, but please understand the corresponding limitation detailed in 
 [the advanced configuration document](../additional-functionality/advanced_configs.md).
 For other unsupported features, please file feature requests on 
-[spark-rapids github repo](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce
+[spark-rapids Github repo](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce
 and the not-supported messages if they are non-sensitive data.
 
 ## Performance Tuning
