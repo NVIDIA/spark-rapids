@@ -228,7 +228,7 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|db     |Databricks  |332db  |Databricks Spark based on Spark 3.1.2         |
+|db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
 |cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
 
 The version-specific directory names have one of the following forms / use cases:
