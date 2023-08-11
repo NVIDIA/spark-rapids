@@ -148,9 +148,10 @@ fi
 $MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
-    echo "Building the default Spark shim and creatign a two-shim dist jar"
+    echo "Building the default Spark shim and creating a two-shim dist jar"
     UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=buildver -DforceStdout)
-    $MVN_CMD -B package -pl dist -am -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER -DskipTests -Dskip $MVN_OPT
+    $MVN_CMD -B package -pl dist -am -DskipTests -Dskip $MVN_OPT \
+        -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
 
 cd /home/ubuntu
