@@ -1328,6 +1328,7 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
           previousValue = Some(scalar.incRefCount())
         case Some(prev) =>
           withResource(prev) { _ =>
+            previousValue = None
             prev.getType.getTypeId match {
               case DType.DTypeEnum.INT64 =>
                 if (failOnError) {
@@ -1342,9 +1343,14 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
                 previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
               case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
                    DType.DTypeEnum.DECIMAL128 =>
-                // TODO overflow check
-                val sum = prev.getBigDecimal.add(scalar.getBigDecimal)
-                previousValue = Some(Scalar.fromDecimal(sum.unscaledValue(), prev.getType))
+                withResource(ColumnVector.fromScalar(scalar, 1)) { scalarCv =>
+                  withResource(prev.add(scalarCv)) { sum =>
+                    AddOverflowChecks.decimalOpOverflowCheck(prev, scalar, sum, failOnError)
+                    val scalar1 = sum.getScalarElement(0)
+                    previousValue = Some(Scalar.fromDecimal(
+                      scalar1.getBigDecimal.unscaledValue(), prev.getType))
+                  }
+                }
               case other =>
                 throw new IllegalStateException(s"unhandled type: $other")
             }
@@ -1352,6 +1358,8 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
         }
     }
   }
+
+
 
   override def fixUp(
       samePartitionMask: Either[ColumnVector, Boolean],
