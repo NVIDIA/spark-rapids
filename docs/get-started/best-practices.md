@@ -5,7 +5,7 @@ nav_order: 15
 parent: Getting-Started
 ---
 
-# Best Practices on Spark RAPIDS
+# Best Practices on the RAPIDS Accelerator for Apache Spark
 
 This article explains the most common best practices using the RAPIDS Accelerator especially for 
 performance tuning and troubleshooting.
