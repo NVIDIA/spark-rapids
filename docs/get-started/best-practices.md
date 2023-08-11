@@ -57,7 +57,7 @@ INFO GpuDeviceManager: Initializing RMM ASYNC pool size = 17840.349609375 MB on 
 The relationship between SQL/job/stage is: Stage belongs to a Job which belongs to SQL.
 First check the Spark UI to identify the problematic SQL ID, Job ID, and Stage ID.
 
-Then find the failed stage in the `stages` page in Spark UI, and go into that stage to look at tasks.
+Then find the failed stage in the `Stages` page in the Spark UI, and go into that stage to look at tasks.
 If some tasks completed successfully while some tasks failed with OOM, check the amount of input 
 types or shuffle bytes read per task to see if there is any data skew.
 
