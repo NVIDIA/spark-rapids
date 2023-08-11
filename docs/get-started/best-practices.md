@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Best Practices on Spark RAPIDS
+title: Best Practices
 nav_order: 15
 parent: Getting-Started
 ---
