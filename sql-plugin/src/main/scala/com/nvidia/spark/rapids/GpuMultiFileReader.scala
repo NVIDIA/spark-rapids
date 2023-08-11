@@ -387,33 +387,6 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
     batchIter = EmptyGpuColumnarBatchIterator
     isDone = true
   }
-
-  /**
-   * Dump the data from HostMemoryBuffer to a file named by debugDumpPrefix + random + format
-   *
-   * @param hmb             host data to be dumped
-   * @param dataLength      data size
-   * @param splits          PartitionedFile to be handled
-   * @param debugDumpPrefix file name prefix, if it is None, will not dump
-   * @param format          file name suffix, if it is None, will not dump
-   */
-  protected def dumpDataToFile(
-      hmb: HostMemoryBuffer,
-      dataLength: Long,
-      splits: Array[PartitionedFile],
-      debugDumpPrefix: Option[String] = None,
-      format: Option[String] = None): Unit = {
-    if (debugDumpPrefix.isDefined && format.isDefined) {
-      val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix.get, s".${format.get}")
-
-      withResource(out) { _ =>
-        withResource(new HostMemoryInputStream(hmb, dataLength)) { in =>
-          logInfo(s"Writing split data for ${splits.mkString(", ")} to $path")
-          IOUtils.copy(in, out)
-        }
-      }
-    }
-  }
 }
 
 // Contains the actual file path to read from and then an optional original path if its read from
