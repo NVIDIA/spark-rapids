@@ -59,7 +59,7 @@ First check the Spark UI to identify the problematic SQL ID, Job ID, and Stage I
 
 Then find the failed stage in the `Stages` page in the Spark UI, and go into that stage to look at tasks.
 If some tasks completed successfully while some tasks failed with OOM, check the amount of input 
-types or shuffle bytes read per task to see if there is any data skew.
+bytes or shuffle bytes read per task to see if there is any data skew.
 
 Check the DAG of the problematic stage to see if there are any suspicious operators which may 
 consume huge amounts of memory, such as windowing, collect_list/collect_set, explode, expand, etc. 
