@@ -1345,10 +1345,12 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
                    DType.DTypeEnum.DECIMAL128 =>
                 withResource(ColumnVector.fromScalar(scalar, 1)) { scalarCv =>
                   withResource(prev.add(scalarCv)) { sum =>
-                    AddOverflowChecks.decimalOpOverflowCheck(prev, scalar, sum, failOnError)
-                    withResource(sum.getScalarElement(0)) { sumScalar =>
-                      previousValue = Some(Scalar.fromDecimal(
-                        sumScalar.getBigDecimal.unscaledValue(), prev.getType))
+                    withResource(AddOverflowChecks.decimalOpOverflowCheck(
+                        prev, scalar, sum, failOnError)) { sumChecked =>
+                      withResource(sum.getScalarElement(0)) { sumScalar =>
+                        previousValue = Some(Scalar.fromDecimal(
+                          sumScalar.getBigDecimal.unscaledValue(), prev.getType))
+                      }
                     }
                   }
                 }
