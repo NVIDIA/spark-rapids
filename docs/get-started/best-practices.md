@@ -68,9 +68,9 @@ consume huge amounts of memory, such as windowing, collect_list/collect_set, exp
 
 #### a. Table Scan Stage
 
-If it is a table scan stage on Parquet/ORC tables, then the number of tasks/partitions is normally 
+If it is a table scan stage on Parquet/ORC tables, then the number of tasks or partitions is normally 
 determined by `spark.sql.files.maxPartitionBytes`. We can decrease its value to increase the
-number of tasks/partitions for this stage so that the memory pressure of each task is less. 
+number of tasks or partitions for this stage so that the memory pressure of each task is less. 
 
 Iceberg or Delta  tables may have different settings to control the concurrency in the table
 scan stage. For example, Iceberg uses `read.split.target-size` as a table property or read option
@@ -78,17 +78,17 @@ to control the split size.
 
 #### b. Shuffle Stage
 
-If it is a shuffle stage, then the number of tasks/partitions is normally determined by 
+If it is a shuffle stage, then the number of tasks or partitions is normally determined by 
 `spark.sql.shuffle.partitions`(default value=200), and also AQE's Coalescing Post Shuffle Partitions
 feature (Such as parameters `spark.sql.adaptive.coalescePartitions.minPartitionSize`, 
 `spark.sql.adaptive.advisoryPartitionSizeInBytes`, etc.).
 
-We can adjust the above parameters to increase the number of tasks/partitions for this shuffle
+We can adjust the above parameters to increase the number of tasks or partitions for this shuffle
 stage to  reduce the memory pressure for each task. For example, we can start with increasing 
 `spark.sql.shuffle.partitions` by a factor of 2, then 4, then 8, etc.
 
 Even without an OOM error, if the SQL plan metrics show lots of spilling from the
-Spark UI in this stage, increasing the number  of tasks/partitions could decrease the
+Spark UI in this stage, increasing the number of tasks or partitions could decrease the
 spilled data size to improve performance.
 
 Note: AQE's Coalescing Post Shuffle Partitions feature could have different behaviors in different 
