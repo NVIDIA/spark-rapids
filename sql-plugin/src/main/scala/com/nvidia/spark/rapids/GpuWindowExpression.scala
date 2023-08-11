@@ -1347,10 +1347,7 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
                   withResource(prev.add(scalarCv)) { sum =>
                     withResource(AddOverflowChecks.decimalOpOverflowCheck(
                         prev, scalar, sum, failOnError)) { sumChecked =>
-                      withResource(sum.getScalarElement(0)) { sumScalar =>
-                        previousValue = Some(Scalar.fromDecimal(
-                          sumScalar.getBigDecimal.unscaledValue(), prev.getType))
-                      }
+                      previousValue = Some(sumChecked.getScalarElement(0))
                     }
                   }
                 }
