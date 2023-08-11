@@ -85,7 +85,7 @@ feature (Such as parameters `spark.sql.adaptive.coalescePartitions.minPartitionS
 
 We can adjust the above parameters to increase the number of tasks/partitions for this shuffle
 stage to  reduce the memory pressure for each task. For example, we can start with increasing 
-`spark.sql.shuffle.partitions` (2x, 4x, 8x, etc.).
+`spark.sql.shuffle.partitions` by a factor of 2, then 4, then 8, etc.
 
 Even without an OOM error, if the SQL plan metrics show lots of spilling from the
 Spark UI in this stage, increasing the number  of tasks/partitions could decrease the
