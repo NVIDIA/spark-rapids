@@ -93,6 +93,9 @@ initialize()
     SKIP_DEP_INSTALL=${SKIP_DEP_INSTALL:-'0'}
     # export 'M2DIR' so that shims can get the correct Spark dependency info
     export M2DIR=/home/ubuntu/.m2/repository
+    # whether to build a two-shim jar with the lowest supported upstream Spark version
+    WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
+
 
     # Print a banner of the build configurations.
     printf '+ %*s +\n' 100 '' | tr ' ' =
@@ -108,6 +111,7 @@ initialize()
     echo "Rapids build jar                              : ${RAPIDS_BUILT_JAR}"
     echo "Build Version                                 : ${BUILDVER}"
     echo "Skip Dependencies                             : ${SKIP_DEP_INSTALL}"
+    echo "Include Default Spark Shim                    : ${WITH_DEFAULT_UPSTREAM_SHIM}"
     printf '+ %*s +\n' 100 '' | tr ' ' =
 }
 
@@ -142,6 +146,11 @@ fi
 
 # Build the RAPIDS plugin by running package command for databricks
 mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
+
+if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
+    echo "Building the default Spark shim and creatign a two-shim dist jar"
+    mvn -B package -pl dist -am -Dincluded_buildvers=311,$BUILDVER -DskipTests -Dskip $MVN_OPT
+fi
 
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
