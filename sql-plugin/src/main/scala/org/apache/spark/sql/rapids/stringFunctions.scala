@@ -2047,11 +2047,14 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
 
   override def doColumnar(
     numRows: Int,
-    str: GpuScalar,
+    strScalar: GpuScalar,
     fromBase: GpuScalar,
-    toBase: GpuScalar): ColumnVector = {
-      throw new UnsupportedOperationException()
+    toBase: GpuScalar
+  ): ColumnVector = {
+    withResource(GpuColumnVector.from(strScalar, numRows, strScalar.dataType)) { strCV =>
+      doColumnar(strCV, fromBase, toBase)
     }
+  }
 
   override def doColumnar(
     str: GpuColumnVector,
