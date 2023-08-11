@@ -227,6 +227,13 @@ def test_hash_repartition_exact_fallback(gen, num_parts):
             .withColumn('id', f.spark_partition_id()) \
             .selectExpr('*'), "ShuffleExchangeExec")
 
+@allow_non_gpu("ProjectExec")
+@pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
+def test_hash_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen, length=1024) \
+            .selectExpr('*', 'hash(a) as h'), "ProjectExec")
+
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [
