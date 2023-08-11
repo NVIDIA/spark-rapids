@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-08-10
+Generated on 2023-08-11
 
 ## Release 23.08
 
@@ -8,27 +8,19 @@ Generated on 2023-08-10
 |:---|:---|
 |[#5509](https://github.com/NVIDIA/spark-rapids/issues/5509)|[FEA] Support order-by on Array|
 |[#7876](https://github.com/NVIDIA/spark-rapids/issues/7876)|[FEA] Add initial support for Databricks 12.2 ML LTS|
-|[#8660](https://github.com/NVIDIA/spark-rapids/issues/8660)|[FEA][Databricks 12.2] Update docs to state that Delta Lake on Databricks 12.2 is supported|
 |[#8547](https://github.com/NVIDIA/spark-rapids/issues/8547)|[FEA] Add support for Delta Lake 2.4 with Spark 3.4|
-|[#8691](https://github.com/NVIDIA/spark-rapids/issues/8691)|[FEA] Driver log warning on startup when GPU is limiting scheduling resource|
 |[#8633](https://github.com/NVIDIA/spark-rapids/issues/8633)|[FEA] Add support for xxHash64 function|
 |[#4929](https://github.com/NVIDIA/spark-rapids/issues/4929)|[FEA] Support min/max aggregation/reduction for arrays of structs and arrays of strings|
 |[#8668](https://github.com/NVIDIA/spark-rapids/issues/8668)|[FEA] Support min and max for arrays|
 |[#4887](https://github.com/NVIDIA/spark-rapids/issues/4887)|[FEA] Hash partitioning on ArrayType|
-|[#6680](https://github.com/NVIDIA/spark-rapids/issues/6680)|Support hashaggregate for Array[Any]|
+|[#6680](https://github.com/NVIDIA/spark-rapids/issues/6680)|[FEA] Support hashaggregate for Array[Any]|
 |[#8085](https://github.com/NVIDIA/spark-rapids/issues/8085)|[FEA] Add support for MillisToTimestamp|
 |[#7801](https://github.com/NVIDIA/spark-rapids/issues/7801)|[FEA] Window Expression orderBy column is not supported in a window range function, found  DoubleType|
 |[#8556](https://github.com/NVIDIA/spark-rapids/issues/8556)|[FEA] [Delta Lake] Add support for new metrics in MERGE|
 |[#308](https://github.com/NVIDIA/spark-rapids/issues/308)|[FEA] Spark 3.1 adding support for  TIMESTAMP_SECONDS, TIMESTAMP_MILLIS and TIMESTAMP_MICROS functions|
 |[#8122](https://github.com/NVIDIA/spark-rapids/issues/8122)|[FEA] Add spark 3.4.1 snapshot shim|
-|[#8423](https://github.com/NVIDIA/spark-rapids/issues/8423)|[FEA] [Databricks 12.2] Get Delta Lake integration tests passing|
-|[#8184](https://github.com/NVIDIA/spark-rapids/issues/8184)|Enable asserts for checking non-empty nulls|
-|[#8382](https://github.com/NVIDIA/spark-rapids/issues/8382)|[FEA] Implement a heuristic to split a project's input based on output and add to hash aggregate|
-|[#8453](https://github.com/NVIDIA/spark-rapids/issues/8453)|[FEA] Support SplitNRetry aggregations without concat on the first pass|
 |[#8525](https://github.com/NVIDIA/spark-rapids/issues/8525)|[FEA] Add support for org.apache.spark.sql.functions.flatten|
-|[#8319](https://github.com/NVIDIA/spark-rapids/issues/8319)|[FEA] Remove hard-coded versions from databricks build script|
 |[#8202](https://github.com/NVIDIA/spark-rapids/issues/8202)|[FEA] List supported Spark builds when the Shim is not found|
-|[#8461](https://github.com/NVIDIA/spark-rapids/issues/8461)|[FEA] Support spill+retry for GpuExpandExec|
 
 ### Performance
 |||
@@ -39,6 +31,9 @@ Generated on 2023-08-10
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#8922](https://github.com/NVIDIA/spark-rapids/issues/8922)|[BUG] integration map_test:test_map_scalars_supported_key_types failures|
+|[#8982](https://github.com/NVIDIA/spark-rapids/issues/8982)|[BUG] Nightly prerelease failures - OrcSuite|
+|[#8978](https://github.com/NVIDIA/spark-rapids/issues/8978)|[BUG] compiling error due to OrcSuite&OrcStatisticShim in databricks runtimes|
 |[#8610](https://github.com/NVIDIA/spark-rapids/issues/8610)|[BUG] query 95 @ SF30K fails with OOM exception|
 |[#8955](https://github.com/NVIDIA/spark-rapids/issues/8955)|[BUG] Bloom filter join tests can fail with multiple join columns|
 |[#45](https://github.com/NVIDIA/spark-rapids/issues/45)|[BUG] very large shuffles can fail|
@@ -81,13 +76,18 @@ Generated on 2023-08-10
 |[#7775](https://github.com/NVIDIA/spark-rapids/issues/7775)|[BUG] scala version hardcoded irrespective of Spark dependency|
 |[#8548](https://github.com/NVIDIA/spark-rapids/issues/8548)|[BUG] cache_test:test_batch_no_cols test FAILED on spark-3.3.0+|
 |[#8579](https://github.com/NVIDIA/spark-rapids/issues/8579)|[BUG] build failed on Databricks clusters "GpuDeleteCommand.scala:104: type mismatch" |
-|[#8380](https://github.com/NVIDIA/spark-rapids/issues/8380)|Remove the legacy Spark support from CachedBatchWriterSuite|
 |[#8187](https://github.com/NVIDIA/spark-rapids/issues/8187)|[BUG] Integration test test_window_running_no_part can produce non-empty nulls (cudf scan)|
 |[#8493](https://github.com/NVIDIA/spark-rapids/issues/8493)|[BUG] branch-23.08 fails to build on Databricks 12.2|
 
 ### PRs
 |||
 |:---|:---|
+|[#8948](https://github.com/NVIDIA/spark-rapids/pull/8948)|[Doc]update download docs for 2308 version[skip ci]|
+|[#8971](https://github.com/NVIDIA/spark-rapids/pull/8971)|Fix test_map_scalars_supported_key_types|
+|[#8990](https://github.com/NVIDIA/spark-rapids/pull/8990)|Remove doc references to 312db [skip ci]|
+|[#8960](https://github.com/NVIDIA/spark-rapids/pull/8960)|[Doc] address profiling tool formatted issue [skip ci]|
+|[#8983](https://github.com/NVIDIA/spark-rapids/pull/8983)|Revert OrcSuite to fix deployment build|
+|[#8979](https://github.com/NVIDIA/spark-rapids/pull/8979)|Fix Databricks build error for new added ORC test cases|
 |[#8920](https://github.com/NVIDIA/spark-rapids/pull/8920)|Add test case to test orc dictionary encoding with lots of rows for nested types|
 |[#8940](https://github.com/NVIDIA/spark-rapids/pull/8940)|Add test case for ORC statistics test|
 |[#8909](https://github.com/NVIDIA/spark-rapids/pull/8909)|Match Spark's NaN handling in collect_set|
