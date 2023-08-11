@@ -13,6 +13,8 @@ Different versions of EMR ship with different versions of Spark, RAPIDS Accelera
 
 | EMR | Spark | RAPIDS Accelerator jar | cuDF jar | xgboost4j-spark jar
 | --- | --- | --- | ---| --- |
+| 6.12 | 3.4.0 | rapids-4-spark_2.12-23.06.0-amzn-0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
+| 6.11 | 3.3.2 | rapids-4-spark_2.12-23.02.0-amzn-0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
 | 6.10 | 3.3.1 | rapids-4-spark_2.12-22.12.0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
 | 6.9 | 3.3.0 | rapids-4-spark_2.12-22.08.0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
 | 6.8 | 3.3.0 | rapids-4-spark_2.12-22.06.0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
@@ -86,8 +88,8 @@ top right corner. Click `Create cluster`, which will bring up a detailed cluster
 
 Enter a custom "Cluster name" for your cluster.
 
-Select **emr-6.10.0** for the release and pick "Custom" for the "Application bundle". Unncheck all the 
-software options, and then check **Hadoop 3.3.3**, **Spark 3.3.1**, **Livy 0.7.1** and 
+Select **emr-6.12.0** for the release and pick "Custom" for the "Application bundle". Uncheck all the 
+software options, and then check **Hadoop 3.3.3**, **Spark 3.4.0**, **Livy 0.7.1** and 
 **JupyterEnterpriseGateway 2.6.0**.
 
 Optionally pick Amazon Linux Release or configure a "Custom AMI".
@@ -260,7 +262,7 @@ You will need:
 
 ```bash
 aws emr create-cluster \
---release-label emr-6.10.0 \
+--release-label emr-6.12.0 \
 --applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
 --service-role DemoServiceRole \
 --ec2-attributes KeyName=demo-key-pair,SubnetId=demo-subnet,InstanceProfile=DemoInstanceProfile \
