@@ -26,6 +26,7 @@ import ai.rapids.cudf._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 
 sealed trait MemoryState
@@ -60,6 +61,15 @@ object GpuDeviceManager extends Logging {
    * Exposes the device id used while initializing the RMM pool
    */
   def getDeviceId(): Option[Int] = deviceId
+
+  @volatile private var poolSizeLimit = 0L
+
+  // Never split below 100 MiB (but this is really just for testing)
+  def getSplitUntilSize: Long = {
+    val conf = new RapidsConf(SQLConf.get)
+    conf.splitUntilSizeOverride
+        .getOrElse(Math.max(poolSizeLimit / 8, 100 * 1024 * 1024))
+  }
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
@@ -149,6 +159,7 @@ object GpuDeviceManager extends Logging {
 
     chunkedPackMemoryResource.foreach(_.close)
     chunkedPackMemoryResource = None
+    poolSizeLimit = 0L
 
     RapidsBufferCatalog.close()
     GpuShuffleEnv.shutdown()
@@ -338,6 +349,7 @@ object GpuDeviceManager extends Logging {
 
       Cuda.setDevice(gpuId)
       try {
+        poolSizeLimit = poolAllocation
         Rmm.initialize(init, logConf, poolAllocation)
       } catch {
         case firstEx: CudfException if ((init & RmmAllocationMode.CUDA_ASYNC) != 0) => {
@@ -351,6 +363,7 @@ object GpuDeviceManager extends Logging {
               logError(
                 "Failed to initialize RMM with either ASYNC or ARENA allocators. Exiting...")
               secondEx.addSuppressed(firstEx)
+              poolSizeLimit = 0L
               throw secondEx
             }
           }

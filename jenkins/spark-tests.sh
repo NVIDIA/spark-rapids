@@ -164,9 +164,9 @@ if [[ $PARALLEL_TEST == "true" ]]; then
     PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
       awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2 * 1024))}')
   fi
-  # parallelism > 6 could slow down the whole process, so we have a limitation for it
+  # parallelism > 5 could slow down the whole process, so we have a limitation for it
   # this is based on our CI gpu types, so we do not put it into the run_pyspark_from_build.sh
-  [[ ${PARALLELISM} -gt 6 ]] && PARALLELISM=6
+  [[ ${PARALLELISM} -gt 5 ]] && PARALLELISM=5
   MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
 
   export TEST_PARALLEL=${PARALLELISM}

@@ -430,18 +430,37 @@ object GpuScalar extends Logging {
 
   private def typeConversionAllowed(s: Scalar, sType: DataType): Boolean = {
     s.getType match {
-      case dt if dt.isNestedType =>
+      case DType.LIST =>
         sType match {
-          // Now supports only list for nested type.
           case ArrayType(elementType, _) =>
-            if (DType.LIST.equals(dt)) {
-              withResource(s.getListAsColumnView) { elementView =>
-                GpuColumnVector.typeConversionAllowed(elementView, elementType)
-              }
-            } else {
-              false
+            withResource(s.getListAsColumnView) { elementView =>
+              GpuColumnVector.typeConversionAllowed(elementView, elementType)
+            }
+          case MapType(keyType, valueType, _) =>
+            withResource(s.getListAsColumnView) { elementView =>
+              GpuColumnVector.typeConversionAllowed(elementView,
+                StructType(Seq(StructField("key", keyType), StructField("value", valueType))))
+            }
+          case BinaryType =>
+            withResource(s.getListAsColumnView) { childView =>
+              DType.UINT8.equals(childView.getType)
             }
           case _ => false // Unsupported type
+        }
+      case DType.STRUCT =>
+        sType match {
+          case st: StructType =>
+            withResource(s.getChildrenFromStructScalar) { children =>
+              if (children.length == st.length) {
+                children.zip(st.map(_.dataType)).forall {
+                  case (cv, dt) =>
+                    GpuColumnVector.typeConversionAllowed(cv, dt)
+                }
+              } else {
+                false
+              }
+            }
+          case _ => false
         }
       case nonNested =>
         GpuColumnVector.getNonNestedRapidsType(sType).equals(nonNested)
@@ -696,10 +715,14 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
     case _ => value.toString
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     // Returns a Scalar instead of the value to support the scalar of nested type, and
     // simplify the handling of result from a `expr.columnarEval`.
     GpuScalar(value, dataType)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {

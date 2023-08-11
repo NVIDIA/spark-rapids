@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,6 +61,32 @@ object GpuBatchUtils {
   def estimateGpuMemory(schema: StructType, columnIndex: Int, rowCount: Long): Long = {
     val field = schema.fields(columnIndex)
     estimateGpuMemory(field.dataType, field.nullable, rowCount)
+  }
+
+  /**
+   * Get the minimum size a column could be that matches these conditions.
+   */
+  def minGpuMemory(dataType:DataType, nullable: Boolean, rowCount: Long): Long = {
+    val validityBufferSize = if (nullable) {
+      calculateValidityBufferSize(rowCount)
+    } else {
+      0
+    }
+
+    val dataSize = dataType match {
+      case DataTypes.BinaryType | DataTypes.StringType | _: MapType | _: ArrayType=>
+        // For nested types (like list or string) the smallest possible size is when
+        // each row is empty (length 0). In that case there is no data, just offsets
+        // and all of the offsets are 0.
+        calculateOffsetBufferSize(rowCount)
+      case dt: StructType =>
+        dt.fields.map { f =>
+          minGpuMemory(f.dataType, f.nullable, rowCount)
+        }.sum
+      case dt =>
+        dt.defaultSize * rowCount
+    }
+    dataSize + validityBufferSize
   }
 
   def estimateGpuMemory(dataType: DataType, nullable: Boolean, rowCount: Long): Long = {

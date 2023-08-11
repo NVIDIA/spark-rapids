@@ -24,6 +24,7 @@ package org.apache.spark.sql.delta.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.internal.Logging
@@ -62,8 +63,8 @@ case class GpuCheckDeltaInvariant(
       constraint)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(child, batch)) { col =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(child.columnarEval(batch)) { col =>
       constraint match {
         case n: NotNull =>
           if (col.getBase.hasNulls) {

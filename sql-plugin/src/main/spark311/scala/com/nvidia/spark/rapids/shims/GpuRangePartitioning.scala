@@ -47,7 +47,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuRangePartitioning(
     gpuOrdering: Seq[SortOrder],
-    numPartitions: Int) extends GpuExpression with ShimExpression with GpuPartitioning {
+    numPartitions: Int)
+    extends GpuExpression
+        with ShimExpression
+        with GpuPartitioning {
 
   override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
@@ -83,6 +86,7 @@ case class GpuRangePartitioning(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any =
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     throw new IllegalStateException("This cannot be executed")
+  }
 }

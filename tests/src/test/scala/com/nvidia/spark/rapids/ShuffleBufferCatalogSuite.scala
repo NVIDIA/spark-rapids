@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
-class ShuffleBufferCatalogSuite extends FunSuite with MockitoSugar {
+class ShuffleBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
   test("registered shuffles should be active") {
     val catalog = mock[RapidsBufferCatalog]
     val rapidsDiskBlockManager = mock[RapidsDiskBlockManager]

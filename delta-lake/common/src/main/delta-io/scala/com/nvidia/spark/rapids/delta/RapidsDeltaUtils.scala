@@ -32,7 +32,7 @@ object RapidsDeltaUtils {
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    deltaLog.fileFormat() match {
+    DeltaRuntimeShim.fileFormatFromLog(deltaLog) match {
       case _: DeltaParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
       case f =>
@@ -81,5 +81,9 @@ object RapidsDeltaUtils {
     if (autoCompactEnabled) {
       meta.willNotWorkOnGpu("automatic compaction of Delta Lake tables is not supported")
     }
+  }
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = {
+    DeltaRuntimeShim.getTightBoundColumnOnFileInitDisabled(spark)
   }
 }

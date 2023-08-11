@@ -18,7 +18,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -229,6 +229,16 @@ def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
 
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+def test_unsupported_fallback_unix_timestamp(data_gen):
+    assert_gpu_fallback_collect(lambda spark: gen_df(
+        spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
+        "unix_timestamp(a, b)"),
+        "UnixTimestamp")
+
+
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_to_unix_timestamp(data_gen, ansi_enabled):
@@ -237,19 +247,48 @@ def test_to_unix_timestamp(data_gen, ansi_enabled):
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+def test_unsupported_fallback_to_unix_timestamp(data_gen):
+    assert_gpu_fallback_collect(lambda spark: gen_df(
+        spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
+        "to_unix_timestamp(a, b)"),
+        "ToUnixTimestamp")
+
+
 @pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 def test_from_utc_timestamp(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
+        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
 
-@allow_non_gpu('ProjectExec, FromUTCTimestamp')
+@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('time_zone', ["PST", "MST", "EST", "VST", "NST", "AST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
-def test_from_utc_timestamp_fallback(data_gen, time_zone):
+def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
     assert_gpu_fallback_collect(
-        lambda spark : unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
-    'ProjectExec')
+        lambda spark: unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
+    'FromUTCTimestamp')
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+def test_unsupported_fallback_from_utc_timestamp(data_gen):
+    time_zone_gen = StringGen(pattern="UTC")
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [("a", data_gen), ("tzone", time_zone_gen)]).selectExpr(
+            "from_utc_timestamp(a, tzone)"),
+        'FromUTCTimestamp')
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+def test_unsupported_fallback_from_unixtime(data_gen):
+    fmt_gen = StringGen(pattern="[M]")
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [("a", data_gen), ("fmt", fmt_gen)]).selectExpr(
+            "from_unixtime(a, fmt)"),
+        'FromUnixTime')
 
 
 @pytest.mark.parametrize('invalid,fmt', [
@@ -388,28 +427,30 @@ def test_date_format(data_gen, date_format):
 unsupported_date_formats = ['F']
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
+@allow_non_gpu('ProjectExec')
 def test_date_format_f(data_gen, date_format):
     assert_gpu_fallback_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), 'ProjectExec')
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        'DateFormatClass')
 
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
+@allow_non_gpu('ProjectExec')
 def test_date_format_f_incompat(data_gen, date_format):
     # note that we can't support it even with incompatibleDateFormats enabled
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
     assert_gpu_fallback_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), 'ProjectExec', conf)
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        'DateFormatClass', conf)
 
 maybe_supported_date_formats = ['dd-MM-yyyy', 'yyyy-MM-dd HH:mm:ss.SSS', 'yyyy-MM-dd HH:mm:ss.SSSSSS']
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
+@allow_non_gpu('ProjectExec')
 def test_date_format_maybe(data_gen, date_format):
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
-        'ProjectExec')
+        'DateFormatClass')
 
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -438,3 +479,75 @@ def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
             .withColumnRenamed("filename", "r_filename")
         return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
     assert_gpu_and_cpu_are_equal_collect(do_join_cast)
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+def test_unsupported_fallback_date_format(data_gen):
+    conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
+    assert_gpu_fallback_collect(
+        lambda spark : gen_df(spark, [("a", data_gen)]).selectExpr(
+            "date_format(a, a)"),
+        "DateFormatClass",
+        conf)
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_to_date():
+    date_gen = StringGen(pattern="2023-08-01")
+    pattern_gen = StringGen(pattern="[M]")
+    conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [("a", date_gen), ("b", pattern_gen)]).selectExpr(
+            "to_date(a, b)"),
+        'GetTimestamp',
+        conf)
+
+
+# (-62135510400, 253402214400) is the range of seconds that can be represented by timestamp_seconds 
+# considering the influence of time zone.
+ts_float_gen = SetValuesGen(FloatType(), [0.0, -0.0, 1.0, -1.0, 1.234567, -1.234567, 16777215.0, float('inf'), float('-inf'), float('nan')])
+seconds_gens = [LongGen(min_val=-62135510400, max_val=253402214400), IntegerGen(), ShortGen(), ByteGen(), 
+                DoubleGen(min_exp=0, max_exp=32), ts_float_gen, DecimalGen(16, 6), DecimalGen(13, 3), DecimalGen(10, 0), DecimalGen(7, -3), DecimalGen(6, 6)]
+@pytest.mark.parametrize('data_gen', seconds_gens, ids=idfn)
+def test_timestamp_seconds(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)"))
+
+def test_timestamp_seconds_long_overflow():
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, long_gen).selectExpr("timestamp_seconds(a)").collect(),
+        conf={},
+        error_message='long overflow')
+    
+@pytest.mark.parametrize('data_gen', [DecimalGen(7, 7), DecimalGen(20, 7)], ids=idfn)
+def test_timestamp_seconds_rounding_necessary(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
+        conf={},
+        error_message='Rounding necessary')
+    
+@pytest.mark.parametrize('data_gen', [DecimalGen(19, 6), DecimalGen(20, 6)], ids=idfn)
+def test_timestamp_seconds_decimal_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_seconds(a)").collect(),
+        conf={},
+        error_message='Overflow')
+
+millis_gens = [LongGen(min_val=-62135510400000, max_val=253402214400000), IntegerGen(), ShortGen(), ByteGen()]
+@pytest.mark.parametrize('data_gen', millis_gens, ids=idfn)
+def test_timestamp_millis(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_millis(a)"))
+    
+def test_timestamp_millis_long_overflow():
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, long_gen).selectExpr("timestamp_millis(a)").collect(),
+        conf={},
+        error_message='long overflow')
+
+micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), IntegerGen(), ShortGen(), ByteGen()]
+@pytest.mark.parametrize('data_gen', micros_gens, ids=idfn)
+def test_timestamp_micros(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))

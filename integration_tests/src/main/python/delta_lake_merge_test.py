@@ -21,7 +21,7 @@ from data_gen import *
 from marks import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, spark_version
 
 # Databricks changes the number of files being written, so we cannot compare logs
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
@@ -29,6 +29,9 @@ num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
                                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true"})
+
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 
 def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
@@ -45,21 +48,29 @@ def make_df(spark, gen, num_slices):
     return three_col_df(spark, gen, SetValuesGen(StringType(), string.ascii_lowercase),
                         SetValuesGen(StringType(), string.ascii_uppercase), num_slices=num_slices)
 
-def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None):
+def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         dest_df = dest_table_func(spark)
         writer = dest_df.write.format("delta")
+        ddl = schema_to_ddl(spark, dest_df.schema)
+        table_properties = {}
         if use_cdf:
-            ddl = schema_to_ddl(spark, dest_df.schema)
+            table_properties['delta.enableChangeDataFeed'] = 'true'
+        if enable_deletion_vectors:
+            table_properties['delta.enableDeletionVectors'] = 'true'
+        if len(table_properties) > 0:
+            # if any table properties are specified then we need to use SQL to define the table
             sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
             if partition_columns:
                 sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
-            sql_text += " TBLPROPERTIES (delta.enableChangeDataFeed = true)"
+            properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
+            sql_text += " TBLPROPERTIES ({})".format(properties)
             spark.sql(sql_text)
-            writer = writer.mode("append")
         elif partition_columns:
             writer = writer.partitionBy(*partition_columns)
+        if use_cdf or enable_deletion_vectors:
+            writer = writer.mode("append")
         writer.save(path)
 
 def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
@@ -101,7 +112,7 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                          src_table_func, dest_table_func, merge_sql, checker, partition_columns)
 
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("disable_conf",
@@ -115,13 +126,37 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
 def test_delta_merge_disabled_fallback(spark_tmp_path, spark_tmp_table_factory, disable_conf):
     def checker(data_path, do_merge):
         assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
-                                  "ExecutedCommandExec", conf=disable_conf)
+                                  delta_write_fallback_check, conf=disable_conf)
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN NOT MATCHED THEN INSERT *"
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
                          use_cdf=False,
                          src_table_func=lambda spark: unary_op_df(spark, SetValuesGen(IntegerType(), range(100))),
                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                         merge_sql=merge_sql,
+                         check_func=checker)
+
+@allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() < "3.3.2", reason="NOT MATCHED BY SOURCE added in DBR 12.2")
+@pytest.mark.skipif((not is_databricks_runtime()) and is_before_spark_340(), reason="NOT MATCHED BY SOURCE added in Delta Lake 2.4")
+def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_table_factory):
+    def checker(data_path, do_merge):
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec", conf = delta_merge_enabled_conf)
+    merge_sql = "MERGE INTO {dest_table} " \
+                "USING {src_table} " \
+                "ON {src_table}.a == {dest_table}.a " \
+                "WHEN MATCHED THEN " \
+                "  UPDATE SET {dest_table}.b = {src_table}.b " \
+                "WHEN NOT MATCHED THEN " \
+                "  INSERT (a, b) VALUES ({src_table}.a, {src_table}.b) " \
+                "WHEN NOT MATCHED BY SOURCE AND {dest_table}.b > 0 THEN " \
+                "  UPDATE SET {dest_table}.b = 0"
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
+                         use_cdf=False,
+                         src_table_func=lambda spark: binary_op_df(spark, SetValuesGen(IntegerType(), range(10))),
+                         dest_table_func=lambda spark: binary_op_df(spark, SetValuesGen(IntegerType(), range(20, 30))),
                          merge_sql=merge_sql,
                          check_func=checker)
 

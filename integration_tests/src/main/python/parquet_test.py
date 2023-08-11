@@ -818,6 +818,7 @@ def test_parquet_read_nano_as_longs_not_configured(std_input_path):
 @pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 @pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
 @pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() == '3.3.2', reason='Config not in DB 12.2')
 @allow_non_gpu('FileSourceScanExec, ColumnarToRowExec')
 def test_parquet_read_nano_as_longs_true(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
@@ -1507,3 +1508,22 @@ def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_c
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : reader(spark).selectExpr(col_name),
             conf=all_confs)
+
+@pytest.mark.parametrize("reader_confs", reader_opt_confs, ids=idfn)
+@ignore_order
+def test_parquet_column_name_with_dots(spark_tmp_path, reader_confs):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    reader = read_parquet_df(data_path)
+    all_confs = reader_confs
+    gens = [
+        ("a.b", StructGen([
+            ("c.d.e", StructGen([
+                ("f.g", int_gen),
+                ("h", string_gen)])),
+            ("i.j", long_gen)])),
+        ("k", boolean_gen)]
+    with_cpu_session(lambda spark: gen_df(spark, gens).write.parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark), conf=all_confs)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`.`c.d.e`.`f.g`"),
+                                         conf=all_confs)

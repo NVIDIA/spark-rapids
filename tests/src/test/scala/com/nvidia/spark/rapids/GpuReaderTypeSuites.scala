@@ -20,7 +20,6 @@ import com.nvidia.spark.rapids.RapidsReaderType._
 import com.nvidia.spark.rapids.shims.GpuBatchScanExec
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.FileUtils.withTempPath
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.functions.input_file_name
 import org.apache.spark.sql.rapids.{ExternalSource, GpuFileSourceScanExec}

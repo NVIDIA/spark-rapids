@@ -23,7 +23,7 @@ import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer, Ta
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.{spy, times, verify}
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}

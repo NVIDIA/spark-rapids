@@ -303,57 +303,63 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             val writeTimeStart: Long = System.nanoTime()
             val recordWriteTime: AtomicLong = new AtomicLong(0L)
             var computeTime: Long = 0L
-            while (records.hasNext) {
-              // get the record
-              val computeStartTime = System.nanoTime()
-              val record = records.next()
-              computeTime += System.nanoTime() - computeStartTime
-              val key = record._1
-              val value = record._2
-              val reducePartitionId: Int = partitioner.getPartition(key)
-              val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
+            try {
+              while (records.hasNext) {
+                // get the record
+                val computeStartTime = System.nanoTime()
+                val record = records.next()
+                computeTime += System.nanoTime() - computeStartTime
+                val key = record._1
+                val value = record._2
+                val reducePartitionId: Int = partitioner.getPartition(key)
+                val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
 
-              if (numWriterThreads == 1) {
-                val recordWriteTimeStart = System.nanoTime()
-                myWriter.write(key, value)
-                recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
-              } else {
-                // we close batches actively in the `records` iterator as we get the next batch
-                // this makes sure it is kept alive while a task is able to handle it.
-                val cb = value match {
-                  case columnarBatch: ColumnarBatch =>
-                    SlicedGpuColumnVector.incRefCount(columnarBatch)
-                  case _ =>
-                    null
-                }
-                writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
-                  withResource(cb) { _ =>
-                    val recordWriteTimeStart = System.nanoTime()
-                    myWriter.write(key, value)
-                    recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                if (numWriterThreads == 1) {
+                  val recordWriteTimeStart = System.nanoTime()
+                  myWriter.write(key, value)
+                  recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                } else {
+                  // we close batches actively in the `records` iterator as we get the next batch
+                  // this makes sure it is kept alive while a task is able to handle it.
+                  val cb = value match {
+                    case columnarBatch: ColumnarBatch =>
+                      SlicedGpuColumnVector.incRefCount(columnarBatch)
+                    case _ =>
+                      null
                   }
-                })
+                  writeFutures += RapidsShuffleInternalManagerBase.queueWriteTask(slotNum, () => {
+                    withResource(cb) { _ =>
+                      val recordWriteTimeStart = System.nanoTime()
+                      myWriter.write(key, value)
+                      recordWriteTime.getAndAdd(System.nanoTime() - recordWriteTimeStart)
+                    }
+                  })
+                }
+              }
+            } finally {
+              // This is in a finally block so that if there is an exception queueing
+              // futures, that we will have waited for any queued write future before we call
+              // .abort on the map output writer (we had test failures otherwise)
+              withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
+                try {
+                  while (writeFutures.nonEmpty) {
+                    try {
+                      writeFutures.dequeue().get()
+                    } catch {
+                      case ee: ExecutionException =>
+                        // this exception is a wrapper for the underlying exception
+                        // i.e. `IOException`. The ShuffleWriter.write interface says
+                        // it can throw these.
+                        throw ee.getCause
+                    }
+                  }
+                } finally {
+                  // cancel all pending futures (only in case of error will we cancel)
+                  writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
+                }
               }
             }
 
-            withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
-              try {
-                while (writeFutures.nonEmpty) {
-                  try {
-                    writeFutures.dequeue().get()
-                  } catch {
-                    case ee: ExecutionException =>
-                      // this exception is a wrapper for the underlying exception
-                      // i.e. `IOException`. The ShuffleWriter.write interface says
-                      // it can throw these.
-                      throw ee.getCause
-                  }
-                }
-              } finally {
-                // cancel all pending futures (only in case of error will we cancel)
-                writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
-              }
-            }
             // writeTime is the amount of time it took to push bytes through the stream
             // minus the amount of time it took to get the batch from the upstream execs
             val writeTimeNs = (System.nanoTime() - writeTimeStart) - computeTime
@@ -904,6 +910,12 @@ class RapidsCachingWriter[K, V](
 
   private val uncompressedMetric: SQLMetric = metrics("dataSize")
 
+  // This is here for the special case where we have no columns like with the .count
+  // case or when we have 0-byte columns. We pick 100 as an arbitrary number so that
+  // we can shuffle these degenerate batches, which have valid metadata and should be
+  // used on the reducer side for computation.
+  private val DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT: Long = 100L
+
   override def write(records: Iterator[Product2[K, V]]): Unit = {
     // NOTE: This MUST NOT CLOSE the incoming batches because they are
     //       closed by the input iterator generated by GpuShuffleExchangeExec
@@ -950,7 +962,15 @@ class RapidsCachingWriter[K, V](
               throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
           bytesWritten += partSize
-          sizes(partId) += partSize
+          // if the size is 0 and we have rows, we are in a case where there are columns
+          // but the type is such that there isn't a buffer in the GPU backing it.
+          // For example, a Struct column without any members. We treat such a case as if it 
+          // were a degenerate table.
+          if (partSize == 0 && batch.numRows() > 0) {
+            sizes(partId) += DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT
+          } else {
+            sizes(partId) += partSize
+          }
           handle
         } else {
           // no device data, tracking only metadata
@@ -960,13 +980,10 @@ class RapidsCachingWriter[K, V](
               blockId,
               tableMeta)
 
-          // The size of the data is really only used to tell if the data should be shuffled or not
-          // a 0 indicates that we should not shuffle anything.  This is here for the special case
-          // where we have no columns, because of predicate push down, but we have a row count as
-          // metadata.  We still want to shuffle it. The 100 is an arbitrary number and can be
-          // any non-zero number that is not too large.
+          // ensure that we set the partition size to the default in this case if
+          // we have non-zero rows, so this degenerate batch is shuffled.
           if (batch.numRows > 0) {
-            sizes(partId) += 100
+            sizes(partId) += DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT
           }
           handle
         }
