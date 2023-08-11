@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.concurrent.{TimeLimitedTests, TimeLimits}
@@ -68,5 +69,14 @@ class GpuSemaphoreSuite extends AnyFunSuite
     GpuSemaphore.acquireIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
+  }
+
+  test("Completion listener registered on first acquire") {
+    val context = mockContext(1)
+    GpuSemaphore.acquireIfNecessary(context)
+    verify(context, times(1)).addTaskCompletionListener[Unit](any())
+    GpuSemaphore.acquireIfNecessary(context)
+    GpuSemaphore.acquireIfNecessary(context)
+    verify(context, times(1)).addTaskCompletionListener[Unit](any())
   }
 }

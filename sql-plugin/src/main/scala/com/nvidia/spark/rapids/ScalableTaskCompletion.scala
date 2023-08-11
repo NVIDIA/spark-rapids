@@ -96,7 +96,7 @@ object ScalableTaskCompletion {
    * Spark itself.
    */
   private class TopLevelTaskCompletion extends Function[TaskContext, Unit] {
-    private val pending = new util.Stack[UserTaskCompletion]()
+    private val pending = new util.LinkedList[UserTaskCompletion]()
     private var callbacksDone = false
 
     override def apply(tc: TaskContext): Unit = {
@@ -146,7 +146,7 @@ object ScalableTaskCompletion {
     }
 
     def removeAllAndShutdown(): Unit = synchronized {
-      while(!pending.empty()) {
+      while(pending.size() > 0) {
         val ucb = pending.pop
         ucb(ucb.tc)
       }
