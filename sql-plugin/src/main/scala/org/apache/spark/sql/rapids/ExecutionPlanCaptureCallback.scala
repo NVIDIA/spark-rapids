@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveS
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
 
-object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
+object ExecutionPlanCaptureCallback {
   private[this] var shouldCapture: Boolean = false
   private[this] val execPlans: ArrayBuffer[SparkPlan] = ArrayBuffer.empty
 
@@ -93,10 +93,13 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
     import org.apache.spark.sql.types.StructType
     import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 
-    val cpuFileSourceScanSchemata = collect(cpuDf.queryExecution.executedPlan) {
+    val adaptiveSparkPlanHelper = new AdaptiveSparkPlanHelper() {}
+    val cpuFileSourceScanSchemata =
+      adaptiveSparkPlanHelper.collect(cpuDf.queryExecution.executedPlan) {
       case scan: FileSourceScanExec => scan.requiredSchema
     }
-    val gpuFileSourceScanSchemata = collect(gpuDf.queryExecution.executedPlan) {
+    val gpuFileSourceScanSchemata =
+      adaptiveSparkPlanHelper.collect(gpuDf.queryExecution.executedPlan) {
       case scan: GpuFileSourceScanExec => scan.requiredSchema
     }
     assert(cpuFileSourceScanSchemata.size == gpuFileSourceScanSchemata.size,
