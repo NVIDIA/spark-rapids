@@ -195,7 +195,7 @@ case class GpuWindowInPandasExec(
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
-      onTaskCompletion(context)(query.close())
+      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
