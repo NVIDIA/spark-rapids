@@ -366,7 +366,7 @@ you haven't already.
 Create a notebook by clicking on "Workspaces (Notebooks)" on the left column and then clicking
 on the "Create Workspace" button. Select the studio you selected in the prior step.
 
-Enter a Workspace name, descritiption and a location (which should be set by default to the studio
+Enter a Workspace name, description and a location (which should be set by default to the studio
 S3 path). Under "Advanced configuration", you can pick an EMR cluster that you have already
 launched. 
 
