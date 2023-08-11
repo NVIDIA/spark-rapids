@@ -21,7 +21,7 @@ hash aggregates, windowing, sorting).
 
 After those candidate jobs are run on GPU using the RAPIDS Accelerator, check the Spark driver 
 log to find the not-supported messages starting with `!`. Some missing features might be enabled by
-turning on some config, but please understand the corresponding limitation detailed in 
+turning on a configuration, but please understand the corresponding limitations detailed in 
 [the advanced configuration document](../additional-functionality/advanced_configs.md).
 For other unsupported features, please file feature requests on 
 [spark-rapids Github repo](https://github.com/NVIDIA/spark-rapids/issues) with a minimum reproduce
