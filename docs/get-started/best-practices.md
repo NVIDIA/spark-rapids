@@ -12,8 +12,8 @@ performance tuning and troubleshooting.
 
 ## Workload Qualification
 
-By following [Workload Qualification](./getting-started-workload-qualification.md), you can identify
-the best candidate Spark applications for the RAPIDS Accelerator and also the feature gaps.
+By following [Workload Qualification](./getting-started-workload-qualification.md) guide, you can 
+identify the best candidate Spark applications for the RAPIDS Accelerator and also the feature gaps.
 
 Based on [Qualification tool](../spark-qualification-tool.md)'s output, you can start with the top N
 recommended CPU Spark jobs, especially if those jobs are computation heavy jobs (Large Joins, 
