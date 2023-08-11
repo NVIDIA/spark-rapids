@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Oracle Cloud Infrastructure
-nav_order: 9
+nav_order: 6
 parent: Getting-Started
 ---
 # Getting started with RAPIDS Accelerator on Oracle Cloud Infrastructure
