@@ -38,8 +38,6 @@ import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 
 class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
   val bloomFilterEnabledConf = new SparkConf()
-    .set("spark.rapids.sql.expression.BloomFilterMightContain", "true")
-    .set("spark.rapids.sql.expression.BloomFilterAggregate", "true")
   val funcId_bloom_filter_agg = new FunctionIdentifier("bloom_filter_agg")
   val funcId_might_contain = new FunctionIdentifier("might_contain")
 
