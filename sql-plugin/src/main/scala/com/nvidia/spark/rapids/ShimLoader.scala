@@ -414,5 +414,4 @@ object ShimLoader extends Logging {
   def loadGpuColumnVector(): Class[_] = {
     ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }
-
 }
