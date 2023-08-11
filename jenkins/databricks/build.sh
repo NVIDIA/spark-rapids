@@ -145,11 +145,12 @@ if [[ "$WITH_BLOOP" == "1" ]]; then
 fi
 
 # Build the RAPIDS plugin by running package command for databricks
-mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
+$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creatign a two-shim dist jar"
-    mvn -B package -pl dist -am -Dincluded_buildvers=311,$BUILDVER -DskipTests -Dskip $MVN_OPT
+    UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=buildver -DforceStdout)
+    $MVN_CMD -B package -pl dist -am -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER -DskipTests -Dskip $MVN_OPT
 fi
 
 cd /home/ubuntu
