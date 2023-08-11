@@ -16,8 +16,8 @@ By following [Workload Qualification](./getting-started-workload-qualification.m
 identify the best candidate Spark applications for the RAPIDS Accelerator and also the feature gaps.
 
 Based on [Qualification tool](../spark-qualification-tool.md)'s output, you can start with the top N
-recommended CPU Spark jobs, especially if those jobs are computation heavy jobs (Large Joins, 
-HashAggregate, Windowing, Sorting).
+recommended CPU Spark jobs, especially if those jobs are computation heavy jobs (large joins, 
+hash aggregates, windowing, sorting).
 
 After those candidate jobs are run on GPU using the RAPIDS Accelerator, check the Spark driver 
 log to find the not-supported messages starting with `!`. Some missing features might be enabled by
