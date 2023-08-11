@@ -42,7 +42,7 @@ On a client machine which has access to the Kubernetes cluster:
 
    Note that you can download these into a local directory and untar the Spark `.tar.gz` as a directory named `spark`.
 
-2. Download the [RAPIDS Accelerator for Spark jars](getting-started-on-prem.md#download-the-rapids-jars) and the
+2. Download the [RAPIDS Accelerator for Spark jars](getting-started-on-prem.md#download-the-rapids-accelerator-jar) and the
   [GPU discovery script](getting-started-on-prem.md#install-the-gpu-discovery-script).
   
    Put `rapids-4-spark_<version>.jar` and `getGpusResources.sh` in the same directory as `spark`.
