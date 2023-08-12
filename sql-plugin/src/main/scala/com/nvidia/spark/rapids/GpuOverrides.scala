@@ -3037,14 +3037,21 @@ object GpuOverrides extends Logging {
       pluginChecks = ExprChecks.projectOnly(
         outputCheck = TypeSig.STRING,
         paramCheck = Seq(
-          ParamCheck(name = "num", cudf = TypeSig.STRING, spark = TypeSig.STRING),
+          ParamCheck(
+            name = "num",
+            cudf = TypeSig.STRING.withInitialTypesPsNote("only non-negative numbers are supported"),
+            spark = TypeSig.STRING),
           ParamCheck(
             name = "from_base",
-            cudf = TypeSig.integral.withInitialTypesPsNote("only values 10 and 16 are supported"),
+            cudf = TypeSig.integral
+              .withAllLit()
+              .withInitialTypesPsNote("only values 10 and 16 are supported"),
             spark = TypeSig.integral),
           ParamCheck(
             name = "to_base",
-            cudf = TypeSig.integral.withInitialTypesPsNote("only values 10 and 16 are supported"),
+            cudf = TypeSig.integral
+              .withAllLit()
+              .withInitialTypesPsNote("only values 10 and 16 are supported"),
             spark = TypeSig.integral)),
         sparkOutputSig = TypeSig.STRING),
         (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
