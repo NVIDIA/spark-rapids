@@ -15,13 +15,15 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, \
-    assert_gpu_fallback_collect
+    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from conftest import is_databricks_runtime
-from marks import allow_non_gpu
+from marks import allow_non_gpu, ignore_order
 from spark_session import is_before_spark_330, is_databricks104_or_later, is_databricks113_or_later, is_spark_33X, is_spark_340_or_later
+from pyspark.sql.functions import create_map, col, lit, row_number
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
+from pyspark.sql.window import Window
 
 
 basic_struct_gen = StructGen([
@@ -30,9 +32,31 @@ basic_struct_gen = StructGen([
                                    BooleanGen(), DateGen(), TimestampGen(), null_gen] + decimal_gens)],
     nullable=False)
 
-maps_with_binary = [MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
+maps_with_binary_value = [MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
+# we need to fix https://github.com/NVIDIA/spark-rapids/issues/8985 and add to
+# map_keys, map_values, and map_entries tests
+maps_with_binary_key = [MapGen(BinaryGen(nullable=False), BinaryGen(max_length=5))]
+maps_with_array_key = [
+    MapGen(ArrayGen(IntegerGen(), nullable=False, max_length=5, convert_to_tuple=True),
+           IntegerGen())]
+maps_with_struct_key = [
+    MapGen(StructGen([['child0', IntegerGen()],
+                      ['child1', IntegerGen()]], nullable=False),
+           IntegerGen())]
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+supported_key_map_gens = \
+    map_gens_sample + \
+    maps_with_binary_value + \
+    decimal_64_map_gens + \
+    decimal_128_map_gens
+
+not_supported_get_map_value_keys_map_gens = \
+    maps_with_binary_key + \
+    maps_with_array_key + \
+    maps_with_struct_key
+
+
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -43,7 +67,7 @@ def test_map_keys(data_gen):
                 'map_keys(a)'))
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -54,7 +78,7 @@ def test_map_values(data_gen):
                 'map_values(a)'))
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample  + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_entries(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -111,10 +135,6 @@ numeric_key_gens = [
 numeric_key_map_gens = [MapGen(key, value(), max_length=6)
                         for key in numeric_key_gens for value in get_map_value_gens()]
 
-supported_key_gens = \
-    [key(nullable=False)
-     for key in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, DateGen, TimestampGen, StringGen]]
-
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
 def test_get_map_value_numeric_keys(data_gen):
@@ -129,30 +149,76 @@ def test_get_map_value_numeric_keys(data_gen):
             'a[999]'))
 
 
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
+def test_get_map_value_supported_keys(data_gen):
+    key_gen = data_gen._key_gen
+    # first expression is not guaranteed to hit
+    # the second expression with map_keys will hit on the first key, or null
+    # on an empty dictionary generated in `a`
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, [("a", data_gen), ("ix", key_gen)]) \
+            .selectExpr('a[ix]', 'a[map_keys(a)[0]]'),
+        exist_classes="GpuGetMapValue,GpuMapKeys")
+
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.parametrize('data_gen', not_supported_get_map_value_keys_map_gens, ids=idfn)
+def test_get_map_value_fallback_keys(data_gen):
+    key_gen = data_gen._key_gen
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [("a", data_gen), ("ix", key_gen)]) \
+            .selectExpr('a[ix]'),
+        cpu_fallback_class_name="GetMapValue")
+
+
 @pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
 def test_basic_scalar_map_get_map_value(key_gen):
     def query_map_scalar(spark):
         return unary_op_df(spark, key_gen).selectExpr('map(0, "zero", 1, "one")[a]')
-    assert_gpu_and_cpu_are_equal_collect(
-        query_map_scalar, {"spark.rapids.sql.explain": "NONE",
-                           # this is set to True so we don't fall back due to float/double -> int
-                           # casting (because the keys of the scalar map are integers)
-                           "spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        query_map_scalar,
+        # check that GpuGetMapValue wasn't optimized out
+        exist_classes="GpuGetMapValue",
+        conf = {"spark.rapids.sql.explain": "NONE",
+                # this is set to True so we don't fall back due to float/double -> int
+                # casting (because the keys of the scalar map are integers)
+                "spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
 
 
-# TODO: this test is causing failures in distributed environments skipping for the short run
-# and will likely be rewritten
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/8922")
-@pytest.mark.parametrize('key_gen', supported_key_gens, ids=idfn)
-def test_map_scalars_supported_key_types(key_gen):
+@allow_non_gpu('WindowLocalExec')
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
+def test_map_scalars_supported_key_types(data_gen):
+    key_gen = data_gen._key_gen
     def query_map_scalar(spark):
-        gen_df(spark, [("key", key_gen)]).createOrReplaceTempView("tbl")
-        spark.sql('select key, map(key, "value") as m from tbl').createOrReplaceTempView("map_tbl")
-        # perform a scalar subquery to exercise the GetMapValue(scalar, vector) API
-        # note that map(k, v, ...)[k] is automatically translated by spark to a CaseWhen
-        # when k, v are expressions, but it doesn't do this for a scalar subquery.
-        return spark.sql('select t.key, (select first(m) from map_tbl where map_tbl.key=map_tbl.key)[key] from map_tbl t')
-    assert_gpu_and_cpu_are_equal_collect(query_map_scalar, {"spark.rapids.sql.explain": "NONE"})
+        key_df = gen_df(spark, [("key", key_gen)], length=100).orderBy(col("key"))\
+            .select(col("key"),
+                    row_number().over(Window().orderBy(col('key')))\
+                        .alias("row_num"))
+        key_df.select(col("key").alias("key_at_ix"))\
+            .where(col("row_num") == 5)\
+            .repartition(100)\
+            .createOrReplaceTempView("single_key_tbl")
+        key_df.select(col("key").alias("key_at_ix_next")) \
+            .where(col("row_num") == 6) \
+            .repartition(100) \
+            .createOrReplaceTempView("single_key_tbl_next")
+        # There will be a single row in single_key_tbl (the row that matched key_ix).
+        # We repartition this table to create several empty tables to test empty partitions,
+        # and also because the window operation put everything into a one partition prior.
+        # Because this is a single key, first(ignore_nulls = true) will be deterministic.
+        return spark.sql(
+            "select key_at_ix, " +
+            "       (select first(map(key_at_ix, 'value'), true) " +
+            "        from single_key_tbl)[key_at_ix], " +
+            # this one is on purpose using `key_at_ix` to guarantee we won't match the key
+            "       (select first(map(key_at_ix_next, 'value'), true) " +
+            "        from single_key_tbl_next)[key_at_ix] " +
+            "from single_key_tbl")
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        query_map_scalar,
+        # check that GpuGetMapValue wasn't optimized out
+        exist_classes="GpuGetMapValue",
+        conf = {"spark.rapids.sql.explain": "NONE"})
 
 
 @pytest.mark.parametrize('data_gen',

@@ -25,11 +25,11 @@ import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
 
-object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
+object ExecutionPlanCaptureCallback {
   private[this] var shouldCapture: Boolean = false
   private[this] val execPlans: ArrayBuffer[SparkPlan] = ArrayBuffer.empty
 
@@ -81,42 +81,6 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
     val gpuPlans = getResultsWithTimeout(timeoutMs = timeoutMs)
     assert(gpuPlans.nonEmpty, "Did not capture a plan")
     fallbackCpuClassList.foreach(fallbackCpuClass => assertDidFallBack(gpuPlans, fallbackCpuClass))
-  }
-
-  /**
-   * This method is used by the Python integration tests.
-   * The method checks the schemata used in the GPU and CPU executed plans and compares it to the
-   * expected schemata to make sure we are not reading more data than needed
-   */
-  def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit = {
-    import org.apache.spark.sql.execution.FileSourceScanExec
-    import org.apache.spark.sql.types.StructType
-    import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
-
-    val cpuFileSourceScanSchemata = collect(cpuDf.queryExecution.executedPlan) {
-      case scan: FileSourceScanExec => scan.requiredSchema
-    }
-    val gpuFileSourceScanSchemata = collect(gpuDf.queryExecution.executedPlan) {
-      case scan: GpuFileSourceScanExec => scan.requiredSchema
-    }
-    assert(cpuFileSourceScanSchemata.size == gpuFileSourceScanSchemata.size,
-      s"Found ${cpuFileSourceScanSchemata.size} file sources in dataframe, " +
-        s"but expected ${gpuFileSourceScanSchemata.size}")
-
-    cpuFileSourceScanSchemata.zip(gpuFileSourceScanSchemata).foreach {
-      case (cpuScanSchema, gpuScanSchema) =>
-         cpuScanSchema match {
-           case otherType: StructType =>
-             assert(gpuScanSchema.sameType(otherType))
-             val expectedStructType = CatalystSqlParser.parseDataType(expectedSchema)
-             assert(gpuScanSchema.sameType(expectedStructType),
-               s"Type GPU schema ${gpuScanSchema.toDDL} doesn't match $expectedSchema")
-             assert(cpuScanSchema.sameType(expectedStructType),
-               s"Type CPU schema ${cpuScanSchema.toDDL} doesn't match $expectedSchema")
-           case otherType => assert(false, s"The expected type $cpuScanSchema" +
-             s" doesn't match the actual type $otherType")
-         }
-    }
   }
 
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
@@ -174,13 +138,13 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
         "Plan does not contain an ansi cast")
   }
 
-  private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
+  def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
     !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
         PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
         exp.children.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
+  def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(plan)
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
         PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||

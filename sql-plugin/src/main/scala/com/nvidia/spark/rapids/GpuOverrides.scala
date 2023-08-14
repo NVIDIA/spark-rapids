@@ -3068,10 +3068,26 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-              TypeSig.STRUCT + TypeSig.ARRAY).nested(), TypeSig.all))),
+              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.psNote(TypeEnum.ARRAY, "Arrays of structs are not supported"),
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagExprForGpu(): Unit = {
+          val arrayWithStructsHashing = a.children.exists(e =>
+            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+              {
+                case ArrayType(_: StructType, _) => true
+                case _ => false
+              })
+          )
+          if (arrayWithStructsHashing) {
+            willNotWorkOnGpu("hashing arrays with structs is not supported")
+          }
+        }
+
         def convertToGpu(): GpuExpression =
           GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
       }),
@@ -3263,22 +3279,10 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
               TypeSig.NULL +
-              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Structs containing " +
-              s"float/double will not be supported.") +
-              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Arrays containing " +
-              s"floats/doubles will not be supported.")).nested(),
+              TypeSig.STRUCT +
+              TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
-
-        override def tagAggForGpu(): Unit = {
-          // Fall back to CPU if type is nested and contains floats or doubles in the type tree.
-          // Because NaNs in nested types are not supported yet. 
-          // See https://github.com/NVIDIA/spark-rapids/issues/8808
-          if (c.child.dataType != FloatType && c.child.dataType != DoubleType &&
-              isOrContainsFloatingPoint(c.child.dataType)) {
-            willNotWorkOnGpu("Float/Double in nested type is not supported")
-          }
-        }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
@@ -3600,7 +3604,8 @@ object GpuOverrides extends Logging {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+            TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+            TypeSig.psNote(TypeEnum.ARRAY, "Arrays of structs are not supported"),
         TypeSig.all)
       ),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
@@ -3610,7 +3615,7 @@ object GpuOverrides extends Logging {
         override def tagPartForGpu(): Unit = {
           val arrayWithStructsHashing = hp.expressions.exists(e =>
             TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-              dt => dt match {
+              {
                 case ArrayType(_: StructType, _) => true
                 case _ => false
               })

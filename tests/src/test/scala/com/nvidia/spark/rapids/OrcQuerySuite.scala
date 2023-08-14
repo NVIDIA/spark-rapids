@@ -29,7 +29,7 @@ import org.apache.orc.impl.RecordReaderImpl
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.rapids.{MyDenseVector, MyDenseVectorUDT}
+import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, MyDenseVector, MyDenseVectorUDT}
 import org.apache.spark.sql.types._
 
 /**
@@ -108,7 +108,15 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
    * Find a orc file in orcDir and get the columns encoding info for the first Stripe
    *
    * @param orcDir  orc file directory
-   * @param columns column indices, starting from 1 in ORC Stripe Footer
+   * @param columns column indices, it's the indices in ORC file, column 0 is always for the root
+   *                meta. The indices is from a tree structure with depth-first iteration. For
+   *                example: schema: the Ids in struct<struct<x1:int, x2: int>, y:int> are:
+   *
+   *                0: struct<struct<x1:int, x2: int>, y:int>
+   *                     /                       \
+   *                1: struct<x1:int, x2: int>    4: y:int
+   *                   /          \
+   *                2: x1:int     3: x2: int
    * @return (encodingKind, dictionarySize) list for each columns passed in
    */
   private def getDictEncodingInfo(orcDir: File, columns: Array[Int]): Array[(String, Int)] = {
@@ -149,8 +157,12 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
     }
     // get CPU encoding info
     val cpuEncodings = withCpuSparkSession(getEncodings)
+
     // get GPU encoding info
+    ExecutionPlanCaptureCallback.startCapture()
     val gpuEncodings = withGpuSparkSession(getEncodings)
+    val plan = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+    ExecutionPlanCaptureCallback.assertContains(plan(0), "GpuDataWritingCommandExec")
 
     assertResult(cpuEncodings)(gpuEncodings)
     gpuEncodings.foreach { case (encodingKind, _) =>
@@ -227,6 +239,72 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
   test("Compression options for writing to an ORC file (SNAPPY, ZLIB and NONE)") {
     supportedWriteCompressTypes.foreach { compression =>
       checkCompressType(Some(compression), None)
+    }
+  }
+
+  test("orc dictionary encoding with lots of rows for nested types") {
+    assume(false, "TODO: move this case to scale test in future")
+    val rowsNum = 1000000
+
+    // orc.dictionary.key.threshold default is 0.8
+    // orc.dictionary.early.check default is true
+    // orc.row.index.stride default is 10000
+    // For more details, refer to
+    // https://github.com/apache/orc/blob/v1.7.4/java/core/src/java/org/apache/orc/OrcConf.java
+    // If the first 10000 rows has less than 10000 * 0.8 cardinality, then use dictionary encoding.
+    // Only String column will use dictionary encoding. Refer to the ORC code:
+    // https://github.com/apache/orc/tree/v1.7.4/java/core/src/java/org/apache/orc/impl/writer
+    val cardinality = (10000 * 0.75).toInt
+
+    def getEncodings: SparkSession => Array[(String, Int)] = { spark =>
+      withTempPath { tmpDir =>
+        // For more info about the column Ids, refer to the desc of `getDictEncodingInfo`
+        val schema = StructType(Seq(              // column Id in ORC is: 0
+          StructField("name", StringType),        // column Id in ORC is: 1, String type
+          StructField("addresses", ArrayType(     // column Id in ORC is: 2
+            StructType(Seq(                       // column Id in ORC is: 3
+              StructField("street", StringType),  // column Id in ORC is: 4, String type
+              StructField("city", StringType),    // column Id in ORC is: 5, String type
+              StructField("state", StringType),   // column Id in ORC is: 6, String type
+              StructField("zip", IntegerType)     // column Id in ORC is: 7
+            )))),
+          StructField("phone_numbers", MapType(   // column Id in ORC is: 8
+            StringType,                           // column Id in ORC is: 9, String type
+            ArrayType(                            // column Id in ORC is: 10
+              StringType)))                       // column Id in ORC is: 11, String type
+        ))
+
+        val data = (0 until rowsNum).map(i => {
+          val v = i % cardinality
+          Row("John" + v,
+            Seq(Row("123 Main St" + v, "Any town" + v, "CA" + v, v)),
+            Map("home" + v -> Seq("111-222-3333" + v, "444-555-6666" + v)))
+        })
+
+        // Create the DataFrame
+        val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+
+        // write to a ORC file
+        df.coalesce(1).write.mode("overwrite").orc(tmpDir.getAbsolutePath)
+
+        // get columns encodings
+        // Only pass the String Ids
+        getDictEncodingInfo(tmpDir, columns = Array(1, 4, 5, 6, 9, 11))
+      }
+    }
+
+    // get CPU encoding info
+    val cpuEncodings = withCpuSparkSession(getEncodings)
+
+    // get GPU encoding info
+    ExecutionPlanCaptureCallback.startCapture()
+    val gpuEncodings = withGpuSparkSession(getEncodings)
+    val plan = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+    ExecutionPlanCaptureCallback.assertContains(plan(0), "GpuDataWritingCommandExec")
+
+    assertResult(cpuEncodings)(gpuEncodings)
+    gpuEncodings.foreach { case (encodingKind, _) =>
+      assert(encodingKind.toUpperCase.contains("DICTIONARY"))
     }
   }
 }

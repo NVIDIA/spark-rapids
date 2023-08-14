@@ -52,8 +52,11 @@ jobs:
           . jenkins/version-def.sh
           svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
-          # do not add empty snapshot versions
-          if [ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 ]; then
+
+          # get private artifact version
+          privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
+          # do not add empty snapshot versions or when private version is released one (does not include snapshot shims)
+          if [[ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 && $privateVer == *"-SNAPSHOT" ]]; then
             svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
             svArrBodySnapshot=${svArrBodySnapshot:1}
             svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
