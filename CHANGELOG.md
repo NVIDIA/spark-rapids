@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-08-11
+Generated on 2023-08-14
 
 ## Release 23.08
 
@@ -31,6 +31,7 @@ Generated on 2023-08-11
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9010](https://github.com/NVIDIA/spark-rapids/issues/9010)|[BUG] Customer failure 23.08: Cannot compute hash of a table with a LIST of STRUCT columns.|
 |[#8922](https://github.com/NVIDIA/spark-rapids/issues/8922)|[BUG] integration map_test:test_map_scalars_supported_key_types failures|
 |[#8982](https://github.com/NVIDIA/spark-rapids/issues/8982)|[BUG] Nightly prerelease failures - OrcSuite|
 |[#8978](https://github.com/NVIDIA/spark-rapids/issues/8978)|[BUG] compiling error due to OrcSuite&OrcStatisticShim in databricks runtimes|
@@ -82,6 +83,13 @@ Generated on 2023-08-11
 ### PRs
 |||
 |:---|:---|
+|[#9016](https://github.com/NVIDIA/spark-rapids/pull/9016)|Fix issue where murmur3 tried to work on array of structs|
+|[#9014](https://github.com/NVIDIA/spark-rapids/pull/9014)|Updating link to download jar [skip ci]|
+|[#9006](https://github.com/NVIDIA/spark-rapids/pull/9006)|Revert test changes to fix binary dedup error|
+|[#9001](https://github.com/NVIDIA/spark-rapids/pull/9001)|[Doc]update the emr getting started doc for emr-6120 release[skip ci]|
+|[#8949](https://github.com/NVIDIA/spark-rapids/pull/8949)|Update JNI and private version to released 23.08.0|
+|[#8977](https://github.com/NVIDIA/spark-rapids/pull/8977)|Create an anonymous subclass of AdaptiveSparkPlanHelper in ExecutionPlanCaptureCallback.scala|
+|[#8972](https://github.com/NVIDIA/spark-rapids/pull/8972)|[Doc]Add best practice doc[skip ci]|
 |[#8948](https://github.com/NVIDIA/spark-rapids/pull/8948)|[Doc]update download docs for 2308 version[skip ci]|
 |[#8971](https://github.com/NVIDIA/spark-rapids/pull/8971)|Fix test_map_scalars_supported_key_types|
 |[#8990](https://github.com/NVIDIA/spark-rapids/pull/8990)|Remove doc references to 312db [skip ci]|
