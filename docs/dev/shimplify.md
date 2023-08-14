@@ -54,12 +54,7 @@ shim source code files and their locations.
 
 * It analyzes the pre-shimplify directory structure and identifies the shims that through the code
 evolution ended up using more dedicated directories than necessary contributing avoidable
-complexity on top of an inherently complex directory structure already. As an example this is one of
-such warnings:
-
-```text
-shimplify - WARNING - Consider consolidating 312db, it spans multiple dedicated directories ['/home/user/gits/NVIDIA/spark-rapids/sql-plugin/src/main/312db/scala', '/home/user/gits/NVIDIA/spark-rapids/sql-plugin/src/main/31xdb/scala']
-```
+complexity on top of an inherently complex directory structure already.
 
 * For the shimplify directory structure all files under `src/(main|test)/spark*` directories
 are read to parse the `spark-rapids-shim-json-lines` comments. It performs the following

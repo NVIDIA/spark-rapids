@@ -147,6 +147,7 @@ We can input multiple Spark event logs and this tool can compare environments, e
 
 
 - Application information
+
 ```
 Application Information:
 

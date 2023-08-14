@@ -25,7 +25,7 @@ from conftest import is_databricks_runtime
 from marks import *
 from parquet_write_test import limited_timestamp, parquet_part_write_gens, parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_330, with_cpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_databricks122_or_later, with_cpu_session
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -42,6 +42,11 @@ delta_meta_allow = [
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+
+delta_optimized_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,DeltaOptimizedWriterExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+
 def fixup_path(d):
     """Modify the 'path' value to remove random IDs in the pathname"""
     parts = d["path"].split("-")
@@ -54,7 +59,12 @@ def del_keys(key_list, c_val, g_val):
 
 def fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""
-    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
+    # note that we remove many byte metrics because number of bytes can vary
+    # between CPU and GPU.
+    metrics_to_remove = ["executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs",
+                         "numRemovedBytes", "numAddedBytes", "numTargetBytesAdded", "numTargetBytesInserted",
+                         "numTargetBytesUpdated", "numTargetBytesRemoved"]
+    for k in metrics_to_remove:
         opm.pop(k, None)
 
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
@@ -146,7 +156,7 @@ def get_last_operation_metrics(path):
                             .selectExpr("operationMetrics")\
                             .head()[0])
 
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("disable_conf",
@@ -160,7 +170,7 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
         lambda spark, path: unary_op_df(spark, int_gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=copy_and_update(writer_confs, disable_conf))
 
 @allow_non_gpu(*delta_meta_allow)
@@ -320,7 +330,7 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
@@ -337,10 +347,10 @@ def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=all_confs)
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
@@ -358,10 +368,10 @@ def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
         write_func,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=delta_writes_enabled_conf)
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
@@ -374,10 +384,10 @@ def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_opt
         lambda spark, path: unary_op_df(spark, int_gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=copy_and_update(write_options, delta_writes_enabled_conf))
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
@@ -398,12 +408,12 @@ def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_opti
             lambda spark, path: unary_op_df(spark, int_gen).coalesce(1).write.format("delta").save(path),
             lambda spark, path: spark.read.format("delta").load(path),
             data_path,
-            "ExecutedCommandExec",
+            delta_write_fallback_check,
             conf=delta_writes_enabled_conf)
     finally:
         with_cpu_session(reset_hadoop_confs)
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize('codec', ['gzip'])
@@ -415,10 +425,10 @@ def test_delta_write_compression_fallback(spark_tmp_path, codec):
         lambda spark, path: unary_op_df(spark, int_gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=confs)
 
-@allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
+@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -429,7 +439,7 @@ def test_delta_write_legacy_format_fallback(spark_tmp_path):
         lambda spark, path: unary_op_df(spark, int_gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=confs)
 
 @allow_non_gpu(*delta_meta_allow)
@@ -794,7 +804,7 @@ def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
         data_path,
         conf=confs)
 
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@allow_non_gpu(delta_optimized_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
@@ -813,7 +823,7 @@ def test_delta_write_optimized_unsupported_sort_fallback(spark_tmp_path, gen):
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        "ExecutedCommandExec",
+        delta_write_fallback_check,
         conf=confs)
 
 @allow_non_gpu(*delta_meta_allow)

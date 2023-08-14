@@ -22,12 +22,14 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.06.0</version>
+        <version>23.08.0</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>23.06.0</version>
+    <version>23.08.0</version>
     <properties>
         <target.classifier/>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -227,9 +229,21 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.scala-lang</groupId>
                     <artifactId>scala-reflect</artifactId>
                     <version>${scala.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.esotericsoftware.kryo</groupId>
+                    <artifactId>kryo-shaded-db</artifactId>
+                    <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
@@ -286,13 +300,6 @@
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <classifier>${spark.version.classifier}</classifier>
-                </configuration>
-            </plugin>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>

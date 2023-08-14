@@ -457,7 +457,7 @@ case class GpuFileSourceScanExec(
   private lazy val fileCacheMetrics: Map[String, GpuMetric] = {
     // File cache only supported on Parquet files for now.
     relation.fileFormat match {
-      case _: GpuReadParquetFileFormat => createFileCacheMetrics()
+      case _: GpuReadParquetFileFormat | _: GpuReadOrcFileFormat => createFileCacheMetrics()
       case _ => Map.empty
     }
   }

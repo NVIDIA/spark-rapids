@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_before_spark_340, is_databricks113_or_later
+from spark_session import is_before_spark_320, is_databricks113_or_later
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -73,6 +73,16 @@ _grpkey_longs_with_nullable_largest_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', DecimalGen(precision=38, scale=2, nullable=True)),
     ('c', DecimalGen(precision=38, scale=2, nullable=True))]
+
+_grpkey_longs_with_nullable_floats = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', FloatGen(nullable=True)),
+    ('c', IntegerGen(nullable=True))]
+
+_grpkey_longs_with_nullable_doubles = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DoubleGen(nullable=True)),
+    ('c', IntegerGen(nullable=True))]
 
 _grpkey_decimals_with_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
@@ -341,7 +351,8 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
         'from window_agg_table ',
         conf = conf)
 
-# In a distributed setup the order of the partitions returend might be different, so we must ignore the order
+
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
@@ -388,7 +399,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
     [('grp', RepeatSeqGen(int_gen, length=20)),  # Grouping column.
-     ('ord', UniqueLongGen(nullable=True)),       # Order-by column (after cast to STRING).
+     ('ord', UniqueLongGen(nullable=True)),      # Order-by column (after cast to STRING).
      ('agg', IntegerGen())]                      # Aggregation column.
 ], ids=idfn)
 def test_range_windows_with_string_order_by_column(data_gen, batch_size):
@@ -424,6 +435,9 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size):
         ' COUNT(1) OVER '
         '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
         '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_asc_CURRENT_to_CURRENT, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) ASC  '
+        '       RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as count_1_asc_UNB_to_UNB, '
         ' COUNT(1) OVER '
         '   (PARTITION BY grp ORDER BY CAST(ord AS STRING) DESC  '
         '       RANGE BETWEEN CURRENT ROW AND CURRENT ROW) as count_1_desc_CURRENT_to_CURRENT '
@@ -879,15 +893,17 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
   pytest.param(_grpkey_longs_with_nullable_largest_decimals,
     marks=pytest.mark.xfail(
       condition=is_databricks113_or_later(),
-      reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+      reason='https://github.com/NVIDIA/spark-rapids/issues/7429')),
+  _grpkey_longs_with_nullable_floats,
+  _grpkey_longs_with_nullable_doubles
 ], ids=idfn)
-def test_window_aggregations_for_decimal_ranges(data_gen):
+def test_window_aggregations_for_decimal_and_float_ranges(data_gen):
     """
-    Tests for range window aggregations, with DECIMAL order by columns.
+    Tests for range window aggregations, with DECIMAL/FLOATING POINT order by columns.
     The table schema used:
       a: Group By column
-      b: Order By column (decimal)
-      c: Aggregation column (incidentally, also decimal)
+      b: Order By column (decimals, floats, doubles)
+      c: Aggregation column (decimals or ints)
 
     Since this test is for the order-by column type, and not for each specific windowing aggregation,
     we use COUNT(1) throughout the test, for different window widths and ordering.
@@ -1108,10 +1124,10 @@ _gen_data_for_collect_set_nested = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', UniqueLongGen()),
     ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
-    ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_nans, length=15)),
+    ('c_struct_array_1', RepeatSeqGen(struct_array_gen, length=15)),
     ('c_struct_array_2', RepeatSeqGen(StructGen([
-        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=14)),
-    ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)),
+        ['c0', struct_array_gen], ['c1', int_gen]]), length=14)),
+    ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen), length=15)),
     ('c_array_array_bool', RepeatSeqGen(ArrayGen(ArrayGen(BooleanGen())), length=15)),
     ('c_array_array_int', RepeatSeqGen(ArrayGen(ArrayGen(IntegerGen())), length=15)),
     ('c_array_array_long', RepeatSeqGen(ArrayGen(ArrayGen(LongGen())), length=15)),
@@ -1120,8 +1136,8 @@ _gen_data_for_collect_set_nested = [
     ('c_array_array_timestamp', RepeatSeqGen(ArrayGen(ArrayGen(TimestampGen())), length=15)),
     ('c_array_array_byte', RepeatSeqGen(ArrayGen(ArrayGen(ByteGen())), length=15)),
     ('c_array_array_string', RepeatSeqGen(ArrayGen(ArrayGen(StringGen())), length=15)),
-    ('c_array_array_float', RepeatSeqGen(ArrayGen(ArrayGen(FloatGen(no_nans=True))), length=15)),
-    ('c_array_array_double', RepeatSeqGen(ArrayGen(ArrayGen(DoubleGen(no_nans=True))), length=15)),
+    ('c_array_array_float', RepeatSeqGen(ArrayGen(ArrayGen(FloatGen())), length=15)),
+    ('c_array_array_double', RepeatSeqGen(ArrayGen(ArrayGen(DoubleGen())), length=15)),
     ('c_array_array_decimal_32', RepeatSeqGen(ArrayGen(ArrayGen(DecimalGen(precision=8, scale=3))), length=15)),
     ('c_array_array_decimal_64', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_64bit)), length=15)),
     ('c_array_array_decimal_128', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_128bit)), length=15)),
@@ -1354,7 +1370,7 @@ def test_unbounded_to_unbounded_window():
         'COUNT(1) OVER ()'))
 
 
-_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample + [binary_gen]
 exprs_for_nth_first_last = \
     'first(a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), ' \
     'first(a) OVER (PARTITION BY b ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), ' \

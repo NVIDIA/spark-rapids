@@ -27,13 +27,13 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.{spy, verify}
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
-class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
+class RapidsDeviceMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
   private def buildTable(): Table = {
     new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)

@@ -20,13 +20,14 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.util.DateTimeConstants
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -142,9 +143,9 @@ abstract class GpuTimeMath(
 
   val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
         (lhs, rhs) match {
           case (l, intvlS: GpuScalar)
               if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
@@ -196,10 +197,10 @@ case class GpuDateAddInterval(start: Expression,
 
   override def dataType: DataType = DateType
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
 
-    withResourceIfAllowed(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) {
         case intvlS: GpuScalar if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
           // Scalar does not support 'CalendarInterval' now, so use
           // the Scala value instead.
@@ -297,7 +298,8 @@ case class GpuDateFormatClass(timestamp: Expression,
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar
+      with TimeZoneAwareExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = StringType
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
@@ -312,15 +314,6 @@ case class GpuDateFormatClass(timestamp: Expression,
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("rhs has to be a scalar for the date_format to work")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-        "the date_format to work")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
@@ -387,6 +380,176 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
           willNotWorkOnGpu("format has to be a string literal")
       }
     }
+  }
+}
+
+trait GpuNumberToTimestampUnaryExpression extends GpuUnaryExpression {
+  
+  override def dataType: DataType = TimestampType
+  override def outputTypeOverride: DType = DType.TIMESTAMP_MICROSECONDS
+
+  /**
+   * Test whether if input * multiplier will cause Long-overflow. In Math.multiplyExact, 
+   * if there is an integer-overflow, then it will throw an ArithmeticException "long overflow"
+   */
+  def checkLongMultiplicationOverflow(input: ColumnVector, multiplier: Long): Unit = {
+    withResource(input.max()) { maxValue =>
+      if (maxValue.isValid) {
+        Math.multiplyExact(maxValue.getLong, multiplier)
+      }
+    }
+    withResource(input.min()) { minValue =>
+      if (minValue.isValid) {
+        Math.multiplyExact(minValue.getLong, multiplier)
+      }
+    }
+  }
+
+  protected val convertTo : GpuColumnVector => ColumnVector
+  
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    convertTo(input)
+  }
+}
+
+case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
+
+  override def nullable: Boolean = child.dataType match {
+    case _: FloatType | _: DoubleType => true
+    case _ => child.nullable
+  }
+
+  private def checkRoundingNecessary(input: ColumnVector, dt: DecimalType): Unit = {
+    // SecondsToTimestamp supports decimals with a scale of 6 or less, which can be represented
+    // as microseconds. An exception will be thrown if the scale is more than 6.
+    val decimalTypeSupported = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+    if (dt.scale > 6) {
+      // Match the behavior of `BigDecimal.longValueExact()`, if decimal is equal to the value
+      // casted to decimal128 with scale 6, then no rounding is necessary.
+      val decimalTypeAllScale = DType.create(DType.DTypeEnum.DECIMAL128, -dt.scale)
+      val castedAllScale = withResource(input.castTo(decimalTypeSupported)) { casted =>
+        casted.castTo(decimalTypeAllScale)
+      }
+      val isEqual = withResource(castedAllScale) { _ =>
+        withResource(input.castTo(decimalTypeAllScale)) { original =>
+          original.equalTo(castedAllScale)
+        }
+      }
+      val roundUnnecessity = withResource(isEqual) { _ =>
+        withResource(isEqual.all()) { all =>
+          all.isValid && all.getBoolean()
+        }
+      }
+      if (!roundUnnecessity) {
+        throw new ArithmeticException("Rounding necessary")
+      }
+    }
+  }
+
+  @transient
+  protected lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
+    case LongType =>
+      (input: GpuColumnVector) => {
+        checkLongMultiplicationOverflow(input.getBase, DateTimeConstants.MICROS_PER_SECOND)
+        val mul = withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
+          input.getBase.mul(scalar)
+        }
+        withResource(mul) { _ =>
+          mul.asTimestampMicroseconds()
+        }
+      }
+    case DoubleType | FloatType =>
+      (input: GpuColumnVector) => {
+        GpuCast.doCast(input.getBase, input.dataType, TimestampType, false, false, false)
+      }
+    case dt: DecimalType =>
+      (input: GpuColumnVector) => {
+        checkRoundingNecessary(input.getBase, dt)
+        // Cast to decimal128 to avoid overflow, scala of 6 is enough after rounding check.
+        val decimalTypeSupported = DType.create(DType.DTypeEnum.DECIMAL128, -6)
+        val mul = withResource(input.getBase.castTo(decimalTypeSupported)) { decimal =>
+          withResource(Scalar.fromLong(DateTimeConstants.MICROS_PER_SECOND)) { scalar =>
+            decimal.mul(scalar, decimalTypeSupported)
+          }
+        }
+        // Match the behavior of `BigDecimal.longValueExact()`:
+        closeOnExcept(mul) { _ =>
+          val greaterThanMax = withResource(Scalar.fromLong(Long.MaxValue)) { longMax =>
+              mul.greaterThan(longMax)
+          }
+          val largerThanLongMax = withResource(greaterThanMax) { greaterThanMax =>
+            withResource(greaterThanMax.any()) { any =>
+              any.isValid && any.getBoolean()
+            }
+          }
+          lazy val smallerThanLongMin: Boolean = {
+            val lessThanMin = withResource(Scalar.fromLong(Long.MinValue)) { longMin =>
+                mul.lessThan(longMin)
+            }
+            withResource(lessThanMin) { lessThanMin =>
+              withResource(lessThanMin.any()) { any =>
+                any.isValid && any.getBoolean()
+              }
+            }
+          }
+          if (largerThanLongMax || smallerThanLongMin) {
+            throw new java.lang.ArithmeticException("Overflow")
+          }
+        }
+        val longs = withResource(mul) { _ =>
+          mul.castTo(DType.INT64)
+        }
+        withResource(longs) { _ =>
+          longs.asTimestampMicroseconds()
+        }
+      }
+    case IntegerType | ShortType | ByteType =>
+      (input: GpuColumnVector) =>
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          // Not possible to overflow for Int, Short and Byte
+          longs.asTimestampSeconds()
+        }
+    case _ =>
+      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " + 
+          s"for SecondsToTimestamp ")
+  }
+}
+
+case class GpuMillisToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
+  protected lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
+    case LongType => 
+      (input: GpuColumnVector) => {
+        checkLongMultiplicationOverflow(input.getBase, DateTimeConstants.MICROS_PER_MILLIS)
+        input.getBase.asTimestampMilliseconds()
+      }
+    case IntegerType | ShortType | ByteType =>
+      (input: GpuColumnVector) => {
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          checkLongMultiplicationOverflow(longs, DateTimeConstants.MICROS_PER_MILLIS)
+          longs.asTimestampMilliseconds()
+        }
+      }
+    case _ =>
+      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " + 
+          s"for MillisToTimestamp ")
+  }
+}
+
+case class GpuMicrosToTimestamp(child: Expression) extends GpuNumberToTimestampUnaryExpression {
+  protected lazy val convertTo: GpuColumnVector => ColumnVector = child.dataType match {
+    case LongType =>
+      (input: GpuColumnVector) => {
+        input.getBase.asTimestampMicroseconds()
+      }
+    case IntegerType | ShortType | ByteType =>
+      (input: GpuColumnVector) => {
+        withResource(input.getBase.castTo(DType.INT64)) { longs =>
+          longs.asTimestampMicroseconds()
+        }
+      }
+    case _ =>
+      throw new UnsupportedOperationException(s"Unsupport type ${child.dataType} " + 
+          s"for MicrosToTimestamp ")
   }
 }
 
@@ -638,7 +801,7 @@ case class RegexReplace(search: String, replace: String)
  * first converting to microseconds and then dividing by the downScaleFactor
  */
 abstract class GpuToTimestamp
-  extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes {
+  extends GpuBinaryExpressionArgsAnyScalar with TimeZoneAwareExpression with ExpectsInputTypes {
 
   import GpuToTimestamp._
 
@@ -658,15 +821,6 @@ abstract class GpuToTimestamp
   val timeParserPolicy = getTimeParserPolicy
 
   val failOnError: Boolean = SQLConf.get.ansiEnabled
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("rhs has to be a scalar for the unixtimestamp to work")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-      "the unixtimestamp to work")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
@@ -847,15 +1001,9 @@ case class GpuFromUnixTime(
     format: Expression,
     strfFormat: String,
     timeZoneId: Option[String] = None)
-  extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("rhs has to be a scalar for the from_unixtime to work")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
-      "the from_unixtime to work")
-  }
+  extends GpuBinaryExpressionArgsAnyScalar
+    with TimeZoneAwareExpression
+    with ImplicitCastInputTypes {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
@@ -919,22 +1067,14 @@ class FromUTCTimestampExprMeta(
 }
 
 case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
-  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpressionArgsAnyScalar
+      with ImplicitCastInputTypes
+      with NullIntolerant {
 
   override def left: Expression = timestamp
   override def right: Expression = timezone
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
   override def dataType: DataType = TimestampType
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalStateException(
-      "Cannot have time zone given by a column vector in GpuFromUTCTimestamp")
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalStateException(
-      "Cannot have time zone given by a column vector in GpuFromUTCTimestamp")
-  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (rhs.getBase.isValid) {

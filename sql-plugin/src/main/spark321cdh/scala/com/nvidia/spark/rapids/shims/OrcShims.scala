@@ -18,28 +18,22 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.orc.Reader
+import org.apache.orc.TypeDescription
 
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.types.DataType
 
-// 320+ ORC shims
+// 321cdh ORC shims
 object OrcShims extends OrcShims321CDHBase {
 
-  // orcTypeDescriptionString is renamed to getOrcSchemaString from 3.3+
-  override def getOrcSchemaString(dt: DataType): String = {
+  /**
+   * Compare if the two TypeDescriptions are equal by ignoring attribute
+   */
+  def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
+    lhs.equals(rhs)
+  }
+
+  def getOrcSchemaString(dt: DataType): String = {
     OrcUtils.orcTypeDescriptionString(dt)
   }
-
-  // ORC Reader of the 321cdh Spark has no close method.
-  // The resource is closed internally.
-  def withReader[V](r: Reader)(block: Reader => V): V = {
-    block(r)
-  }
-
-  // ORC Reader of the 321cdh Spark has no close method.
-  // The resource is closed internally.
-  def closeReader(reader: Reader): Unit = {
-  }
-
 }

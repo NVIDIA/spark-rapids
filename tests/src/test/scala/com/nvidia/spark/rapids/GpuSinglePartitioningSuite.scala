@@ -20,14 +20,14 @@ import java.math.RoundingMode
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuSinglePartitioningSuite extends FunSuite {
+class GpuSinglePartitioningSuite extends AnyFunSuite {
   private def buildBatch(): ColumnarBatch = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
@@ -56,7 +56,8 @@ class GpuSinglePartitioningSuite extends FunSuite {
             val expected = contigTables.head
             // partition will consume batch, so increment refcounts enabling withResource to close
             GpuColumnVector.extractBases(batch).foreach(_.incRefCount())
-            val result = partitioner.columnarEval(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+            val result =
+              partitioner.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
             try {
               assertResult(1)(result.length)
               assertResult(0)(result.head._2)

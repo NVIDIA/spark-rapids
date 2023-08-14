@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
+import com.nvidia.spark.rapids.delta.shims.MergeIntoCommandMetaShim
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -35,21 +35,14 @@ class MergeIntoCommandMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    MergeIntoCommandMetaShim.tagForGpu(this, mergeCmd)
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.migratedSchema)(conf)
-  }
+  override def convertToGpu(): RunnableCommand =
+    MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
 }
 
 class MergeIntoCommandEdgeMeta(
@@ -64,19 +57,12 @@ class MergeIntoCommandEdgeMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    MergeIntoCommandMetaShim.tagForGpu(this, mergeCmd)
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
     RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
   }
 
-  override def convertToGpu(): RunnableCommand = {
-    GpuMergeIntoCommand(
-      mergeCmd.source,
-      mergeCmd.target,
-      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
-      mergeCmd.condition,
-      mergeCmd.matchedClauses,
-      mergeCmd.notMatchedClauses,
-      mergeCmd.migratedSchema)(conf)
-  }
+  override def convertToGpu(): RunnableCommand =
+    MergeIntoCommandMetaShim.convertToGpu(mergeCmd, conf)
 }

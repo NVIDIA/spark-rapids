@@ -58,13 +58,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-23.06.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -255,7 +255,7 @@ object ShimLoader extends Logging {
         serviceProviderListPath)
 
     val numShimServiceProviders = serviceProviderList.size
-    val shimServiceProviderOpt = serviceProviderList.flatMap { shimServiceProviderStr =>
+    val (matchingProviders, restProviders) = serviceProviderList.flatMap { shimServiceProviderStr =>
       val mask = shimIdFromPackageName(shimServiceProviderStr)
       try {
         val shimURL = new java.net.URL(s"${shimRootURL.toString}$mask/")
@@ -278,18 +278,26 @@ object ShimLoader extends Logging {
           logDebug(cnf + ": Could not load the provider, likely a dev build", cnf)
           None
       }
-    }.find { case (shimServiceProvider, _) =>
-      shimServiceProviderOverrideClassName.nonEmpty ||
-        shimServiceProvider.matchesVersion(sparkVersion)
-    }.map { case (inst, url) =>
-      shimURL = url
-      shimProvider = inst
-      // this class will be loaded again by the real executor classloader
-      inst.getClass.getName
+    }.partition { case (inst, _) =>
+      shimServiceProviderOverrideClassName.nonEmpty || inst.matchesVersion(sparkVersion)
     }
 
-    shimServiceProviderOpt.getOrElse {
-        throw new IllegalArgumentException(s"Could not find Spark Shim Loader for $sparkVersion")
+    matchingProviders.headOption.map { case (provider, url) =>
+      shimURL = url
+      shimProvider = provider
+      // this class will be loaded again by the real executor classloader
+      provider.getClass.getName
+    }.getOrElse {
+        val supportedVersions = restProviders.map {
+          case (p, _) =>
+            val buildVer = shimIdFromPackageName(p.getClass.getName).drop("spark".length)
+            s"${p.getShimVersion} {buildver=${buildVer}}"
+        }.mkString(", ")
+        throw new IllegalArgumentException(
+          s"This RAPIDS Plugin build does not support Spark build ${sparkVersion}. " +
+          s"Supported Spark versions: ${supportedVersions}. " +
+          "Consult the Release documentation at " +
+          "https://nvidia.github.io/spark-rapids/docs/download.html")
     }
   }
 

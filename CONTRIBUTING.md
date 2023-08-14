@@ -28,9 +28,19 @@ There are two types of branches in this repository:
   is held here. `main` will change with new releases, but otherwise it should not change with
   every pull request merged, making it a more stable branch.
 
+## Git Submodules
+
+This repository uses git submodules. The submodules may need to be updated after the repository
+is cloned or after moving to a new commit via `git submodule update --init`. See the
+[Git documentation on submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) for more
+information.
+
 ## Building From Source
 
-We use [Maven](https://maven.apache.org) for most aspects of the build. Some important parts
+We use [Maven](https://maven.apache.org) for most aspects of the build. We test the build with latest
+patch versions for Maven 3.6.x, 3.8.x and 3.9.x. Maven version 3.6.0 or more recent is enforced.
+
+Some important parts
 of the build execute in the `verify` phase of the Maven build lifecycle.  We recommend when
 building at least running to the `verify` phase, e.g.:
 
@@ -38,8 +48,8 @@ building at least running to the `verify` phase, e.g.:
 mvn verify
 ```
 
-After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
-This will build the plugin for a single version of Spark.  By default this is Apache Spark
+After a successful build, the RAPIDS Accelerator jar will be in the `dist/target/` directory.
+This will build the plugin for a single version of Spark.  By default, this is Apache Spark
 3.1.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
 to Maven. For instance to build Spark 3.1.1 you would use:
 
@@ -70,7 +80,7 @@ passed in the `MAVEN_OPTS` environment variable.
 
 ### Building a Distribution for Multiple Versions of Spark
 
-By default the distribution jar only includes code for a single version of Spark, albeit the jar file
+By default, the distribution jar only includes code for a single version of Spark, albeit the jar file
 layout will be such that it can be accessed only using the Shim loading logic for
 [multiple Spark versions](./docs/dev/shims.md#run-time-issues). See
 [below](#building-a-distribution-for-a-single-spark-release) for dist jar creation without
@@ -103,15 +113,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.0-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-23.06.0-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.0-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-23.08.0-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -119,7 +129,7 @@ public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 #### Building with buildall script
 
 There is a build script `build/buildall` that automates the local build process. Use
-`./buid/buildall --help` for up-to-date use information.
+`./build/buildall --help` for up-to-date use information.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots` that includes all released (noSnapshots) and snapshots Spark versions except for Databricks
@@ -134,7 +144,7 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 
 ### Building against different CUDA Toolkit versions
 
-You can build against different versions of the CUDA Toolkit by using qone of the following profiles:
+You can build against different versions of the CUDA Toolkit by using one of the following profiles:
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
 ### Building a Distribution for a Single Spark Release
@@ -153,7 +163,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.0-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -178,7 +188,7 @@ When iterating on changes impacting the `dist` module artifact directly or via
 dependencies you might find the jar creation step unacceptably slow. Due to the
 current size of the artifact `rapids-4-spark_2.12` Maven Jar Plugin spends the
 bulk of the time compressing the artifact content.
-Since the JAR file specification focusses on the file entry layout in a ZIP
+Since the JAR file specification focuses on the file entry layout in a ZIP
 archive without requiring file entries to be compressed it is possible to skip
 compression, and increase the speed of creating `rapids-4-spark_2.12` jar ~3x
 for a single Spark version Shim alone.
@@ -218,12 +228,12 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|db     |Databricks  |312db  |Databricks Spark based on Spark 3.1.2         |
+|db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
 |cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
 
 The version-specific directory names have one of the following forms / use cases:
 
-* `src/main/spark${buildver}`, example: `src/main/spark330db`
+* `src/main/spark${buildver}`, example: `src/main/spark332db`
 * `src/test/spark${buildver}`, example: `src/test/spark340`
 
 with a special shim descriptor as a Scala/Java comment. See [shimplify.md][1]
@@ -384,7 +394,7 @@ to avoid stale class files.
 Now you should be able to see Scala class members in the Explorer's Outline view and in the
 Breadcrumbs view at the top of the Editor with a Scala file open.
 
-Check Metals logs, "Run Doctor", etc if something is not working as expected. You can also verify
+Check Metals logs, "Run Doctor" etc. if something is not working as expected. You can also verify
 that the Bloop build server and the Metals language server are running by executing `jps` in the
 Terminal window:
 ```shell script
@@ -418,7 +428,7 @@ it by making sure Metals Server (Bloop client) and Bloop Server are both running
 
 [2]: https://github.com/scalameta/metals-vscode/pull/644/files#diff-04bba6a35cad1c794cbbe677678a51de13441b7a6ee8592b7b50be1f05c6f626R132
 #### Other IDEs
-We welcome pull requests with tips how to setup your favorite IDE!
+We welcome pull requests with tips on how to setup your favorite IDE!
 
 ### Your first issue
 
@@ -459,7 +469,7 @@ and the Scala conventions detailed above, preferring the latter.
 
 ### Sign your work
 
-We require that all contributors sign-off on their commits. This certifies that the contribution is your original work, or you have rights to submit it under the same license, or a compatible license.
+We require that all contributors sign-off on their commits. This certifies that the contribution is your original work, or you have the rights to submit it under the same license, or a compatible license.
 
 Any contribution which contains commits that are not signed off will not be accepted.
 
@@ -478,7 +488,7 @@ Signed-off-by: Your Name <your@email.com>
 The sign-off is a simple line at the end of the explanation for the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. Use your real name, no pseudonyms or anonymous contributions.  If you set your `user.name` and `user.email` git configs, you can sign your commit automatically with `git commit -s`.
 
 
-The signoff means you certify the below (from [developercertificate.org](https://developercertificate.org)):
+The sign-off means you certify the below (from [developercertificate.org](https://developercertificate.org)):
 
 ```
 Developer Certificate of Origin
@@ -556,8 +566,8 @@ Update copyright year....................................................Failed
 - duration: 0.01s
 - files were modified by this hook
 ```
-You can confirm that the update actually has happened by either inspecting its effect with
-`git diff` first or simply reexecuting `git commit` right away. The second time no file
+You can confirm that the update has actually happened by either inspecting its effect with
+`git diff` first or simply re-executing `git commit` right away. The second time no file
 modification should be triggered by the copyright year update hook and the commit should succeed.
 
 There is a known issue for macOS users if they use the default version of `sed`. The copyright update
@@ -571,13 +581,13 @@ export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 ```
 
 ### Pull request status checks
-A pull request should pass all status checks before merged.
-#### signoff check
+A pull request should pass all status checks before being merged.
+#### sign-off check
 Please follow the steps in the [Sign your work](#sign-your-work) section,
-and make sure at least one commit in your pull request get signed-off.
+and make sure at least one commit in your pull request is signed-off.
 #### blossom-ci
 The check runs on NVIDIA self-hosted runner, a [project committer](.github/workflows/blossom-ci.yml#L36) can
-manually trigger it by commenting `build`. It includes following steps,
+manually trigger it by commenting `build`. It includes the following steps,
 1. Mergeable check
 2. Blackduck vulnerability scan
 3. Fetch merged code (merge the pull request HEAD into BASE branch, e.g. fea-001 into branch-x)

@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.delta.shims
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.delta.DeltaColumnMapping
 import org.apache.spark.sql.delta.expressions.JoinedProjection
-import org.apache.spark.sql.delta.stats.UsesMetadataFields
 import org.apache.spark.sql.delta.util.JsonUtils
 import org.apache.spark.sql.types.StructField
 
@@ -47,5 +46,3 @@ object ShimJoinedProjection {
 object ShimJsonUtils {
   def fromJson[T: Manifest](json: String): T = JsonUtils.fromJson[T](json)
 }
-
-trait ShimUsesMetadataFields extends UsesMetadataFields

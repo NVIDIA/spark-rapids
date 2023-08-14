@@ -138,13 +138,13 @@ object ExecutionPlanCaptureCallback {
         "Plan does not contain an ansi cast")
   }
 
-  private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
+  def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
     !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
         PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
         exp.children.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
+  def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(plan)
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
         PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||

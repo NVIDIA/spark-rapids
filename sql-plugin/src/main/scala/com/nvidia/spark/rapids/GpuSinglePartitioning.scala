@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,17 +38,16 @@ case object GpuSinglePartitioning extends GpuExpression with ShimExpression
    * into a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
    * temporary value.
    */
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (batch.numCols == 0) {
       Array(batch).zipWithIndex
     } else {
       // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
       // slice will produce.
-      val sliced = sliceInternalGpuOrCpuAndClose(
+      sliceInternalGpuOrCpuAndClose(
         batch.numRows,
         Array(0),
         GpuColumnVector.extractColumns(batch))
-      sliced.zipWithIndex.filter(_._1 != null)
     }
   }
 

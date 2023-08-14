@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 package com.nvidia.spark.rapids.shuffle
 
 import com.nvidia.spark.rapids.shuffle.ucx.UCXConnection._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class UCXConnectionSuite extends FunSuite {
+class UCXConnectionSuite extends AnyFunSuite {
   test("generate active message id") {
     Seq(0, 1, 2, 100000, Int.MaxValue).foreach { eId =>
       assertResult(eId)(

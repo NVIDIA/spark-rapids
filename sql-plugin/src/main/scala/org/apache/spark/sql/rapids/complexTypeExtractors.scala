@@ -16,15 +16,14 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims._
 
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
@@ -51,30 +50,29 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
   override def sql: String =
     child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(child.columnarEval(batch)) { input =>
-      val dt = dataType
-      input match {
-        case cv: GpuColumnVector =>
-          withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
-            GpuColumnVector.from(view.copyToColumnVector(), dt)
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    val dt = dataType
+    withResourceIfAllowed(child.columnarEvalAny(batch)) {
+      case cv: GpuColumnVector =>
+        withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
+          GpuColumnVector.from(view.copyToColumnVector(), dt)
+        }
+      case s: GpuScalar =>
+        // For a scalar in we want a scalar out.
+        if (!s.isValid) {
+          GpuScalar(null, dt)
+        } else {
+          withResource(s.getBase.getChildrenFromStructScalar) { children =>
+            GpuScalar.wrap(children(ordinal).getScalarElement(0), dt)
           }
-        case null =>
-          GpuColumnVector.fromNull(batch.numRows(), dt)
-        // Literal struct values are wrapped in GpuScalar
-        case s: GpuScalar =>
-          s.getValue match {
-            case null =>
-              GpuColumnVector.fromNull(batch.numRows(), dt)
-            case ir: InternalRow =>
-              val tmp = ir.get(ordinal, dt)
-              withResource(GpuScalar.from(tmp, dt)) { scalar =>
-                GpuColumnVector.from(scalar, batch.numRows(), dt)
-              }
-          }
-      }
+        }
+      case other =>
+        throw new IllegalArgumentException(s"Got an unexpected type out of columnarEvalAny $other")
     }
   }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
 }
 
 /**
@@ -214,6 +212,11 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
     }
   }
 
+  /**
+   * `Null` is returned for invalid ordinals.
+   */
+  override def nullable: Boolean = true
+
   override def dataType: DataType = child.dataType.asInstanceOf[MapType].valueType
 
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, keyType)
@@ -241,8 +244,11 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
     }
   }
 
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("Map lookup keys must be scalar values")
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val map = lhs.getBase
@@ -284,7 +290,7 @@ case class GpuArrayContains(left: Expression, right: Expression)
    * or if the list does not contain any null elements.
    */
   private def orNotContainsNull(containsResult: ColumnVector,
-                                inputListsColumn:ColumnVector): ColumnVector = {
+                                inputListsColumn: ColumnView): ColumnVector = {
     val notContainsNull = withResource(inputListsColumn.listContainsNulls) {
       _.not
     }
@@ -303,11 +309,27 @@ case class GpuArrayContains(left: Expression, right: Expression)
     }
   }
 
-  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(ColumnVector.fromScalar(lhs.getBase, numRows)) { inputListsColumn =>
+      withResource(ColumnVector.fromScalar(rhs.getBase, numRows)) { keysColumn =>
+        //NOTE: listContainsColumn expects that input and the keys columns to have the same
+        // number of rows
+        withResource(inputListsColumn.listContainsColumn(keysColumn)) {
+          orNotContainsNull(_, inputListsColumn)
+        }
+      }
+    }
+  }
 
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(ColumnVector.fromScalar(lhs.getBase, rhs.getRowCount.toInt)) { inputListsColumn =>
+      //NOTE: listContainsColumn expects that input and the keys columns to have the same
+      // number of rows
+      withResource(inputListsColumn.listContainsColumn(rhs.getBase)) {
+        orNotContainsNull(_, inputListsColumn)
+      }
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val inputListsColumn = lhs.getBase
