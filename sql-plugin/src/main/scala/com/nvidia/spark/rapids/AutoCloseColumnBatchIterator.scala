@@ -15,8 +15,9 @@
  */
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -40,7 +41,12 @@ class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] =
     }
   }
 
-  onTaskCompletionIfNotTest(closeCurrentBatch())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeCurrentBatch()
+    }
+  }
 
   override def hasNext: Boolean = {
     closeCurrentBatch()

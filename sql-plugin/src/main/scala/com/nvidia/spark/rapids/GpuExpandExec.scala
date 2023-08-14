@@ -18,9 +18,10 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -119,8 +120,11 @@ class GpuExpandIterator(
   private val numOutputRows = metrics(NUM_OUTPUT_ROWS)
   private val opTime = metrics(OP_TIME)
 
-  onTaskCompletionIfNotTest {
-    sb.foreach(_.close())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      sb.foreach(_.close())
+    }
   }
 
   override def hasNext: Boolean = sb.isDefined || it.hasNext

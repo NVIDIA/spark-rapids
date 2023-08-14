@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+
+import org.apache.spark.TaskContext
 
 /**
  * Helper iterator that wraps a BufferedIterator of AutoCloseable subclasses.
@@ -28,7 +30,12 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
  */
 class CloseableBufferedIterator[T <: AutoCloseable](wrapped: BufferedIterator[T])
   extends BufferedIterator[T] with AutoCloseable {
-  onTaskCompletionIfNotTest(close())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   private[this] var isClosed = false
   override def head: T = wrapped.head

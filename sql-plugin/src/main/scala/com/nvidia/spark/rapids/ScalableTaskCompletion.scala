@@ -81,19 +81,6 @@ object ScalableTaskCompletion {
   }
 
   /**
-   * Testing wrapper around the user callback function. It is not common and is here to allow
-   * us to still have things behave correctly in some unit tests.
-   */
-  private class TestTaskCompletion(f: () => Unit)
-      extends TaskCompletionCallbackHandle {
-    override def removeCallback(): Unit = {
-      // NOOP
-    }
-
-    override def removeAndCall(): Unit = f()
-  }
-
-  /**
    * Keeps track of user callbacks for a given task. It is also the callback from
    * Spark itself.
    */
@@ -101,24 +88,31 @@ object ScalableTaskCompletion {
     private val pending = new util.HashSet[UserTaskCompletion]()
     private var callbacksDone = false
 
-    override def apply(tc: TaskContext): Unit = {
+    private def callAllCallbacks(tc: TaskContext): Throwable = synchronized {
       var error: Throwable = null
-      synchronized {
-        pending.forEach { utc =>
-          try {
+      pending.forEach { utc =>
+        try {
+          if (tc == null) {
+            utc(utc.tc)
+          } else {
             utc(tc)
-          } catch {
-            case t: Throwable =>
-              if (error == null) {
-                error = t
-              } else {
-                error.addSuppressed(t)
-              }
           }
+        } catch {
+          case t: Throwable =>
+            if (error == null) {
+              error = t
+            } else {
+              error.addSuppressed(t)
+            }
         }
-        pending.clear()
-        callbacksDone = true
       }
+      pending.clear()
+      callbacksDone = true
+      error
+    }
+
+    override def apply(tc: TaskContext): Unit = {
+      var error = callAllCallbacks(tc)
       try {
         ScalableTaskCompletion.removeTopLevel(tc.taskAttemptId())
       } catch {
@@ -147,11 +141,11 @@ object ScalableTaskCompletion {
       pending.remove(u)
     }
 
-    def removeAllAndShutdown(): Unit = synchronized {
-      pending.forEach { utc =>
-        utc(utc.tc)
+    def removeAllAndShutdown(): Unit = {
+      val error = callAllCallbacks(null)
+      if (error != null) {
+        throw error
       }
-      pending.clear()
     }
   }
 
@@ -221,26 +215,6 @@ object ScalableTaskCompletion {
   def onTaskCompletion(f: TaskContext => Unit): TaskCompletionCallbackHandle = {
     val tc: TaskContext = TaskContext.get()
     add(new UserTaskCompletion(tc, Right(f)))
-  }
-
-  /**
-   * When the current task completes, if there is a current task call the given function.
-   * @return a handle that can be used to remove the callback.
-   */
-  def onTaskCompletionIfNotTest(f: => Unit): TaskCompletionCallbackHandle = {
-    Option(TaskContext.get()).map { tc =>
-      add(new UserTaskCompletion(tc, Left(() => f)))
-    }.getOrElse(new TestTaskCompletion(() => f))
-  }
-
-  /**
-   * When the current task completes, if there is a current task call the function
-   * @return a handle that can be used to remove the callback, if there is a task.
-   */
-  def onTaskCompletionIfNotTest(f: TaskContext => Unit): Option[TaskCompletionCallbackHandle] = {
-    Option(TaskContext.get()).map { tc =>
-      add(new UserTaskCompletion(tc, Right(f)))
-    }
   }
 
   /**

@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.closeOnExcept
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -40,7 +41,12 @@ abstract class GpuColumnarBatchIterator(closeWithTask: Boolean)
     extends Iterator[ColumnarBatch] with AutoCloseable {
   private var isClosed = false
   if (closeWithTask) {
-    onTaskCompletionIfNotTest(close())
+    // Don't install the callback if in a unit test
+    Option(TaskContext.get()).foreach { tc =>
+      onTaskCompletion(tc) {
+        close()
+      }
+    }
   }
 
   final override def close(): Unit = {

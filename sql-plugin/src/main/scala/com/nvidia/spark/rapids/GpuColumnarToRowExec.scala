@@ -22,7 +22,7 @@ import scala.collection.mutable.Queue
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.ScalableTaskCompletion.{onTaskCompletion, onTaskCompletionIfNotTest}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -213,7 +213,12 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     (gpuCV: GpuColumnVector) => gpuCV.copyToHost()
   }
 
-  onTaskCompletionIfNotTest(closeCurrentBatch())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeCurrentBatch()
+    }
+  }
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {

@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -419,7 +419,12 @@ case class GpuProjectAstExec(
             }
           }
 
-        onTaskCompletionIfNotTest(close())
+        // Don't install the callback if in a unit test
+        Option(TaskContext.get()).foreach { tc =>
+          onTaskCompletion(tc) {
+            close()
+          }
+        }
 
         override def hasNext: Boolean = {
           if (cbIter.hasNext) {

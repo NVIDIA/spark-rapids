@@ -29,7 +29,7 @@ import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -42,6 +42,7 @@ import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -239,7 +240,12 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
     }
   }
 
-  onTaskCompletionIfNotTest(closeCurrentBatch())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeCurrentBatch()
+    }
+  }
 
   override def hasNext: Boolean = iter.hasNext
 
@@ -1195,9 +1201,13 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         with AutoCloseable {
       val hostBatches = new ListBuffer[ColumnarBatch]()
 
-      onTaskCompletionIfNotTest {
-        hostBatches.foreach(_.close())
-        hostBatches.clear()
+      // Don't install the callback if in a unit test
+      Option(TaskContext.get()).foreach { tc =>
+        onTaskCompletion(tc) {
+          hostBatches.foreach(_.close())
+          hostBatches.clear()
+          close()
+        }
       }
 
       override def next(): CachedBatch = myIter.next()

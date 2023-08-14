@@ -22,9 +22,10 @@ import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -300,7 +301,12 @@ abstract class AbstractGpuCoalesceIterator(
   /** Optional row limit */
   var batchRowLimit: Int = 0
 
-  onTaskCompletionIfNotTest(clearOnDeck())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      clearOnDeck()
+    }
+  }
 
   private def getHasOnDeck: Boolean = {
     while (!hasOnDeck && iter.hasNext) {

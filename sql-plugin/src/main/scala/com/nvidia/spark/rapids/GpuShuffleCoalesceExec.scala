@@ -21,7 +21,7 @@ import java.util
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.{HostConcatResult, SerializedTableHeader}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -95,7 +95,12 @@ class HostShuffleCoalesceIterator(
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
 
-  onTaskCompletionIfNotTest(close())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   override def close(): Unit = {
     serializedTables.forEach(_.close())

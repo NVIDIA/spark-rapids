@@ -29,7 +29,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletionIfNotTest
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -731,7 +731,12 @@ class GpuMergeAggregateIterator(
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
 
-  onTaskCompletionIfNotTest(close())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   override def hasNext: Boolean = {
     sortFallbackIter.map(_.hasNext).getOrElse {
