@@ -37,6 +37,8 @@ trait TaskCompletionCallbackHandle {
 
 /**
  * Provides a task completion listeners in Spark that you can remove if needed to help with scaling.
+ * Spark guarantees LIFO order to the callbacks, but we do not. If you need that kind of a
+ * guarantee then use the Spark task APIs directly.
  */
 object ScalableTaskCompletion {
   // Note: There are three levels of synchronization that can happen here. The order that they are
@@ -44,7 +46,7 @@ object ScalableTaskCompletion {
   //
   // ScalableTaskCompletion -> TopLevelTaskCompletion -> UserTaskCompletion
   //
-  // to avoid any potential deadlocks
+  // this is to avoid any potential deadlocks
 
   /**
    * Wrapper around a user callback function.
@@ -96,14 +98,13 @@ object ScalableTaskCompletion {
    * Spark itself.
    */
   private class TopLevelTaskCompletion extends Function[TaskContext, Unit] {
-    private val pending = new util.LinkedList[UserTaskCompletion]()
+    private val pending = new util.HashSet[UserTaskCompletion]()
     private var callbacksDone = false
 
     override def apply(tc: TaskContext): Unit = {
       var error: Throwable = null
       synchronized {
-        while (!pending.isEmpty) {
-          val utc = pending.pop
+        pending.forEach { utc =>
           try {
             utc(tc)
           } catch {
@@ -115,6 +116,7 @@ object ScalableTaskCompletion {
               }
           }
         }
+        pending.clear()
         callbacksDone = true
       }
       try {
@@ -146,10 +148,10 @@ object ScalableTaskCompletion {
     }
 
     def removeAllAndShutdown(): Unit = synchronized {
-      while(pending.size() > 0) {
-        val ucb = pending.pop
-        ucb(ucb.tc)
+      pending.forEach { utc =>
+        utc(utc.tc)
       }
+      pending.clear()
     }
   }
 
