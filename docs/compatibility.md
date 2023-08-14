@@ -466,9 +466,12 @@ These are the known cases where running on the GPU will produce different result
   query component, or fragment component. But in plugin, parse_url just simply allow empty 
   authority component without checking if it is followed something or not. So `parse_url('http://', 'HOST')` will
   return `null` in Spark, but return `""` in plugin.
-- If input url has a invalid Ipv6 address, Spark will return `null` for all components, but plugin will parse other
+- If an input url has a invalid Ipv6 address, Spark will return `null` for all components, but plugin will parse other
   components except `HOST` as normal. So `http://userinfo@[1:2:3:4:5:6:7:8:9:10]/path?query=1#Ref`'s result will be 
   `[null,/path,query=1,Ref,http,/path?query=1,userinfo@[1:2:3:4:5:6:7:8:9:10],userinfo]`
+- If an input URL doesn't have a protocol, but has a port, like `foo.bar:123/index.html', Spark will treat it as a URI 
+  with a `PROTOCOL` of `foo.bar` and all other components are `null`. The plugin will returns an empty string `""` for `PATH` and `FILE` in this case.
+- If an input is opaque URI, the behavior between Spark and the plugin may be mismatched, especially for `FILE` and `PATH` part. For example, `mailto:xx@yy.com` will return `null` for `FILE` and `PATH` in Spark, but return `xx@yy.com` in plugin.
 
 ## Windowing
 
