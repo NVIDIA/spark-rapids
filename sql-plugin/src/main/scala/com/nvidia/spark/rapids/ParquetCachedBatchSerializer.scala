@@ -29,6 +29,7 @@ import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -239,9 +240,12 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
     }
   }
 
-  TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
-    closeCurrentBatch()
-  })
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeCurrentBatch()
+    }
+  }
 
   override def hasNext: Boolean = iter.hasNext
 
@@ -1197,10 +1201,14 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         with AutoCloseable {
       val hostBatches = new ListBuffer[ColumnarBatch]()
 
-      Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit] { _ =>
-        hostBatches.foreach(_.close())
-        hostBatches.clear()
-      })
+      // Don't install the callback if in a unit test
+      Option(TaskContext.get()).foreach { tc =>
+        onTaskCompletion(tc) {
+          hostBatches.foreach(_.close())
+          hostBatches.clear()
+          close()
+        }
+      }
 
       override def next(): CachedBatch = myIter.next()
 

@@ -32,6 +32,7 @@ class GpuSemaphoreSuite extends AnyFunSuite
   val timeLimit = Span(10, Seconds)
 
   override def beforeEach(): Unit = {
+    ScalableTaskCompletion.reset()
     GpuSemaphore.shutdown()
     // semaphore tests depend on a SparkEnv being available
     val activeSession = SparkSession.getActiveSession
@@ -44,6 +45,7 @@ class GpuSemaphoreSuite extends AnyFunSuite
   }
 
   override def afterEach(): Unit = {
+    ScalableTaskCompletion.reset()
     GpuSemaphore.shutdown()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
