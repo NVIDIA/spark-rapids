@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
-from marks import ignore_order
+from marks import allow_non_gpu, ignore_order
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -206,3 +206,11 @@ def test_posexplode_nested_outer_array_data(data_gen):
             'a', 'posexplode_outer(b) as (pos, c)').selectExpr(
             'a', 'pos', 'posexplode_outer(c)'),
         conf=conf_to_enforce_split_input)
+
+@allow_non_gpu("GenerateExec")
+@ignore_order(local=True)
+def test_generate_outer_fallback():
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql("SELECT array(struct(1, 'a'), struct(2, 'b')) as x")\
+            .repartition(1).selectExpr("inline_outer(x)"),
+        "GenerateExec")
