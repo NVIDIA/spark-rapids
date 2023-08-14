@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Sample Dockerfile to install UCX in a Ubuntu 18.04 image
+# Sample Dockerfile to install UCX in a Ubuntu 20.04 image
 #
 # The parameters are: 
 #   - CUDA_VER: 11.8.0 by default
