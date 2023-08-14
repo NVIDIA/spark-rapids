@@ -31,6 +31,8 @@ Generated on 2023-08-14
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9021](https://github.com/NVIDIA/spark-rapids/issues/9021)|[BUG] test_map_scalars_supported_key_types failed in dataproc 2.1|
+|[#9020](https://github.com/NVIDIA/spark-rapids/issues/9020)|[BUG] auto-disable snapshot shims test in github action for pre-release branch|
 |[#9010](https://github.com/NVIDIA/spark-rapids/issues/9010)|[BUG] Customer failure 23.08: Cannot compute hash of a table with a LIST of STRUCT columns.|
 |[#8922](https://github.com/NVIDIA/spark-rapids/issues/8922)|[BUG] integration map_test:test_map_scalars_supported_key_types failures|
 |[#8982](https://github.com/NVIDIA/spark-rapids/issues/8982)|[BUG] Nightly prerelease failures - OrcSuite|
@@ -83,6 +85,9 @@ Generated on 2023-08-14
 ### PRs
 |||
 |:---|:---|
+|[#9023](https://github.com/NVIDIA/spark-rapids/pull/9023)|Allow WindowLocalExec to run on CPU for a map test.|
+|[#9024](https://github.com/NVIDIA/spark-rapids/pull/9024)|Do not trigger snapshot spark version test in pre-release maven-verify checks [skip ci]|
+|[#8975](https://github.com/NVIDIA/spark-rapids/pull/8975)|Init 23.08 changelog [skip ci]|
 |[#9016](https://github.com/NVIDIA/spark-rapids/pull/9016)|Fix issue where murmur3 tried to work on array of structs|
 |[#9014](https://github.com/NVIDIA/spark-rapids/pull/9014)|Updating link to download jar [skip ci]|
 |[#9006](https://github.com/NVIDIA/spark-rapids/pull/9006)|Revert test changes to fix binary dedup error|
