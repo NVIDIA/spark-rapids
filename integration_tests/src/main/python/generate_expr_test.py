@@ -207,7 +207,7 @@ def test_posexplode_nested_outer_array_data(data_gen):
             'a', 'pos', 'posexplode_outer(c)'),
         conf=conf_to_enforce_split_input)
 
-@allow_non_gpu("GenerateExec")
+@allow_non_gpu("GenerateExec", "ShuffleExchangeExec")
 @ignore_order(local=True)
 def test_generate_outer_fallback():
     assert_gpu_fallback_collect(
