@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.{DataType, Decimal, StructType}
 import org.apache.spark.storage.BlockManagerId
 import org.apache.spark.util.{ShutdownHookManager, Utils}
 
@@ -170,5 +170,11 @@ object TrampolineUtil {
 
   def getSparkConf(spark: SparkSession): SQLConf = {
     spark.sqlContext.conf
+  }
+
+  def checkDecimalOverflow(value: Decimal, precision: Int, scale: Int,
+      failOnError: Boolean): Decimal = {
+    value.toPrecision(precision, scale, roundMode = Decimal.ROUND_HALF_UP,
+      nullOnOverflow = !failOnError)
   }
 }

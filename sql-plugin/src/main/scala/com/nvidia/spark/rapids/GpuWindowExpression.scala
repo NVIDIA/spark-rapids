@@ -28,7 +28,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -1321,6 +1323,8 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
 
   private var previousValue: Option[Scalar] = None
 
+  private val numeric = TypeUtils.getNumeric(resultType, failOnError)
+
   override def updateState(scalar: Scalar): Unit = {
     if (scalar.isValid) {
       previousValue match {
@@ -1343,14 +1347,12 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
                 previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
               case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
                    DType.DTypeEnum.DECIMAL128 =>
-                withResource(ColumnVector.fromScalar(scalar, 1)) { scalarCv =>
-                  withResource(prev.add(scalarCv)) { sum =>
-                    withResource(AddOverflowChecks.decimalOpOverflowCheck(
-                        prev, scalar, sum, failOnError)) { sumChecked =>
-                      previousValue = Some(sumChecked.getScalarElement(0))
-                    }
-                  }
-                }
+                val decimal = numeric.plus(Decimal(prev.getBigDecimal),
+                  Decimal(scalar.getBigDecimal)).asInstanceOf[Decimal]
+                val dt = resultType.asInstanceOf[DecimalType]
+                previousValue = Option(TrampolineUtil.checkDecimalOverflow(
+                    decimal, dt.precision, dt.scale, failOnError))
+                  .map(n => Scalar.fromDecimal(n.toJavaBigDecimal))
               case other =>
                 throw new IllegalStateException(s"unhandled type: $other")
             }
@@ -1358,8 +1360,6 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
         }
     }
   }
-
-
 
   override def fixUp(
       samePartitionMask: Either[ColumnVector, Boolean],
