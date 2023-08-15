@@ -66,7 +66,7 @@ Navigate to your home directory in the UI and select **Create** > **File** from 
 create an `init.sh` scripts with contents:   
    ```bash
    #!/bin/bash
-   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.08.0.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.0/rapids-4-spark_2.12-23.08.0.jar
+   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.08.1.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar
    ```
 Then create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
