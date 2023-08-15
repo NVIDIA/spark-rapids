@@ -135,8 +135,7 @@ case class GpuRowBasedHiveSimpleUDF(
       method.getGenericReturnType, ObjectInspectorOptions.JAVA))
 
   override protected def evaluateRow(childrenRow: InternalRow): Any = {
-    val array = childRowAccessors.map(_(childrenRow))
-    val inputs = wrapRow(array, wrappers, cached, inputDataTypes)
+    val inputs = wrapRow(childRowAccessors.map(_(childrenRow)), wrappers, cached, inputDataTypes)
     val ret = FunctionRegistry.invoke(
       method,
       function,
