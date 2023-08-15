@@ -43,6 +43,13 @@ object GpuDeviceManager extends Logging {
     java.lang.Boolean.getBoolean("com.nvidia.spark.rapids.memory.gpu.rmm.init.task")
   }
 
+  private var numTasks = 0
+
+  /**
+   * Get an approximate count on the number of tasks this executor will run.
+   */
+  def getNumTasks = numTasks
+
   // Memory resource used only for cudf::chunked_pack to allocate scratch space
   // during spill to host. This is done to set aside some memory for this operation
   // from the beginning of the job.
@@ -141,7 +148,8 @@ object GpuDeviceManager extends Logging {
   }
 
   def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
-      conf: RapidsConf): Unit = {
+      conf: RapidsConf, numTasks: Int): Unit = {
+    this.numTasks = numTasks
     // as long in execute mode initialize everything because we could enable it after startup
     if (conf.isSqlExecuteOnGPU) {
       // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
@@ -198,7 +206,7 @@ object GpuDeviceManager extends Logging {
       val resources = getResourcesFromTaskContext
       val conf = new RapidsConf(SparkEnv.get.conf)
       if (rmmTaskInitEnabled) {
-        initializeGpuAndMemory(resources, conf)
+        initializeGpuAndMemory(resources, conf, 1)
       } else {
         // just set the device if provided so task thread uses right GPU
         initializeGpu(resources, conf)
