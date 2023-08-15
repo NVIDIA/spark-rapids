@@ -158,11 +158,11 @@ object MultiFileReaderThreadPool extends Logging {
   /**
    * Get the existing thread pool or create one with the given thread count if it does not exist.
    * @note The thread number will be ignored if the thread pool is already created, or modified
-   *       if it is not the right size compared to the number of tasks.
+   *       if it is not the right size compared to the number of cores available.
    */
   def getOrCreateThreadPool(numThreadsFromConf: Int): ThreadPoolExecutor = {
     threadPool.getOrElse {
-      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumTasks)
+      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
 
       if (numThreadsFromConf != numThreads) {
         logWarning(s"Using $numThreads as the number of threads for the thread pool.")

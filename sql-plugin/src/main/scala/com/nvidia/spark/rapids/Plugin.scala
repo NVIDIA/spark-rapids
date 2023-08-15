@@ -110,7 +110,7 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  def estimateExecTasksOnExec(conf: SparkConf): Int = {
+  def estimateCoresOnExec(conf: SparkConf): Int = {
     conf.getOption(RapidsPluginUtils.EXECUTOR_CORES_KEY)
         .map(_.toInt)
         .getOrElse(Runtime.getRuntime.availableProcessors)
@@ -328,7 +328,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       reRegisterCheckLeakHook()
 
       val sparkConf = pluginContext.conf()
-      val numTasks = RapidsPluginUtils.estimateExecTasksOnExec(sparkConf)
+      val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
@@ -356,7 +356,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf,
-          numTasks)
+          numCores)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
           if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
