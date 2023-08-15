@@ -170,7 +170,7 @@ object RapidsPluginUtils extends Logging {
 
     // If spark.task.resource.gpu.amount is larger than
     // (spark.executor.resource.gpu.amount / spark.executor.cores) then GPUs will be the limiting
-    // resource for task scheduling., but we can only output the warning if executor cores is set
+    // resource for task scheduling, but we can only output the warning if executor cores is set
     // because this is happening on the driver so the number of tasks in the runtime is not
     // relevant
     if (conf.contains(TASK_GPU_AMOUNT_KEY) &&
