@@ -45,14 +45,14 @@ object GpuParseUrl {
   //                                        
   // private val HOST_REGEX   = """^(?:(?:([^:/?#]+):)?(?://((?:(?:(?:[^\@]*)@)?(\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(([^?#]*)(\?[^#]*)?)(#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
   //                            """^(?:(?:(  [^:/?#]+):)?(?://(  (?:(?:(?:[^\@/]*)@)?(\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(([^?#]*)(\?[^#]*)?)(#.*)?)$"""
-  private val HOST_REGEX      = """^(?:(?:(?:[^:/?#]+):)?(?:[0-9]+[^#]*|(?://(?:(?:(?:(?:[^\@/?#]*)@)?(\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)?(?:\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
-  private val PATH_REGEX      = """^(?:[^:/?#]+:[^/#][^/#][^#]*|(?:[^:/?#]+:)?(?://(?:[^\@/?#]*@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*)(?::[0-9]+)?)?([^?#]*)?(?:\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?$"""
-  private val QUERY_REGEX     = """^(?:(?:(?:[^:/?#]+):)?(?:[0-9]+[^#]*|(?://(?:(?:(?:(?:[^\@/?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)?(\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
-  private val REF_REGEX       = """^(?:(?:(?:[^:/?#]+):)?(?:[0-9]+[^#]*|(?://(?:(?:(?:(?:[^\@/?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)?(?:\?[^#]*)?)(#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
-  private val PROTOCOL_REGEX  = """^(?:(?:([^:/?#]+):)?(?:(?:[0-9]+[^#]*|(?://(?:(?:(?:[^\@/?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)?(?:\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
-  private val FILE_REGEX      = """^(?:[^:/?#]+:[^/#][^/#][^#]*|(?:[^:/?#]+:)?(?://(?:[^\@/?#]*@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*)(?::[0-9]+)?)?((?:[^?#]*)?(?:\?[^#]*)?))(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?$"""
-  private val AUTHORITY_REGEX = """^(?:(?:(?:[^:/?#]+):)?(?:[0-9]+[^#]*|(?://((?:(?:(?:[^\@/?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)?(?:\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
-  private val USERINFO_REGEX  = """^(?:(?:(?:[^:/?#]+):)?(?:[0-9]+[^#]*|(?://(?:(?:(?:([^\@/?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/#:?]*))(?::[0-9]+)?))?(?:[^?#]*)?(?:\?[^#]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  private val HOST_REGEX      = """^(?:(?:(?:[^:\\ /?#]+):)?(?:[0-9]+[^\\ #]*|(?://(?:(?:(?:(?:[^@\\ /?#]*)@)?(\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*))(?::[0-9]+)?))?(?:[^?\\ #]*)?(?:\?[^\\ #]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  private val PATH_REGEX      = """^(?:[^:\\ /?#]+:[^/#][^/#][^#]*|(?:[^:\\ /?#]+:)?(?://(?:[^@\\ /?#]*@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*)(?::[0-9]+)?)?([^?\\ #]*)?(?:\?[^\\ #]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?$"""
+  private val QUERY_REGEX     = """^(?:(?:(?:[^:\\ /?#]+):)?(?:[0-9]+[^\\ #]*|(?://(?:(?:(?:(?:[^@\\ /?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*))(?::[0-9]+)?))?(?:[^?\\ #]*)?(\?[^\\ #]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  private val REF_REGEX       = """^(?:(?:(?:[^:\\ /?#]+):)?(?:[0-9]+[^\\ #]*|(?://(?:(?:(?:(?:[^@\\ /?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*))(?::[0-9]+)?))?(?:[^?\\ #]*)?(?:\?[^\\ #]*)?)(#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  private val PROTOCOL_REGEX  = """^(?:(?:([^:\\ /?#]+):)?(?:(?:[0-9]+[^\\ #]*|(?://(?:(?:(?:[^@\\ /?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*))(?::[0-9]+)?))?(?:[^?\\ #]*)?(?:\?[^\\ #]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  private val FILE_REGEX      = """^(?:[^:\\ /?#]+:[^/#][^/#][^#]*|(?:[^:\\ /?#]+:)?(?://(?:[^@\\ /?#]*@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*)(?::[0-9]+)?)?((?:[^?\\ #]*)?(?:\?[^\\ #]*)?))(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?$"""
+  private val AUTHORITY_REGEX = """^(?:(?:(?:[^:\\ /?#]+):)?(?:[0-9]+[^\\ #]*|(?://((?:(?:(?:[^@\\ /?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*))(?::[0-9]+)?))?(?:[^?\\ #]*)?(?:\?[^\\ #]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
+  private val USERINFO_REGEX  = """^(?:(?:(?:[^:\\ /?#]+):)?(?:[0-9]+[^\\ #]*|(?://(?:(?:(?:([^@\\ /?#]*)@)?(?:\[[0-9A-Za-z%.:]+\]|[^/\\ #:?]*))(?::[0-9]+)?))?(?:[^?\\ #]*)?(?:\?[^\\ #]*)?)(?:#[a-zA-Z0-9\-_.!~*'();/?:@&=+$,[\]%]*)?)$"""
   // HostName parsing followed rules in java URI lib:
   // hostname      = domainlabel [ "." ] | 1*( domainlabel "." ) toplabel [ "." ]
   // domainlabel   = alphanum | alphanum *( alphanum | "-" ) alphanum
@@ -118,16 +118,16 @@ case class GpuParseUrl(children: Seq[Expression],
     new RegexProgram(regex)
   }
 
-  private def reValid(url: ColumnVector): ColumnVector = {
-    // Simply check if urls contain spaces for now, most validations will be done when extracting.
-    withResource(Scalar.fromString(" ")) { blank =>
-      withResource(url.stringContains(blank)) { isMatch =>
-        withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-          isMatch.ifElse(nullScalar, url)
-        }
-      }
-    }
-  }
+  // private def reValid(url: ColumnVector): ColumnVector = {
+  //   // Simply check if urls contain spaces for now, most validations will be done when extracting.
+  //   withResource(Scalar.fromString(" ")) { blank =>
+  //     withResource(url.stringContains(blank)) { isMatch =>
+  //       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+  //         isMatch.ifElse(nullScalar, url)
+  //       }
+  //     }
+  //   }
+  // }
 
   private def reMatch(url: ColumnVector, partToExtract: String): ColumnVector = {
     val regex = partToExtract match {
@@ -217,10 +217,8 @@ case class GpuParseUrl(children: Seq[Expression],
 
   def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
-    val valid = reValid(url.getBase)
-    val matched = withResource(valid) { _ =>
-      reMatch(valid, part)
-    }
+    // val valid = reValid(url.getBase)
+    val matched = reMatch(url.getBase, part)
     if (part == HOST) {
       val valided = withResource(matched) { _ =>
         unsetInvalidHost(matched)

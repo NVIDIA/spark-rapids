@@ -98,29 +98,6 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     ).toDF("urls")
   }
 
-  def otherEdgeCases(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    Seq[String](
-      "http://shtory-g.ru?email=ggradnigo@prepaidlegal.com",
-      "http://foo.bar/baduser@xx/yy",
-      "http://foo.bar/xx/yy?baduser@zz",
-      "http://foo.bar?query=baduser@key",
-      "http://foo.bar#baduser@zz",
-      "http://foo.bar:666@123/xx/yy",
-      "mailto:xx@yy.com",
-      "foo.bar",
-      "foo.bar/yy?query=key#fragment",       
-      "foo.bar:123",
-      "foo.bar:123/xx/yy",
-      "foo.bar:123/xx/yy?query=key",
-      "foo.bar:123/xx/yy/?query=key&query2=key2",
-      "foo.bar:123/xx/yy#fragment",
-      "foo.bar:123/xx/yy/index.html",
-      "foo.bar:123?query=key"
-    ).toDF("urls")
-  }
-
-
   def urlCasesFromSpark(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
@@ -171,6 +148,37 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://[::13.1.68.3]"
     ).toDF("urls")
   }
+
+  def otherEdgeCases(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    // scalastyle:off line.size.limit
+    Seq[String](
+      """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=%user_id""",
+      """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=user_id""",
+      """http://www.musimagen.com/lista_socios.php?letra=\303%91""",
+      """http://www.fjpengfei.com/picshow.asp?id=31&mnid=5074&classname=\320\373\264\253\273\255\262\341&banner=2""",
+      """http://www.musimagen.com/lista_socios.php?letra=%91xx""",
+      """http://www.musimagen.com/lista_socios.php?letra=%20xx""",
+      """http://www.fjpengfei.com/picshow.asp?id=31&mnid=5074&classname=xxy&banner=2""",
+      """http://ecnavi.jp/redirect/?url=**""",
+      "http://shtory-g.ru?email=ggradnigo@prepaidlegal.com",
+      "http://foo.bar/baduser@xx/yy",
+      "http://foo.bar/xx/yy?baduser@zz",
+      "http://foo.bar?query=baduser@key",
+      "http://foo.bar#baduser@zz",
+      "http://foo.bar:666@123/xx/yy",
+      "mailto:xx@yy.com",
+      "foo.bar/yy?query=key#fragment",       
+      "foo.bar:123",
+      "foo.bar:123/xx/yy",
+      "foo.bar:123/xx/yy?query=key",
+      "foo.bar:123/xx/yy/?query=key&query2=key2",
+      "foo.bar:123/xx/yy#fragment",
+      "foo.bar:123/xx/yy/index.html",
+      "foo.bar:123?query=key"
+    ).toDF("urls")
+  }
+  // scalastyle:on
 
   def urlWithQueryKey(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
