@@ -64,6 +64,8 @@ compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It
 on V100, T4, A10, A100, L4 and H100 GPUs with CUDA 11.8-12.0.  For those using other types of GPUs 
 which do not have CUDA forward compatibility (for example, GeForce), CUDA 11.8 or later is required.
 
+Note that v23.08.0 is deprecated.
+
 ### Verify signature
 * Download the [RAPIDS Accelerator for Apache Spark 23.08.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar)
   and [RAPIDS Accelerator for Apache Spark 23.08.1 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar.asc)
