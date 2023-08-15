@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, PinnedMemoryPool}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, freeOnExcept, withResource}
 import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_SPILL_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -30,6 +30,12 @@ import com.nvidia.spark.rapids.format.TableMeta
 class RapidsHostMemoryStore(
     maxSize: Long)
     extends RapidsBufferStore(StorageTier.HOST) {
+
+  override def spillableOnAdd: Boolean = false
+
+  override protected def setSpillable(buffer: RapidsBufferBase, spillable: Boolean): Unit = {
+    doSetSpillable(buffer, spillable)
+  }
 
   override def getMaxSize: Option[Long] = Some(maxSize)
 
@@ -45,6 +51,31 @@ class RapidsHostMemoryStore(
     }
 
     HostMemoryBuffer.allocate(size, false)
+  }
+
+  def addBuffer(
+      id: RapidsBufferId,
+      buffer: HostMemoryBuffer,
+      tableMeta: TableMeta,
+      initialSpillPriority: Long,
+      needsSync: Boolean): RapidsBuffer = {
+    buffer.incRefCount()
+    // TODO: note that there is a difference between buffer.getLength
+    // andthe metadata sizes...
+    val rapidsBuffer = new RapidsHostMemoryBuffer(
+      id,
+      buffer.getLength,
+      tableMeta,
+      initialSpillPriority,
+      buffer)
+    freeOnExcept(rapidsBuffer) { _ =>
+      logDebug(s"Adding host buffer for: [id=$id, size=${buffer.getLength}, " +
+        s"uncompressed=${rapidsBuffer.meta.bufferMeta.uncompressedSize}, " +
+        s"meta_id=${tableMeta.bufferMeta.id}, " +
+        s"meta_size=${tableMeta.bufferMeta.size}]")
+      addBuffer(rapidsBuffer, needsSync)
+      rapidsBuffer
+    }
   }
 
   override protected def createBuffer(
@@ -95,13 +126,22 @@ class RapidsHostMemoryStore(
       meta: TableMeta,
       spillPriority: Long,
       buffer: HostMemoryBuffer)
-      extends RapidsBufferBase(
-        id, meta, spillPriority) {
+      extends RapidsBufferBase(id, meta, spillPriority)
+        with MemoryBuffer.EventHandler {
     override val storageTier: StorageTier = StorageTier.HOST
 
-    override def getMemoryBuffer: MemoryBuffer = {
-      buffer.incRefCount()
-      buffer
+    override def getMemoryBuffer: MemoryBuffer = synchronized {
+      buffer.synchronized {
+        setSpillable(this, false)
+        buffer.incRefCount()
+        buffer
+      }
+    }
+
+    override def updateSpillability(): Unit = {
+      if (buffer.getRefCount == 1) {
+        setSpillable(this, true)
+      }
     }
 
     override protected def releaseResources(): Unit = {
@@ -110,5 +150,49 @@ class RapidsHostMemoryStore(
 
     /** The size of this buffer in bytes. */
     override def getMemoryUsedBytes: Long = size
+
+    // If this require triggers, we are re-adding a `HostMemoryBuffer` outside of
+    // the catalog lock, which should not possible. The event handler is set to null
+    // when we free the `RapidsHostMemoryBuffer` and if the buffer is not free, we
+    // take out another handle (in the catalog).
+    // TODO: This is not robust (to rely on outside locking and addReference/free)
+    //  and should be revisited.
+    require(buffer.setEventHandler(this) == null,
+      "HostMemoryBuffer with non-null event handler failed to add!!")
+
+    /**
+     * Override from the MemoryBuffer.EventHandler interface.
+     *
+     * If we are being invoked we have the `buffer` lock, as this callback
+     * is being invoked from `MemoryBuffer.close`
+     *
+     * @param refCount - buffer's current refCount
+     */
+    override def onClosed(refCount: Int): Unit = {
+      // refCount == 1 means only 1 reference exists to `buffer` in the
+      // RapidsHostMemoryBuffer (we own it)
+      if (refCount == 1) {
+        // setSpillable is being called here as an extension of `MemoryBuffer.close()`
+        // we hold the MemoryBuffer lock and we could be called from a Spark task thread
+        // Since we hold the MemoryBuffer lock, `incRefCount` waits for us. The only other
+        // call to `setSpillable` is also under this same MemoryBuffer lock (see:
+        // `getMemoryBuffer`)
+        setSpillable(this, true)
+      }
+    }
+
+    /**
+     * We overwrite free to make sure we don't have a handler for the underlying
+     * buffer, since this `RapidsBuffer` is no longer tracked.
+     */
+    override def free(): Unit = synchronized {
+      if (isValid) {
+        // it is going to be invalid when calling super.free()
+        buffer.setEventHandler(null)
+      }
+      super.free()
+    }
   }
 }
+
+
