@@ -18,7 +18,7 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
-## Release v23.08.0
+## Release v23.08.1
 ### Hardware Requirements:
 
 The plugin is tested on the following architectures:
@@ -55,9 +55,9 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
-### Download v23.08.0
+### Download v23.08.1
 * Download the [RAPIDS
-  Accelerator for Apache Spark 23.08.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.0/rapids-4-spark_2.12-23.08.0.jar)
+  Accelerator for Apache Spark 23.08.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar)
 
 This package is built against CUDA 11.8, all CUDA 11.x and 12.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
@@ -65,11 +65,11 @@ on V100, T4, A10, A100, L4 and H100 GPUs with CUDA 11.8-12.0.  For those using o
 which do not have CUDA forward compatibility (for example, GeForce), CUDA 11.8 or later is required.
 
 ### Verify signature
-* Download the [RAPIDS Accelerator for Apache Spark 23.08.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.0/rapids-4-spark_2.12-23.08.0.jar)
-  and [RAPIDS Accelerator for Apache Spark 23.08.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.0/rapids-4-spark_2.12-23.08.0.jar.asc)
+* Download the [RAPIDS Accelerator for Apache Spark 23.08.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar)
+  and [RAPIDS Accelerator for Apache Spark 23.08.1 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar.asc)
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
-* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.08.0.jar.asc rapids-4-spark_2.12-23.08.0.jar`
+* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.08.1.jar.asc rapids-4-spark_2.12-23.08.1.jar`
 
 The output if signature verify:
 
