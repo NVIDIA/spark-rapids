@@ -1013,3 +1013,37 @@ def test_bloom_filter_join_split_cpu_build(agg_replace_mode, is_multi_column):
     check_bloom_filter_join(confs=conf,
                             expected_classes="GpuBloomFilterMightContain,BloomFilterAggregate,GpuBloomFilterAggregate",
                             is_multi_column=is_multi_column)
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_with_merge_some_null_filters(spark_tmp_path):
+    data_path1 = spark_tmp_path + "/BLOOM_JOIN_DATA1"
+    data_path2 = spark_tmp_path + "/BLOOM_JOIN_DATA2"
+    with_cpu_session(lambda spark: spark.range(100000).coalesce(1).write.parquet(data_path1))
+    with_cpu_session(lambda spark: spark.range(100000).withColumn("id2", col("id").cast("string"))\
+                     .coalesce(1).write.parquet(data_path2))
+    confs = copy_and_update(bloom_filter_confs,
+                            bloom_filter_exprs_enabled,
+                            {"spark.sql.files.maxPartitionBytes": "1000"})
+    def do_join(spark):
+        left = spark.read.parquet(data_path1)
+        right = spark.read.parquet(data_path2)
+        return right.filter("cast(id2 as bigint) % 3 = 0").join(left, left.id == right.id, "inner")
+    assert_gpu_and_cpu_are_equal_collect(do_join, confs)
+
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
+@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
+def test_bloom_filter_join_with_merge_all_null_filters(spark_tmp_path):
+    data_path1 = spark_tmp_path + "/BLOOM_JOIN_DATA1"
+    data_path2 = spark_tmp_path + "/BLOOM_JOIN_DATA2"
+    with_cpu_session(lambda spark: spark.range(100000).write.parquet(data_path1))
+    with_cpu_session(lambda spark: spark.range(100000).withColumn("id2", col("id").cast("string")) \
+                     .write.parquet(data_path2))
+    confs = copy_and_update(bloom_filter_confs, bloom_filter_exprs_enabled)
+    def do_join(spark):
+        left = spark.read.parquet(data_path1)
+        right = spark.read.parquet(data_path2)
+        return right.filter("cast(id2 as bigint) % 3 = 4").join(left, left.id == right.id, "inner")
+    assert_gpu_and_cpu_are_equal_collect(do_join, confs)

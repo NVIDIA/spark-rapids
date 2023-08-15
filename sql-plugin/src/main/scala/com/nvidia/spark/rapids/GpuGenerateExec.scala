@@ -46,7 +46,7 @@ class GpuGenerateExecSparkPlanMeta(
   }
 
   override def tagPlanForGpu(): Unit = {
-    if (gen.outer &&
+    if (gen.outer && childExprs.head.isInstanceOf[GeneratorExprMeta[_]] &&
       !childExprs.head.asInstanceOf[GeneratorExprMeta[Generator]].supportOuter) {
       willNotWorkOnGpu(s"outer is not currently supported with ${gen.generator.nodeName}")
     }
