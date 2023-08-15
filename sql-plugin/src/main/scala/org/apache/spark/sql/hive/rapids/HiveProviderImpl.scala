@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
-import org.apache.spark.sql.hive.rapids.shims.{GpuHiveTableScanExec, GpuRowBasedHiveGenericUDF, GpuRowBasedHiveSimpleUDF, HiveProviderCmdShims}
+import org.apache.spark.sql.hive.rapids.shims.{GpuHiveTableScanExec, HiveProviderCmdShims}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
