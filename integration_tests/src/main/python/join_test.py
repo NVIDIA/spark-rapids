@@ -1005,7 +1005,6 @@ def test_bloom_filter_join_with_merge_some_null_filters(spark_tmp_path):
     with_cpu_session(lambda spark: spark.range(100000).withColumn("id2", col("id").cast("string"))\
                      .coalesce(1).write.parquet(data_path2))
     confs = copy_and_update(bloom_filter_confs,
-                            bloom_filter_exprs_enabled,
                             {"spark.sql.files.maxPartitionBytes": "1000"})
     def do_join(spark):
         left = spark.read.parquet(data_path1)
@@ -1022,9 +1021,8 @@ def test_bloom_filter_join_with_merge_all_null_filters(spark_tmp_path):
     with_cpu_session(lambda spark: spark.range(100000).write.parquet(data_path1))
     with_cpu_session(lambda spark: spark.range(100000).withColumn("id2", col("id").cast("string")) \
                      .write.parquet(data_path2))
-    confs = copy_and_update(bloom_filter_confs, bloom_filter_exprs_enabled)
     def do_join(spark):
         left = spark.read.parquet(data_path1)
         right = spark.read.parquet(data_path2)
         return right.filter("cast(id2 as bigint) % 3 = 4").join(left, left.id == right.id, "inner")
-    assert_gpu_and_cpu_are_equal_collect(do_join, confs)
+    assert_gpu_and_cpu_are_equal_collect(do_join, bloom_filter_confs)
