@@ -165,7 +165,8 @@ object MultiFileReaderThreadPool extends Logging {
       val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
 
       if (numThreadsFromConf != numThreads) {
-        logWarning(s"Using $numThreads as the number of threads for the thread pool.")
+        logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
+            s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
       }
       initThreadPool(numThreads)
     }
