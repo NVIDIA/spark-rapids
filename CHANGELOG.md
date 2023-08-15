@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-08-14
+Generated on 2023-08-15
 
 ## Release 23.08
 
@@ -31,6 +31,9 @@ Generated on 2023-08-14
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9034](https://github.com/NVIDIA/spark-rapids/issues/9034)|[BUG] java.lang.ClassCastException: com.nvidia.spark.rapids.RuleNotFoundExprMeta cannot be cast to com.nvidia.spark.rapids.GeneratorExprMeta|
+|[#9032](https://github.com/NVIDIA/spark-rapids/issues/9032)|[BUG] Multiple NDS queries fail with Spark-3.4.1 with bloom filter exception|
+|[#8962](https://github.com/NVIDIA/spark-rapids/issues/8962)|[BUG] Nightly build failed: ExecutionPlanCaptureCallback$.class is not bitwise-identical across shims|
 |[#9021](https://github.com/NVIDIA/spark-rapids/issues/9021)|[BUG] test_map_scalars_supported_key_types failed in dataproc 2.1|
 |[#9020](https://github.com/NVIDIA/spark-rapids/issues/9020)|[BUG] auto-disable snapshot shims test in github action for pre-release branch|
 |[#9010](https://github.com/NVIDIA/spark-rapids/issues/9010)|[BUG] Customer failure 23.08: Cannot compute hash of a table with a LIST of STRUCT columns.|
@@ -85,6 +88,11 @@ Generated on 2023-08-14
 ### PRs
 |||
 |:---|:---|
+|[#9044](https://github.com/NVIDIA/spark-rapids/pull/9044)|[DOC] update release version from v2308.0 to 2308.1 [skip ci]|
+|[#9036](https://github.com/NVIDIA/spark-rapids/pull/9036)|Fix meta class cast exception when generator not supported|
+|[#9042](https://github.com/NVIDIA/spark-rapids/pull/9042)|Bump up project version to 23.08.1-SNAPSHOT|
+|[#9035](https://github.com/NVIDIA/spark-rapids/pull/9035)|Handle null values when merging Bloom filters|
+|[#9029](https://github.com/NVIDIA/spark-rapids/pull/9029)|Update 23.08 changelog to latest [skip ci]|
 |[#9023](https://github.com/NVIDIA/spark-rapids/pull/9023)|Allow WindowLocalExec to run on CPU for a map test.|
 |[#9024](https://github.com/NVIDIA/spark-rapids/pull/9024)|Do not trigger snapshot spark version test in pre-release maven-verify checks [skip ci]|
 |[#8975](https://github.com/NVIDIA/spark-rapids/pull/8975)|Init 23.08 changelog [skip ci]|

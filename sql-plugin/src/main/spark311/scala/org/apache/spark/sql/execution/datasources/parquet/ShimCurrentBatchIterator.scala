@@ -32,13 +32,13 @@ import java.io.IOException
 
 import com.nvidia.spark.CurrentBatchIterator
 import com.nvidia.spark.rapids.ParquetCachedBatch
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.schema.Type
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.ShimVectorizedColumnReader
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
@@ -156,8 +156,8 @@ class ShimCurrentBatchIterator(
 
   override def hasNext: Boolean = rowsReturned < totalRowCount
 
-  TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
+  onTaskCompletion {
     close()
-  })
+  }
 
 }

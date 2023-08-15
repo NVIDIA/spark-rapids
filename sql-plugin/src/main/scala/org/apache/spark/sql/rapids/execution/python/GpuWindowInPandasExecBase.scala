@@ -24,6 +24,7 @@ import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -94,7 +95,7 @@ class GroupingIterator(
   // batch into multiple batches to make sure one batch contains only one group.
   private val groupBatches: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
-  TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
+  onTaskCompletion {
     groupBatches.foreach(_.close())
     groupBatches.clear()
   }
@@ -496,7 +497,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator

@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
@@ -126,7 +127,7 @@ trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
 
       private[this] var arrowReader: StreamedTableReader = _
 
-      context.addTaskCompletionListener[Unit] { _ =>
+      onTaskCompletion(context) {
         if (arrowReader != null) {
           arrowReader.close()
           arrowReader = null

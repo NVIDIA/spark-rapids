@@ -27,8 +27,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, GroupByAggregation, Scalar}
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector, Scalar, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuBloomFilterAggregate.optimalNumOfHashFunctions
 import com.nvidia.spark.rapids.jni.BloomFilter
 
@@ -110,7 +110,22 @@ case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggre
 
 case class GpuBloomFilterMerge() extends CudfAggregate {
   override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
-    BloomFilter.merge(col)
+    val nullCount = col.getNullCount
+    if (nullCount == col.getRowCount) {
+      // degenerate case, all columns are null
+      Scalar.listFromNull(new HostColumnVector.BasicType(false, DType.UINT8))
+    } else if (nullCount > 0) {
+      // BloomFilter.merge does not handle nulls, so filter them out before merging
+      withResource(col.isNotNull) { isNotNull =>
+        withResource(new Table(col)) { table =>
+          withResource(table.filter(isNotNull)) { filtered =>
+            BloomFilter.merge(filtered.getColumn(0))
+          }
+        }
+      }
+    } else {
+      BloomFilter.merge(col)
+    }
   }
 
   override lazy val groupByAggregate: GroupByAggregation =
