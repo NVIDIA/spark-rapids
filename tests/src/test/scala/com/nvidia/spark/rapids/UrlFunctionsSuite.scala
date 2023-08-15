@@ -101,11 +101,12 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
   def otherEdgeCases(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[String](
-      "http://foo.bar/@xx/yy",
-      "http://foo.bar/xx/yy?@zz",
-      "http://foo.bar/xx/yy?query=@key",
-      "http://foo.bar/xx#@zz",
-      "http://foo.bar:@123/xx/yy",
+      "http://shtory-g.ru?email=ggradnigo@prepaidlegal.com",
+      "http://foo.bar/baduser@xx/yy",
+      "http://foo.bar/xx/yy?baduser@zz",
+      "http://foo.bar?query=baduser@key",
+      "http://foo.bar#baduser@zz",
+      "http://foo.bar:666@123/xx/yy",
       "mailto:xx@yy.com",
       "foo.bar",
       "foo.bar/yy?query=key#fragment",       
