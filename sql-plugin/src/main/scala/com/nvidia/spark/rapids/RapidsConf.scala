@@ -337,7 +337,7 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.OffHeapLimit.enabled")
+  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
       .doc("Should the off heap limit be enforced or not.")
       .startupOnly()
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
@@ -345,7 +345,7 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.OffHeapLimit.size")
+  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
           "This includes pinned memory and some overhead memory. If pinned is larger " +
           "than this - overhead pinned will be truncated.")
@@ -355,7 +355,7 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createOptional // The default
 
-  val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.hostPageable.taskOverhead.size")
+  val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.host.taskOverhead.size")
       .doc("The amount of off heap memory reserved per task for overhead activities " +
           "like C++ heap/stack and a few other small things that are hard to control for.")
       .startupOnly()
