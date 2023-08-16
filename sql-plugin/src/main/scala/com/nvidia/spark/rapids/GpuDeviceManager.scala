@@ -384,11 +384,65 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def allocatePinnedMemory(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
+  private def initializeOffHeapLimits(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-    if (!PinnedMemoryPool.isInitialized && conf.pinnedPoolSize > 0) {
-      logInfo(s"Initializing pinned memory pool (${conf.pinnedPoolSize / 1024 / 1024.0} MB)")
-      PinnedMemoryPool.initialize(conf.pinnedPoolSize, gpuId)
+    val pinnedSize = if (conf.offHeapLimitEnabled) {
+      logWarning("OFF HEAP MEMORY LIMITS IS ENABLED. " +
+          "THIS IS EXPERIMENTAL FOR NOW USE WITH CAUTION")
+      val perTaskOverhead = conf.perTaskOverhead
+      val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
+      val confPinnedSize = conf.pinnedPoolSize
+      val confLimit = conf.offHeapLimit
+      // TODO the min limit size of overhead + 1 GiB is arbitrary and we should have some
+      ///  better tests to see what an ideal value really should be.
+      val minMemoryLimit = totalOverhead + (1024 * 1024 * 1024)
+
+      val memoryLimit = if (confLimit.isDefined) {
+        confLimit.get
+      } else if (confPinnedSize > 0) {
+        // TODO 1 GiB above the pinned size probably should change, we are using it to match the
+        //  old behavior for the pool, but that is not great and we want to have hard evidence
+        //  for a better value before just picking something else that is arbitrary
+        val ret = confPinnedSize + (1024 * 1024 * 1024)
+        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set using " +
+            s"${RapidsConf.PINNED_POOL_SIZE} + 1 GiB instead for memory limit " +
+            s"${ret / 1024 / 1024.0} MiB")
+        ret
+      } else {
+        // We don't have pinned or a conf limit set, so go with the min
+        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set and neither is " +
+            s"${RapidsConf.PINNED_POOL_SIZE}. Using the minimum memory size for the limit " +
+            s"which is ${RapidsConf.TASK_OVERHEAD_SIZE} * cores (${GpuDeviceManager.numCores}) " +
+            s"+ 1 GiB => ${minMemoryLimit / 1024 / 1024.0} MiB")
+        minMemoryLimit
+      }
+
+      val finalMemoryLimit = if (memoryLimit < minMemoryLimit) {
+        logWarning(s"The memory limit ${memoryLimit / 1024 / 1024.0} MiB " +
+            s"is smaller than the minimum limit size ${minMemoryLimit / 1024 / 1024.0} MiB " +
+            s"using the minimum instead")
+        minMemoryLimit
+      } else {
+        memoryLimit
+      }
+      // TODO need to configure the limits when we have those APIs available, and log what those
+      //  limits are
+      if (confPinnedSize + totalOverhead <= finalMemoryLimit) {
+        confPinnedSize
+      } else {
+        val ret = finalMemoryLimit - totalOverhead
+        logWarning(s"The configured pinned memory ${confPinnedSize / 1024 / 1024.0} MiB " +
+            s"plus the overhead ${totalOverhead / 1024 / 1024.0} MiB " +
+            s"is larger than the off heap limit ${finalMemoryLimit / 1024 / 1024.0} MiB " +
+            s"dropping pinned memory to ${ret / 1024 / 1024.0} MiB")
+        ret
+      }
+    } else {
+      conf.pinnedPoolSize
+    }
+    if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
+      logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
+      PinnedMemoryPool.initialize(pinnedSize, gpuId)
     }
   }
 
@@ -396,6 +450,7 @@ object GpuDeviceManager extends Logging {
    * Initialize the GPU memory for gpuId according to the settings in rapidsConf.  It is assumed
    * that if gpuId is set then that gpu is already the default device.  If gpuId is not set
    * this will search all available GPUs starting at 0 looking for the appropriate one.
+   *
    * @param gpuId the id of the gpu to use
    * @param rapidsConf the config to use.
    */
@@ -410,7 +465,7 @@ object GpuDeviceManager extends Logging {
         } else if (singletonMemoryInitialized == Uninitialized) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
           initializeRmm(gpu, rapidsConf)
-          allocatePinnedMemory(gpu, rapidsConf)
+          initializeOffHeapLimits(gpu, rapidsConf)
           singletonMemoryInitialized = Initialized
         }
       }
