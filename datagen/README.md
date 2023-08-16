@@ -10,15 +10,14 @@ data between tables for joins. To accomplish this we wrote
 
 To get started with big data generation the first thing you need to do is 
 to include the appropriate jar on the classpath for your version of Apache Spark. 
-Note that this does not run on the GPU, but it does use
-parts of the shim framework that the RAPIDS Accelerator does, so it is currently in 
-the integration tests jar for the RAPIDS Accelerator. The jar is specific to the
-version of Spark you are using and is not pushed to Maven Central. Because of this
-you will have to build it from source yourself.
+Note that this does not run on the GPU, but it does use parts of the shim framework
+that the RAPIDS Accelerator does. The jar is specific to the version of Spark you
+are using and is not pushed to Maven Central. Because of this you will have to
+build it from source yourself.
 
 ```shell
-cd integration_tests
-mvn clean package -Drat.skip -DskipTests -Dbuildver=$SPARK_VERSION
+cd datagen
+mvn clean package -Dbuildver=$SPARK_VERSION
 ```
 
 Where `$SPARK_VERSION` is a compressed version number, like 330 for Spark 3.3.0.
@@ -27,13 +26,13 @@ If you are building with a jdk version that is not 8, you will need to add in th
 corresponding profile flag `-P<jdk11|jdk17>`
 
 After this the jar should be at 
-`target/rapids-4-spark-integration-tests_2.12-$PLUGIN_VERSION-spark$SPARK_VERSION.jar`
-for example a Spark 3.3.0 jar for the 23.08.0 release would be
-`target/rapids-4-spark-integration-tests_2.12-23.08.0-spark330.jar`
+`target/datagen_2.12-$PLUGIN_VERSION-spark$SPARK_VERSION.jar`
+for example a Spark 3.3.0 jar for the 23.10.0 release would be
+`target/datagen_2.12-23.10.0-spark330.jar`
 
 To get a spark shell with this you can run 
 ```shell
-spark-shell --jars target/rapids-4-spark-integration-tests_2.12-23.08.0-spark330.jar
+spark-shell --jars target/datagen_2.12-23.10.0-spark330.jar
 ```
 
 After that you should be good to go.

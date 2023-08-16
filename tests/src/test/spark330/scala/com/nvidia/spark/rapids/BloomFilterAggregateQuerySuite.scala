@@ -27,13 +27,17 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.expressions.{BloomFilterMightContain, Expression, ExpressionInfo}
 import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 
 class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
+  val bloomFilterEnabledConf = new SparkConf()
   val funcId_bloom_filter_agg = new FunctionIdentifier("bloom_filter_agg")
   val funcId_might_contain = new FunctionIdentifier("might_contain")
 
@@ -65,74 +69,145 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
         (1L to 100L).map(_ => None)).toDF("col")
   }
 
+  private def withExposedSqlFuncs[T](spark: SparkSession)(func: SparkSession => T): T = {
+    try {
+      installSqlFuncs(spark)
+      func(spark)
+    } finally {
+      uninstallSqlFuncs(spark)
+    }
+  }
+
+  private def doBloomFilterTest(numEstimated: Long, numBits: Long): DataFrame => DataFrame = {
+    df =>
+      val table = "bloom_filter_test"
+      val sqlString =
+        s"""
+           |SELECT might_contain(
+           |            (SELECT bloom_filter_agg(col,
+           |              cast($numEstimated as long),
+           |              cast($numBits as long))
+           |             FROM $table),
+           |            col) positive_membership_test,
+           |       might_contain(
+           |            (SELECT bloom_filter_agg(col,
+           |              cast($numEstimated as long),
+           |              cast($numBits as long))
+           |             FROM values (-1L), (100001L), (20000L) as t(col)),
+           |            col) negative_membership_test
+           |FROM $table
+          """.stripMargin
+      df.createOrReplaceTempView(table)
+      withExposedSqlFuncs(df.sparkSession) { spark =>
+        spark.sql(sqlString)
+      }
+  }
+
+  private def getPlanValidator(exec: String): (SparkPlan, SparkPlan) => Unit = {
+    def searchPlan(p: SparkPlan): Boolean = {
+      ExecutionPlanCaptureCallback.didFallBack(p, exec) ||
+        p.children.exists(searchPlan) ||
+        p.subqueries.exists(searchPlan)
+    }
+    (_, gpuPlan) => {
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(gpuPlan)
+      assert(searchPlan(executedPlan), s"Could not find $exec in the GPU plan:\n$executedPlan")
+    }
+  }
+
+  // test with GPU bloom build, GPU bloom probe
+  for (numEstimated <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
+    for (numBits <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
+      testSparkResultsAreEqual(
+        s"might_contain GPU build GPU probe estimated=$numEstimated numBits=$numBits",
+        buildData,
+        conf = bloomFilterEnabledConf.clone()
+      )(doBloomFilterTest(numEstimated, numBits))
+    }
+  }
+
+  // test with CPU bloom build, GPU bloom probe
   for (numEstimated <- Seq(4096L, 4194304L, Long.MaxValue,
     SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
-    for (numBits <- Seq(4096L, 4194304L, Long.MaxValue,
+    for (numBits <- Seq(4096L, 4194304L,
       SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
-      ALLOW_NON_GPU_testSparkResultsAreEqual(
-        s"might_contain estimated=$numEstimated numBits=$numBits",
+      ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+        s"might_contain CPU build GPU probe estimated=$numEstimated numBits=$numBits",
         buildData,
-        Seq("ObjectHashAggregateExec", "ShuffleExchangeExec"))(df =>
-        {
-          val table = "bloom_filter_test"
-          val sqlString =
-            s"""
-               |SELECT might_contain(
-               |            (SELECT bloom_filter_agg(col,
-               |              cast($numEstimated as long),
-               |              cast($numBits as long))
-               |             FROM $table),
-               |            col) positive_membership_test,
-               |       might_contain(
-               |            (SELECT bloom_filter_agg(col,
-               |              cast($numEstimated as long),
-               |              cast($numBits as long))
-               |             FROM values (-1L), (100001L), (20000L) as t(col)),
-               |            col) negative_membership_test
-               |FROM $table
-              """.stripMargin
-          df.createOrReplaceTempView(table)
-          try {
-            installSqlFuncs(df.sparkSession)
-            df.sparkSession.sql(sqlString)
-          } finally {
-            uninstallSqlFuncs(df.sparkSession)
-          }
-        })
+        Seq("ObjectHashAggregateExec", "ShuffleExchangeExec"),
+        conf = bloomFilterEnabledConf.clone()
+          .set("spark.rapids.sql.expression.BloomFilterAggregate", "false")
+      )(doBloomFilterTest(numEstimated, numBits))(getPlanValidator("ObjectHashAggregateExec"))
+    }
+  }
+
+  // test with GPU bloom build, CPU bloom probe
+  for (numEstimated <- Seq(4096L, 4194304L, Long.MaxValue,
+    SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
+    for (numBits <- Seq(4096L, 4194304L,
+      SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
+      ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+        s"might_contain GPU build CPU probe estimated=$numEstimated numBits=$numBits",
+        buildData,
+        Seq("LocalTableScanExec", "ProjectExec", "ShuffleExchangeExec"),
+        conf = bloomFilterEnabledConf.clone()
+          .set("spark.rapids.sql.expression.BloomFilterMightContain", "false")
+      )(doBloomFilterTest(numEstimated, numBits))(getPlanValidator("ProjectExec"))
+    }
+  }
+
+  // test with partial/final-only GPU bloom build, CPU bloom probe
+  for (mode <- Seq("partial", "final")) {
+    for (numEstimated <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS.defaultValue.get)) {
+      for (numBits <- Seq(SQLConf.RUNTIME_BLOOM_FILTER_MAX_NUM_BITS.defaultValue.get)) {
+        ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
+          s"might_contain GPU $mode build CPU probe estimated=$numEstimated numBits=$numBits",
+          buildData,
+          Seq("ObjectHashAggregateExec", "ProjectExec", "ShuffleExchangeExec"),
+          conf = bloomFilterEnabledConf.clone()
+            .set("spark.rapids.sql.expression.BloomFilterMightContain", "false")
+            .set("spark.rapids.sql.hashAgg.replaceMode", mode)
+        )(doBloomFilterTest(numEstimated, numBits))(getPlanValidator("ObjectHashAggregateExec"))
+      }
     }
   }
 
   testSparkResultsAreEqual(
     "might_contain with literal bloom filter buffer",
-    spark => spark.range(1, 1).asInstanceOf[DataFrame]) {
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    conf=bloomFilterEnabledConf.clone()) {
     df =>
-      try {
-        installSqlFuncs(df.sparkSession)
-        df.sparkSession.sql(
+      withExposedSqlFuncs(df.sparkSession) { spark =>
+        spark.sql(
           """SELECT might_contain(
             |X'00000001000000050000000343A2EC6EA8C117E2D3CDB767296B144FC5BFBCED9737F267',
             |cast(201 as long))""".stripMargin)
-      } finally {
-        uninstallSqlFuncs(df.sparkSession)
       }
   }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqual(
+  testSparkResultsAreEqual(
     "might_contain with all NULL inputs",
     spark => spark.range(1, 1).asInstanceOf[DataFrame],
-    Seq("ObjectHashAggregateExec", "ShuffleExchangeExec")) {
+    conf=bloomFilterEnabledConf.clone()) {
     df =>
-      try {
-        installSqlFuncs(df.sparkSession)
-        df.sparkSession.sql(
+      withExposedSqlFuncs(df.sparkSession) { spark =>
+        spark.sql(
           """
             |SELECT might_contain(null, null) both_null,
             |       might_contain(null, 1L) null_bf,
             |       might_contain((SELECT bloom_filter_agg(cast(id as long)) from range(1, 10000)),
             |            null) null_value
           """.stripMargin)
-      } finally {
-        uninstallSqlFuncs(df.sparkSession)
+      }
+  }
+
+  testSparkResultsAreEqual(
+    "bloom_filter_agg with empty input",
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    conf=bloomFilterEnabledConf.clone()) {
+    df =>
+      withExposedSqlFuncs(df.sparkSession) { spark =>
+        spark.sql("""SELECT bloom_filter_agg(cast(id as long)) from range(1, 1)""")
       }
   }
 }

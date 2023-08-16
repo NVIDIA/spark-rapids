@@ -337,13 +337,6 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
-    .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
-      "Use 0 to disable the pool.")
-    .startupOnly()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.GiB.toBytes(1))
-
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -1375,19 +1368,40 @@ object RapidsConf {
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val PARQUET_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.parquet.debug.dumpAlways")
+    .doc(s"This only has an effect if $PARQUET_DEBUG_DUMP_PREFIX is set. If true then " +
+      "Parquet data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
     .doc("A path prefix where ORC split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val ORC_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.orc.debug.dumpAlways")
+    .doc(s"This only has an effect if $ORC_DEBUG_DUMP_PREFIX is set. If true then " +
+      "ORC data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val AVRO_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.avro.debug.dumpPrefix")
     .doc("A path prefix where AVRO split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val AVRO_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.avro.debug.dumpAlways")
+    .doc(s"This only has an effect if $AVRO_DEBUG_DUMP_PREFIX is set. If true then " +
+      "Avro data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
@@ -1996,7 +2010,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2173,8 +2187,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
-  lazy val pageablePoolSize: Long = get(PAGEABLE_POOL_SIZE)
-
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
@@ -2259,11 +2271,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
 
-  lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
+  lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 
-  lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
+  lazy val parquetDebugDumpAlways: Boolean = get(PARQUET_DEBUG_DUMP_ALWAYS)
 
-  lazy val avroDebugDumpPrefix: String = get(AVRO_DEBUG_DUMP_PREFIX)
+  lazy val orcDebugDumpPrefix: Option[String] = get(ORC_DEBUG_DUMP_PREFIX)
+
+  lazy val orcDebugDumpAlways: Boolean = get(ORC_DEBUG_DUMP_ALWAYS)
+
+  lazy val avroDebugDumpPrefix: Option[String] = get(AVRO_DEBUG_DUMP_PREFIX)
+
+  lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 

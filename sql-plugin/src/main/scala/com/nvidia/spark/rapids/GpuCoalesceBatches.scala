@@ -22,6 +22,7 @@ import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -300,10 +301,12 @@ abstract class AbstractGpuCoalesceIterator(
   /** Optional row limit */
   var batchRowLimit: Int = 0
 
-  // note that TaskContext.get() can return null during unit testing so we wrap it in an
-  // option here
-  Option(TaskContext.get())
-      .foreach(_.addTaskCompletionListener[Unit](_ => clearOnDeck()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      clearOnDeck()
+    }
+  }
 
   private def getHasOnDeck: Boolean = {
     while (!hasOnDeck && iter.hasNext) {

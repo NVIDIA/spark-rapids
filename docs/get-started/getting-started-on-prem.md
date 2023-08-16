@@ -8,7 +8,9 @@ parent: Getting-Started
 # Getting Started with RAPIDS Accelerator with on premise cluster or local mode
 ## Spark Deployment Methods
 The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
-the RAPIDS Accelerator for Apache Spark. The primary methods to deploy Spark are:
+the RAPIDS Accelerator for Apache Spark. Please see [Software Requirements](../download.md#software-requirements) 
+section for complete list of Spark versions supported by RAPIDS plugin. The primary methods to 
+deploy Spark are:
 * [Local mode](#local-mode) - this is for dev/testing only, not for production
 * [Standalone Mode](#spark-standalone-cluster)
 * [On a YARN cluster](#running-on-yarn)
@@ -56,13 +58,13 @@ CUDA and will not run on other versions. The jars use a classifier to keep them 
 - CUDA 11.x => classifier cuda11
 
 For example, here is a sample version of the jar with CUDA 11.x support:
-- rapids-4-spark_2.12-23.08.0-SNAPSHOT-cuda11.jar
+- rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar
 
 For simplicity export the location to this jar. This example assumes the sample jar above has
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-23.08.0-SNAPSHOT-cuda11.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar
 ```
 
 ## Install the GPU Discovery Script

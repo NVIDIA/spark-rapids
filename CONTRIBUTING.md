@@ -113,15 +113,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -163,7 +163,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -228,12 +228,12 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|db     |Databricks  |312db  |Databricks Spark based on Spark 3.1.2         |
+|db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
 |cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
 
 The version-specific directory names have one of the following forms / use cases:
 
-* `src/main/spark${buildver}`, example: `src/main/spark330db`
+* `src/main/spark${buildver}`, example: `src/main/spark332db`
 * `src/test/spark${buildver}`, example: `src/test/spark340`
 
 with a special shim descriptor as a Scala/Java comment. See [shimplify.md][1]

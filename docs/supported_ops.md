@@ -10046,7 +10046,7 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>Arrays of structs are not supported;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
 <td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
@@ -16684,9 +16684,9 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Arrays containing floats/doubles will not be supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Structs containing float/double will not be supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -16727,9 +16727,9 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Arrays containing floats/doubles will not be supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Structs containing float/double will not be supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -16770,9 +16770,9 @@ are limited.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Arrays containing floats/doubles will not be supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Structs containing float/double will not be supported.;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -19432,7 +19432,7 @@ as `a` don't show up in the table. They are controlled by the rules for
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>Arrays of structs are not supported;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>
 <td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, MAP, UDT</em></td>
 <td><b>NS</b></td>

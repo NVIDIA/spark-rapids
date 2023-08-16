@@ -29,6 +29,7 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.TaskContext
@@ -44,11 +45,18 @@ case class GpuBloomFilterMightContain(
   extends ShimBinaryExpression with GpuExpression with AutoCloseable {
 
   @transient private lazy val bloomFilter: GpuBloomFilter = {
-    Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-    withResourceIfAllowed(bloomFilterExpression.columnarEvalAny(new ColumnarBatch(Array.empty))) {
+    val ret = withResourceIfAllowed(
+      bloomFilterExpression.columnarEvalAny(new ColumnarBatch(Array.empty))) {
       case s: GpuScalar => GpuBloomFilter(s)
       case x => throw new IllegalStateException(s"Expected GPU scalar, found $x")
     }
+    // Don't install the callback if in a unit test
+    Option(TaskContext.get()).foreach { tc =>
+      onTaskCompletion(tc) {
+        close()
+      }
+    }
+    ret
   }
 
   override def nullable: Boolean = true
@@ -95,6 +103,9 @@ case class GpuBloomFilterMightContain(
       }
     }
   }
+
+  // This is disabled until https://github.com/NVIDIA/spark-rapids/issues/8945 can be fixed
+  override def disableTieredProjectCombine: Boolean = true
 
   override def close(): Unit = {
     if (bloomFilter != null) {

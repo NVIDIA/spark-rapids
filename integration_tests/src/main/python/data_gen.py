@@ -620,12 +620,13 @@ class TimestampGen(DataGen):
 
 class ArrayGen(DataGen):
     """Generate Arrays of data."""
-    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False):
+    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False, convert_to_tuple=False):
         super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
         self._child_gen = child_gen
         self.all_null = all_null
+        self.convert_to_tuple = convert_to_tuple
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
@@ -639,7 +640,12 @@ class ArrayGen(DataGen):
             if self.all_null:
                 return None
             length = rand.randint(self._min_length, self._max_length)
-            return [self._child_gen.gen() for _ in range(0, length)]
+            result = [self._child_gen.gen() for _ in range(0, length)]
+            # This is needed for map(array, _) tests because python cannot create
+            # a dict(list, _), but it can create a dict(tuple, _)
+            if self.convert_to_tuple:
+                result = tuple(result)
+            return result
         self._start(rand, gen_array)
 
     def contains_ts(self):
@@ -1013,9 +1019,6 @@ all_basic_gens = all_basic_gens_no_null + [null_gen]
 all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
-all_basic_gens_no_floats = [byte_gen, short_gen, int_gen, long_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
-
 # Many Spark versions have issues sorting large decimals,
 # see https://issues.apache.org/jira/browse/SPARK-40089.
 orderable_decimal_gen_128bit = decimal_gen_128bit
@@ -1048,8 +1051,6 @@ single_level_array_gens_no_null = [ArrayGen(sub_gen) for sub_gen in all_basic_ge
 
 single_level_array_gens_no_nan = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_nan + decimal_gens]
 
-single_level_array_gens_no_floats = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_floats + decimal_gens]
-
 single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
 
 map_string_string_gen = [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
@@ -1068,13 +1069,9 @@ all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 
 all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_nan)])
 
-all_basic_struct_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_floats)])
-
 struct_array_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens)])
 
 struct_array_gen_no_nans = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
-
-struct_array_gen_no_floats = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_floats)])
 
 # Some struct gens, but not all because of nesting
 nonempty_struct_gens_sample = [all_basic_struct_gen,

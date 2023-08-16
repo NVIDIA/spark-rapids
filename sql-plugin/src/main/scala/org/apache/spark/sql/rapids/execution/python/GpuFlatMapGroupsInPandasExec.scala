@@ -29,6 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
 import org.apache.spark.sql.rapids.execution.python.shims._
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -115,7 +116,7 @@ case class GpuFlatMapGroupsInPandasExec(
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.
     val pythonOutputSchema = StructType(
-        StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
+        StructField("out_struct", DataTypeUtilsShim.fromAttributes(localOutput)) :: Nil)
 
     // Resolve the argument offsets and related attributes.
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
@@ -124,7 +125,7 @@ case class GpuFlatMapGroupsInPandasExec(
     val runnerShims = GpuArrowPythonRunnerShims(conf,
                         chainedFunc,
                         Array(argOffsets),
-                        StructType.fromAttributes(dedupAttrs),
+                        DataTypeUtilsShim.fromAttributes(dedupAttrs),
                         pythonOutputSchema)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
