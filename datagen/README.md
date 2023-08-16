@@ -458,30 +458,32 @@ which will install a `NullProbabilityGenerationFunction` or by calling the
 ### LengthGeneratorFunction
 
 For variable length types, like strings and arrays, a pluggable length generator
-function is used to produce those lengths. Currently only fixed lengths are
-supported out of the box. This is because the naive way to generate a length
+function is used to produce those lengths. Fixed length generator is preferred 
+when avoiding data skew is one of data target. This is because the naive way to generate a length
 where all possible lengths have an equal probability produces skew in the
 resulting values. A length of 0 has one and only one possible value in it.
 So if we restrict the length to 0 or 1, then half of all values generated will be
-zero length strings, which is not ideal.
+zero length strings, which is not ideal. 
 
 If you want to set the length of a String or Array you can navigate to the 
-column or sub-column you want and call `setLength` on it. This will install
-and updated `FixedLengthGeneratorFunction`.
+column or sub-column you want and call `setLength(fixedLen)` on it. This will install
+and updated `FixedLengthGeneratorFunction`. If you want to the length to 
+be able to vary, you can call `setLength(minLen, maxLen)`.
 
 ```scala
-val dataTable = DBGen().addTable("data", "a string, b array<string>", 3)
+val dataTable = DBGen().addTable("data", "a string, b array<string>, c string", 3)
 dataTable("a").setLength(1)
 dataTable("b").setLength(2)
 dataTable("b")("data").setLength(3)
+dataTable("c").setLength(1,5)
 dataTable.toDF(spark).show(false)
-+---+----------+
-|a  |b         |
-+---+----------+
-|t  |[X]6, /<E]|
-|y  |[[d", uu=]|
-|^  |[uH[, wjX]|
-+---+----------+
++---+----------+----+
+|a  |b         |c   |
++---+----------+----+
+|t  |[X]6, /<E]|_,sA|
+|y  |[[d", uu=]|H:  |
+|^  |[uH[, wjX]|ooa>|
++---+----------+----+
 ```
 
 You can also set a `LengthGeneratorFunction` instance for any column or sub-column 
