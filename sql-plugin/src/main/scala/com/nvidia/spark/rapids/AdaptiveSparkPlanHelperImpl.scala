@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
+import org.apache.spark.sql.rapids.AdaptiveSparkPlanHelperShim
 
-class AdaptiveSparkPlanHelperImpl extends AdaptiveSparkPlanHelper
+class AdaptiveSparkPlanHelperImpl extends AdaptiveSparkPlanHelperShim with AdaptiveSparkPlanHelper

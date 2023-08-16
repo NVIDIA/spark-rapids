@@ -34,7 +34,7 @@ import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
-import org.apache.spark.sql.rapids.AdaptiveSparkPlanHelperImpl
+import org.apache.spark.sql.rapids.AdaptiveSparkPlanHelperShim
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.util.MutableURLClassLoader
 
@@ -416,8 +416,8 @@ object ShimLoader extends Logging {
     ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }
 
-  def newAdaptiveSparkPlanHelperShim(): AdaptiveSparkPlanHelperImpl =
-    ShimReflectionUtils.newInstanceOf[AdaptiveSparkPlanHelperImpl](
-      "org.apache.spark.sql.rapids.AdaptiveSparkPlanHelperImpl"
+  def newAdaptiveSparkPlanHelperShim(): AdaptiveSparkPlanHelperShim =
+    ShimReflectionUtils.newInstanceOf[AdaptiveSparkPlanHelperShim](
+      "com.nvidia.spark.rapids.AdaptiveSparkPlanHelperImpl"
     )
 }

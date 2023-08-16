@@ -249,3 +249,7 @@ class ExecutionPlanCaptureCallback extends QueryExecutionListener {
   override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit =
     captureIfNeeded(qe)
 }
+
+trait AdaptiveSparkPlanHelperShim {
+  def collect[B](p: SparkPlan)(pf: PartialFunction[SparkPlan, B]): Seq[B]
+}
