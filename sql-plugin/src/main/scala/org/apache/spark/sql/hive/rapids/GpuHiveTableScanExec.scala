@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "350"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.hive.rapids.shims
+package org.apache.spark.sql.hive.rapids
 
 import java.net.URI
 import java.util.concurrent.TimeUnit.NANOSECONDS
@@ -26,17 +23,16 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
+import ai.rapids.cudf._
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
-import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -48,9 +44,10 @@ import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSeq, AttributeSet, BindReferences, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.connector.read.PartitionReader
-import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, PartitionedFileUtil, SQLExecution}
+import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.execution.rapids.shims.FilePartitionShims
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{BooleanType, DataType, DecimalType, StructType}
@@ -263,27 +260,8 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
     val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
 
-    def canBeSplit(filePath: Path, hadoopConf: Configuration): Boolean = {
-      // Checks if file at path `filePath` can be split.
-      // Uncompressed Hive Text files may be split. GZIP compressed files are not.
-      // Note: This method works on a Path, and cannot take a `FileStatus`.
-      //       partition.files is an Array[FileStatus] on vanilla Apache Spark,
-      //       but an Array[SerializableFileStatus] on Databricks.
-      val codec = new CompressionCodecFactory(hadoopConf).getCodec(filePath)
-      codec == null || codec.isInstanceOf[SplittableCompressionCodec]
-    }
-
-    val splitFiles = selectedPartitions.flatMap { partition =>
-      partition.files.flatMap { f =>
-        PartitionedFileUtil.splitFiles(
-          sparkSession,
-          f,
-          isSplitable = canBeSplit(f.getPath, hadoopConf),
-          maxSplitBytes,
-          partition.values
-        )
-      }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
-    }
+    val splitFiles = FilePartitionShims.splitFiles(sparkSession, hadoopConf,
+      selectedPartitions, maxSplitBytes)
 
     val filePartitions = FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
 
