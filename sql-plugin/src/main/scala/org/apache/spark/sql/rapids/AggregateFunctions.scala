@@ -21,6 +21,7 @@ import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, Group
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.SumUnboundedToUnboundedFixer
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -1136,6 +1137,7 @@ abstract class GpuSum(
     extends GpuAggregateFunction
         with ImplicitCastInputTypes
         with GpuBatchedRunningWindowWithFixer
+        with GpuUnboundToUnboundWindowWithFixer
         with GpuAggregateWindowFunction
         with GpuRunningWindowFunction
         with Serializable {
@@ -1204,6 +1206,10 @@ abstract class GpuSum(
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
     cols.head.incRefCount()
+  }
+
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer = {
+    new SumUnboundedToUnboundedFixer(resultType, failOnErrorOverride)
   }
 }
 
