@@ -118,16 +118,15 @@ case class GpuParseUrl(children: Seq[Expression],
     new RegexProgram(regex)
   }
 
-  // private def reValid(url: ColumnVector): ColumnVector = {
-  //   // Simply check if urls contain spaces for now, most validations will be done when extracting.
-  //   withResource(Scalar.fromString(" ")) { blank =>
-  //     withResource(url.stringContains(blank)) { isMatch =>
-  //       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-  //         isMatch.ifElse(nullScalar, url)
-  //       }
-  //     }
-  //   }
-  // }
+  private def reValid(url: ColumnVector): ColumnVector = {
+    val regex = """([^\s]*\s|([^%[]*|[^%[]*][^%]*)%([^0-9a-fA-F]|[0-9a-fA-F][^0-9a-fA-F]|$))"""
+    val prog = new RegexProgram(regex)
+    withResource(url.matchesRe(prog)) { isMatch =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+        isMatch.ifElse(nullScalar, url)
+      }
+    }
+  }
 
   private def reMatch(url: ColumnVector, partToExtract: String): ColumnVector = {
     val regex = partToExtract match {
@@ -190,6 +189,16 @@ case class GpuParseUrl(children: Seq[Expression],
     }
   }
 
+  private def unsetInvalidProtocol(cv: ColumnVector): ColumnVector = {
+    val regex = """^[a-zA-Z][\w+\-.]*$"""
+    val prog = new RegexProgram(regex)
+    withResource(cv.matchesRe(prog)) { isMatch =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+        isMatch.ifElse(cv, nullScalar)
+      }
+    }
+  }
+
   private def unsetInvalidIpv6Host(cv: ColumnVector, simpleMatched: ColumnVector): ColumnVector = {
     val regex = """^\[(""" + ipv6Regex1 + "|" + ipv6Regex2 + "|" + ipv6Regex3 + "|" + ipv6Regex4 + "|" + 
         ipv6Regex5 + "|" + ipv6Regex6 + "|" + ipv6Regex7 + "|" + ipv6Regex8 + "|" + ipv6Regex9 + "|" +
@@ -217,8 +226,10 @@ case class GpuParseUrl(children: Seq[Expression],
 
   def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString
-    // val valid = reValid(url.getBase)
-    val matched = reMatch(url.getBase, part)
+    val valid = reValid(url.getBase)
+    val matched = withResource(valid) { _ =>
+      reMatch(valid, part)
+    }
     if (part == HOST) {
       val valided = withResource(matched) { _ =>
         unsetInvalidHost(matched)
@@ -243,6 +254,13 @@ case class GpuParseUrl(children: Seq[Expression],
         withResource(matched) { _ =>
           uriPathEmptyToNulls(matched, isUri)
         }
+      }
+    } else if (part == PROTOCOL) {
+      val valided = withResource(matched) { _ =>
+        unsetInvalidProtocol(matched)
+      }
+      withResource(valided) { _ =>
+        emptyToNulls(valided)
       }
     } else {
       withResource(matched) { _ =>

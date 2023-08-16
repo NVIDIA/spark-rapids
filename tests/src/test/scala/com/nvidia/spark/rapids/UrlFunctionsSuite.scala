@@ -153,7 +153,21 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     import session.sqlContext.implicits._
     // scalastyle:off line.size.limit
     Seq[String](
-      """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=%user_id""",
+      "http://abc.com/a%xx%ueue",
+      "áì&ÙêìÏÕ",
+      "foo.bar",
+      // "",
+      "½4+",
+      "=Â-",
+      "uéò×õA",
+      "wc6ËWdþ¨í'",
+      ")-",
+      "()",
+      "foo",
+      "123.foo.bar",
+      "123.foo.bar:123",
+      "foo.bar:123",
+      // """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=%user_id""",
       """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=user_id""",
       """http://www.musimagen.com/lista_socios.php?letra=\303%91""",
       """http://www.fjpengfei.com/picshow.asp?id=31&mnid=5074&classname=\320\373\264\253\273\255\262\341&banner=2""",
