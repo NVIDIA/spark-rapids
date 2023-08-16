@@ -31,6 +31,7 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
@@ -40,7 +41,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
+import org.apache.spark.sql.execution.exchange.ShuffleOrigin
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
 
 case class GpuShuffleExchangeExec(
@@ -49,7 +50,7 @@ case class GpuShuffleExchangeExec(
     shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
     extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
-        with ShuffleExchangeLike {
+    with ShuffleExchangeLikeShim {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
 
