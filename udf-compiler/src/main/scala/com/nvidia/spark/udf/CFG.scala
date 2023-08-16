@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.udf
 
-import CatalystExpressionBuilder.simplify
-import javassist.bytecode.{CodeIterator, ConstPool, InstructionPrinter, Opcode}
 import scala.annotation.tailrec
 import scala.collection.immutable.{HashMap, SortedMap, SortedSet}
+
+import CatalystExpressionBuilder.simplify
+import javassist.bytecode.{CodeIterator, ConstPool, InstructionPrinter, Opcode}
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
