@@ -98,6 +98,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
     // This column "Should overlap with a_facts.primary_a about 99% of the time"
     bData("b_foreign_a").setSeedRange(1, Math.round(1 / overlapRatio * aNumRows))
     (1 to 3).map(i => bData(s"b_key3_$i").setSeedRange(1, Math.round(bNumRows * 0.99)))
+    bData("b_key3_2").setValueRange(-719162, 2932896)
     (1 to 10).map(i => bData(s"b_data_small_value_range_$i").setSeedRange(1, 10000))
     bData.toDF(spark)
   }
@@ -144,14 +145,15 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
     - 10 data columns
    */
   private def genEData(): DataFrame = {
-    val schema = "b_key3_1 string," +
-      "b_key3_2 date," +
-      "b_key3_3 long," +
+    val schema = "e_key3_1 string," +
+      "e_key3_2 date," +
+      "e_key3_3 long," +
       (1 to 10).map(i => s"e_data_$i ${randomColumnType()}").mkString(",")
     val overlapRatio = 0.9
     val eData = dbgen.addTable("e_data", schema, eNumRows)
     val overlapBias = Math.round(bNumRows * (1 - overlapRatio))
-    (1 to 3).map(i => eData(s"b_key3_$i").setSeedRange(1 + overlapBias, Math.round(0.99 * eNumRows) + overlapBias))
+    (1 to 3).map(i => eData(s"e_key3_$i").setSeedRange(1 + overlapBias, Math.round(0.99 * eNumRows) + overlapBias))
+    eData("e_key3_2").setValueRange(-719162, 2932896)
     eData.toDF(spark)
 
   }
@@ -203,6 +205,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
         (expWeight, ExponentialDistribution(50, 1.0)),
         (flatWeight, FlatDistribution()))))
         .setSeedRange(1, 10000))
+    gData("g_key3_2").setValueRange(-719162, 2932896)
     gData("g_data_enum_1").setSeedRange(1,5)
     gData("g_data_row_num_1").setSeedRange(1, gNumRows)
     gData.toDF(spark)

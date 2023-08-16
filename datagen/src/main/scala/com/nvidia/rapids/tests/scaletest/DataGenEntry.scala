@@ -6,13 +6,12 @@ import scopt.OptionParser
 object DataGenEntry{
 
   // case class represents all input commandline arguments
-  private case class Config(
-                             scaleFactor: Int = 1,
-                             complexity: Int = 1,
-                             tables: Array[String] = Array(),
-                             outputDir: String = "",
-                             format: String = "parquet",
-                             version: String = "")
+  private case class Config(scaleFactor: Int = 1,
+    complexity: Int = 1,
+    tables: Array[String] = Array(),
+    outputDir: String = "",
+    format: String = "parquet",
+    version: String = "")
 
   private def runDataGen(config: Config): Unit ={
     // Init SparkSession
@@ -22,20 +21,31 @@ object DataGenEntry{
 
     val tableGenerator = new TableGenerator(config.scaleFactor, config.complexity, spark)
     val tableMap = tableGenerator.genTables(config.tables)
-    val baseOutputPath = s"${config.outputDir}/SCALE_${config.scaleFactor}_${config.complexity}_${config.format}_${config.version}"
+    val baseOutputPath = s"${config.outputDir}/" +
+      s"SCALE_" +
+      s"${config.scaleFactor}_" +
+      s"${config.complexity}_" +
+      s"${config.format}_" +
+      s"${config.version}"
     // 512 Mb block size requirement
     val setBlockSizeTables = Seq("b_data", "g_data")
 
     for ((tableName, df) <- tableMap) {
       if (setBlockSizeTables.contains(tableName)) {
         config.format match {
-          case "parquet" => df.write.option("parquet.block.size", 512*1024*1024).parquet(s"$baseOutputPath/$tableName")
-          case "orc" => df.write.option("orc.block.size", 512*1024*1024).orc(s"$baseOutputPath/$tableName")
+          case "parquet" => df.write
+            .option("parquet.block.size", 512*1024*1024)
+            .parquet(s"$baseOutputPath/$tableName")
+          case "orc" => df.write
+            .option("orc.block.size", 512*1024*1024)
+            .orc(s"$baseOutputPath/$tableName")
         }
       } else {
         config.format match {
-          case "parquet" => df.write.parquet(s"$baseOutputPath/$tableName")
-          case "orc" => df.write.orc(s"$baseOutputPath/$tableName")
+          case "parquet" => df.write
+            .parquet(s"$baseOutputPath/$tableName")
+          case "orc" => df.write
+            .orc(s"$baseOutputPath/$tableName")
         }
       }
     }
