@@ -29,6 +29,13 @@ import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources._
 
 object FilePartitionShims {
+  def getPartitions(selectedPartitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
+    selectedPartitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, p.values)
+      }
+    }
+  }
 
   def splitFiles(sparkSession: SparkSession,
       hadoopConf: Configuration,
@@ -58,6 +65,25 @@ object FilePartitionShims {
     }
   }
 
+  // TODO come up with better name for this
+  def splitFiles2(selectedPartitions: Array[PartitionDirectory],
+      relation: HadoopFsRelation,
+      maxSplitBytes: Long): Array[PartitionedFile] = {
 
-
+    selectedPartitions.flatMap { partition =>
+      partition.files.flatMap { file =>
+        // getPath() is very expensive so we only want to call it once in this block:
+        val filePath = file.getPath
+        val isSplitable = relation.fileFormat.isSplitable(
+          relation.sparkSession, relation.options, filePath)
+        PartitionedFileUtil.splitFiles(
+          sparkSession = relation.sparkSession,
+          file = file,
+          isSplitable = isSplitable,
+          maxSplitBytes = maxSplitBytes,
+          partitionValues = partition.values
+        )
+      }
+    }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+  }
 }
