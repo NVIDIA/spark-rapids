@@ -337,7 +337,7 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.hostOffHeapLimit.enabled")
+  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.OffHeapLimit.enabled")
       .doc("Should the off heap limit be enforced or not.")
       .startupOnly()
       // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
@@ -345,7 +345,7 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.hostOffHeapLimit.size")
+  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.OffHeapLimit.size")
       .doc("The maximum amount of off heap memory that the plugin will use. " +
           "This includes pinned memory and some overhead memory. If pinned is larger " +
           "than this - overhead pinned will be truncated.")
