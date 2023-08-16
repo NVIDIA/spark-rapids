@@ -153,6 +153,7 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     import session.sqlContext.implicits._
     // scalastyle:off line.size.limit
     Seq[String](
+      "http://fb.com.accounts.login.userid.474878.fbsacc.com/frd/fbn/?next=http%3A%2F%2Fwww.fb.com%2videos%2F%3A%4A%4ID%1A",
       "http://abc.com/a%xx%ueue",
       "áì&ÙêìÏÕ",
       "foo.bar",

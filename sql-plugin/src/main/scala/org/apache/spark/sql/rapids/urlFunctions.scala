@@ -119,7 +119,7 @@ case class GpuParseUrl(children: Seq[Expression],
   }
 
   private def reValid(url: ColumnVector): ColumnVector = {
-    val regex = """([^\s]*\s|([^%[]*|[^%[]*][^%]*)%([^0-9a-fA-F]|[0-9a-fA-F][^0-9a-fA-F]|$))"""
+    val regex = """([^\s]*\s|([^[]*|[^[]*\[.*].*)%([^0-9a-fA-F]|[0-9a-fA-F][^0-9a-fA-F]|$))"""
     val prog = new RegexProgram(regex)
     withResource(url.matchesRe(prog)) { isMatch =>
       withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
