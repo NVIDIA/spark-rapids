@@ -151,32 +151,15 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
 
   def otherEdgeCases(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    // scalastyle:off line.size.limit
     Seq[String](
-      "http://fb.com.accounts.login.userid.474878.fbsacc.com/frd/fbn/?next=http%3A%2F%2Fwww.fb.com%2videos%2F%3A%4A%4ID%1A",
+      "http://userinfo@spark.apache.org/path/%3C%f9?query=1#Ref",
+      "http://userinfo@spark.apache.org/path?query=%10%e3#Ref",
+      "http://userinfo@spark.apache.org/path?query=%10%xx#Ref",
+      "http://userinfo@spark.apache.org/path?query=1#R%20ef",
       "http://abc.com/a%xx%ueue",
-      "áì&ÙêìÏÕ",
-      "foo.bar",
-      // "",
-      "½4+",
-      "=Â-",
-      "uéò×õA",
-      "wc6ËWdþ¨í'",
-      ")-",
-      "()",
-      "foo",
       "123.foo.bar",
       "123.foo.bar:123",
       "foo.bar:123",
-      // """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=%user_id""",
-      """http://ecnavi.jp/redirect/?url=http://ad-4091.affit.jp/c.ts/35n.2/-/1g.html?mu=user_id""",
-      """http://www.musimagen.com/lista_socios.php?letra=\303%91""",
-      """http://www.fjpengfei.com/picshow.asp?id=31&mnid=5074&classname=\320\373\264\253\273\255\262\341&banner=2""",
-      """http://www.musimagen.com/lista_socios.php?letra=%91xx""",
-      """http://www.musimagen.com/lista_socios.php?letra=%20xx""",
-      """http://www.fjpengfei.com/picshow.asp?id=31&mnid=5074&classname=xxy&banner=2""",
-      """http://ecnavi.jp/redirect/?url=**""",
-      "http://shtory-g.ru?email=ggradnigo@prepaidlegal.com",
       "http://foo.bar/baduser@xx/yy",
       "http://foo.bar/xx/yy?baduser@zz",
       "http://foo.bar?query=baduser@key",
@@ -193,7 +176,6 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "foo.bar:123?query=key"
     ).toDF("urls")
   }
-  // scalastyle:on
 
   def urlWithQueryKey(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._

@@ -30,41 +30,9 @@ url_pattern_with_key = r'((http|https|ftp|file)://)(([a-z]{1,3}\.){0,3}([a-z]{1,
 
 url_gen = StringGen(url_pattern)
 
-url_gen_special = StringGen(url_pattern).with_special_case('http://[0:0:0:0:0:FFFF:129.144.52.38%33').with_special_case('http://userinfo@spark.apache.org/path?query=1#Ref')
-
-set_value_gen = SetValuesGen(StringType(), ['http://[0:0:0:0:0:FFFF:129.144.52.38%33]', 'http://userinfo@spark.apache.org/path?query=1#Ref', 'http://例子.测试'])
-
-def test_parse_url_time_1():
-    run_with_cpu_and_gpu(
-        lambda spark : unary_op_df(spark, url_gen, length=200000).selectExpr(
-                "a",
-                "parse_url(a, 'HOST', '')",
-                "parse_url(a, 'PATH', '')",
-                "parse_url(a, 'REF', '')",
-                "parse_url(a, 'PROTOCOL', '')",
-                "parse_url(a, 'FILE', '')",
-                "parse_url(a, 'AUTHORITY', '')",
-                "parse_url(a, 'USERINFO', '')"
-                ), 'COLLECT')
-    assert(False)
-
-def test_parse_url_time_2():
-    run_with_cpu_and_gpu(
-        lambda spark : unary_op_df(spark, url_gen_special, length=200000).selectExpr(
-                "a",
-                "parse_url(a, 'HOST', '')",
-                "parse_url(a, 'PATH', '')",
-                "parse_url(a, 'REF', '')",
-                "parse_url(a, 'PROTOCOL', '')",
-                "parse_url(a, 'FILE', '')",
-                "parse_url(a, 'AUTHORITY', '')",
-                "parse_url(a, 'USERINFO', '')"
-                ), 'COLLECT')
-    assert(False)
-
 def test_parse_url_host():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen, length=10).selectExpr(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
                 "a",
                 "parse_url(a, 'HOST')"
                 ))

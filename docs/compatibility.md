@@ -469,6 +469,9 @@ These are the known cases where running on the GPU will produce different result
 - If an input url has a invalid Ipv6 address, Spark will return `null` for all components, but plugin will parse other
   components except `HOST` as normal. So `http://userinfo@[1:2:3:4:5:6:7:8:9:10]/path?query=1#Ref`'s result will be 
   `[null,/path,query=1,Ref,http,/path?query=1,userinfo@[1:2:3:4:5:6:7:8:9:10],userinfo]`
+- PATH and FILE of some edge cases (like empty string and url without PROTOCOL but contains "//") will be empty string in plugin instead of null in Spark.
+- Only UTF-8 encoding is supported in the plugin. If the input url contains characters that are not in UTF-8 encoding, 
+  the result may be different from Spark.
 
 ## Windowing
 
