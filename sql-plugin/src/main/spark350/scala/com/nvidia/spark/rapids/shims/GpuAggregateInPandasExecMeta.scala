@@ -22,8 +22,10 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
-import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExec, GpuPythonUDF}
+import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExec, GpuPythonUDAF}
 
 class GpuAggregateInPandasExecMeta(
     aggPandas: AggregateInPandasExec,
@@ -39,8 +41,13 @@ class GpuAggregateInPandasExecMeta(
   private val groupingNamedExprs: Seq[BaseExprMeta[NamedExpression]] =
     aggPandas.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+  val pythonUDAFs = aggPandas.aggExpressions.map(_.aggregateFunction.asInstanceOf[PythonUDAF])
+
+  private val aggs: Seq[BaseExprMeta[AggregateExpression]] =
+    aggPandas.aggExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
   private val udfs: Seq[BaseExprMeta[PythonUDAF]] =
-    aggPandas.udfExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    pythonUDAFs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   private val resultNamedExprs: Seq[BaseExprMeta[NamedExpression]] =
     aggPandas.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -50,7 +57,9 @@ class GpuAggregateInPandasExecMeta(
   override def convertToGpu(): GpuExec =
     GpuAggregateInPandasExec(
       groupingNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+      aggs.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
+      udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDAF]],
+      aggPandas.aggExpressions.map(_.resultAttribute),
       resultNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans.head.convertIfNeeded()
     )(aggPandas.groupingExpressions)

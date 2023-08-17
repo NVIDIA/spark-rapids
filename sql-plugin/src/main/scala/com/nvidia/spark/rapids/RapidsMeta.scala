@@ -31,6 +31,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.python.AggregateInPandasExec
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.types.DataType
 
@@ -936,6 +937,12 @@ object ExpressionContext {
       case agg: SparkPlan if SparkShimImpl.isWindowFunctionExec(agg) =>
         WindowAggExprContext
       case agg: BaseAggregateExec =>
+        if (agg.groupingExpressions.isEmpty) {
+          ReductionAggExprContext
+        } else {
+          GroupByAggExprContext
+        }
+      case agg: AggregateInPandasExec =>
         if (agg.groupingExpressions.isEmpty) {
           ReductionAggExprContext
         } else {
