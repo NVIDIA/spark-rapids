@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -191,8 +191,24 @@ def test_repartition_df(data_gen, num_parts, length):
     assert_gpu_and_cpu_are_equal_collect(
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
             lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
-            # disable sort before shuffle so round robin works for arrays
+            # disable sort before shuffle, this means disable round robin
             conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
+
+@pytest.mark.parametrize('data_gen', [
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
+    pytest.param([('_c' + str(i), ArrayGen(gen)) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+], ids=idfn)
+@pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
+@pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
+@ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+def test_repartition_df_for_round_robin(data_gen, num_parts, length):
+    from pyspark.sql.functions import lit
+    assert_gpu_and_cpu_are_equal_collect(
+        # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
+        lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
+        # Use round robin partition when sortBeforeRepartition is true
+        conf = {'spark.sql.execution.sortBeforeRepartition': 'true'})
 
 @allow_non_gpu('ShuffleExchangeExec', 'RoundRobinPartitioning')
 @pytest.mark.parametrize('data_gen', [[('ag', ArrayGen(string_gen))],

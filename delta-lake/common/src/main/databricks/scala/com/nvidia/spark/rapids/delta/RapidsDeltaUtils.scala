@@ -60,8 +60,7 @@ object RapidsDeltaUtils {
     // can involve a sort on all columns. The GPU doesn't currently support sorting on all types,
     // so we fallback if the GPU cannot support the round-robin partitioning.
     if (sqlConf.sortBeforeRepartition) {
-      val orderableTypeSig = (GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128
-          + TypeSig.STRUCT).nested()
+      val orderableTypeSig = GpuOverrides.pluginSupportedOrderableSig
       val unorderableTypes = schema.map(_.dataType).filterNot { t =>
         orderableTypeSig.isSupportedByPlugin(t)
       }
