@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.udf
 
-import CatalystExpressionBuilder.simplify
-import javassist.bytecode.{CodeIterator, ConstPool, InstructionPrinter, Opcode}
 import scala.annotation.tailrec
 import scala.collection.immutable.{HashMap, SortedMap, SortedSet}
+
+import CatalystExpressionBuilder.simplify
+import javassist.bytecode.{CodeIterator, ConstPool, InstructionPrinter, Opcode}
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging

@@ -20,6 +20,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
 import org.apache.spark.TaskContext
@@ -403,6 +404,18 @@ object RmmRapidsRetryIterator extends Logging {
     def this(input: Iterator[T], fn: T => K) =
       this(input, fn, null)
 
+    private def closeInternal(): Unit = {
+      attemptStack.safeClose()
+      attemptStack.clear()
+    }
+
+    // Don't install the callback if in a unit test
+    private val onClose = Option(TaskContext.get()).map { tc =>
+      onTaskCompletion(tc) {
+        closeInternal()
+      }
+    }
+
     protected val attemptStack = new mutable.ArrayStack[T]()
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
@@ -433,12 +446,15 @@ object RmmRapidsRetryIterator extends Logging {
         RmmSpark.currentThreadEndRetryBlock()
       }
       attemptStack.pop().close()
+      if (attemptStack.isEmpty && !input.hasNext) {
+        // No need to call the onClose because the attemptStack is empty
+        onClose.foreach(_.removeCallback())
+      }
       res
     }
 
     override def close(): Unit = {
-      attemptStack.safeClose()
-      attemptStack.clear()
+      onClose.map(_.removeAndCall()).getOrElse(closeInternal())
     }
   }
 

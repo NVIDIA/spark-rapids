@@ -22,6 +22,7 @@ import scala.collection.mutable.Queue
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -72,7 +73,7 @@ class AcceleratedColumnarToRowIterator(
   private var at: Int = 0
   private var total: Int = 0
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => closeAllPendingBatches())
+  onTaskCompletion(closeAllPendingBatches())
 
   private def setCurrentBatch(wip: HostColumnVector): Unit = {
     currentCv = Some(wip)
@@ -212,7 +213,12 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     (gpuCV: GpuColumnVector) => gpuCV.copyToHost()
   }
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeCurrentBatch()
+    }
+  }
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {

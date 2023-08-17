@@ -47,7 +47,6 @@ import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
-
 object ParquetVectorizedReader {
   /**
    * We are getting this method using reflection because its a package-private

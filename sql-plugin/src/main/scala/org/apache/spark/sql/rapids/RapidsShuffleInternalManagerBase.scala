@@ -27,6 +27,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
 
@@ -553,10 +554,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
   }
 
-  context.addTaskCompletionListener[Unit]( _ => {
+  onTaskCompletion(context) {
     // should not be needed, but just in case
     closeShuffleReadRange()
-  })
+  }
 
   private def fetchContinuousBlocksInBatch: Boolean = {
     val conf = SparkEnv.get.conf
@@ -643,12 +644,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
 
     // Register a completion handler to close any queued cbs.
-    context.addTaskCompletionListener[Unit]( _ => {
+    onTaskCompletion(context) {
       queued.forEach {
         case (_, cb:ColumnarBatch) => cb.close()
       }
       queued.clear()
-    })
+    }
 
     override def hasNext: Boolean = {
       if (fallbackIter != null) {
@@ -875,9 +876,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         context.taskMetrics().incDiskBytesSpilled(sorter.diskBytesSpilled)
         context.taskMetrics().incPeakExecutionMemory(sorter.peakMemoryUsedBytes)
         // Use completion callback to stop sorter if task was finished/cancelled.
-        context.addTaskCompletionListener[Unit](_ => {
+        onTaskCompletion(context) {
           sorter.stop()
-        })
+        }
         CompletionIterator[Product2[K, C], Iterator[Product2[K, C]]](sorter.iterator, sorter.stop())
       case None =>
         aggregatedIter

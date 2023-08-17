@@ -43,6 +43,13 @@ object GpuDeviceManager extends Logging {
     java.lang.Boolean.getBoolean("com.nvidia.spark.rapids.memory.gpu.rmm.init.task")
   }
 
+  private var numCores = 0
+
+  /**
+   * Get an approximate count on the number of cores this executor will use.
+   */
+  def getNumCores: Int = numCores
+
   // Memory resource used only for cudf::chunked_pack to allocate scratch space
   // during spill to host. This is done to set aside some memory for this operation
   // from the beginning of the job.
@@ -141,7 +148,8 @@ object GpuDeviceManager extends Logging {
   }
 
   def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
-      conf: RapidsConf): Unit = {
+      conf: RapidsConf, numCores: Int): Unit = {
+    this.numCores = numCores
     // as long in execute mode initialize everything because we could enable it after startup
     if (conf.isSqlExecuteOnGPU) {
       // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
@@ -191,14 +199,15 @@ object GpuDeviceManager extends Logging {
   /**
    * Always set the GPU if it was assigned by Spark and initialize the RMM if its configured
    * to do so in the task.
-   * We expect the plugin to be run with 1 task and 1 GPU per executor.
+   * We expect the plugin to be run with 1 GPU per executor.
    */
   def initializeFromTask(): Unit = {
     if (threadGpuInitialized.get() == false) {
       val resources = getResourcesFromTaskContext
       val conf = new RapidsConf(SparkEnv.get.conf)
       if (rmmTaskInitEnabled) {
-        initializeGpuAndMemory(resources, conf)
+        val numCores = RapidsPluginUtils.estimateCoresOnExec(SparkEnv.get.conf)
+        initializeGpuAndMemory(resources, conf, numCores)
       } else {
         // just set the device if provided so task thread uses right GPU
         initializeGpu(resources, conf)
