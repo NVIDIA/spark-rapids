@@ -45,7 +45,7 @@ import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 
 object FileSinkDescShim {
   def getPartitionColumns(tmpLocation: Path, tableDesc: TableDesc): String = {
-    val fileSinkConf = new FileSinkDesc(tmpLocation, tableDesc, false)
+    val fileSinkConf = new FileSinkDesc(tmpLocation.toString, tableDesc, false)
     fileSinkConf.getTableInfo.getProperties.getProperty("partition_columns")
   }
 }
