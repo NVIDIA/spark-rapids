@@ -34,8 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuBasicSum}
+import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -292,7 +291,7 @@ case class BatchedOps(running: Seq[NamedExpression],
   def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
 }
 
-object  GpuWindowExec {
+object GpuWindowExec {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
@@ -1763,34 +1762,13 @@ class GpuCachedDoublePassWindowIterator(
     }
   }
 
-  private lazy val conf: RapidsConf = new RapidsConf(SQLConf.get)
-
   private lazy val fixerIndexMap: Map[Int, FixerPair] =
     boundWindowOps.zipWithIndex.flatMap {
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
-
-        val okToFix = func match {
-          // we may want to make this check more generic when we add unbounded fixers for other
-          // aggregate functions that operate on floating-point inputs
-          case f: GpuBasicSum =>
-            f.child.dataType match {
-              case DataTypes.ByteType | DataTypes.ShortType | DataTypes.IntegerType |
-                 DataTypes.LongType | _: DecimalType =>
-                true
-              case DataTypes.FloatType | DataTypes.DoubleType =>
-                conf.isUnboundedFloatOptimizationEnabled
-              case _ =>
-                false
-            }
-          case _ =>
-            true
-        }
-
         func match {
-          case f: GpuUnboundToUnboundWindowWithFixer if okToFix =>
+          case f: GpuUnboundToUnboundWindowWithFixer =>
             Some((index, new FixerPair(f)))
-          case GpuAggregateExpression(f: GpuUnboundToUnboundWindowWithFixer, _, _, _, _)
-              if okToFix =>
+          case GpuAggregateExpression(f: GpuUnboundToUnboundWindowWithFixer, _, _, _, _) =>
             Some((index, new FixerPair(f)))
           case _ => None
         }
