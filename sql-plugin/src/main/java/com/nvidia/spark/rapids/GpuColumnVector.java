@@ -136,19 +136,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public abstract void copyColumnar(ColumnVector cv, int colNum, int rows);
 
     protected abstract ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex);
-    protected abstract int buildersLength();
 
     public ColumnarBatch build(int rows) {
-      return build(buildersLength(), rows, this::buildAndPutOnDevice);
+      return build(rows, this::buildAndPutOnDevice);
     }
 
-    protected ColumnarBatch build(int numCols, int rows,
-        Function<Integer, ai.rapids.cudf.ColumnVector> buildOneCol) {
-      ColumnVector[] vectors = new ColumnVector[numCols];
+    protected ColumnarBatch build(int rows, Function<Integer, ai.rapids.cudf.ColumnVector> col) {
+      ColumnVector[] vectors = new ColumnVector[fields.length];
       boolean success = false;
       try {
-        for (int i = 0; i < numCols; i++) {
-          vectors[i] = new GpuColumnVector(fields[i].dataType(), buildOneCol.apply(i));
+        for (int i = 0; i < fields.length; i++) {
+          vectors[i] = new GpuColumnVector(fields[i].dataType(), col.apply(i));
         }
         ColumnarBatch ret = new ColumnarBatch(vectors, rows);
         success = true;
@@ -193,11 +191,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           close();
         }
       }
-    }
-
-    @Override
-    protected int buildersLength() {
-      return builders.length;
     }
 
     @Override
@@ -275,11 +268,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    protected int buildersLength() {
-      return builders.length;
-    }
-
-    @Override
     protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       builders[builderIndex] = null;
@@ -316,7 +304,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (hostColumns == null) {
         hostColumns = buildHostColumns();
       }
-      return build(hostColumns.length, rows, i -> hostColumns[i].copyToDevice());
+      return build(rows, i -> hostColumns[i].copyToDevice());
     }
 
     @Override
