@@ -65,8 +65,7 @@ object FilePartitionShims {
     }
   }
 
-  // TODO come up with better name for this
-  def splitFiles2(selectedPartitions: Array[PartitionDirectory],
+  def splitFiles(selectedPartitions: Array[PartitionDirectory],
       relation: HadoopFsRelation,
       maxSplitBytes: Long): Array[PartitionedFile] = {
 

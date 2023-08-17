@@ -564,7 +564,7 @@ case class GpuFileSourceScanExec(
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
 
-    val splitFiles = FilePartitionShims.splitFiles2(selectedPartitions, relation, maxSplitBytes)
+    val splitFiles = FilePartitionShims.splitFiles(selectedPartitions, relation, maxSplitBytes)
 
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
