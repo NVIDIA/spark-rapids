@@ -36,6 +36,7 @@ package org.apache.spark.sql.hive.rapids.shims
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OptimizedCreateHiveTableAsSelectCommandMeta
+import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
@@ -44,9 +45,9 @@ import org.apache.spark.sql.hive.execution.{CreateHiveTableAsSelectCommand, Inse
 
 trait HiveProviderCmdShims extends HiveProvider {
 
-  // the return type of `org.apache.hadoop.hive.ql.exec.UDF` is intentionally
-  // omitted here to work around a deprecation warning with Cloudera
-  def createFunction(a: HiveSimpleUDF) /*: UDF*/ = {
+  // UDF class is deprecated in Cloudera
+  @scala.annotation.nowarn("msg=class UDF in package exec is deprecated")
+  def createFunction(a: HiveSimpleUDF): UDF = {
     a.function
   }
 
