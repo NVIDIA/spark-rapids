@@ -337,6 +337,32 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
+  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
+      .doc("Should the off heap limit be enforced or not.")
+      .startupOnly()
+      // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
+      .doc("The maximum amount of off heap memory that the plugin will use. " +
+          "This includes pinned memory and some overhead memory. If pinned is larger " +
+          "than this - overhead pinned will be truncated.")
+      .startupOnly()
+      .internal() // https://github.com/NVIDIA/spark-rapids/issues/8878 should be replaced with
+      // .commonlyUsed()
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional // The default
+
+  val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.host.taskOverhead.size")
+      .doc("The amount of off heap memory reserved per task for overhead activities " +
+          "like C++ heap/stack and a few other small things that are hard to control for.")
+      .startupOnly()
+      .internal() // https://github.com/NVIDIA/spark-rapids/issues/8878
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(15L * 1024 * 1024) // 15 MiB
+
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -1280,6 +1306,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_UNBOUNDED_OPTIMIZATION_FLOAT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.unboundedFloatAggFixerEnabled")
+      .doc("When set to false, this disables an optimization on window aggregate functions " +
+        "that operate on floating point inputs with unbounded preceding and unbounded following. " +
+        "When enabled, it is possible that results may differ from run to run due to the " +
+        "order of operations changing")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
     .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
@@ -2187,6 +2222,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
+  lazy val offHeapLimitEnabled: Boolean = get(OFF_HEAP_LIMIT_ENABLED)
+
+  lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
+
+  lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
+
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
@@ -2612,6 +2653,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val isUnboundedFloatOptimizationEnabled: Boolean = get(ENABLE_UNBOUNDED_OPTIMIZATION_FLOAT)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 

@@ -185,6 +185,7 @@ def test_basic_scalar_map_get_map_value(key_gen):
                 "spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
 
 
+@allow_non_gpu('WindowLocalExec')
 @pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 def test_map_scalars_supported_key_types(data_gen):
     key_gen = data_gen._key_gen

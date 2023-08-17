@@ -22,6 +22,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
@@ -265,7 +266,7 @@ private[python] class BatchGroupedIterator private(
   private val batchesQueue: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
   // Suppose runs inside a task context.
-  TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
+  onTaskCompletion {
     batchesQueue.foreach(_.close())
     batchesQueue.clear()
   }
@@ -459,7 +460,7 @@ class CoGroupedIterator(
     GpuColumnVector.emptyBatch(DataTypeUtilsShim.fromAttributes(rightSchema))
 
   // Suppose runs inside a task context.
-  TaskContext.get().addTaskCompletionListener[Unit] { _ =>
+  onTaskCompletion {
     Seq(currentLeftData, currentRightData, emptyLeftBatch, emptyRightBatch)
       .filter(_ != null)
       .safeClose()

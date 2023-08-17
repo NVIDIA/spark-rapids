@@ -28,7 +28,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -1311,6 +1313,99 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
     previousResult = None
   }
 }
+
+/**
+ * Fixes up a sum operation for unbounded preceding to unbounded following
+ * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
+ */
+class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
+    extends BatchedUnboundedToUnboundedWindowFixer {
+
+  private var previousValue: Option[Scalar] = None
+
+  private val numeric = TypeUtils.getNumeric(resultType, failOnError)
+
+  override def updateState(scalar: Scalar): Unit = {
+    if (scalar.isValid) {
+      previousValue match {
+        case None =>
+          previousValue = Some(scalar.incRefCount())
+        case Some(prev) =>
+          withResource(prev) { _ =>
+            previousValue = None
+            prev.getType.getTypeId match {
+              case DType.DTypeEnum.INT64 =>
+                if (failOnError) {
+                  previousValue = Some(Scalar.fromLong(Math.addExact(
+                    scalar.getLong, prev.getLong)))
+                } else {
+                  previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
+                }
+              case DType.DTypeEnum.FLOAT32 =>
+                previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
+              case DType.DTypeEnum.FLOAT64 =>
+                previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
+              case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
+                   DType.DTypeEnum.DECIMAL128 =>
+                val decimal = numeric.plus(Decimal(prev.getBigDecimal),
+                  Decimal(scalar.getBigDecimal)).asInstanceOf[Decimal]
+                val dt = resultType.asInstanceOf[DecimalType]
+                previousValue = Option(TrampolineUtil.checkDecimalOverflow(
+                    decimal, dt.precision, dt.scale, failOnError))
+                  .map(n => Scalar.fromDecimal(n.toJavaBigDecimal))
+              case other =>
+                throw new IllegalStateException(s"unhandled type: $other")
+            }
+          }
+        }
+    }
+  }
+
+  override def fixUp(
+      samePartitionMask: Either[ColumnVector, Boolean],
+      column: ColumnVector): ColumnVector = {
+
+    def makeScalar(): Scalar = previousValue match {
+      case Some(value) =>
+        value
+      case _ => resultType match {
+        case DataTypes.LongType => Scalar.fromNull(DType.INT64)
+        case DataTypes.FloatType => Scalar.fromNull(DType.FLOAT32)
+        case DataTypes.DoubleType => Scalar.fromNull(DType.FLOAT64)
+        case d: DecimalType =>
+          val dt = if (d.precision > DType.DECIMAL64_MAX_PRECISION) {
+            DType.DTypeEnum.DECIMAL128.getNativeId
+          } else if (d.precision > DType.DECIMAL32_MAX_PRECISION) {
+            DType.DTypeEnum.DECIMAL64.getNativeId
+          } else {
+            DType.DTypeEnum.DECIMAL32.getNativeId
+          }
+          Scalar.fromNull(DType.fromNative(dt, d.scale))
+        case other =>
+          throw new IllegalStateException(s"unhandled type: $other")
+      }
+    }
+
+    samePartitionMask match {
+      case scala.Left(cv) =>
+        cv.ifElse(makeScalar(), column)
+      case scala.Right(true) =>
+        ColumnVector.fromScalar(makeScalar(), column.getRowCount.toInt)
+      case _ =>
+        column.incRefCount()
+    }
+  }
+
+  override def close(): Unit = {
+    reset()
+  }
+
+  override def reset(): Unit = {
+    previousValue.foreach(_.close())
+    previousValue = None
+  }
+}
+
 
 /**
  * Rank is more complicated than DenseRank to fix. This is because there are gaps in the

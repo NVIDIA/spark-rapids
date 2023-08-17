@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
+import java.{lang => jl}
 import java.io.ObjectInputStream
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -24,8 +25,8 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
-import java.{lang => jl}
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -171,11 +172,11 @@ object GpuTaskMetrics extends Logging {
       // avoid double registering the task metrics...
       if (!taskLevelMetrics.contains(id)) {
         taskLevelMetrics.put(id, metrics)
-        tc.addTaskCompletionListener { tc =>
+        onTaskCompletion(tc, tc =>
           synchronized {
             taskLevelMetrics.remove(tc.taskAttemptId())
           }
-        }
+        )
       }
     }
   }

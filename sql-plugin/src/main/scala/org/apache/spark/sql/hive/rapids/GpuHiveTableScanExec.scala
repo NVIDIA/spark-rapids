@@ -16,6 +16,13 @@
 
 package org.apache.spark.sql.hive.rapids
 
+import java.net.URI
+import java.util.concurrent.TimeUnit.NANOSECONDS
+
+import scala.collection.JavaConverters._
+import scala.collection.immutable.HashSet
+import scala.collection.mutable
+
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -23,15 +30,10 @@ import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
-import java.net.URI
-import java.util.concurrent.TimeUnit.NANOSECONDS
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
 import org.apache.hadoop.io.compress.{CompressionCodecFactory, SplittableCompressionCodec}
-import scala.collection.JavaConverters._
-import scala.collection.immutable.HashSet
-import scala.collection.mutable
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD

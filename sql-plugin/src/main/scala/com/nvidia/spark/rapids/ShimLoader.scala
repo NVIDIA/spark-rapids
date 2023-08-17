@@ -18,13 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
+import scala.annotation.tailrec
+import scala.collection.JavaConverters._
+import scala.util.Try
+
 import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.delta.DeltaProbe
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.commons.lang3.reflect.MethodUtils
-import scala.annotation.tailrec
-import scala.collection.JavaConverters._
-import scala.util.Try
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
