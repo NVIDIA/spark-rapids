@@ -43,28 +43,24 @@ object ScaleTestDataGen{
       s"${config.scaleFactor}_" +
       s"${config.complexity}_" +
       s"${config.format}_" +
-      s"${config.version}" +
+      s"${config.version}_" +
       s"${config.seed}"
     // 512 Mb block size requirement
-    val setBlockSizeTables = Seq("b_data", "g_data")
+    // 128 Mb is the default size in Spark
+    val defaultGroupSizeInSpark = 128*1024*1024
+    val customGroupSize = 512*1024*1024
+    val specialRowGroupSizeMap = Map("b_data" -> customGroupSize,
+      "g_data" -> customGroupSize)
 
     for ((tableName, df) <- tableMap) {
-      if (setBlockSizeTables.contains(tableName)) {
-        config.format match {
-          case "parquet" => df.write
-            .option("parquet.block.size", 512*1024*1024)
-            .parquet(s"$baseOutputPath/$tableName")
-          case "orc" => df.write
-            .option("orc.block.size", 512*1024*1024)
-            .orc(s"$baseOutputPath/$tableName")
-        }
-      } else {
-        config.format match {
-          case "parquet" => df.write
-            .parquet(s"$baseOutputPath/$tableName")
-          case "orc" => df.write
-            .orc(s"$baseOutputPath/$tableName")
-        }
+      config.format match {
+        case "parquet" => df.write
+          .option("parquet.block.size", specialRowGroupSizeMap.getOrElse(tableName, defaultGroupSizeInSpark))
+          .parquet(s"$baseOutputPath/$tableName")
+        case "orc" => df.write
+          .option("orc.block.size", specialRowGroupSizeMap.getOrElse(tableName, defaultGroupSizeInSpark))
+          .orc(s"$baseOutputPath/$tableName")
+        case unsupported => throw new IllegalArgumentException(s"Unknown format: $unsupported")
       }
     }
   }
