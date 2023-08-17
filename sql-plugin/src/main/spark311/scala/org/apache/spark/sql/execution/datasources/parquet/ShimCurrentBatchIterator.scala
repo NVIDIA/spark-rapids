@@ -29,11 +29,11 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
 
 import java.io.IOException
+import java.util
 
 import com.nvidia.spark.CurrentBatchIterator
 import com.nvidia.spark.rapids.ParquetCachedBatch
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
 import org.apache.parquet.column.ColumnDescriptor
