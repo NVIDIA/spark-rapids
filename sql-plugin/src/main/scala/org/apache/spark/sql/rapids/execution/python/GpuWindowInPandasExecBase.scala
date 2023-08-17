@@ -230,14 +230,14 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
 
   protected val windowBoundTypeConf = "pandas_window_bound_types"
 
-  protected def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  protected def collectFunctions(udf: GpuPythonUDAF): (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
-      case Seq(u: GpuPythonUDF) =>
+      case Seq(u: GpuPythonUDAF) =>
         val (chained, children) = collectFunctions(u)
         (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDAF]).isEmpty))
         (ChainedPythonFunctions(Seq(udf.func)), udf.children)
     }
   }
@@ -263,7 +263,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
           val frame = spec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
           function match {
             case GpuAggregateExpression(_, _, _, _, _) => collect("AGGREGATE", frame, e)
-            // GpuPythonUDF is a GpuAggregateWindowFunction, so it is covered here.
+            // GpuPythonUDAF is a GpuAggregateWindowFunction, so it is covered here.
             case _: GpuAggregateWindowFunction => collect("AGGREGATE", frame, e)
             // OffsetWindowFunction is not supported yet, no harm to keep it here
             case _: OffsetWindowFunction => collect("OFFSET", frame, e)
@@ -412,7 +412,8 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // 2) Extract window functions, here should be Python (Pandas) UDFs
     val allWindowExpressions = expressionsWithFrameIndex.map(_._1)
     val udfExpressions = allWindowExpressions.map {
-      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuPythonUDF]
+      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuAggregateExpression]
+        .aggregateFunction.asInstanceOf[GpuPythonUDAF]
     }
     // We shouldn't be chaining anything here.
     // All chained python functions should only contain one function.
