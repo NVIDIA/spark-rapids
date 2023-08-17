@@ -29,6 +29,7 @@ import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -2004,7 +2005,10 @@ class GpuConvMeta(
       case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
         if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
       case _ =>
-        willNotWorkOnGpu("only literal 10 or 16 for from_base and to_base are supported")
+        willNotWorkOnGpu(because = "only literal 10 or 16 for from_base and to_base are supported")
+    }
+    if (SQLConf.get.ansiEnabled) {
+      willNotWorkOnGpu(because = " the GPU has no overflow checking.")
     }
   }
 
@@ -2063,7 +2067,9 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
   ): ColumnVector = {
     (fromBase.getValue, toBase.getValue) match {
       case (fromRadix: Int, toRadix: Int) =>
-        withResource(CastStrings.toIntegersWithBase(str.getBase, fromRadix, false, DType.UINT64)) { intCV =>
+        withResource(
+          CastStrings.toIntegersWithBase(str.getBase, fromRadix, false, DType.UINT64)
+        ) { intCV =>
           CastStrings.fromIntegersWithBase(intCV, toRadix)
         }
       case _ => throw new UnsupportedOperationException()

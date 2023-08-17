@@ -3039,7 +3039,7 @@ object GpuOverrides extends Logging {
         paramCheck = Seq(
           ParamCheck(
             name = "num",
-            cudf = TypeSig.STRING.withInitialTypesPsNote("only non-negative numbers are supported"),
+            cudf = TypeSig.STRING,
             spark = TypeSig.STRING),
           ParamCheck(
             name = "from_base",
