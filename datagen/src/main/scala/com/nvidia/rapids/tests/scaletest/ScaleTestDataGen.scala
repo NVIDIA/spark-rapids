@@ -1,9 +1,25 @@
+/*
+ * Copyright (c) 2023, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.nvidia.rapids.tests.scaletest
 
 import org.apache.spark.sql.SparkSession
 import scopt.OptionParser
 
-object DataGenEntry{
+object ScaleTestDataGen{
 
   // case class represents all input commandline arguments
   private case class Config(scaleFactor: Int = 1,
@@ -11,7 +27,8 @@ object DataGenEntry{
     tables: Array[String] = Array(),
     outputDir: String = "",
     format: String = "parquet",
-    version: String = "")
+    version: String = "",
+    seed: Int = 41)
 
   private def runDataGen(config: Config): Unit ={
     // Init SparkSession
@@ -19,14 +36,15 @@ object DataGenEntry{
       .appName("Scale Test Data Generation")
       .getOrCreate()
 
-    val tableGenerator = new TableGenerator(config.scaleFactor, config.complexity, spark)
+    val tableGenerator = new TableGenerator(config.scaleFactor, config.complexity, config.seed, spark)
     val tableMap = tableGenerator.genTables(config.tables)
     val baseOutputPath = s"${config.outputDir}/" +
       s"SCALE_" +
       s"${config.scaleFactor}_" +
       s"${config.complexity}_" +
       s"${config.format}_" +
-      s"${config.version}"
+      s"${config.version}" +
+      s"${config.seed}"
     // 512 Mb block size requirement
     val setBlockSizeTables = Seq("b_data", "g_data")
 
@@ -90,19 +108,22 @@ object DataGenEntry{
             if(supportFormats.contains(x.toLowerCase)) success
             else failure(s"Format must be one of ${supportFormats.mkString(",")}")
           )
-          .action((x, c) => c.copy(format = x))
+          .action((x, c) => c.copy(format = x.toLowerCase))
           .text("output format")
 
         opt[String]('v', "version")
           .action((x, c) => c.copy(version = x))
-          .text("version"
-      )
+          .text("version")
+
+        opt[Int]('d', "seed")
+          .optional()
+          .action((x, c) => c.copy(seed = x))
+          .text("seed used to generate random data columns")
     }
 
     OParser.parse(args, Config()) match {
       case Some(config) =>
         runDataGen(config)
-
       case _ =>
         sys.exit(1)
     }

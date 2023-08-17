@@ -1,7 +1,24 @@
+/*
+ * Copyright (c) 2023, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.nvidia.rapids.tests.scaletest
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.tests.datagen.{DBGen, ExponentialDistribution, FlatDistribution, MultiDistribution}
+import org.apache.spark.sql.tests.datagen.{CorrelatedKeyGroup, DBGen, DistinctDistribution, ExponentialDistribution, FlatDistribution, MultiDistribution, RowNumPassThrough}
+import org.apache.spark.sql.types.{DateType, TimestampType}
 
 import scala.util.Random
 
@@ -13,8 +30,12 @@ import scala.util.Random
  * 3. 3-column key group with the types string, date, long.
  * 4. 1 column that is an int with a unique count of 5
  */
-class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
+class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkSession) {
   val dbgen: DBGen = DBGen()
+  // diff days of(1970-01-01, 0001-01-01) and diff days of(1970-01-01, 9999-12-31)
+  // set this to avoid out of range case for Date and Timestamp
+  dbgen.setDefaultValueRange(DateType, -719162, 2932896)
+  dbgen.setDefaultValueRange(TimestampType, -719162, 2932896)
   // define numRows in class as different table may depend on each other
   private val aNumRows = scaleFactor * 10000
   private val bNumRows = scaleFactor * 1000000
@@ -23,7 +44,6 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
   private val eNumRows = scaleFactor * 1000000
   private val fNumRows = scaleFactor * 10000
   private val gNumRows = scaleFactor * 1000000
-  private val seed = 41
   private val random = new Random(seed)
 
   private def randomColumnType(): String = {
@@ -51,9 +71,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
       "Decimal(7, 2)",
       "Decimal(19, 4)"
     )
-    val seed = 41
-    val r = new Random(seed)
-    candidates(r.nextInt(candidates.length))
+    candidates(random.nextInt(candidates.length))
   }
 
   /**
@@ -71,7 +89,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
       "a_data_low_unique_len_1 string," +
       (1 to complexity).map(i => s"a_data_$i ${randomColumnType()}").mkString(",")
     val aFacts = dbgen.addTable("a_facts", schema, aNumRows)
-    aFacts("primary_a").setSeedRange(1, aNumRows)
+    aFacts("primary_a").setSeedRange(1, aNumRows).setSeedMapping(DistinctDistribution())
     aFacts("a_key4_1").setSeedRange(1,5)
     aFacts("a_data_low_unique_1").setSeedRange(1, 5)
     aFacts("a_data_low_unique_len_1").setLength(1, 5)
@@ -96,9 +114,14 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
     val overlapRatio = 0.99
     val bData = dbgen.addTable("b_data", schema, bNumRows)
     // This column "Should overlap with a_facts.primary_a about 99% of the time"
-    bData("b_foreign_a").setSeedRange(1, Math.round(1 / overlapRatio * aNumRows))
-    (1 to 3).map(i => bData(s"b_key3_$i").setSeedRange(1, Math.round(bNumRows * 0.99)))
-    bData("b_key3_2").setValueRange(-719162, 2932896)
+    val overlapSeeds = Math.round(aNumRows * overlapRatio)
+    val startSeed = aNumRows - overlapSeeds + 1
+    val endSeed = startSeed + aNumRows
+    bData("b_foreign_a").setSeedRange(startSeed, endSeed)
+    bData.configureKeyGroup(
+      (1 to 3).map(i => s"b_key3_$i"),
+      CorrelatedKeyGroup(1, 1, Math.round(bNumRows * 0.99)),
+      FlatDistribution())
     (1 to 10).map(i => bData(s"b_data_small_value_range_$i").setSeedRange(1, 10000))
     bData.toDF(spark)
   }
@@ -119,9 +142,15 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
       (1 to 5).map(i => s"c_data_numeric_$i ${randomNumericColumnType()}").mkString(",")
     val overlapRatio = 0.50
     val cData = dbgen.addTable("c_data", schema, cNumRows)
-    cData("c_foreign_a").setSeedRange(1, Math.round(1 / overlapRatio * aNumRows))
-    (1 to complexity).map(i => cData(s"c_key2_$i").setSeedRange(1, 10))
-    cData("c_data_row_num_1").setValueRange(1, cNumRows)
+    val overlapSeeds = Math.round(aNumRows * overlapRatio)
+    val startSeed = aNumRows - overlapSeeds + 1
+    val endSeed = startSeed + aNumRows
+    cData("c_foreign_a").setSeedRange(startSeed, endSeed)
+    cData.configureKeyGroup(
+      (1 to complexity).map(i => s"c_key2_$i"),
+      CorrelatedKeyGroup(1, 1, 10),
+      FlatDistribution())
+    cData("c_data_row_num_1").setValueGen(RowNumPassThrough)
     cData.toDF(spark)
   }
   /**
@@ -136,7 +165,11 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
     val dData = dbgen.addTable("d_data", schema, dNumRows)
     // each key should show up about 10 time, but the overlap with c_data for key group 2 should only be about 50%
     // c_data key group uses seed range (1, 10) so here d_data uses (6, 15) to get 50% overlap
-    (1 to complexity).map(i => dData(s"d_key2_$i").setSeedRange(6, 15))
+    dData.configureKeyGroup(
+      (1 to complexity).map(i => s"d_key2_$i"),
+      CorrelatedKeyGroup(1, 6, 15),
+      FlatDistribution()
+    )
     dData.toDF(spark)
   }
   /**
@@ -152,8 +185,13 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
     val overlapRatio = 0.9
     val eData = dbgen.addTable("e_data", schema, eNumRows)
     val overlapBias = Math.round(bNumRows * (1 - overlapRatio))
-    (1 to 3).map(i => eData(s"e_key3_$i").setSeedRange(1 + overlapBias, Math.round(0.99 * eNumRows) + overlapBias))
-    eData("e_key3_2").setValueRange(-719162, 2932896)
+    val startSeed = 1 + overlapBias
+    val endSeed = Math.round(0.99 * eNumRows) + overlapBias
+    eData.configureKeyGroup(
+      (1 to 3).map(i => s"e_key3_$i"),
+      CorrelatedKeyGroup(1, startSeed, endSeed),
+      FlatDistribution()
+    )
     eData.toDF(spark)
 
   }
@@ -200,12 +238,13 @@ class TableGenerator(scaleFactor: Int, complexity: Int, spark: SparkSession) {
     // "a few keys with lots of values and a long tail with few"
     val expWeight = 10.0
     val flatWeight = 1.0
-    (1 to 3).map(i =>
-      gData(s"g_key3_$i").setSeedMapping(MultiDistribution(Seq(
+    gData.configureKeyGroup(
+      (1 to 3).map(i => s"g_key3_$i"),
+      CorrelatedKeyGroup(1, 1, 10000),
+      MultiDistribution(Seq(
         (expWeight, ExponentialDistribution(50, 1.0)),
-        (flatWeight, FlatDistribution()))))
-        .setSeedRange(1, 10000))
-    gData("g_key3_2").setValueRange(-719162, 2932896)
+        (flatWeight, FlatDistribution())))
+    )
     gData("g_data_enum_1").setSeedRange(1,5)
     gData("g_data_row_num_1").setSeedRange(1, gNumRows)
     gData.toDF(spark)

@@ -458,8 +458,8 @@ which will install a `NullProbabilityGenerationFunction` or by calling the
 ### LengthGeneratorFunction
 
 For variable length types, like strings and arrays, a pluggable length generator
-function is used to produce those lengths. Fixed length generator is preferred 
-when avoiding data skew is one of data target. This is because the naive way to generate a length
+function is used to produce those lengths. Fixed length generator is preferred
+to avoid data skew in the resulting column. This is because the naive way to generate a length
 where all possible lengths have an equal probability produces skew in the
 resulting values. A length of 0 has one and only one possible value in it.
 So if we restrict the length to 0 or 1, then half of all values generated will be
@@ -467,8 +467,8 @@ zero length strings, which is not ideal.
 
 If you want to set the length of a String or Array you can navigate to the 
 column or sub-column you want and call `setLength(fixedLen)` on it. This will install
-and updated `FixedLengthGeneratorFunction`. If you want to the length to 
-be able to vary, you can call `setLength(minLen, maxLen)`.
+an updated `FixedLengthGeneratorFunction`. You may set a range of lengths using
+setLength(minLen, maxLen), but this may introduce skew in the resulting data.
 
 ```scala
 val dataTable = DBGen().addTable("data", "a string, b array<string>, c string", 3)
