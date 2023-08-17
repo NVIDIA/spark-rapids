@@ -2063,7 +2063,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
   ): ColumnVector = {
     (fromBase.getValue, toBase.getValue) match {
       case (fromRadix: Int, toRadix: Int) =>
-        withResource(CastStrings.toIntegersWithBase(str.getBase, fromRadix)) { intCV =>
+        withResource(CastStrings.toIntegersWithBase(str.getBase, fromRadix, false, DType.UINT64)) { intCV =>
           CastStrings.fromIntegersWithBase(intCV, toRadix)
         }
       case _ => throw new UnsupportedOperationException()
