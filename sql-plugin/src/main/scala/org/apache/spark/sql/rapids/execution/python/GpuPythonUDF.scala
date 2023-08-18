@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
-import org.apache.spark.sql.rapids.CudfAggregate
 import org.apache.spark.sql.types._
 
 /**
@@ -50,101 +49,6 @@ object GpuPythonUDF {
   // This is currently same as GroupedAggPandasUDF, but we might support new types in the future,
   // e.g, N -> N transform.
   def isWindowPandasUDF(e: Expression): Boolean = isGroupedAggPandasUDF(e)
-}
-
-/**
- * A serialized version of a Python lambda function. This is a special expression, which needs a
- * dedicated physical operator to execute it, and thus can't be pushed down to data sources.
- */
-case class GpuPythonUDAF(
-    name: String,
-    func: PythonFunction,
-    dataType: DataType,
-    children: Seq[Expression],
-    evalType: Int,
-    udfDeterministic: Boolean,
-    resultId: ExprId = NamedExpression.newExprId)
-    extends Expression with GpuUnevaluable with NonSQLExpression with UserDefinedExpression
-      with org.apache.spark.sql.rapids.GpuAggregateFunction
-    with GpuAggregateWindowFunction {
-
-  override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
-
-  override def toString: String = s"$name(${children.mkString(", ")})"
-
-  lazy val resultAttribute: Attribute = AttributeReference(toPrettySQL(this), dataType, nullable)(
-    exprId = resultId)
-
-  override def nullable: Boolean = true
-
-  override lazy val canonicalized: Expression = {
-    val canonicalizedChildren = children.map(_.canonicalized)
-    // `resultId` can be seen as cosmetic variation in PythonUDF, as it doesn't affect the result.
-    this.copy(resultId = ExprId(-1)).withNewChildren(canonicalizedChildren)
-  }
-
-  // Support window things
-  override val windowInputProjection: Seq[Expression] = Seq.empty
-
-  override def windowAggregation(
-                                  inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
-    throw new UnsupportedOperationException(s"GpuPythonUDF should run in a Python process.")
-  }
-
-  /**
-   * These are values that spark calls initial because it uses
-   * them to initialize the aggregation buffer, and returns them in case
-   * of an empty aggregate when there are no expressions.
-   *
-   * In our case they are only used in a very specific case:
-   * the empty input reduction case. In this case we don't have input
-   * to reduce, but we do have reduction functions, so each reduction function's
-   * `initialValues` is invoked to populate a single row of output.
-   *   */
-  override val initialValues: Seq[Expression] = Seq.empty[Expression]
-
-  /**
-   * Using the child reference, define the shape of input batches sent to
-   * the update expressions
-   *
-   * @note this can be thought of as "pre" update: as update consumes its
-   *       output in order
-   */
-  override val inputProjection: Seq[Expression] = Seq.empty[Expression]
-  /**
-   * update: first half of the aggregation
-   * The sequence of `CudfAggregate` must match the shape of `inputProjections`,
-   * and care must be taken to ensure that each cuDF aggregate is able to work
-   * with the corresponding inputProjection (i.e. inputProjection[i] is the input
-   * to updateAggregates[i]).
-   */
-  override val updateAggregates: Seq[CudfAggregate] = Seq.empty[CudfAggregate]
-  /**
-   * merge: second half of the aggregation. Also used to merge multiple batches in the
-   * update or merge stages. These cuDF aggregates consume the output of `preMerge`.
-   * The sequence of `CudfAggregate` must match the shape of `aggBufferAttributes`,
-   * and care must be taken to ensure that each cuDF aggregate is able to work
-   * with the corresponding input (i.e. aggBufferAttributes[i] is the input
-   * to mergeAggregates[i]). If a transformation is required, `preMerge` can be used
-   * to mutate the batches before they arrive at `mergeAggregates`.
-   */
-  override val mergeAggregates: Seq[CudfAggregate] = Seq.empty[CudfAggregate]
-  /**
-   * This takes the output of `postMerge` computes the final result of the aggregation.
-   *
-   * @note `evaluateExpression` is bound to `aggBufferAttributes`, so the references used in
-   *       `evaluateExpression` must also be used in `aggBufferAttributes`.
-   */
-  override val evaluateExpression: Expression = null
-
-  /**
-   * This is the contract with the outside world. It describes what the output of postUpdate should
-   * look like, and what the input to preMerge looks like. It also describes what the output of
-   * postMerge must look like.
-   */
-  override def aggBufferAttributes: Seq[AttributeReference] = {
-    throw new IllegalStateException("")
-  }
 }
 
 /**

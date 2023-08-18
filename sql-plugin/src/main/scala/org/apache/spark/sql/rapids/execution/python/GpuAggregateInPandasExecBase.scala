@@ -32,7 +32,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -50,15 +49,24 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * This node aims at accelerating the data transfer between JVM and Python for GPU pipeline, and
  * scheduling GPU resources for its Python processes.
  */
-case class GpuAggregateInPandasExec(
+abstract class GpuAggregateInPandasExecBase(
     gpuGroupingExpressions: Seq[NamedExpression],
-    aggExpressions: Seq[GpuAggregateExpression],
-    udfExpressions: Seq[GpuPythonUDAF],
-    pyOutAttributes: Seq[Attribute],
+    udfExpressions: Seq[GpuPythonUDF],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan)(
     cpuGroupingExpressions: Seq[NamedExpression])
   extends ShimUnaryExecNode with GpuPythonExecBase {
+
+//  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+//    udfExpressions: Seq[GpuPythonUDF],
+//    resultExpressions: Seq[NamedExpression],
+//    child: SparkPlan)(
+//    cpuGroupingExpressions: Seq[NamedExpression]) = {
+//   GpuAggregateInPandasExecBase(gpuGroupingExpressions, udfExpressions,
+//     udfExpressions.map(_.resultAttribute), resultExpressions, child)(cpuGroupingExpressions)
+//  }
+
+  val pyOutAttributes: Seq[Attribute] = udfExpressions.map(_.resultAttribute)
 
   override def otherCopyArgs: Seq[AnyRef] = cpuGroupingExpressions :: Nil
 
@@ -76,14 +84,14 @@ case class GpuAggregateInPandasExec(
     }
   }
 
-  private def collectFunctions(udf: GpuPythonUDAF): (ChainedPythonFunctions, Seq[Expression]) = {
+  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
-      case Seq(u: GpuPythonUDAF) =>
+      case Seq(u: GpuPythonUDF) =>
         val (chained, children) = collectFunctions(u)
         (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDAF]).isEmpty))
+        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
         (ChainedPythonFunctions(Seq(udf.func)), udf.children)
     }
   }
@@ -105,7 +113,6 @@ case class GpuAggregateInPandasExec(
   // batches by the grouping expressions, and processed by Python executors group by group,
   // so better to coalesce the output batches.
   override def coalesceAfter: Boolean = gpuGroupingExpressions.nonEmpty
-
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
