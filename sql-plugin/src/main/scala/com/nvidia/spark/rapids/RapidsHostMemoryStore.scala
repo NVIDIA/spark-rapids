@@ -60,8 +60,6 @@ class RapidsHostMemoryStore(
       initialSpillPriority: Long,
       needsSync: Boolean): RapidsBuffer = {
     buffer.incRefCount()
-    // TODO: note that there is a difference between buffer.getLength
-    // andthe metadata sizes...
     val rapidsBuffer = new RapidsHostMemoryBuffer(
       id,
       buffer.getLength,
