@@ -49,24 +49,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * This node aims at accelerating the data transfer between JVM and Python for GPU pipeline, and
  * scheduling GPU resources for its Python processes.
  */
-abstract class GpuAggregateInPandasExecBase(
+case class GpuAggregateInPandasExec(
     gpuGroupingExpressions: Seq[NamedExpression],
     udfExpressions: Seq[GpuPythonUDF],
+    pyOutAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan)(
     cpuGroupingExpressions: Seq[NamedExpression])
   extends ShimUnaryExecNode with GpuPythonExecBase {
-
-//  def apply(gpuGroupingExpressions: Seq[NamedExpression],
-//    udfExpressions: Seq[GpuPythonUDF],
-//    resultExpressions: Seq[NamedExpression],
-//    child: SparkPlan)(
-//    cpuGroupingExpressions: Seq[NamedExpression]) = {
-//   GpuAggregateInPandasExecBase(gpuGroupingExpressions, udfExpressions,
-//     udfExpressions.map(_.resultAttribute), resultExpressions, child)(cpuGroupingExpressions)
-//  }
-
-  val pyOutAttributes: Seq[Attribute] = udfExpressions.map(_.resultAttribute)
 
   override def otherCopyArgs: Seq[AnyRef] = cpuGroupingExpressions :: Nil
 
@@ -251,5 +241,27 @@ abstract class GpuAggregateInPandasExecBase(
       }
     }
   } // end of internalDoExecuteColumnar
+
+}
+
+object GpuAggregateInPandasExec {
+  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+      udfExpressions: Seq[GpuPythonUDF],
+      resultExpressions: Seq[NamedExpression],
+      child: SparkPlan)(
+      cpuGroupingExpressions: Seq[NamedExpression]) = {
+    new GpuAggregateInPandasExec(gpuGroupingExpressions, udfExpressions,
+      udfExpressions.map(_.resultAttribute), resultExpressions, child)(cpuGroupingExpressions)
+  }
+
+  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+      udfExpressions: Seq[GpuPythonUDF],
+      pyOutAttributes: Seq[Attribute],
+      resultExpressions: Seq[NamedExpression],
+      child: SparkPlan)(
+      cpuGroupingExpressions: Seq[NamedExpression]) = {
+    new GpuAggregateInPandasExec(gpuGroupingExpressions, udfExpressions,
+      pyOutAttributes, resultExpressions, child)(cpuGroupingExpressions)
+  }
 
 }
