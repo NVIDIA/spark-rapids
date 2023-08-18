@@ -25,7 +25,8 @@ import org.apache.spark.sql.execution.FilterExec
 
 class OrcPushDownSuite extends SparkQueryCompareTestSuite {
 
-  private def checkPredicatePushDown(spark: SparkSession, filepath: String, numRows: Int, predicate: String): Unit = {
+  private def checkPredicatePushDown(spark: SparkSession, filepath: String, numRows: Int, 
+      predicate: String): Unit = {
     val df = spark.read.orc(filepath).where(predicate)
     val schema = df.schema
     val withoutFilters = df.queryExecution.executedPlan.transform {
