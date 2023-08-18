@@ -309,26 +309,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     @Override
     public void close() {
-      for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
-        if (b != null) {
-          try {
+      try {
+        for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
+          if (b != null) {
             b.close();
-          } catch (Throwable e) {
-            /* ignore the exception */
           }
         }
-      }
-      if (hostColumns != null) {
-        for (ai.rapids.cudf.HostColumnVector hcv: hostColumns) {
-          if (hcv != null) {
-            try {
+      } finally {
+        if (hostColumns != null) {
+          for (ai.rapids.cudf.HostColumnVector hcv: hostColumns) {
+            if (hcv != null) {
               hcv.close();
-            } catch (Throwable e) {
-              /* ignore the exception */
             }
           }
+          hostColumns = null;
         }
-        hostColumns = null;
       }
     }
   }
