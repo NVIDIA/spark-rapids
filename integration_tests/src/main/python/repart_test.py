@@ -191,7 +191,7 @@ def test_repartition_df(data_gen, num_parts, length):
     assert_gpu_and_cpu_are_equal_collect(
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
             lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
-            # disable sort before shuffle, this means disable round robin
+            # disable sort before shuffle so round robin works for maps
             conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
 @pytest.mark.parametrize('data_gen', [
@@ -207,21 +207,11 @@ def test_repartition_df_for_round_robin(data_gen, num_parts, length):
     assert_gpu_and_cpu_are_equal_collect(
         # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
         lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
-        # Use round robin partition when sortBeforeRepartition is true
-        conf = {'spark.sql.execution.sortBeforeRepartition': 'true'})
+        # Enable sort for round robin partition
+        conf = {'spark.sql.execution.sortBeforeRepartition': 'true'})  # default is true
 
 @allow_non_gpu('ShuffleExchangeExec', 'RoundRobinPartitioning')
-@pytest.mark.parametrize('data_gen', [[('ag', ArrayGen(string_gen))],
-    [('a', StructGen([
-      ('a_1', StructGen([
-        ('a_1_1', int_gen),
-        ('a_1_2', float_gen),
-        ('a_1_3', double_gen)
-      ])),
-      ('b_1', long_gen),
-      ('c_1', int_gen)
-    ]))],
-    [('a', simple_string_to_string_map_gen)]], ids=idfn)
+@pytest.mark.parametrize('data_gen', [[('a', simple_string_to_string_map_gen)]], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 def test_round_robin_sort_fallback(data_gen):
     from pyspark.sql.functions import lit
