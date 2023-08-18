@@ -24,10 +24,10 @@ object ScaleTestDataGen{
   // case class represents all input commandline arguments
   private case class Config(scaleFactor: Int = 1,
     complexity: Int = 1,
-    tables: Array[String] = Array(),
     outputDir: String = "",
+    tables: Array[String] = Array("a_facts", "b_data", "c_data", "d_data", "e_data", "f_facts", "g_data"),
     format: String = "parquet",
-    version: String = "",
+    version: String = "1.0.0",
     seed: Int = 41)
 
   private def runDataGen(config: Config): Unit ={
@@ -69,52 +69,37 @@ object ScaleTestDataGen{
     val tableList = List("a_facts", "b_data", "c_data", "d_data", "e_data", "f_facts", "g_data")
     val supportFormats = List("parquet","orc")
     val OParser = new OptionParser[Config]("DataGenEntry"){
-
-        head("Scale Test Data Generation Application", "0.1")
-
-        opt[Int]('s', "scale_factor")
-          .required()
-          .action((x, c) => c.copy(scaleFactor = x))
-          .text("scale factor for data size")
-
-        opt[Int]('c', "complexity")
-          .required()
-          .action((x, c) => c.copy(complexity = x))
-          .text("complexity level for processing")
-
-        opt[String]('t', "tables")
-          .optional()
-          .action((x, c) => c.copy(tables = x.split(",")))
-          .validate(x =>
-            if (x.split(",").forall(t => tableList.contains(t))) success
-            else failure(s"Invalid table name. Must be one of ${tableList.mkString(",")}")
-          )
-          .text("tables to generate")
-
-        opt[String]('o', "output_dir")
-          .required()
-          .action((x, c) => c.copy(outputDir = x))
-          .validate(x =>
-            if(x.nonEmpty) success else failure("Output dir required")
-          )
-          .text("output directory")
-
-        opt[String]('f', "format")
-          .validate( x =>
-            if(supportFormats.contains(x.toLowerCase)) success
-            else failure(s"Format must be one of ${supportFormats.mkString(",")}")
-          )
-          .action((x, c) => c.copy(format = x.toLowerCase))
-          .text("output format")
-
-        opt[String]('v', "version")
-          .action((x, c) => c.copy(version = x))
-          .text("version")
-
-        opt[Int]('d', "seed")
-          .optional()
-          .action((x, c) => c.copy(seed = x))
-          .text("seed used to generate random data columns")
+      head("Scale Test Data Generation Application", "1.0.0")
+      arg[Int]("<scale factor>")
+        .action((x, c) => c.copy(scaleFactor = x))
+        .text("scale factor for data size")
+      arg[Int]("<complexity>")
+        .required()
+        .action((x, c) => c.copy(complexity = x))
+        .text("complexity level for processing")
+      arg[String]("<format>")
+        .validate(x =>
+          if (supportFormats.contains(x.toLowerCase)) success
+          else failure(s"Format must be one of ${supportFormats.mkString(",")}")
+        )
+        .action((x, c) => c.copy(format = x.toLowerCase))
+        .text("output format for the data")
+      arg[String]("<output directory>")
+        .required()
+        .action((x, c) => c.copy(outputDir = x))
+        .text("output directory for data generated")
+      opt[String]('t', "tables")
+        .optional()
+        .action((x, c) => c.copy(tables = x.split(",").map(_.toLowerCase)))
+        .validate(x =>
+          if (x.split(",").forall(t => tableList.contains(t))) success
+          else failure(s"Invalid table name. Must be one of ${tableList.mkString(",")}")
+        )
+        .text("tables to generate. If not specified, all tables will be generated")
+      opt[Int]('d', "seed")
+        .optional()
+        .action((x, c) => c.copy(seed = x))
+        .text("seed used to generate random data columns. default is 41 if not specified")
     }
 
     OParser.parse(args, Config()) match {

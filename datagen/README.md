@@ -543,3 +543,8 @@ follow a given pattern you can do that. Or provide a distribution where a very
 specific seed shows up 99% of the time, and the rest of the time it falls back
 to the regular `FlatDistribution`, you can also do that. It is designed to be very
 flexible.
+
+# Scale Test Data Generation Entry
+In order to generate large scale dataset to test the query engine, we use the data
+generation library above to create a test suite. For more details like the data schema,
+how to use the test suite etc, please refer to [ScaleTest.md](./ScaleTest.md).

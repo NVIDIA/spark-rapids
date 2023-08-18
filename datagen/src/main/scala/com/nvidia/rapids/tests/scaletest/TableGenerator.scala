@@ -120,7 +120,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     bData("b_foreign_a").setSeedRange(startSeed, endSeed)
     bData.configureKeyGroup(
       (1 to 3).map(i => s"b_key3_$i"),
-      CorrelatedKeyGroup(1, 1, Math.round(bNumRows * 0.99)),
+      CorrelatedKeyGroup(3, 1, Math.round(bNumRows * 0.99)),
       FlatDistribution())
     (1 to 10).map(i => bData(s"b_data_small_value_range_$i").setSeedRange(1, 10000))
     bData.toDF(spark)
@@ -148,7 +148,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     cData("c_foreign_a").setSeedRange(startSeed, endSeed)
     cData.configureKeyGroup(
       (1 to complexity).map(i => s"c_key2_$i"),
-      CorrelatedKeyGroup(1, 1, 10),
+      CorrelatedKeyGroup(2, 1, cNumRows/10),
       FlatDistribution())
     cData("c_data_row_num_1").setValueGen(RowNumPassThrough)
     cData.toDF(spark)
@@ -165,9 +165,12 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     val dData = dbgen.addTable("d_data", schema, dNumRows)
     // each key should show up about 10 time, but the overlap with c_data for key group 2 should only be about 50%
     // c_data key group uses seed range (1, 10) so here d_data uses (6, 15) to get 50% overlap
+    val numSeedsInKeyTwo = cNumRows/10
+    val keyTwoStartSeed = numSeedsInKeyTwo / 2
+    val keyTwoEndSeed = keyTwoStartSeed + numSeedsInKeyTwo
     dData.configureKeyGroup(
       (1 to complexity).map(i => s"d_key2_$i"),
-      CorrelatedKeyGroup(1, 6, 15),
+      CorrelatedKeyGroup(2, keyTwoStartSeed, keyTwoEndSeed),
       FlatDistribution()
     )
     dData.toDF(spark)
@@ -189,7 +192,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     val endSeed = Math.round(0.99 * eNumRows) + overlapBias
     eData.configureKeyGroup(
       (1 to 3).map(i => s"e_key3_$i"),
-      CorrelatedKeyGroup(1, startSeed, endSeed),
+      CorrelatedKeyGroup(3, startSeed, endSeed),
       FlatDistribution()
     )
     eData.toDF(spark)
@@ -240,7 +243,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     val flatWeight = 1.0
     gData.configureKeyGroup(
       (1 to 3).map(i => s"g_key3_$i"),
-      CorrelatedKeyGroup(1, 1, 10000),
+      CorrelatedKeyGroup(3, 1, 10000),
       MultiDistribution(Seq(
         (expWeight, ExponentialDistribution(50, 1.0)),
         (flatWeight, FlatDistribution())))
@@ -261,10 +264,6 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
   )
 
   def genTables(targetTables: Seq[String]): Map[String, DataFrame] = {
-    if (targetTables.isEmpty) {
-      fullTableMap
-    } else {
     targetTables.map(key => (key, fullTableMap(key))).toMap
-    }
   }
 }
