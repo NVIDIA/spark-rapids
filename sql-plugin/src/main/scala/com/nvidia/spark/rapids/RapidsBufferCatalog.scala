@@ -295,7 +295,7 @@ class RapidsBufferCatalog(
   }
 
   /**
-   * Adds a buffer to the either device or host storage. This does NOT take
+   * Adds a buffer to either the device or host storage. This does NOT take
    * ownership of the buffer, so it is the responsibility of the caller to close it.
    *
    * @param id the RapidsBufferId to use for this buffer
