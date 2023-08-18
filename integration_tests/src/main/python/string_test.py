@@ -783,12 +783,15 @@ def test_like_complex_escape():
 
 @pytest.mark.parametrize('from_base,pattern',
                          [
-                             pytest.param(10, r' ?-?[0-9]{1,16}',       id='from_10'),
-                             pytest.param(16, r' ?-?[0-9a-fA-F]{1,14}', id='from_16')
+                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
+                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16')
                          ])
 # to_base can be positive and negative
 @pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
 def test_conv_dec_to_from_hex(from_base, to_base, pattern):
+    # before 3.2 leading space are deem the string non-numeric and the result is 0
+    if not is_before_spark_320:
+        pattern = r' ?' + pattern
     gen = mk_str_gen(pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))
