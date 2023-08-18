@@ -69,7 +69,8 @@ public class GpuParquet {
     private long maxBatchSizeBytes = Integer.MAX_VALUE;
     private long targetBatchSizeBytes = Integer.MAX_VALUE;
     private boolean useChunkedReader = false;
-    private String debugDumpPrefix = null;
+    private scala.Option<String> debugDumpPrefix = null;
+    private boolean debugDumpAlways = false;
     private scala.collection.immutable.Map<String, GpuMetric> metrics = null;
 
     private ReadBuilder(InputFile file) {
@@ -144,8 +145,9 @@ public class GpuParquet {
       return this;
     }
 
-    public ReadBuilder withDebugDumpPrefix(String dumpPrefix) {
+    public ReadBuilder withDebugDump(scala.Option<String> dumpPrefix, boolean dumpAlways) {
       this.debugDumpPrefix = dumpPrefix;
+      this.debugDumpAlways = dumpAlways;
       return this;
     }
 
@@ -160,7 +162,7 @@ public class GpuParquet {
           InternalRow.empty(), file.location(), start, length);
       return new GpuParquetReader(file, projectSchema, options, nameMapping, filter, caseSensitive,
           idToConstant, deleteFilter, partFile, conf, maxBatchSizeRows, maxBatchSizeBytes,
-          targetBatchSizeBytes, useChunkedReader, debugDumpPrefix, metrics);
+          targetBatchSizeBytes, useChunkedReader, debugDumpPrefix, debugDumpAlways, metrics);
     }
   }
 

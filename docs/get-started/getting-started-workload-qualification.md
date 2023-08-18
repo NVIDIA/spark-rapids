@@ -1,10 +1,10 @@
 ---
 layout: page
 title: Workload Qualification
-nav_order: 8
+nav_order: 9
 parent: Getting-Started
 ---
-# Getting Started on Spark workload qualification
+# Getting Started on Spark Workload Qualification
 
 The RAPIDS Accelerator for Apache Spark runs as many operations as possible on the GPU.  If there
 are operators which do not yet run on GPU, they will seamlessly fallback to the CPU.  There may be

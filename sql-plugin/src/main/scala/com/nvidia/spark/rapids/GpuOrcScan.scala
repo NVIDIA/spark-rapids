@@ -530,7 +530,8 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
+  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val debugDumpAlways = rapidsConf.orcDebugDumpAlways
   private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, metrics, broadcastedConf, filters,
@@ -561,8 +562,8 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
-      debugDumpPrefix, filters, filterHandler, metrics, ignoreMissingFiles, ignoreCorruptFiles,
-      queryUsesInputFile, keepReadsInOrder, combineConf)
+      debugDumpPrefix, debugDumpAlways, filters, filterHandler, metrics, ignoreMissingFiles,
+      ignoreCorruptFiles, queryUsesInputFile, keepReadsInOrder, combineConf)
   }
 
   /**
@@ -601,9 +602,9 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
-    new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
-      maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics, partitionSchema, numThreads,
-      filterHandler.isCaseSensitive)
+    new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
+      debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
+      partitionSchema, numThreads, filterHandler.isCaseSensitive)
   }
 
   /**
@@ -628,7 +629,8 @@ case class GpuOrcPartitionReaderFactory(
   extends ShimFilePartitionReaderFactory(params) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
+  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val debugDumpAlways = rapidsConf.orcDebugDumpAlways
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, metrics, broadcastedConf,
@@ -653,8 +655,8 @@ case class GpuOrcPartitionReaderFactory(
       val conf = broadcastedConf.value.value
       OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
       val reader = new PartitionReaderWithBytesRead(new GpuOrcPartitionReader(conf, partFile, ctx,
-        readDataSchema, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
-        filterHandler.isCaseSensitive))
+        readDataSchema, debugDumpPrefix, debugDumpAlways,  maxReadBatchSizeRows,
+        maxReadBatchSizeBytes, metrics, filterHandler.isCaseSensitive))
       ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
     }
   }
@@ -729,9 +731,13 @@ object OrcBlockMetaForSplitCheck {
 
 /** Collections of some common functions for ORC */
 trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionReaderBase =>
-  private val orcFormat = Some("orc")
+  /** Whether debug dumping is enabled and the path prefix where to dump */
+  val debugDumpPrefix: Option[String]
 
-  def debugDumpPrefix: Option[String]
+  /** Whether to always debug dump or only on errors */
+  val debugDumpAlways: Boolean
+
+  val conf: Configuration
 
   // The Spark schema describing what will be read
   def readDataSchema: StructType
@@ -866,9 +872,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       requestedMapping: Option[Array[Int]],
       isCaseSensitive: Boolean,
       splits: Array[PartitionedFile]): Table = {
-    // Dump ORC data into a file
-    dumpDataToFile(hostBuf, bufSize, splits, debugDumpPrefix, orcFormat)
-
     val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
     val includedColumns = tableSchema.getFieldNames.asScala
     val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
@@ -882,7 +885,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     // about to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    try {
+    val table = try {
       RmmRapidsRetryIterator.withRetryNoSplit[Table] {
         val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
           metrics(GPU_DECODE_TIME))) { _ =>
@@ -895,8 +898,20 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       }
     } catch {
       case e: Exception =>
-        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+        val dumpMsg = debugDumpPrefix.map { prefix =>
+          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".orc")
+          s", data dumped to $p"
+        }.getOrElse("")
+        throw new IOException(
+          s"Error when processing file splits [${splits.mkString("; ")}]$dumpMsg", e)
     }
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".orc")
+        logWarning(s"Dumped data for [${splits.mkString("; ")}] to $p")
+      }
+    }
+    table
   }
 
   protected final def isNeedToSplitDataBlock(
@@ -1141,17 +1156,19 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
  * @param ctx     the context to provide some necessary information
  * @param readDataSchema Spark schema of what will be read from the file
  * @param debugDumpPrefix path prefix for dumping the memory file or null
+ * @param debugDumpAlways whether to always debug dump or only on errors
  * @param maxReadBatchSizeRows maximum number of rows to read in a batch
  * @param maxReadBatchSizeBytes maximum number of bytes to read in a batch
  * @param execMetrics metrics to update during read
  * @param isCaseSensitive whether the name check should be case sensitive or not
  */
 class GpuOrcPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     partFile: PartitionedFile,
     ctx: OrcPartitionReaderContext,
     override val readDataSchema: StructType,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics : Map[String, GpuMetric],
@@ -1935,6 +1952,7 @@ private object GpuOrcFileFilterHandler {
  * @param maxNumFileProcessed threshold to control the maximum file number to be
  *                            submitted to threadpool
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated ORC data or null
+ * @param debugDumpAlways whether to always debug dump or only on errors
  * @param filters filters passed into the filterHandler
  * @param filterHandler used to filter the ORC stripes
  * @param execMetrics the metrics
@@ -1942,7 +1960,7 @@ private object GpuOrcFileFilterHandler {
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class MultiFileCloudOrcPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     files: Array[PartitionedFile],
     dataSchema: StructType,
     override val readDataSchema: StructType,
@@ -1952,6 +1970,7 @@ class MultiFileCloudOrcPartitionReader(
     numThreads: Int,
     maxNumFileProcessed: Int,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     filters: Array[Filter],
     filterHandler: GpuOrcFileFilterHandler,
     execMetrics: Map[String, GpuMetric],
@@ -2466,6 +2485,7 @@ private case class OrcSingleStripeMeta(
  *                              to only contain the column chunks to be read
  * @param readDataSchema        the Spark schema describing what will be read
  * @param debugDumpPrefix       a path prefix to use for dumping the fabricated Orc data or null
+ * @param debugDumpAlways       whether to always debug dump or only on errors
  * @param maxReadBatchSizeRows  soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
  * @param execMetrics           metrics
@@ -2474,11 +2494,12 @@ private case class OrcSingleStripeMeta(
  * @param isCaseSensitive       whether the name check should be case sensitive or not
  */
 class MultiFileOrcPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     files: Array[PartitionedFile],
     clippedStripes: Seq[OrcSingleStripeMeta],
     override val readDataSchema: StructType,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],

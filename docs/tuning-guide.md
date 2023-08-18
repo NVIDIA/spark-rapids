@@ -210,6 +210,16 @@ rather than megabytes or smaller.
 Note that the GPU can encode Parquet and ORC data much faster than the CPU, so the costs of
 writing large files can be significantly lower.
 
+Use Hive Parquet or ORC tables instead of Hive Text tables as the intermediate tables for
+CTAS(`Create Table As Select`) queries. The suggested change is to add `stored as parquet` for CTAS.
+Alternatively, you can set `hive.default.fileformat=Parquet` to create Parquet files by default.
+Refer to this
+[Hive Doc](https://cwiki.apache.org/confluence/display/Hive/Configuration+Properties#ConfigurationProperties-hive.default.fileformat)
+for more details.
+
+If the query scans Hive ORC tables, make sure `spark.sql.hive.convertMetastoreOrc=true` to avoid CPU
+fallback.
+
 ## Input Files' column order
 When there are a large number of columns for file formats like Parquet and ORC the size of the 
 contiguous data for each individual column can be very small. This can result in doing lots of very 
@@ -498,3 +508,28 @@ For all other cases large windows, including skewed values in partition by and o
 result in slow performance. If you do run into one of these situations please file an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) so we can properly prioritize
 our work to support more optimizations.
+
+## Shuffle Disks
+Dataproc: [Local SSD](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds)
+is recommended for Spark scratch space to improve IO. For example, when creating Dataproc cluster,
+you can add below:
+
+```
+--worker-local-ssd-interface=NVME
+--num-secondary-worker-local-ssds=2
+--worker-local-ssd-interface=NVME
+--secondary-worker-local-ssd-interface=NVME
+```
+
+Refer to [Getting Started on GCP Dataproc](./get-started/getting-started-gcp.md) for more details.
+
+On-Prem cluster: Try to use enough NVME or SSDs as shuffling disks to avoid local disk IO bottleneck.
+
+## Exclude bad nodes from YARN resource
+
+Just in case there are bad nodes due to hardware failure issues (including GPU failure), we suggest
+setting `spark.yarn.executor.launch.excludeOnFailure.enabled=true` so that the problematic node can
+be excluded.
+
+Refer to [Running Spark on YARN](https://spark.apache.org/docs/latest/running-on-yarn.html) for more
+details.

@@ -25,9 +25,9 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
@@ -1494,7 +1494,7 @@ class GpuRunningWindowIterator(
   private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  onTaskCompletion(close())
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -1733,7 +1733,7 @@ class GpuCachedDoublePassWindowIterator(
   private var lastPartsProcessing: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  onTaskCompletion(close())
 
   private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
     lastPartsCaching.foreach(_.close())

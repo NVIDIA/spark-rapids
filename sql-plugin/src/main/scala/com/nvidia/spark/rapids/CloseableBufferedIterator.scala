@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+
 import org.apache.spark.TaskContext
 
 /**
@@ -28,8 +30,12 @@ import org.apache.spark.TaskContext
  */
 class CloseableBufferedIterator[T <: AutoCloseable](wrapped: BufferedIterator[T])
   extends BufferedIterator[T] with AutoCloseable {
-  // register against task completion to close any leaked buffered items
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   private[this] var isClosed = false
   override def head: T = wrapped.head

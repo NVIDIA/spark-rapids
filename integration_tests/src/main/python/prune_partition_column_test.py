@@ -173,14 +173,13 @@ def create_contacts_table_and_read(is_partitioned, format, data_path, expected_s
 # https://github.com/NVIDIA/spark-rapids/issues/8712
 # https://github.com/NVIDIA/spark-rapids/issues/8713
 # https://github.com/NVIDIA/spark-rapids/issues/8714
-@pytest.mark.parametrize('query_and_expected_schemata', [("select friends.middle, friends from {} where p=1", "struct<friends:array<struct<first:string,middle:string,last:string>>>"),
-                                                         pytest.param(("select name.middle, address from {} where p=2", "struct<name:struct<middle:string>,address:string>"), marks=pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/8788')),
-                                                         ("select name.first from {} where name.first = 'Jane'", "struct<name:struct<first:string>>")])
+@pytest.mark.parametrize('query,expected_schemata', [("select friends.middle, friends from {} where p=1", "struct<friends:array<struct<first:string,middle:string,last:string>>>"),
+                                                     pytest.param("select name.middle, address from {} where p=2", "struct<name:struct<middle:string>,address:string>", marks=pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/8788')),
+                                                     ("select name.first from {} where name.first = 'Jane'", "struct<name:struct<first:string>>")])
 @pytest.mark.parametrize('is_partitioned', [True, False])
 @pytest.mark.parametrize('format', ["parquet", "orc"])
-def test_select_complex_field(format, spark_tmp_path, query_and_expected_schemata, is_partitioned, spark_tmp_table_factory):
+def test_select_complex_field(format, spark_tmp_path, query, expected_schemata, is_partitioned, spark_tmp_table_factory):
     table_name = spark_tmp_table_factory.get()
-    query, expected_schemata = query_and_expected_schemata
     data_path = spark_tmp_path + "/DATA"
     def read_temp_view(schema):
         def do_it(spark):
@@ -191,14 +190,13 @@ def test_select_complex_field(format, spark_tmp_path, query_and_expected_schemat
     create_contacts_table_and_read(is_partitioned, format, data_path, expected_schemata, read_temp_view, conf, table_name)
 
 # https://github.com/NVIDIA/spark-rapids/issues/8715
-@pytest.mark.parametrize('select_and_expected_schemata', [("friend.First", "struct<friends:array<struct<first:string>>>"),
+@pytest.mark.parametrize('query, expected_schemata', [("friend.First", "struct<friends:array<struct<first:string>>>"),
                                                           ("friend.MIDDLE", "struct<friends:array<struct<middle:string>>>")])
 @pytest.mark.skipif(is_before_spark_320(), reason='https://issues.apache.org/jira/browse/SPARK-34638')
 @pytest.mark.parametrize('is_partitioned', [True, False])
 @pytest.mark.parametrize('format', ["parquet", "orc"])
-def test_nested_column_prune_on_generator_output(format, spark_tmp_path, select_and_expected_schemata, is_partitioned, spark_tmp_table_factory):
+def test_nested_column_prune_on_generator_output(format, spark_tmp_path, query, expected_schemata, is_partitioned, spark_tmp_table_factory):
     table_name = spark_tmp_table_factory.get()
-    query, expected_schemata = select_and_expected_schemata
     data_path = spark_tmp_path + "/DATA"
     def read_temp_view(schema):
         def do_it(spark):

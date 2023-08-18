@@ -20,16 +20,16 @@ import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
-import com.nvidia.spark.rapids.{PlanShims, PlanUtils}
+import com.nvidia.spark.rapids.{PlanShims, PlanUtils, ShimLoader}
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, QueryExecution, ReusedSubqueryExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.util.QueryExecutionListener
 
-object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
+object ExecutionPlanCaptureCallback {
   private[this] var shouldCapture: Boolean = false
   private[this] val execPlans: ArrayBuffer[SparkPlan] = ArrayBuffer.empty
 
@@ -93,10 +93,13 @@ object ExecutionPlanCaptureCallback extends AdaptiveSparkPlanHelper {
     import org.apache.spark.sql.types.StructType
     import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 
-    val cpuFileSourceScanSchemata = collect(cpuDf.queryExecution.executedPlan) {
+    val adaptiveSparkPlanHelper = ShimLoader.newAdaptiveSparkPlanHelperShim()
+    val cpuFileSourceScanSchemata =
+      adaptiveSparkPlanHelper.collect(cpuDf.queryExecution.executedPlan) {
       case scan: FileSourceScanExec => scan.requiredSchema
     }
-    val gpuFileSourceScanSchemata = collect(gpuDf.queryExecution.executedPlan) {
+    val gpuFileSourceScanSchemata =
+      adaptiveSparkPlanHelper.collect(gpuDf.queryExecution.executedPlan) {
       case scan: GpuFileSourceScanExec => scan.requiredSchema
     }
     assert(cpuFileSourceScanSchemata.size == gpuFileSourceScanSchemata.size,
@@ -245,4 +248,8 @@ class ExecutionPlanCaptureCallback extends QueryExecutionListener {
 
   override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit =
     captureIfNeeded(qe)
+}
+
+trait AdaptiveSparkPlanHelperShim {
+  def collect[B](p: SparkPlan)(pf: PartialFunction[SparkPlan, B]): Seq[B]
 }

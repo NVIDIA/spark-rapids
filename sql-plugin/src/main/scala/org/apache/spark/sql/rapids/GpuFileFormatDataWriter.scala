@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.GpuFileFormatDataWriterShim
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
@@ -762,7 +763,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
   private val concurrentWriters = mutable.HashMap[String, WriterStatusWithCaches]()
 
   // guarantee to close the caches and writers when task is finished
-  taskContext.addTaskCompletionListener[Unit](_ => closeCachesAndWriters())
+  onTaskCompletion(taskContext)(closeCachesAndWriters())
 
   private val outDataTypes = description.dataColumns.map(_.dataType).toArray
 

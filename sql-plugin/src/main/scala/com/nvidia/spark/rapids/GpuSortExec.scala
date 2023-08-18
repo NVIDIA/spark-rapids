@@ -25,9 +25,9 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
@@ -138,7 +138,7 @@ case class GpuSortExec(
       if (outOfCore) {
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
           targetSize, opTime, sortTime, outputBatch, outputRows)
-        TaskContext.get().addTaskCompletionListener(_ -> iter.close())
+        onTaskCompletion(iter.close())
         iter
       } else {
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,

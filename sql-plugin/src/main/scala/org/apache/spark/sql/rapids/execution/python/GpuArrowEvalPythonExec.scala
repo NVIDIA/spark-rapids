@@ -26,6 +26,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -55,7 +56,7 @@ class RebatchingRoundoffIterator(
     extends Iterator[ColumnarBatch] {
   var pending: Option[SpillableColumnarBatch] = None
 
-  TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
+  onTaskCompletion {
     pending.foreach(_.close())
     pending = None
   }
@@ -285,7 +286,7 @@ case class GpuArrowEvalPythonExec(
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(context)(queue.close())
 
       val (pyFuncs, inputs) = udfs.map(collectFunctions).unzip
 

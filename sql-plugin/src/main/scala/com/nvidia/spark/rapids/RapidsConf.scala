@@ -337,6 +337,32 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
+  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
+      .doc("Should the off heap limit be enforced or not.")
+      .startupOnly()
+      // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
+      .doc("The maximum amount of off heap memory that the plugin will use. " +
+          "This includes pinned memory and some overhead memory. If pinned is larger " +
+          "than this - overhead pinned will be truncated.")
+      .startupOnly()
+      .internal() // https://github.com/NVIDIA/spark-rapids/issues/8878 should be replaced with
+      // .commonlyUsed()
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional // The default
+
+  val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.host.taskOverhead.size")
+      .doc("The amount of off heap memory reserved per task for overhead activities " +
+          "like C++ heap/stack and a few other small things that are hard to control for.")
+      .startupOnly()
+      .internal() // https://github.com/NVIDIA/spark-rapids/issues/8878
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(15L * 1024 * 1024) // 15 MiB
+
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
@@ -1368,19 +1394,40 @@ object RapidsConf {
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val PARQUET_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.parquet.debug.dumpAlways")
+    .doc(s"This only has an effect if $PARQUET_DEBUG_DUMP_PREFIX is set. If true then " +
+      "Parquet data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
     .doc("A path prefix where ORC split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val ORC_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.orc.debug.dumpAlways")
+    .doc(s"This only has an effect if $ORC_DEBUG_DUMP_PREFIX is set. If true then " +
+      "ORC data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val AVRO_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.avro.debug.dumpPrefix")
     .doc("A path prefix where AVRO split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val AVRO_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.avro.debug.dumpAlways")
+    .doc(s"This only has an effect if $AVRO_DEBUG_DUMP_PREFIX is set. If true then " +
+      "Avro data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
@@ -2166,6 +2213,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
+  lazy val offHeapLimitEnabled: Boolean = get(OFF_HEAP_LIMIT_ENABLED)
+
+  lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
+
+  lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
+
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
@@ -2250,11 +2303,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
 
-  lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
+  lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 
-  lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
+  lazy val parquetDebugDumpAlways: Boolean = get(PARQUET_DEBUG_DUMP_ALWAYS)
 
-  lazy val avroDebugDumpPrefix: String = get(AVRO_DEBUG_DUMP_PREFIX)
+  lazy val orcDebugDumpPrefix: Option[String] = get(ORC_DEBUG_DUMP_PREFIX)
+
+  lazy val orcDebugDumpAlways: Boolean = get(ORC_DEBUG_DUMP_ALWAYS)
+
+  lazy val avroDebugDumpPrefix: Option[String] = get(AVRO_DEBUG_DUMP_PREFIX)
+
+  lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
