@@ -637,8 +637,6 @@ class RapidsBufferCatalog(
       spillStore: RapidsBufferStore,
       stream: Cuda.Stream): Unit = {
     val spillStoreMaxSize = spillStore.getMaxSize
-    // if the spill store is empty, we should not warn extra (there was nothing to spill)
-    var success = spillStore.currentSize == 0
     if (spillStoreMaxSize.isDefined) {
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
@@ -650,16 +648,7 @@ class RapidsBufferCatalog(
           logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
           TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
         }
-        success =
-          amountSpilled >= buffer.getMemoryUsedBytes ||
-            buffer.getMemoryUsedBytes > spillStoreMaxSize.get
       }
-    }
-    // TODO: this is just a warning for now
-    if (!success && spillStoreMaxSize.isDefined) {
-      logWarning(
-        s"Could not spill enough from ${spillStore.name} to stay " +
-          s"within ${spillStoreMaxSize.get} B")
     }
   }
 
