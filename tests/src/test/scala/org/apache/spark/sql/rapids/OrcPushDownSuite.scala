@@ -70,7 +70,8 @@ class OrcPushDownSuite extends SparkQueryCompareTestSuite {
         val withoutFilters = dfRead.queryExecution.executedPlan.transform {
           case GpuFilterExec(_, child) => child
         }
-        val actual = spark.internalCreateDataFrame(withoutFilters.execute(), schema, false).count()
+        val actual = spark.internalCreateDataFrame(withoutFilters.execute(), schema, false)
+            .count()
         assert(actual < 10)
       })
     }
@@ -97,7 +98,8 @@ class OrcPushDownSuite extends SparkQueryCompareTestSuite {
   //       val withoutFilters = dfRead.queryExecution.executedPlan.transform {
   //         case FilterExec(_, child) => child
   //       }
-  //       val actual = spark.internalCreateDataFrame(withoutFilters.execute(), schema, false).count()
+  //       val actual = spark.internalCreateDataFrame(withoutFilters.execute(), schema, false)
+  //           .count()
   //       assert(actual < 10)
   //     })
   //   }
