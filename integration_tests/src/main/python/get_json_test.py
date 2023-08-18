@@ -47,7 +47,7 @@ def test_get_json_object(json_str_pattern):
 def test_unsupported_fallback_get_json_object(json_str_pattern):
     gen = mk_json_str_gen(json_str_pattern)
     scalar_json = '{"store": {"fruit": "test"}}'
-    pattern = StringGen(pattern='\$\.[a-z]{1,9}')
+    pattern = StringGen(pattern=r'\$\.[a-z]{1,9}')
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
             gen_df(spark, [('a', gen), ('b', pattern)], length=10).selectExpr(sql_text),
