@@ -637,7 +637,8 @@ class RapidsBufferCatalog(
       spillStore: RapidsBufferStore,
       stream: Cuda.Stream): Unit = {
     val spillStoreMaxSize = spillStore.getMaxSize
-    var success = false
+    // if the spill store is empty, we should not warn extra (there was nothing to spill)
+    var success = spillStore.currentSize == 0
     if (spillStoreMaxSize.isDefined) {
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
