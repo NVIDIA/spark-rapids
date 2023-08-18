@@ -164,7 +164,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
       (1 to 10).map(i => s"d_data_$i ${randomColumnType()}").mkString(",")
     val dData = dbgen.addTable("d_data", schema, dNumRows)
     // each key should show up about 10 time, but the overlap with c_data for key group 2 should only be about 50%
-    // c_data key group uses seed range (1, 10) so here d_data uses (6, 15) to get 50% overlap
+    // For example if c_data.c_key2_* had 1000 rows the seed range would be (1, 100) so here d_data.d_key2_* would use a seed range of (50, 150)
+    // thus the overlap will be about ~50%
     val numSeedsInKeyTwo = cNumRows/10
     val keyTwoStartSeed = numSeedsInKeyTwo / 2
     val keyTwoEndSeed = keyTwoStartSeed + numSeedsInKeyTwo
@@ -217,7 +218,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     // overlap only 1 of 5 => this (5, 9) vs. aFact (1, 5)
     fFact("f_data_low_unique_1").setSeedRange(5, 9)
     fFact("f_data_low_unique_len_1").setLength(1, 5)
-    fFact("f_data_row_num_1").setValueRange(1, fNumRows)
+    fFact("f_data_row_num_1").setValueGen(RowNumPassThrough)
     fFact.toDF(spark)
   }
   /**
@@ -249,7 +250,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
         (flatWeight, FlatDistribution())))
     )
     gData("g_data_enum_1").setSeedRange(1,5)
-    gData("g_data_row_num_1").setSeedRange(1, gNumRows)
+    gData("g_data_row_num_1").setValueGen(RowNumPassThrough)
     gData.toDF(spark)
   }
 

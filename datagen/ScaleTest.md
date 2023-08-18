@@ -5,7 +5,7 @@
 The Scale Test suite is composed by 2 parts: data generation tool and test query
 sets.
 
-For the data generation tool, it leverages the bid data generation library code 
+For the data generation tool, it leverages the big data generation library code
 to produce large scale data. We defined several tables in the tool and put the schema
 at the [table schema](#table-schema) section.
 
@@ -18,16 +18,41 @@ It will be submitted as the main class to Spark to run the data generation.
 ### User interface
 
 The input arguments for this tool is described as below:
-```
-  -s, --scale_factor <value> scale factor for data size
-  -c, --complexity <value>   complexity level for processing
-  -t, --tables <value>       tables to generate
-  -o, --output_dir <value>   output directory
-  -f, --format <value>       output format
-  -v, --version <value>      version
-  -d, --seed <value>         seed used to generate random data columns
+
+```bash
+Usage: DataGenEntry [options] <scale factor> <complexity> <format> <output directory>
+
+  <scale factor>        scale factor for data size
+  <complexity>          complexity level for processing
+  <format>              output format for the data
+  <output directory>    output directory for data generated
+  -t, --tables <value>  tables to generate. If not specified, all tables will be generated
+  -d, --seed <value>    seed used to generate random data columns. default is 41 if not specified
+  --overwrite           Flag argument. Whether to overwrite the existing data in the path.
 
 ```
+
+The data generation tool can be used just like a normal Spark application, user
+can submit it to Spark master with essential parameters:
+
+```bash
+$SPARK_HOME/bin/spark-submit \
+--master spark://<SPARK_MASTER>:7077 \
+--conf spark.driver.memory=10G \
+--conf spark.executor.memory=32G \
+--conf spark.sql.parquet.int96RebaseModeInWrite=CORRECTED \
+--conf spark.sql.parquet.datetimeRebaseModeInWrite=CORRECTED \
+--class com.nvidia.rapids.tests.scaletest.ScaleTestDataGen \ # the main class
+--jars $SPARK_HOME/examples/jars/scopt_2.12-3.7.1.jar \ # one dependency jar just shipped with Spark under $SPARK_HOME
+./target/datagen_2.12-23.10.0-SNAPSHOT-spark332.jar \
+1 \
+10 \
+parquet \
+<PATH_TO_SAVE_DATA>
+```
+
+Then a folder with name pattern: `SCALE_<scale factor>_<complexity>_<format>_<data gen tool version>_<seed>`
+will be created under the `<PATH_TO_SAVE_DATA>` that user just provided.
 
 ## Test Query Sets
 To be added.

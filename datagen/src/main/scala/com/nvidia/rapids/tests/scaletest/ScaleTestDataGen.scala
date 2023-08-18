@@ -28,7 +28,8 @@ object ScaleTestDataGen{
     tables: Array[String] = Array("a_facts", "b_data", "c_data", "d_data", "e_data", "f_facts", "g_data"),
     format: String = "parquet",
     version: String = "1.0.0",
-    seed: Int = 41)
+    seed: Int = 41,
+    overwrite: Boolean = false)
 
   private def runDataGen(config: Config): Unit ={
     // Init SparkSession
@@ -53,11 +54,16 @@ object ScaleTestDataGen{
       "g_data" -> customGroupSize)
 
     for ((tableName, df) <- tableMap) {
+      var writer = df.write
+      if (config.overwrite) {
+        // default mode is "errorifexists" by Spark if not specified.
+        writer = writer.mode("overwrite")
+      }
       config.format match {
-        case "parquet" => df.write
+        case "parquet" => writer
           .option("parquet.block.size", specialRowGroupSizeMap.getOrElse(tableName, defaultGroupSizeInSpark))
           .parquet(s"$baseOutputPath/$tableName")
-        case "orc" => df.write
+        case "orc" => writer
           .option("orc.block.size", specialRowGroupSizeMap.getOrElse(tableName, defaultGroupSizeInSpark))
           .orc(s"$baseOutputPath/$tableName")
         case unsupported => throw new IllegalArgumentException(s"Unknown format: $unsupported")
@@ -100,6 +106,10 @@ object ScaleTestDataGen{
         .optional()
         .action((x, c) => c.copy(seed = x))
         .text("seed used to generate random data columns. default is 41 if not specified")
+      opt[Unit]("overwrite")
+        .optional()
+        .action((_, c) => c.copy(overwrite = true))
+        .text("Flag argument. Whether to overwrite the existing data in the path.")
     }
 
     OParser.parse(args, Config()) match {
