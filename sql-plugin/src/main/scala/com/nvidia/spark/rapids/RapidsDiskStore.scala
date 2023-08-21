@@ -16,16 +16,19 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileOutputStream}
+import java.io.{File, FileInputStream, FileOutputStream}
 import java.nio.channels.FileChannel.MapMode
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
@@ -36,6 +39,49 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       incoming: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     // assuming that the disk store gets contiguous buffers
+    val id = incoming.id
+    val path = if (id.canShareDiskPaths) {
+      sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
+    } else {
+      id.getDiskPath(diskBlockManager)
+    }
+
+    val (fileOffset, diskLength) = if (id.canShareDiskPaths) {
+      // only one writer at a time for now when using shared files
+      path.synchronized {
+        if (incoming.needsSerialization) {
+          // only shuffle buffers share paths, and adding host-backed ColumnarBatch is
+          // not the shuffle case, so this is not supported and is never exercised.
+          throw new IllegalStateException(
+            s"Attempted spilling to disk a RapidsBuffer $incoming that needs serialization " +
+              s"while sharing spill paths.")
+        } else {
+          copyBufferToPath(incoming, path, append = true)
+        }
+      }
+    } else {
+      if (incoming.needsSerialization) {
+        serializeBufferToStream(incoming, path)
+      } else {
+        copyBufferToPath(incoming, path, append = false)
+      }
+    }
+
+    logDebug(s"Spilled to $path $fileOffset:$diskLength")
+    new RapidsDiskBuffer(
+      id,
+      fileOffset,
+      diskLength,
+      incoming.meta,
+      incoming.getSpillPriority,
+      incoming.needsSerialization)
+  }
+
+  /** Copy a host buffer to a file, returning the file offset at which the data was written. */
+  private def copyBufferToPath(
+      incoming: RapidsBuffer,
+      path: File,
+      append: Boolean): (Long, Long) = {
     val incomingBuffer =
       withResource(incoming.getCopyIterator) { incomingCopyIterator =>
         incomingCopyIterator.next()
@@ -45,58 +91,44 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         case h: HostMemoryBuffer => h
         case _ => throw new UnsupportedOperationException("buffer without host memory")
       }
-      val id = incoming.id
-      val path = if (id.canShareDiskPaths) {
-        sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
-      } else {
-        id.getDiskPath(diskBlockManager)
-      }
-      val fileOffset = if (id.canShareDiskPaths) {
-        // only one writer at a time for now when using shared files
-        path.synchronized {
-          copyBufferToPath(hostBuffer, path, append = true)
+      val iter = new HostByteBufferIterator(hostBuffer)
+      val fos = new FileOutputStream(path, append)
+      try {
+        val channel = fos.getChannel
+        val fileOffset = channel.position
+        iter.foreach { bb =>
+          while (bb.hasRemaining) {
+            channel.write(bb)
+          }
         }
-      } else {
-        copyBufferToPath(hostBuffer, path, append = false)
+        (fileOffset, channel.position())
+      } finally {
+        fos.close()
       }
-      logDebug(s"Spilled to $path $fileOffset:${incomingBuffer.getLength}")
-      new RapidsDiskBuffer(
-        id,
-        fileOffset,
-        incomingBuffer.getLength,
-        incoming.meta,
-        incoming.getSpillPriority)
     }
   }
 
-  /** Copy a host buffer to a file, returning the file offset at which the data was written. */
-  private def copyBufferToPath(
-      buffer: HostMemoryBuffer,
-      path: File,
-      append: Boolean): Long = {
-    val iter = new HostByteBufferIterator(buffer)
-    val fos = new FileOutputStream(path, append)
-    try {
-      val channel = fos.getChannel
-      val fileOffset = channel.position
-      iter.foreach { bb =>
-        while (bb.hasRemaining) {
-          channel.write(bb)
-        }
+  private def serializeBufferToStream(
+      incoming: RapidsBuffer,
+      path: File): (Long, Long) = {
+    withResource(new FileOutputStream(path, false /*append not supported*/)) { fos =>
+      withResource(fos.getChannel) { outputChannel =>
+        val startOffset = outputChannel.position()
+        incoming.serializeToStream(fos)
+        val endingOffset = outputChannel.position()
+        val writtenBytes = endingOffset - startOffset
+        (startOffset, writtenBytes)
       }
-      fileOffset
-    } finally {
-      fos.close()
     }
   }
-
 
   class RapidsDiskBuffer(
       id: RapidsBufferId,
       fileOffset: Long,
       size: Long,
       meta: TableMeta,
-      spillPriority: Long)
+      spillPriority: Long,
+      override val needsSerialization: Boolean = false)
       extends RapidsBufferBase(
         id, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
@@ -106,6 +138,8 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     override val storageTier: StorageTier = StorageTier.DISK
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
+      require(!needsSerialization,
+          "Called getMemoryBuffer on a disk buffer that needs deserialization")
       if (hostBuffer.isEmpty) {
         val path = id.getDiskPath(diskBlockManager)
         val mappedBuffer = HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE,
@@ -115,6 +149,22 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       }
       hostBuffer.foreach(_.incRefCount())
       hostBuffer.get
+    }
+
+    override def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+      require(needsSerialization,
+        "Disk buffer was not serialized yet getHostColumnarBatch is being invoked")
+      require(fileOffset == 0,
+        "Attempted to obtain a HostColumnarBatch from a spilled RapidsBuffer that is sharing " +
+          "paths on disk")
+      val path = id.getDiskPath(diskBlockManager)
+      withResource(new FileInputStream(path)) { fis =>
+        val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(fis)
+        val hostCols = closeOnExcept(hostBuffer) { _ =>
+          SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+        }
+        new ColumnarBatch(hostCols.toArray, header.getNumRows)
+      }
     }
 
     override def close(): Unit = synchronized {

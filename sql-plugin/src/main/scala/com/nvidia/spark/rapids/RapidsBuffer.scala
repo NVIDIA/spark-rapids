@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.io.OutputStream
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -175,7 +176,6 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
   } else {
     None
   }
-
   def isChunked: Boolean = chunkedPacker.isDefined
 
   // this is used for the single shot case to flag when `next` is call
@@ -245,11 +245,23 @@ trait RapidsBuffer extends AutoCloseable {
   def getCopyIterator: RapidsBufferCopyIterator =
     new RapidsBufferCopyIterator(this)
 
+  /**
+   * At spill time, the tier we are spilling to may need to hand the rapids buffer an output stream
+   * to write to. This is the case for a `RapidsHostColumnarBatch`.
+   * @param outputStream stream that the `RapidsBuffer` will serialize itself to
+   */
+  def serializeToStream(outputStream: OutputStream): Unit = {
+    throw new IllegalStateException(s"Buffer $this does not support serializeToStream")
+  }
+
   /** Descriptor for how the memory buffer is formatted */
   def meta: TableMeta
 
   /** The storage tier for this buffer */
   val storageTier: StorageTier
+
+  /** A RapidsBuffer that needs to be serialized/deserialized at spill/materialization time */
+  val needsSerialization: Boolean = false
 
   /**
    * Get the columnar batch within this buffer. The caller must have
@@ -262,6 +274,21 @@ trait RapidsBuffer extends AutoCloseable {
    *       with decompressing the data if necessary.
    */
   def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
+
+  /**
+   * Get the host-backed columnar batch from this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   *
+   * If this `RapidsBuffer` was added originally to the device tier, or if this is
+   * a just a buffer (not a batch), this function will throw.
+   *
+   * @param sparkTypes the spark data types the batch should have
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
+   */
+  def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+    throw new IllegalStateException(s"$this does not support host columnar batches.")
+  }
 
   /**
    * Get the underlying memory buffer. This may be either a HostMemoryBuffer or a DeviceMemoryBuffer

@@ -349,8 +349,15 @@ class RapidsBufferCatalog(
       batch: ColumnarBatch,
       initialSpillPriority: Long,
       needsSync: Boolean = true): RapidsBufferHandle = {
-    closeOnExcept(GpuColumnVector.from(batch)) { table =>
-      addTable(table, initialSpillPriority, needsSync)
+    require(batch.numCols() > 0,
+      "Cannot call addBatch with a batch that doesn't have columns")
+    batch.column(0) match {
+      case _: RapidsHostColumnVector =>
+        addHostBatch(batch, initialSpillPriority, needsSync)
+      case _ =>
+        closeOnExcept(GpuColumnVector.from(batch)) { table =>
+          addTable(table, initialSpillPriority, needsSync)
+        }
     }
   }
 
@@ -375,6 +382,25 @@ class RapidsBufferCatalog(
     val rapidsBuffer = deviceStorage.addTable(
       id,
       table,
+      initialSpillPriority,
+      needsSync)
+    registerNewBuffer(rapidsBuffer)
+    makeNewHandle(id, initialSpillPriority)
+  }
+
+
+  /**
+   * Add a host-backed ColumnarBatch to the catalog. This is only called from addBatch
+   * after we detect that this is a host-backed batch.
+   */
+  private def addHostBatch(
+      hostCb: ColumnarBatch,
+      initialSpillPriority: Long,
+      needsSync: Boolean): RapidsBufferHandle = {
+    val id = TempSpillBufferId()
+    val rapidsBuffer = hostStorage.addBatch(
+      id,
+      hostCb,
       initialSpillPriority,
       needsSync)
     registerNewBuffer(rapidsBuffer)
