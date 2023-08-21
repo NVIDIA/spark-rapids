@@ -16,17 +16,20 @@
 
 package com.nvidia.rapids.tests.scaletest
 
+import scala.util.Random
+
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.tests.datagen.{CorrelatedKeyGroup, DBGen, DistinctDistribution, ExponentialDistribution, FlatDistribution, MultiDistribution, RowNumPassThrough}
 import org.apache.spark.sql.types.{DateType, TimestampType}
 
-import scala.util.Random
 
 /**
  * pre-concepts:
  * - key groups:
  * 1. The primary key for table a. In table a each row will be unique
- * 2. Adjusted key group. The number of columns will correspond to the complexity. The types of the columns should be selected from the set {string, decimal(7, 2), decimal(15, 2), int, long, timestamp, date, struct<num: long, desc: string>}
+ * 2. Adjusted key group. The number of columns will correspond to the complexity. The types of the
+ *    columns should be selected from the set {string, decimal(7, 2), decimal(15, 2), int, long,
+ *    timestamp, date, struct<num: long, desc: string>}
  * 3. 3-column key group with the types string, date, long.
  * 4. 1 column that is an int with a unique count of 5
  */
@@ -51,7 +54,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     // See: https://github.com/NVIDIA/spark-rapids/issues/8717
     // ride-along/data columns will pick the column type from the candidates below.
     // required at https://github.com/NVIDIA/spark-rapids/issues/8813#issue-1822958165
-    // TODO: maybe we can move this to an external text file so we can extend it easily in the future
+    // TODO: maybe we can move this to an external text file so we can extend it easily in the
+    //       future
     val candidates = Seq(
       "int",
       "long",
@@ -79,7 +83,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     - primary_a the primary key from key group 1
     - key group 4
     - a_data_low_unique_1 data column that is a long with a unique count of 5
-    - a_data_low_unique_len_1 data column that is a string with variable length ranging from 1 to 5 inclusive (even distribution of lengths)
+    - a_data_low_unique_len_1 data column that is a string with variable length ranging from 1 to 5
+      inclusive (even distribution of lengths)
     - complexity data columns
    */
   private def genAFacts(): DataFrame = {
@@ -98,7 +103,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
   }
 
   /**
-  b_data: Each scale factor corresponds to 1,000,000 rows. (The row group size should be configured to be 512 MiB when writing parquet or equivalent when writing ORC)
+  b_data: Each scale factor corresponds to 1,000,000 rows. (The row group size should be configured
+  to be 512 MiB when writing parquet or equivalent when writing ORC)
     - b_foreign_a Should overlap with a_facts.primary_a about 99% of the time
     - key group 3 with 3 columns (The unique count should be about 99% of the total number of rows).
     - 10 data columns of various types
@@ -155,7 +161,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
   }
   /**
   d_data: Each scale factor corresponds to 100,000 rows.
-    - key group 2 complexity columns (each key should show up about 10 time, but the overlap with c_data for key group 2 should only be about 50%)
+    - key group 2 complexity columns (each key should show up about 10 time, but the overlap with
+      c_data for key group 2 should only be about 50%)
     - 10 data columns
    */
   private def genDData(): DataFrame = {
@@ -163,8 +170,10 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
       "," +
       (1 to 10).map(i => s"d_data_$i ${randomColumnType()}").mkString(",")
     val dData = dbgen.addTable("d_data", schema, dNumRows)
-    // each key should show up about 10 time, but the overlap with c_data for key group 2 should only be about 50%
-    // For example if c_data.c_key2_* had 1000 rows the seed range would be (1, 100) so here d_data.d_key2_* would use a seed range of (50, 150)
+    // each key should show up about 10 time, but the overlap with c_data for key group 2 should
+    // only be about 50%
+    // For example if c_data.c_key2_* had 1000 rows the seed range would be (1, 100) so here
+    // d_data.d_key2_* would use a seed range of (50, 150)
     // thus the overlap will be about ~50%
     val numSeedsInKeyTwo = cNumRows/10
     val keyTwoStartSeed = numSeedsInKeyTwo / 2
@@ -178,7 +187,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
   }
   /**
   e_data: Each scale factor corresponds to 1,000,000 rows.
-    - key group 3 with 3 columns (the unique count should be about 99% of the total number of rows and overlap with b_data key group 3 by about 90%).
+    - key group 3 with 3 columns (the unique count should be about 99% of the total number of rows
+      and overlap with b_data key group 3 by about 90%).
     - 10 data columns
    */
   private def genEData(): DataFrame = {
@@ -202,8 +212,10 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
   /**
   f_facts: Each scale factor corresponds to 10,000 rows
     - key group 4
-    - f_data_low_unique_1 data column that is a long with a unique count of 5 but overlap with a_data_low_unique_1 is only 1 of the 5.
-    - f_data_low_unique_len_1 data column that is a string with variable length ranging from 1 to 5 inclusive (even distribution of lengths)
+    - f_data_low_unique_1 data column that is a long with a unique count of 5 but overlap with
+      a_data_low_unique_1 is only 1 of the 5.
+    - f_data_low_unique_len_1 data column that is a string with variable length ranging from 1 to 5
+      inclusive (even distribution of lengths)
     - f_data_row_num_1 long column which is essentially the row number for window ordering
     - complexity/2 data columns
    */
@@ -212,7 +224,8 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
       "f_data_low_unique_1 long, " +
       "f_data_low_unique_len_1 string, " +
       "f_data_row_num_1 long, " +
-      (1 to Math.round(complexity/2.0).toInt).map(i => s"f_data_$i ${randomColumnType()}").mkString(",")
+      (1 to Math.round(complexity/2.0).toInt).map(i => s"f_data_$i ${randomColumnType()}")
+        .mkString(",")
     val fFact = dbgen.addTable("f_facts", schema, fNumRows)
     fFact("f_key4_1").setSeedRange(1, 5)
     // overlap only 1 of 5 => this (5, 9) vs. aFact (1, 5)
@@ -222,8 +235,10 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     fFact.toDF(spark)
   }
   /**
-  g_data: Each scale factor corresponds to 1,000,000 rows. (The row group size should be configured to be 512 MiB)
-  key group 3 with 3 columns (should be skewed massively so there are a few keys with lots of values and a long tail with few).
+  g_data: Each scale factor corresponds to 1,000,000 rows. (The row group size should be configured
+          to be 512 MiB)
+  key group 3 with 3 columns (should be skewed massively so there are a few keys with lots of values
+  and a long tail with few).
   g_data_enum_1 1 string column with 5 unique values in it (an ENUM of sorts)
   g_data_row_num_1 1 long data column that is essentially the row number for range tests in window.
   20 byte data columns

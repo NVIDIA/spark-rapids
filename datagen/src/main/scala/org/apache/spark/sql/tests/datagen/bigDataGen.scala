@@ -294,7 +294,8 @@ case class FixedLengthGeneratorFunction(length: Int) extends LengthGeneratorFunc
  * Generate the data with a variable length. Note this will cause skew due to different
  * possible cardinality for the different lengths.
  */
-case class VarLengthGeneratorFunction(minLength: Int, maxLength: Int) extends LengthGeneratorFunction {
+case class VarLengthGeneratorFunction(minLength: Int, maxLength: Int) extends
+  LengthGeneratorFunction {
   override def withLocationToSeedMapping(mapping: LocationToSeedMapping): LengthGeneratorFunction =
     this
   override def apply(rowLoc: RowLocation): Int = {

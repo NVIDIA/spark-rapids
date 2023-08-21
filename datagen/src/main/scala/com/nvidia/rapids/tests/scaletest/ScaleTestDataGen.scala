@@ -16,8 +16,9 @@
 
 package com.nvidia.rapids.tests.scaletest
 
-import org.apache.spark.sql.SparkSession
 import scopt.OptionParser
+
+import org.apache.spark.sql.SparkSession
 
 object ScaleTestDataGen{
 
@@ -25,7 +26,13 @@ object ScaleTestDataGen{
   private case class Config(scaleFactor: Int = 1,
     complexity: Int = 1,
     outputDir: String = "",
-    tables: Array[String] = Array("a_facts", "b_data", "c_data", "d_data", "e_data", "f_facts", "g_data"),
+    tables: Array[String] = Array("a_facts",
+      "b_data",
+      "c_data",
+      "d_data",
+      "e_data",
+      "f_facts",
+      "g_data"),
     format: String = "parquet",
     version: String = "1.0.0",
     seed: Int = 41,
@@ -37,7 +44,8 @@ object ScaleTestDataGen{
       .appName("Scale Test Data Generation")
       .getOrCreate()
 
-    val tableGenerator = new TableGenerator(config.scaleFactor, config.complexity, config.seed, spark)
+    val tableGenerator = new TableGenerator(config.scaleFactor, config.complexity, config.seed,
+      spark)
     val tableMap = tableGenerator.genTables(config.tables)
     val baseOutputPath = s"${config.outputDir}/" +
       s"SCALE_" +
@@ -61,10 +69,12 @@ object ScaleTestDataGen{
       }
       config.format match {
         case "parquet" => writer
-          .option("parquet.block.size", specialRowGroupSizeMap.getOrElse(tableName, defaultGroupSizeInSpark))
+          .option("parquet.block.size", specialRowGroupSizeMap.getOrElse(tableName,
+            defaultGroupSizeInSpark))
           .parquet(s"$baseOutputPath/$tableName")
         case "orc" => writer
-          .option("orc.block.size", specialRowGroupSizeMap.getOrElse(tableName, defaultGroupSizeInSpark))
+          .option("orc.block.size", specialRowGroupSizeMap.getOrElse(tableName,
+            defaultGroupSizeInSpark))
           .orc(s"$baseOutputPath/$tableName")
         case unsupported => throw new IllegalArgumentException(s"Unknown format: $unsupported")
       }
