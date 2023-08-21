@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -134,16 +135,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public abstract void copyColumnar(ColumnVector cv, int colNum, int rows);
 
-    protected abstract ColumnVector buildAndPutOnDevice(int builderIndex);
-    protected abstract int buildersLength();
+    protected abstract ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex);
 
     public ColumnarBatch build(int rows) {
-      int buildersLen = buildersLength();
-      ColumnVector[] vectors = new ColumnVector[buildersLen];
+      return build(rows, this::buildAndPutOnDevice);
+    }
+
+    protected ColumnarBatch build(int rows, Function<Integer, ai.rapids.cudf.ColumnVector> col) {
+      ColumnVector[] vectors = new ColumnVector[fields.length];
       boolean success = false;
       try {
-        for (int i = 0; i < buildersLen; i++) {
-          vectors[i] = buildAndPutOnDevice(i);
+        for (int i = 0; i < fields.length; i++) {
+          vectors[i] = new GpuColumnVector(fields[i].dataType(), col.apply(i));
         }
         ColumnarBatch ret = new ColumnarBatch(vectors, rows);
         success = true;
@@ -191,17 +194,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    protected int buildersLength() {
-      return builders.length;
-    }
-
-    @Override
-    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+    protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
-      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
       referenceHolders[builderIndex].releaseReferences();
       builders[builderIndex] = null;
-      return gcv;
+      return cv;
     }
 
     @Override
@@ -230,6 +227,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
+    private ai.rapids.cudf.HostColumnVector[] hostColumns;
 
     /**
      * A collection of builders for building up columnar data.
@@ -270,16 +268,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    protected int buildersLength() {
-      return builders.length;
-    }
-
-    @Override
-    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+    protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
-      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
       builders[builderIndex] = null;
-      return gcv;
+      return cv;
     }
 
     public HostColumnVector[] buildHostColumns() {
@@ -303,11 +295,34 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
+    /**
+     * Build a columnar batch without releasing the holding data on host.
+     * It is safe to call this multiple times, and data will be released
+     * after a call to `close`.
+     */
+    public ColumnarBatch tryBuild(int rows) {
+      if (hostColumns == null) {
+        hostColumns = buildHostColumns();
+      }
+      return build(rows, i -> hostColumns[i].copyToDevice());
+    }
+
     @Override
     public void close() {
-      for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
-        if (b != null) {
-          b.close();
+      try {
+        for (ai.rapids.cudf.HostColumnVector.ColumnBuilder b: builders) {
+          if (b != null) {
+            b.close();
+          }
+        }
+      } finally {
+        if (hostColumns != null) {
+          for (ai.rapids.cudf.HostColumnVector hcv: hostColumns) {
+            if (hcv != null) {
+              hcv.close();
+            }
+          }
+          hostColumns = null;
         }
       }
     }
