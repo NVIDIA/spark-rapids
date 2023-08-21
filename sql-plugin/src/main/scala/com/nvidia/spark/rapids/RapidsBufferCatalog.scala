@@ -622,7 +622,9 @@ class RapidsBufferCatalog(
     if (spillStoreMaxSize.isDefined) {
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
-      val maybeAmountSpilled = synchronousSpill(spillStore, buffer.getMemoryUsedBytes, stream)
+      val targetTotalSize =
+      math.max(spillStoreMaxSize.get - buffer.getMemoryUsedBytes, 0)
+      val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize, stream)
       maybeAmountSpilled.foreach { amountSpilled =>
         if (amountSpilled != 0) {
           logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
