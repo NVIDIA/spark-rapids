@@ -151,6 +151,12 @@ lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
             ['child_string', StringGen()]
         ])]
 
+numeric_gens = [byte_gen, short_gen, int_gen, long_gen,
+        FloatGen(no_nans=False, special_cases=[]),
+        DoubleGen(no_nans=False, special_cases=[]),
+        DecimalGen(precision=18, scale=1),
+        DecimalGen(precision=38, scale=1)]
+
 _float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
@@ -239,6 +245,21 @@ def test_decimal_running_sum_window_no_part(data_gen):
         '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_b_asc '
         'from window_agg_table',
         conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
+@ignore_order
+@approximate_float
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_numeric_running_sum_window_no_part_unbounded(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as sum_b_asc '
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                'spark.rapids.sql.batchSizeBytes': '100'})
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")

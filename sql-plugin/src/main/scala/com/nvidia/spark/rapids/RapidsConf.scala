@@ -1306,6 +1306,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_UNBOUNDED_OPTIMIZATION_FLOAT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.unboundedFloatAggFixerEnabled")
+      .doc("When set to false, this disables an optimization on window aggregate functions " +
+        "that operate on floating point inputs with unbounded preceding and unbounded following. " +
+        "When enabled, it is possible that results may differ from run to run due to the " +
+        "order of operations changing")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
     .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
@@ -2644,6 +2653,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val isUnboundedFloatOptimizationEnabled: Boolean = get(ENABLE_UNBOUNDED_OPTIMIZATION_FLOAT)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
