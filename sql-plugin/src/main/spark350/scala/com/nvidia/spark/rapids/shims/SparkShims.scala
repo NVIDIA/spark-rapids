@@ -22,7 +22,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF}
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 
 object SparkShimImpl extends Spark340PlusShims {
 
@@ -52,7 +52,7 @@ object SparkShimImpl extends Spark340PlusShims {
             s"blocks running on GPU because $reasons"
 
           override def convertToGpu(): GpuExpression =
-            GpuPythonUDF(a.name, a.func, a.dataType,
+            GpuPythonUDAF(a.name, a.func, a.dataType,
               childExprs.map(_.convertToGpu()),
               a.evalType, a.udfDeterministic, a.resultId)
         })

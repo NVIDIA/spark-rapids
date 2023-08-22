@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
-import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExec, GpuPythonUDF}
+import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExec, GpuPythonUDAF}
 
 class GpuAggregateInPandasExecMeta(
     aggPandas: AggregateInPandasExec,
@@ -41,9 +41,6 @@ class GpuAggregateInPandasExecMeta(
 
   val pythonUDAFs = aggPandas.aggExpressions.map(_.aggregateFunction.asInstanceOf[PythonUDAF])
 
-//  private val aggs: Seq[BaseExprMeta[AggregateExpression]] =
-//    aggPandas.aggExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
   private val udfs: Seq[BaseExprMeta[PythonUDAF]] =
     pythonUDAFs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
@@ -55,7 +52,7 @@ class GpuAggregateInPandasExecMeta(
   override def convertToGpu(): GpuExec =
     GpuAggregateInPandasExec(
       groupingNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+      udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDAF]],
       aggPandas.aggExpressions.map(_.resultAttribute),
       resultNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans.head.convertIfNeeded()

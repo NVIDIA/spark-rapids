@@ -23,13 +23,13 @@ import com.nvidia.spark.rapids.GpuWindowExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 
 object PythonUDFShim {
-  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDF] = {
+  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDAF] = {
     exp.map {
       case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuAggregateExpression]
-        .aggregateFunction.asInstanceOf[GpuPythonUDF]
+        .aggregateFunction.asInstanceOf[GpuPythonUDAF]
     }
   }
 }
