@@ -16,14 +16,20 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{DynamicPruning, Expression}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuDynamicPruningExpression(child: Expression)
-  extends GpuUnaryExpression with DynamicPruning {
+  extends ShimUnaryExpression with GpuExpression with DynamicPruning {
 
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    input.getBase.incRefCount()
+  override def columnarEvalAny(batch: ColumnarBatch): Unit = {
+    child.columnarEvalAny(batch)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    child.columnarEval(batch)
   }
 }

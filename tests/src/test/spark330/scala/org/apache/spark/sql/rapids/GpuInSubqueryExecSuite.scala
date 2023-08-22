@@ -31,8 +31,21 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, ExprId}
 import org.apache.spark.sql.execution.{FilterExec, InSubqueryExec, LocalTableScanExec, ProjectExec, RowToColumnarExec, SparkPlan, SubqueryExec}
 
+/**
+ * Testing for GpuInSubqeryExec. It is difficult to build a series of DataFrame
+ * operations, even at the logical plan level, that will reliably translate
+ * to an InSubqueryExec in the final physical CPU plan. Most Spark implementations
+ * turn this into some sort of join instead. Therefore these tests build low-level
+ * physical plans with InSubqueryExec and manually invoke the GPU optimization rules
+ * to make sure we're exercising GpuInSubqueryExec.
+ */
 class GpuInSubqueryExecSuite extends SparkQueryCompareTestSuite {
   private def readToPhysicalPlan(df: DataFrame): SparkPlan = {
+    // Since we're building up the low-level plan manually, Spark won't
+    // automatically inject the columnar transitions for us. This adds
+    // a columnar transition to the local table scan which will
+    // remain on the CPU. When the GPU optimization rules later run,
+    // this will be turned into a GPU columnar transition.
     df.queryExecution.executedPlan.transformUp {
       case s: LocalTableScanExec => RowToColumnarExec(s)
     }
