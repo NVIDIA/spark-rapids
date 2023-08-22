@@ -34,7 +34,7 @@ class OrcPushDownSuite extends SparkQueryCompareTestSuite {
       case GpuFilterExec(_, child) => child
     }
     val actual = spark.internalCreateDataFrame(withoutFilters.execute(), schema, false).count()
-    assert(actual < numRows)
+    assert(0 < actual && actual < numRows)
   }
 
   test("Support for pushing down filters for boolean types gpu write gpu read") {
@@ -74,29 +74,32 @@ class OrcPushDownSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("Support for pushing down filters for decimal types gpu write gpu read") {
-    withTempPath { file =>
-      withGpuSparkSession(spark => {
-        val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
-        val df = spark.createDataFrame(data).toDF("a")
-        df.repartition(10).write.orc(file.getCanonicalPath)
-        checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
-      })
-    }
-  }
+  // Following tests fail due to https://github.com/rapidsai/cudf/issues/13933
+  // predicate push down will not work for decimal type files written by GPU
 
-  test("Support for pushing down filters for decimal types gpu write cpu read") {
-    withTempPath { file =>
-      withGpuSparkSession(spark => {
-        val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
-        val df = spark.createDataFrame(data).toDF("a")
-        df.repartition(10).write.orc(file.getCanonicalPath)
-      })
-      withCpuSparkSession(spark => {
-        checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
-      })
-    }
-  }
+  // test("Support for pushing down filters for decimal types gpu write gpu read") {
+  //   withTempPath { file =>
+  //     withGpuSparkSession(spark => {
+  //       val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
+  //       val df = spark.createDataFrame(data).toDF("a")
+  //       df.repartition(10).write.orc(file.getCanonicalPath)
+  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
+  //     })
+  //   }
+  // }
+
+  // test("Support for pushing down filters for decimal types gpu write cpu read") {
+  //   withTempPath { file =>
+  //     withGpuSparkSession(spark => {
+  //       val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
+  //       val df = spark.createDataFrame(data).toDF("a")
+  //       df.repartition(10).write.orc(file.getCanonicalPath)
+  //     })
+  //     withCpuSparkSession(spark => {
+  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
+  //     })
+  //   }
+  // }
 
   test("Support for pushing down filters for decimal types cpu write gpu read") {
     withTempPath { file =>
