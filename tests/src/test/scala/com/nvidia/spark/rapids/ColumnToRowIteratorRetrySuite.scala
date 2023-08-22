@@ -43,7 +43,6 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
-      // only one batch
       numRows += 1
     }
     assertResult(NUM_ROWS)(numRows)
@@ -57,7 +56,6 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
-      // only one batch
       numRows += 1
     }
     assertResult(NUM_ROWS)(numRows)
