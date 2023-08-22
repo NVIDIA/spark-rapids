@@ -1,0 +1,3 @@
+q1:SELECT a_facts.*, b_data_{1-10} FROM b_data JOIN a_facts WHERE primary_a = b_foreign_a
+q2:SELECT a_facts.*, b_data_{1-10} FROM b_data FULL OUTER JOIN a_facts WHERE primary_a = b_foreign_a
+q3:SELECT a_facts.*, b_data_{1-10} FROM b_data LEFT OUTER JOIN a_facts WHERE primary_a = b_foreign_a
