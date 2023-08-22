@@ -407,9 +407,9 @@ abstract class GpuBroadcastExchangeExecBase(
   protected val timeout: Long = SQLConf.get.broadcastTimeout
 
   // prior to Spark 3.5.0, runId is defined as `def` rather than `val` so
-  // produces a new ID on each reference. We capture the value once and
-  // cache it here
-  val _runId: UUID = runId
+  // produces a new ID on each reference. We override with a `val` so that
+  // the value is assigned once.
+  override val runId: UUID = UUID.randomUUID
 
   @transient
   lazy val relationFuture: Future[Broadcast[Any]] = {
@@ -429,7 +429,7 @@ abstract class GpuBroadcastExchangeExecBase(
         SQLExecution.withExecutionId(sparkSession, executionId) {
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.
-            sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
+            sparkContext.setJobGroup(runId.toString, s"broadcast exchange (runId ${runId})",
               interruptOnCancel = true)
             val broadcastResult = {
               val collected =
@@ -514,7 +514,7 @@ abstract class GpuBroadcastExchangeExecBase(
       case ex: TimeoutException =>
         logError(s"Could not execute broadcast in $timeout secs.", ex)
         if (!relationFuture.isDone) {
-          sparkContext.cancelJobGroup(_runId.toString)
+          sparkContext.cancelJobGroup(runId.toString)
           relationFuture.cancel(true)
         }
         throw new SparkException(s"Could not execute broadcast in $timeout secs. " +
@@ -534,7 +534,7 @@ abstract class GpuBroadcastExchangeExecBase(
       case ex: TimeoutException =>
         logError(s"Could not execute broadcast in $timeout secs.", ex)
         if (!relationFuture.isDone) {
-          sparkContext.cancelJobGroup(_runId.toString)
+          sparkContext.cancelJobGroup(runId.toString)
           relationFuture.cancel(true)
         }
         throw new SparkException(s"Could not execute broadcast in $timeout secs. " +
