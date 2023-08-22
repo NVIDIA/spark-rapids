@@ -15,13 +15,13 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta}
 
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
 class GpuShuffleMeta(
@@ -29,4 +29,13 @@ class GpuShuffleMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)
+  extends GpuShuffleMetaBase(shuffle, conf, parent, rule) {
+
+  override def convertToGpu(): GpuExec =
+    GpuShuffleExchangeExec(
+      childParts.head.convertToGpu(),
+      childPlans.head.convertIfNeeded(),
+      shuffle.shuffleOrigin
+    )(shuffle.outputPartitioning,
+      shuffle.advisoryPartitionSize)
+}

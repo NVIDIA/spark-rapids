@@ -41,16 +41,18 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.exchange.ShuffleOrigin
+import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
 
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)(
-    cpuOutputPartitioning: Partitioning)
+    cpuOutputPartitioning: Partitioning,
+    val advisoryPartitionSize: Option[Long] = None
+)
     extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
-    with ShuffleExchangeLikeShim {
+        with ShuffleExchangeLike {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
 
