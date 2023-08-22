@@ -56,7 +56,7 @@ $SPARK_HOME/bin/spark-submit \
 10 \
 100 \
 parquet \
-/home/allxu/code/spark-rapids/datagen/testdata \
+<path-to-data-generated-by-data-gen-tool> \
 ./output \
 ./query_file.txt \
 ./report.csv \

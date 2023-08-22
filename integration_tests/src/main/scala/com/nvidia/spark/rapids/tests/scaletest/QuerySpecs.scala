@@ -55,7 +55,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
   /**
    * Read the query template file extract the template queries inside, Produce the real queries
    * @param queryFilePath
-   * @return
+   * @return a map of query name as key and query content as value
    */
   def processQueryFile(queryFilePath: String): Map[String, String] = {
     var queryMap: Map[String, String] = Map()
