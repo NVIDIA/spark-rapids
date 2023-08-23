@@ -56,28 +56,34 @@ class GpuInSubqueryExecSuite extends SparkQueryCompareTestSuite {
     Seq("400.0", "123.4").toDF("strings")
   }
 
-  private def buildCpuInSubqueryPlan(spark: SparkSession): SparkPlan = {
+  private def buildCpuInSubqueryPlan(
+      spark: SparkSession,
+      shouldBroadcast: Boolean): SparkPlan = {
     val df1ReadExec = readToPhysicalPlan(nullableStringsIntsDf(spark))
     val df2ReadExec = readToPhysicalPlan(subqueryTable(spark))
     val inSubquery = InSubqueryExec(
       df1ReadExec.output.head,
       SubqueryExec("sbe",
         ProjectExec(Seq(df2ReadExec.output.head), df2ReadExec)),
-      ExprId(7))
+      ExprId(7),
+      shouldBroadcast=shouldBroadcast)
     FilterExec(DynamicPruningExpression(inSubquery), df1ReadExec)
   }
 
-  test("InSubqueryExec") {
-    val gpuResults = withGpuSparkSession({ spark =>
-      val overrides = new GpuOverrides()
-      val transitionOverrides = new GpuTransitionOverrides()
-      val gpuPlan = transitionOverrides(overrides(buildCpuInSubqueryPlan(spark)))
-      gpuPlan.execute().collect()
-    })
-    assertResult(1)(gpuResults.length)
-    val row = gpuResults.head
-    assertResult(2)(row.numFields)
-    assertResult("400.0")(row.getString(0))
-    assert(row.isNullAt(1))
+  for (shouldBroadcast <- Seq(false, true)) {
+    test(s"InSubqueryExec shouldBroadcast=$shouldBroadcast") {
+      val gpuResults = withGpuSparkSession({ spark =>
+        val overrides = new GpuOverrides()
+        val transitionOverrides = new GpuTransitionOverrides()
+        val cpuPlan = buildCpuInSubqueryPlan(spark, shouldBroadcast)
+        val gpuPlan = transitionOverrides(overrides(cpuPlan))
+        gpuPlan.execute().collect()
+      })
+      assertResult(1)(gpuResults.length)
+      val row = gpuResults.head
+      assertResult(2)(row.numFields)
+      assertResult("400.0")(row.getString(0))
+      assert(row.isNullAt(1))
+    }
   }
 }
