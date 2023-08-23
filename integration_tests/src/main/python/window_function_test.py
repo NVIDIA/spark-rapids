@@ -154,6 +154,7 @@ lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=False, special_cases=[]),
         DoubleGen(no_nans=False, special_cases=[]),
+        LongGen(special_cases=[]),
         DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 
@@ -249,7 +250,7 @@ def test_decimal_running_sum_window_no_part(data_gen):
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_numeric_running_sum_window_no_part_unbounded(data_gen):
+def test_numeric_sum_window_no_part_unbounded(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
         'window_agg_table',
@@ -264,7 +265,7 @@ def test_numeric_running_sum_window_no_part_unbounded(data_gen):
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-def test_numeric_running_sum_window_no_part_unbounded_partitioned(data_gen):
+def test_numeric_sum_window_no_part_unbounded_partitioned(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, UniqueLongGen(), data_gen).repartition(256),
         'window_agg_table',
