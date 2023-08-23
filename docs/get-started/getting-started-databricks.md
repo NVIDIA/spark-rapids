@@ -10,10 +10,9 @@ This guide will run through how to set up the RAPIDS Accelerator for Apache Spar
 At the end of this guide, the reader will be able to run a sample Apache Spark application that runs
 on NVIDIA GPUs on Databricks.
 
-## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 10.4 ML or 11.3 ML with GPU
-    * AWS: 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
-    * Azure: 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
+## Supported runtime versions
+Please see [Software Requirements](../download.md#software-requirements) section for complete list of 
+Databricks runtime versions supported by RAPIDS plugin.
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
@@ -67,7 +66,7 @@ Navigate to your home directory in the UI and select **Create** > **File** from 
 create an `init.sh` scripts with contents:   
    ```bash
    #!/bin/bash
-   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.06.0.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.06.0/rapids-4-spark_2.12-23.06.0.jar
+   sudo wget -O /databricks/jars/rapids-4-spark_2.12-23.08.1.jar https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar
    ```
 Then create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
@@ -116,7 +115,7 @@ cluster meets the prerequisites above by configuring it as follows:
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-23.06.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-23.08.1.jar:/databricks/spark/python
     ```
    Note that since python memory pool require installing the cudf library, so you need to install cudf library in 
    each worker nodes `pip install cudf-cu11 --extra-index-url=https://pypi.nvidia.com` or disable python memory pool

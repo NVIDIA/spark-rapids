@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
 # limitations under the License.
 #
 
-FROM nvidia/cuda:11.5.0-devel-ubuntu18.04
+FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
 ARG spark_uid=185
 
 # https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
 RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 
 # Install java dependencies
+ENV DEBIAN_FRONTEND="noninteractive"
 RUN apt-get update && apt-get install -y --no-install-recommends openjdk-8-jdk openjdk-8-jre
 ENV JAVA_HOME /usr/lib/jvm/java-1.8.0-openjdk-amd64
 ENV PATH $PATH:/usr/lib/jvm/java-1.8.0-openjdk-amd64/jre/bin:/usr/lib/jvm/java-1.8.0-openjdk-amd64/bin
@@ -60,7 +61,7 @@ COPY getGpusResources.sh /opt/sparkRapidsPlugin
 RUN mkdir /opt/spark/python
 # TODO: Investigate running both pip and pip3 via virtualenvs
 RUN apt-get update && \
-    apt install -y python python-pip && \
+    apt install -y python wget && wget https://bootstrap.pypa.io/pip/2.7/get-pip.py && python get-pip.py && \
     apt install -y python3 python3-pip && \
     # We remove ensurepip since it adds no functionality since pip is
     # installed on the image and it just takes up 1.6MB on the image
