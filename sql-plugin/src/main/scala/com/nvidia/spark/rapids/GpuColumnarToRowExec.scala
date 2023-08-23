@@ -134,7 +134,7 @@ class AcceleratedColumnarToRowIterator(
         }
         assert(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
         it.foreach { rowsCvList =>
-          withResource(rowsCvList) { - =>
+          withResource(rowsCvList) { _ =>
             rowsCvList.foreach { rowsCv =>
               pendingCvs += rowsCv.copyToHost()
             }
