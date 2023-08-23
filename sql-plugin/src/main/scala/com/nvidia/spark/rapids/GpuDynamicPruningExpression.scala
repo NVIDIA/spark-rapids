@@ -25,7 +25,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuDynamicPruningExpression(child: Expression)
   extends ShimUnaryExpression with GpuExpression with DynamicPruning {
 
-  override def columnarEvalAny(batch: ColumnarBatch): Unit = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     child.columnarEvalAny(batch)
   }
 
