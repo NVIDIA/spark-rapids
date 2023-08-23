@@ -3054,14 +3054,16 @@ object GpuOverrides extends Logging {
         (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
           new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)
     ).disabledByDefault(
-      """|GPU implementation is incomplete. We currently only support from/to_base 10 and 16. We
-         | fall back on CPU if the signed conversion is signalled via a negative to_base.
-         | GPU implementation does not check for 64-bit int overflow when performing the conversion
-         | to return FFFFFFFFFFFFFFFF or 18446744073709551615 or to throw an error in the ANSI mode.
-         | It is safe to enable if the overflow is not possible or detected externally.
-         | For instance decimal strings not longer than 18 characters / hexadecimal strings
-         | not longer than 15 characters disregarding the sign cannot cause an overflow.
-         """.stripMargin),
+      """GPU implementation is incomplete. We currently only support from/to_base values
+         |of 10 and 16. We fall back on CPU if the signed conversion is signalled via
+         |a negative to_base.
+         |GPU implementation does not check for an 64-bit signed/unsigned int overflow when
+         |performing the conversion to return `FFFFFFFFFFFFFFFF` or `18446744073709551615` or
+         |to throw an error in the ANSI mode.
+         |It is safe to enable if the overflow is not possible or detected externally.
+         |For instance decimal strings not longer than 18 characters / hexadecimal strings
+         |not longer than 15 characters disregarding the sign cannot cause an overflow.
+         """.stripMargin.replaceAll("\n", " ")),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
