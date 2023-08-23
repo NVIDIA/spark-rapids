@@ -279,7 +279,7 @@ def test_numeric_sum_window_no_part_unbounded_partitioned(data_gen):
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
-@pytest.mark.parametrize('partition_by', ['a', 'b'], ids=idfn)
+@pytest.mark.parametrize('partition_by', ['a', 'b', 'a, b'], ids=idfn)
 def test_numeric_sum_window_unbounded(data_gen, partition_by):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
