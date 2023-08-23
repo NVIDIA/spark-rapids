@@ -17,6 +17,12 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.plans.ExistenceJoin
+import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.BooleanType
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
@@ -94,5 +100,49 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual2("Test left anti self join with nulls with partition sort",
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
+  }
+
+  for (buildRight <- Seq(false, true)) {
+    for (buildEmpty <- Seq(false, true)) {
+      def generateLeftTable(spark: SparkSession): DataFrame = {
+        import spark.sqlContext.implicits._
+        if (buildEmpty && !buildRight) {
+          Seq[(Long, Long)]().toDF("longs", "more_longs")
+        } else {
+          longsDf(spark)
+        }
+      }
+
+      def generateRightTable(spark: SparkSession): DataFrame = {
+        import spark.sqlContext.implicits._
+        if (buildEmpty && buildRight) {
+          Seq[(Long, Long)]().toDF("longs", "more_longs")
+        } else {
+          biggerLongsDf(spark)
+        }
+      }
+
+      IGNORE_ORDER_testSparkResultsAreEqual2(
+        "Test unconditional nested loop existence join " +
+          s"buildRight=$buildRight buildEmpty=$buildEmpty",
+        generateLeftTable,
+        generateRightTable,
+        conf = new SparkConf().set("spark.rapids.sql.debug.logTransformations", "true")) {
+        (df1, df2) => {
+          val joinHint = if (buildRight) {
+            JoinHint(None, Some(HintInfo(Some(BROADCAST))))
+          } else {
+            JoinHint(Some(HintInfo(Some(BROADCAST))), None)
+          }
+          val cpuPlan = Join(
+            TrampolineUtil.toLogicalPlan(df1),
+            TrampolineUtil.toLogicalPlan(df2),
+            ExistenceJoin(AttributeReference("exists", BooleanType, false)()),
+            None,
+            joinHint)
+          TrampolineUtil.toDataFrame(df1.sparkSession, cpuPlan)
+        }
+      }
+    }
   }
 }
