@@ -276,6 +276,22 @@ def test_numeric_sum_window_no_part_unbounded_partitioned(data_gen):
         conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                 'spark.rapids.sql.batchSizeBytes': '100'})
 
+@ignore_order
+@approximate_float
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('partition_by', ['a', 'b'], ids=idfn)
+def test_numeric_sum_window_unbounded(data_gen, partition_by):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        f'   (partition by {partition_by} order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as sum_b_asc '
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                'spark.rapids.sql.batchSizeBytes': '100'})
+
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
 @ignore_order
