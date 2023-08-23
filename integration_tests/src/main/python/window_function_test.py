@@ -266,7 +266,7 @@ def test_numeric_running_sum_window_no_part_unbounded(data_gen):
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_numeric_running_sum_window_no_part_unbounded_partitioned(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen).repartition(64),
+        lambda spark: two_col_df(spark, UniqueLongGen(), data_gen).repartition(256),
         'window_agg_table',
         'select '
         ' sum(b) over '
