@@ -134,7 +134,6 @@ Conv,NS,`conv`,This is disabled by default because GPU implementation is incompl
  It is safe to enable if the overflow is not possible or detected externally.
  For instance decimal strings not longer than 18 characters / hexadecimal strings
  not longer than 15 characters disregarding the sign cannot cause an overflow.
- cause an overflow.
          ,project,num,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 Conv,NS,`conv`,This is disabled by default because GPU implementation is incomplete. We currently only support from/to_base 10 and 16. We
  fall back on CPU if the signed conversion is signalled via a negative to_base.
@@ -143,7 +142,6 @@ Conv,NS,`conv`,This is disabled by default because GPU implementation is incompl
  It is safe to enable if the overflow is not possible or detected externally.
  For instance decimal strings not longer than 18 characters / hexadecimal strings
  not longer than 15 characters disregarding the sign cannot cause an overflow.
- cause an overflow.
          ,project,from_base,NA,PS,PS,PS,PS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Conv,NS,`conv`,This is disabled by default because GPU implementation is incomplete. We currently only support from/to_base 10 and 16. We
  fall back on CPU if the signed conversion is signalled via a negative to_base.
@@ -152,7 +150,6 @@ Conv,NS,`conv`,This is disabled by default because GPU implementation is incompl
  It is safe to enable if the overflow is not possible or detected externally.
  For instance decimal strings not longer than 18 characters / hexadecimal strings
  not longer than 15 characters disregarding the sign cannot cause an overflow.
- cause an overflow.
          ,project,to_base,NA,PS,PS,PS,PS,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Conv,NS,`conv`,This is disabled by default because GPU implementation is incomplete. We currently only support from/to_base 10 and 16. We
  fall back on CPU if the signed conversion is signalled via a negative to_base.
@@ -161,7 +158,6 @@ Conv,NS,`conv`,This is disabled by default because GPU implementation is incompl
  It is safe to enable if the overflow is not possible or detected externally.
  For instance decimal strings not longer than 18 characters / hexadecimal strings
  not longer than 15 characters disregarding the sign cannot cause an overflow.
- cause an overflow.
          ,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA
 Cos,S,`cos`,None,project,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Cos,S,`cos`,None,project,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA

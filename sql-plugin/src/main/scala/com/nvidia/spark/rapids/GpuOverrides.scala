@@ -3061,7 +3061,6 @@ object GpuOverrides extends Logging {
          | It is safe to enable if the overflow is not possible or detected externally.
          | For instance decimal strings not longer than 18 characters / hexadecimal strings
          | not longer than 15 characters disregarding the sign cannot cause an overflow.
-         | cause an overflow.
          """.stripMargin),
     expr[MapConcat](
       "Returns the union of all the given maps",

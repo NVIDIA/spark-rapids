@@ -215,7 +215,6 @@ Name | SQL Function(s) | Description | Default Value | Notes
  It is safe to enable if the overflow is not possible or detected externally.
  For instance decimal strings not longer than 18 characters / hexadecimal strings
  not longer than 15 characters disregarding the sign cannot cause an overflow.
- cause an overflow.
          |
 <a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|`cos`|Cosine|true|None|
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|
