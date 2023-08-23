@@ -109,6 +109,7 @@ def test_coalescing_uniform_sync(spark_tmp_path, v1_enabled_list):
     all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.rapids.sql.format.avro.reader.type': 'COALESCING',
         'spark.rapids.sql.avro.debug.dumpPrefix': dump_path,
+        'spark.rapids.sql.avro.debug.dumpAlways': 'true',
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
     with_gpu_session(
         lambda spark: spark.read.format("avro").load(data_path).collect(),

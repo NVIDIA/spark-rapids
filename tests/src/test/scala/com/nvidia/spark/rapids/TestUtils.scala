@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
-import java.io.File
 import org.scalatest.Assertions
 
 import org.apache.spark.SparkConf
@@ -57,8 +58,16 @@ object TestUtils extends Assertions {
     assertResult(expected.numRows)(actual.numRows)
     assertResult(expected.numCols)(actual.numCols)
     (0 until expected.numCols).foreach { i =>
-      compareColumns(expected.column(i).asInstanceOf[GpuColumnVector].getBase,
-        actual.column(i).asInstanceOf[GpuColumnVector].getBase)
+      actual.column(i) match {
+        case gpuVector: GpuColumnVector =>
+          compareColumns(expected.column(i).asInstanceOf[GpuColumnVector].getBase,
+            gpuVector.getBase)
+        case hostVector: RapidsHostColumnVector =>
+          compareColumns(expected.column(i).asInstanceOf[RapidsHostColumnVector].getBase,
+            hostVector.getBase)
+        case _ =>
+          throw new IllegalStateException(s"Unexpected column type ${actual}")
+      }
     }
   }
 

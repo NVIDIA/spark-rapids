@@ -179,7 +179,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     concatTime: GpuMetric,
     copyBufTime: GpuMetric,
     opTime: GpuMetric,
-    peakDevMemory: GpuMetric,
     opName: String,
     useArrowCopyOpt: Boolean)
   extends AbstractGpuCoalesceIterator(iter,
@@ -198,7 +197,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilderBase = _
   var totalRows = 0
-  var maxDeviceMemory: Long = 0
 
   // the arrow cudf converter only supports primitive types and strings
   // decimals and nested types aren't supported yet
@@ -266,12 +264,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batch.numRows())).sum
   }
 
+  override def hasAnyToConcat: Boolean = totalRows > 0
+
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     val ret = batchBuilder.build(totalRows)
-    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
+    val maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
 
     // refine the estimate for number of rows based on this batch
     batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory,
@@ -292,7 +292,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder = null
     }
     totalRows = 0
-    peakDevMemory.set(maxDeviceMemory)
   }
 
   private var onDeck: Option[ColumnarBatch] = None
@@ -328,8 +327,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
-    COPY_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_BUFFER_TIME),
-    PEAK_DEVICE_MEMORY -> createMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
+    COPY_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COPY_BUFFER_TIME)
     )
 
   override def output: Seq[Attribute] = child.output
@@ -361,7 +359,6 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val copyBufTime = gpuLongMetric(COPY_BUFFER_TIME)
     val opTime = gpuLongMetric(OP_TIME)
-    val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     // cache in a local to avoid serializing the plan
     val outputSchema = schema
@@ -373,7 +370,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
         streamTime, concatTime, copyBufTime, opTime,
-        peakDevMemory, "HostColumnarToGpu", confUseArrow)
+        "HostColumnarToGpu", confUseArrow)
     }
   }
 }

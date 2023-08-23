@@ -21,7 +21,9 @@ import scala.util.Try
 import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
@@ -30,6 +32,9 @@ trait DeltaRuntimeShim {
   def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
   def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot
+  def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean
 }
 
 object DeltaRuntimeShim {
@@ -45,8 +50,10 @@ object DeltaRuntimeShim {
         DeltaUDF.getClass.getMethod("stringStringUdf", classOf[String => String])
       }.map(_ => "org.apache.spark.sql.delta.rapids.delta21x.Delta21xRuntimeShim")
           .getOrElse("org.apache.spark.sql.delta.rapids.delta22x.Delta22xRuntimeShim")
+    } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
+      "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
     } else {
-      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.3.x")
+      throw new IllegalStateException("Delta Lake is not supported on Spark > 3.4.x")
     }
   }
 
@@ -68,4 +75,10 @@ object DeltaRuntimeShim {
 
   def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot =
     shimInstance.unsafeVolatileSnapshotFromLog(deltaLog)
+
+  def fileFormatFromLog(deltaLog: DeltaLog): FileFormat =
+    shimInstance.fileFormatFromLog(deltaLog)
+
+  def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
+    shimInstance.getTightBoundColumnOnFileInitDisabled(spark)
 }

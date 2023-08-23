@@ -22,6 +22,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import *
 import pyspark.sql.functions as f
+import pyspark.sql.utils
 from datetime import timedelta
 
 # No overflow gens here because we just focus on verifying the fallback to CPU when
@@ -398,17 +399,12 @@ def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
-# See https://github.com/NVIDIA/spark-rapids/issues/8330
-# Basically if we overflow on Decimal128 values when up-casting the operands, we need
-# to fall back to CPU since we don't currently have enough precision to support that 
-# on the GPU. 
-@allow_non_gpu("ProjectExec", "Remainder")
-@pytest.mark.skipif(not is_databricks113_or_later() and not is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8330")
-@pytest.mark.parametrize('lhs', [DecimalGen(38,0), DecimalGen(37,2), DecimalGen(38,5)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(27,7), DecimalGen(30,10), DecimalGen(38,1)], ids=idfn)
-def test_mod_mixed_overflow_fallback(lhs, rhs):
-    assert_gpu_fallback_collect(
-        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"), "Remainder")
+# @pytest.mark.skipif(not is_databricks113_or_later() and not is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8330")
+@pytest.mark.parametrize('lhs', [DecimalGen(38,0), DecimalGen(37,2), DecimalGen(38,5), DecimalGen(38,-10), DecimalGen(38,7)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(27,7), DecimalGen(30,10), DecimalGen(38,1), DecimalGen(36,0), DecimalGen(28,-7)], ids=idfn)
+def test_mod_mixed_decimal128(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr("a", "b", f"a % b"))
 
 # Split into 4 tests to permute https://github.com/NVIDIA/spark-rapids/issues/7553 failures
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
@@ -643,6 +639,7 @@ def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'bround(a)',
+                'bround(1.234, 2)',
                 'bround(a, -1)',
                 'bround(a, 1)',
                 'bround(a, 2)',
@@ -655,10 +652,33 @@ def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'round(a)',
+                'round(1.234, 2)',
                 'round(a, -1)',
                 'round(a, 1)',
                 'round(a, 2)',
                 'round(a, 10)'))
+
+
+@incompat
+@approximate_float
+@pytest.mark.parametrize('data_gen', [int_gen], ids=idfn)
+def test_illegal_args_round(data_gen):
+    def check_analysis_exception(spark, sql_text):
+        try:
+            gen_df(spark, [("a", data_gen), ("b", int_gen)], length=10).selectExpr(sql_text)
+            raise Exception("round/bround should not plan with invalid arguments %s" % sql_text)
+        except pyspark.sql.utils.AnalysisException as e:
+            pass
+
+    def doit(spark):
+        check_analysis_exception(spark, "round(1.2345, b)")
+        check_analysis_exception(spark, "round(a, b)")
+        check_analysis_exception(spark, "bround(1.2345, b)")
+        check_analysis_exception(spark, "bround(a, b)")
+
+    with_cpu_session(lambda spark: doit(spark))
+    with_gpu_session(lambda spark: doit(spark))
+
 
 @incompat
 @approximate_float

@@ -38,7 +38,6 @@ _orig_conf_keys = _orig_conf.keys()
 _default_conf = {
     'spark.ansi.enabled': 'false',
     'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
-    'spark.rapids.sql.castDecimalToString.enabled': 'false',
     'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
     'spark.rapids.sql.castFloatToString.enabled': 'false',
@@ -154,6 +153,9 @@ def is_before_spark_331():
 def is_before_spark_340():
     return spark_version() < "3.4.0"
 
+def is_spark_320_or_later():
+    return spark_version() >= "3.2.0"
+
 def is_spark_330_or_later():
     return spark_version() >= "3.3.0"
 
@@ -190,6 +192,15 @@ def is_databricks104_or_later():
 
 def is_databricks113_or_later():
     return is_databricks_version_or_later(11, 3)
+
+def is_databricks122_or_later():
+    return is_databricks_version_or_later(12, 2)
+
+def supports_delta_lake_deletion_vectors():
+    if is_databricks_runtime():
+        return is_databricks122_or_later()
+    else:
+        return is_spark_340_or_later()
 
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")

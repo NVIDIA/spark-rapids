@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.06.0-SNAPSHOT</version>
+        <version>23.10.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>23.06.0-SNAPSHOT</version>
+    <version>23.10.0-SNAPSHOT</version>
 
     <properties>
         <!--
@@ -35,6 +35,8 @@
         and they are auto-deduped using binary diff
         -->
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.compressed.artifact>false</rapids.compressed.artifact>
+        <rapids.shim.jar.test.phase>none</rapids.shim.jar.test.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -64,23 +66,6 @@
     </dependencies>
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>${maven.jar.plugin.version}</version>
-                <configuration>
-                    <archive>
-                        <!-- transient jar, writing compressed can take several x time -->
-                        <compress>false</compress>
-                    </archive>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>default-test-jar</id>
-                        <phase>none</phase>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -506,6 +491,23 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release332db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-spark332db_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release333</id>
             <activation>
                 <property>
@@ -534,6 +536,23 @@
                 <property>
                     <name>buildver</name>
                     <value>340</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-24x_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release341</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341</value>
                 </property>
             </activation>
             <dependencies>

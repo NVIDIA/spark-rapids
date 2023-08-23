@@ -22,7 +22,7 @@ import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
@@ -30,21 +30,20 @@ import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuMultiFileReaderSuite extends FunSuite {
+class GpuMultiFileReaderSuite extends AnyFunSuite {
 
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
     val membuffers =
       Array(SingleHMBAndMeta(
-        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty, null))
-    val metrics = Map(GpuMetric.PEAK_DEVICE_MEMORY -> NoopMetric)
+        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
       numThreads = 1,
       maxNumFileProcessed = 1,
       filters = Array.empty,
-      execMetrics = metrics,
+      execMetrics = Map.empty,
       maxReadBatchSizeRows = 1000,
       maxReadBatchSizeBytes = 64L * 1024L * 1024L) {
 

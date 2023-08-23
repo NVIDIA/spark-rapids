@@ -16,7 +16,9 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "330db"}
+{"spark": "332db"}
 {"spark": "340"}
+{"spark": "341"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -25,6 +27,7 @@ import scala.math.{max, min}
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -65,7 +68,7 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 trait GpuAddSub extends CudfBinaryArithmetic {
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
   val failOnError: Boolean
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val outputType = dataType
     val leftInputType = left.dataType
     val rightInputType = right.dataType
@@ -90,13 +93,11 @@ trait GpuAddSub extends CudfBinaryArithmetic {
               super.columnarEval(batch)
             } else {
               // eval operands using the output precision
-              val castLhs = withResource(
-                GpuExpressionsUtils.columnarEvalToColumn(left, batch)
-              ) { lhs =>
+              val castLhs = withResource(left.columnarEval(batch)) { lhs =>
                 GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
-                withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+                withResource(right.columnarEval(batch)) { rhs =>
                   GpuCast.doCast(rhs.getBase(), rightInputType, resultType, false, false, false)
                 }
               }
@@ -135,12 +136,12 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 
   protected def prepareInputAndExecute(
       batch: ColumnarBatch,
-      resultType: DecimalType): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      resultType: DecimalType): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
     }
     val retTab = withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
       }
       withResource(castRhs) { castRhs =>
@@ -260,6 +261,12 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
 
+  // We should only use the long remainder algorithm when 
+  // the intermedite precision required will overflow one of the operands
+  private[this] lazy val useLongDivision: Boolean = {
+    DecimalRemainderChecks.neededPrecision(lhsType, rhsType) > DType.DECIMAL128_MAX_PRECISION
+  }
+
   // This is the type that the LHS will be cast to. The precision will match the precision of
   // the intermediate rhs (to make CUDF happy doing the divide), but the scale will be shifted
   // enough so CUDF produces the desired output scale
@@ -285,13 +292,60 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    if (useLongDivision) {
+      longRemainder(batch)
+    } else {
+      regularRemainder(batch)
+    }
+  }
+
+  private def longRemainder(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
+      lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
+    }
+    val retTab = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
+        withResource(divByZeroFixes(rhs.getBase)) { fixed =>
+          fixed.castTo(DType.create(DType.DTypeEnum.DECIMAL128, fixed.getType.getScale))
+        }
+      }
+      withResource(castRhs) { castRhs =>
+        com.nvidia.spark.rapids.jni.DecimalUtils.remainder128(castLhs, castRhs, -decimalType.scale)
+      }
+    }
+    val retCol = withResource(retTab) { retTab =>
+      val overflowed = retTab.getColumn(0)
+      val remainder = retTab.getColumn(1)
+      if (failOnError) {
+        withResource(overflowed.any()) { anyOverflow =>
+          if (anyOverflow.isValid && anyOverflow.getBoolean) {
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        remainder.incRefCount()
+      } else {
+        // With remainder, the return type can actually be a lower precision type than 
+        // DECIMAL128, the output of DecimalUtils.remainder128, so we need to cast it here.
+        val castRemainder = remainder.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        withResource(castRemainder) { castRemainder =>
+          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+            overflowed.ifElse(nullVal, castRemainder)
+          }
+        }
+      }
+    }
+    GpuColumnVector.from(retCol, dataType)
+  }
+
+  private def regularRemainder(batch: ColumnarBatch): GpuColumnVector = {
+    val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     withResource(castLhs) { castLhs =>
-      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+      val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
             legacyCastToString = false, stringToDateAnsiModeEnabled = false)
@@ -422,8 +476,8 @@ case class GpuIntegralDecimalDivide(
 
   override def failOnError: Boolean = SQLConf.get.ansiEnabled
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    super.columnarEval(batch).asInstanceOf[GpuColumnVector]
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    super.columnarEval(batch)
   }
 
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {

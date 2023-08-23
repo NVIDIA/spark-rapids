@@ -20,7 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, CurrentRow, ExprId, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.rapids.GpuCount

@@ -306,7 +306,14 @@ abstract class BaseHashJoinIterator(
           // We need a new LSCB that will be taken over by the gatherer, or closed
           closeOnExcept(LazySpillableColumnarBatch(spillOnlyCb.getBatch, "stream_data")) {
             streamBatch =>
+              // the original stream data batch is not spillable until
+              // we ask it to be right here, because we called `getBatch` on it
+              // to make up the new lazy spillable (`streamBatch`)
+              spillOnlyCb.allowSpilling()
+
               withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+                // ensure that the build data can be spilled
+                built.allowSpilling()
                 joinGatherer(builtKeys, built, streamBatch)
               }
           }
@@ -375,6 +382,8 @@ abstract class BaseHashJoinIterator(
       buildData: LazySpillableColumnarBatch,
       streamCb: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     withResource(GpuProjectExec.project(streamCb.getBatch, boundStreamKeys)) { streamKeys =>
+      // ensure we make the stream side spillable again
+      streamCb.allowSpilling()
       joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, streamCb)
     }
   }

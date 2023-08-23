@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
+{"spark": "341"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -51,7 +52,7 @@ trait Spark340PlusShims extends Spark331PlusShims {
           "projection if needed",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data
       // type. The types below are allowed as inputs and outputs.
-      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 +
+      ExecChecks((pluginSupportedOrderableSig +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {

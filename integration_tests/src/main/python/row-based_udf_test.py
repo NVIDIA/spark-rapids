@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from spark_session import with_spark_session
+from spark_session import with_spark_session, is_databricks122_or_later
 from conftest import skip_unless_precommit_tests
 
 def drop_udf(spark, udfname):

@@ -24,12 +24,11 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
-import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -160,7 +159,8 @@ case class GpuAvroPartitionReaderFactory(
     @transient params: Map[String, String])
   extends ShimFilePartitionReaderFactory(params) with Logging {
 
-  private val debugDumpPrefix = Option(rapidsConf.avroDebugDumpPrefix)
+  private val debugDumpPrefix = rapidsConf.avroDebugDumpPrefix
+  private val debugDumpAlways = rapidsConf.avroDebugDumpAlways
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
 
@@ -178,7 +178,7 @@ case class GpuAvroPartitionReaderFactory(
       _ += (System.nanoTime() - startTime)
     }
     val reader = new PartitionReaderWithBytesRead(new GpuAvroPartitionReader(conf, partFile,
-      blockMeta, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
+      blockMeta, readDataSchema, debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, metrics))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
@@ -200,7 +200,8 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  private val debugDumpPrefix = Option(rapidsConf.avroDebugDumpPrefix)
+  private val debugDumpPrefix = rapidsConf.avroDebugDumpPrefix
+  private val debugDumpAlways = rapidsConf.avroDebugDumpAlways
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
@@ -236,7 +237,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
       partFiles.filter(_.filePath.toString().endsWith(".avro"))
     }
     new GpuMultiFileCloudAvroPartitionReader(conf, files, numThreads, maxNumFileProcessed,
-      filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix,
+      filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix, debugDumpAlways,
       readDataSchema, partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes)
   }
 
@@ -291,16 +292,16 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
-      debugDumpPrefix, metrics, mapPathHeader.toMap)
+      debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
   }
 
 }
 
 /** A trait collecting common methods across the 3 kinds of avro readers */
 trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
-  private val avroFormat = Some("avro")
-
   def debugDumpPrefix: Option[String]
+
+  def debugDumpAlways: Boolean
 
   def readDataSchema: StructType
 
@@ -319,17 +320,14 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       hostBuf: HostMemoryBuffer,
       bufSize: Long,
       splits: Array[PartitionedFile]): Table = {
-    // Dump buffer for debugging when required
-    dumpDataToFile(hostBuf, bufSize, splits, debugDumpPrefix, avroFormat)
-
     val readOpts = CudfAvroOptions.builder()
       .includeColumn(readDataSchema.fieldNames.toSeq: _*)
       .build()
     // about to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    try {
-      RmmRapidsRetryIterator.withRetryNoSplit {
+    val table = try {
+      RmmRapidsRetryIterator.withRetryNoSplit[Table] {
         withResource(new NvtxWithMetrics("Avro decode",
           NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
           Table.readAvro(readOpts, hostBuf, 0, bufSize)
@@ -337,8 +335,22 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
       }
     } catch {
       case e: Exception =>
-        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+        val dumpMsg = debugDumpPrefix.map { prefix =>
+          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".avro")
+          s", data dumped to $p"
+        }.getOrElse("")
+        throw new IOException(
+          s"Error when processing file splits [${splits.mkString("; ")}]$dumpMsg", e)
     }
+    closeOnExcept(table) { _ =>
+      debugDumpPrefix.foreach { prefix =>
+        if (debugDumpAlways) {
+          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".avro")
+          logWarning(s"Wrote data for ${splits.mkString("; ")} to $p")
+        }
+      }
+    }
+    table
   }
 
   /**
@@ -357,7 +369,6 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
         withResource(sendToGpuUnchecked(hostBuf, bufSize, splits)) { t =>
           val batchSizeBytes = GpuColumnVector.getTotalDeviceMemoryUsed(t)
           logDebug(s"GPU batch size: $batchSizeBytes bytes")
-          maxDeviceMemory = max(batchSizeBytes, maxDeviceMemory)
           metrics(NUM_OUTPUT_BATCHES) += 1
           // convert to batch
           Some(GpuColumnVector.from(t, GpuColumnVector.extractTypes(readDataSchema)))
@@ -530,6 +541,7 @@ class GpuAvroPartitionReader(
     blockMeta: AvroBlockMeta,
     override val readDataSchema: StructType,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric])
@@ -546,7 +558,6 @@ class GpuAvroPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batchIter = readBatch() match {
           case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
@@ -612,6 +623,7 @@ class GpuAvroPartitionReader(
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated AVRO data or null
+ * @param debugDumpAlways whether to debug dump always or only on errors
  * @param readDataSchema the Spark schema describing what will be read
  * @param partitionSchema Schema of partitions.
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows to be read per batch
@@ -627,6 +639,7 @@ class GpuMultiFileCloudAvroPartitionReader(
     ignoreCorruptFiles: Boolean,
     ignoreMissingFiles: Boolean,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     override val readDataSchema: StructType,
     partitionSchema: StructType,
     maxReadBatchSizeRows: Integer,
@@ -825,7 +838,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty, null)))
+                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
@@ -873,6 +886,7 @@ class GpuMultiFileAvroPartitionReader(
     maxReadBatchSizeBytes: Long,
     numThreads: Int,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     execMetrics: Map[String, GpuMetric],
     mapPathHeader: Map[Path, Header])
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
@@ -940,7 +954,6 @@ class GpuMultiFileAvroPartitionReader(
       new SingleGpuDataProducer(sendToGpuUnchecked(dataBuffer, dataSize, splits))
     }
     GpuDataProducer.wrap(tableReader) { table =>
-      maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
             s"but read ${table.getNumberOfColumns}")

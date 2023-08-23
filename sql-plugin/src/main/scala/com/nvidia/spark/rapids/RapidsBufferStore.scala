@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.util.Comparator
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import scala.collection.mutable
 
@@ -233,6 +234,21 @@ abstract class RapidsBufferStore(val tier: StorageTier)
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = {
     buffers.add(buffer)
+    buffer.updateSpillability()
+  }
+
+  /**
+   * Adds a buffer to the spill framework, stream synchronizing with the producer
+   * stream to ensure that the buffer is fully materialized, and can be safely copied
+   * as part of the spill.
+   *
+   * @param needsSync true if we should stream synchronize before adding the buffer
+   */
+  protected def addBuffer(buffer: RapidsBufferBase, needsSync: Boolean): Unit = {
+    if (needsSync) {
+      Cuda.DEFAULT_STREAM.sync()
+    }
+    addBuffer(buffer)
   }
 
   override def close(): Unit = {
@@ -257,6 +273,9 @@ abstract class RapidsBufferStore(val tier: StorageTier)
     protected[this] var refcount = 0
 
     private[this] var spillPriority: Long = initialSpillPriority
+
+    private[this] val rwl: ReentrantReadWriteLock = new ReentrantReadWriteLock()
+
 
     def meta: TableMeta = _meta
 
@@ -407,6 +426,30 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
     private[RapidsBufferStore] def updateSpillPriorityValue(priority: Long): Unit = {
       spillPriority = priority
+    }
+
+    override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = {
+      withResource(getMemoryBuffer) { buff =>
+        val lock = rwl.readLock()
+        try {
+          lock.lock()
+          body(buff)
+        } finally {
+          lock.unlock()
+        }
+      }
+    }
+
+    override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = {
+      withResource(getMemoryBuffer) { buff =>
+        val lock = rwl.writeLock()
+        try {
+          lock.lock()
+          body(buff)
+        } finally {
+          lock.unlock()
+        }
+      }
     }
 
     /** Must be called with a lock on the buffer */

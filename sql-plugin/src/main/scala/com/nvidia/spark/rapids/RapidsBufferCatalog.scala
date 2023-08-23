@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm, Table}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -61,7 +63,8 @@ trait RapidsBufferHandle extends AutoCloseable {
  * `RapidsBufferCatalog.singleton` should be used instead.
  */
 class RapidsBufferCatalog(
-    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.deviceStorage)
+    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.deviceStorage,
+    hostStorage: RapidsHostMemoryStore = RapidsBufferCatalog.hostStorage)
   extends AutoCloseable with Logging {
 
   /** Map of buffer IDs to buffers sorted by storage tier */
@@ -196,7 +199,7 @@ class RapidsBufferCatalog(
   }
 
   /**
-   * Adds a buffer to the device storage. This does NOT take ownership of the
+   * Adds a buffer to the catalog and store. This does NOT take ownership of the
    * buffer, so it is the responsibility of the caller to close it.
    *
    * This version of `addBuffer` should not be called from the shuffle catalogs
@@ -210,7 +213,7 @@ class RapidsBufferCatalog(
    * @return RapidsBufferHandle handle for this buffer
    */
   def addBuffer(
-      buffer: DeviceMemoryBuffer,
+      buffer: MemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       needsSync: Boolean = true): RapidsBufferHandle = synchronized {
@@ -292,29 +295,42 @@ class RapidsBufferCatalog(
   }
 
   /**
-   * Adds a buffer to the device storage. This does NOT take ownership of the
-   * buffer, so it is the responsibility of the caller to close it.
+   * Adds a buffer to either the device or host storage. This does NOT take
+   * ownership of the buffer, so it is the responsibility of the caller to close it.
    *
    * @param id the RapidsBufferId to use for this buffer
-   * @param buffer buffer that will be owned by the store
+   * @param buffer buffer that will be owned by the target store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param needsSync whether the spill framework should stream synchronize while adding
-   *                  this device buffer (defaults to true)
+   *                  this buffer (defaults to true)
    * @return RapidsBufferHandle handle for this RapidsBuffer
    */
   def addBuffer(
       id: RapidsBufferId,
-      buffer: DeviceMemoryBuffer,
+      buffer: MemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       needsSync: Boolean): RapidsBufferHandle = synchronized {
-    val rapidsBuffer = deviceStorage.addBuffer(
-      id,
-      buffer,
-      tableMeta,
-      initialSpillPriority,
-      needsSync)
+    val rapidsBuffer = buffer match {
+      case gpuBuffer: DeviceMemoryBuffer =>
+        deviceStorage.addBuffer(
+          id,
+          gpuBuffer,
+          tableMeta,
+          initialSpillPriority,
+          needsSync)
+      case hostBuffer: HostMemoryBuffer =>
+        hostStorage.addBuffer(
+          id,
+          hostBuffer,
+          tableMeta,
+          initialSpillPriority,
+          needsSync)
+      case _ =>
+        throw new IllegalArgumentException(
+          s"Cannot call addBuffer with buffer $buffer")
+    }
     registerNewBuffer(rapidsBuffer)
     makeNewHandle(id, initialSpillPriority)
   }
@@ -497,72 +513,89 @@ class RapidsBufferCatalog(
     if (spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
     }
-    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
-    logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
-      s"Current total ${store.currentSize}. " +
-      s"Current spillable ${store.currentSpillableSize}")
-
-    // we try to spill in this thread. If another thread is also spilling, we let that
-    // thread win and we return letting RMM retry the alloc
-    var rmmShouldRetryAlloc = false
 
     // total amount spilled in this invocation
     var totalSpilled: Long = 0
 
-    if (store.currentSpillableSize > targetTotalSize) {
-      withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
-        logWarning(s"${store.name} store spilling to reduce usage from " +
-          s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
-          s"to $targetTotalSize bytes")
+    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
-        // If the store has 0 spillable bytes left, it has exhausted.
-        var exhausted = false
+    val mySpillCount = spillCount
 
-        while (!exhausted && !rmmShouldRetryAlloc &&
-            store.currentSpillableSize > targetTotalSize) {
-          val mySpillCount = spillCount
-          synchronized {
-            if (spillCount == mySpillCount) {
-              spillCount += 1
-              val nextSpillable = store.nextSpillable()
-              if (nextSpillable != null) {
-                // we have a buffer (nextSpillable) to spill
-                spillAndFreeBuffer(nextSpillable, spillStore, stream)
-                totalSpilled += nextSpillable.getMemoryUsedBytes
+    // we have to hold this lock while freeing buffers, otherwise we could run
+    // into the case where a buffer is spilled yet it is aliased in addBuffer
+    // via an event handler that hasn't been reset (it resets during the free)
+    synchronized {
+      if (mySpillCount != spillCount) {
+        // a different thread already spilled, returning
+        // None which lets the calling code know that rmm should retry allocation
+        None
+      } else {
+        // this thread win the race and should spill
+        spillCount += 1
+
+        logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
+          s"Current total ${store.currentSize}. " +
+          s"Current spillable ${store.currentSpillableSize}")
+
+        if (store.currentSpillableSize > targetTotalSize) {
+          withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
+            logWarning(s"${store.name} store spilling to reduce usage from " +
+              s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
+              s"to $targetTotalSize bytes")
+
+            // If the store has 0 spillable bytes left, it has exhausted.
+            var exhausted = false
+
+            val buffersToFree = new ArrayBuffer[RapidsBuffer]()
+
+            try {
+              while (!exhausted &&
+                store.currentSpillableSize > targetTotalSize) {
+                val nextSpillable = store.nextSpillable()
+                if (nextSpillable != null) {
+                  // we have a buffer (nextSpillable) to spill
+                  spillBuffer(nextSpillable, spillStore, stream)
+                    .foreach(buffersToFree.append(_))
+                  totalSpilled += nextSpillable.getMemoryUsedBytes
+                }
               }
-            } else {
-              rmmShouldRetryAlloc = true
+              if (totalSpilled <= 0) {
+                // we didn't spill in this iteration, exit loop
+                exhausted = true
+                logWarning("Unable to spill enough to meet request. " +
+                  s"Total=${store.currentSize} " +
+                  s"Spillable=${store.currentSpillableSize} " +
+                  s"Target=$targetTotalSize")
+              }
+            } finally {
+              if (buffersToFree.nonEmpty) {
+                // This is a hack in order to completely synchronize with the GPU before we free
+                // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
+                // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
+                // all launched GPU work, otherwise crashes or data corruption could occur.
+                // A more performant implementation would be to synchronize on the thread that read
+                // the buffer via events.
+                // https://github.com/NVIDIA/spark-rapids/issues/8610
+                Cuda.deviceSynchronize()
+                buffersToFree.safeFree()
+              }
             }
-          }
-          if (!rmmShouldRetryAlloc && totalSpilled <= 0) {
-            // we didn't spill in this iteration, exit loop
-            exhausted = true
-            logWarning("Unable to spill enough to meet request. " +
-                s"Total=${store.currentSize} " +
-                s"Spillable=${store.currentSpillableSize} " +
-                s"Target=$targetTotalSize")
           }
         }
       }
-    }
-
-    if (rmmShouldRetryAlloc) {
-      // if we are going to retry, and didn't spill, returning None prevents extra
-      // logs where we say we spilled 0 bytes from X store
-      None
-    } else {
       Some(totalSpilled)
     }
   }
 
   /**
    * Given a specific `RapidsBuffer` spill it to `spillStore`
+   * @return the buffer, if successfully spilled, in order for the caller to free it
    * @note called with catalog lock held
    */
-  private def spillAndFreeBuffer(
+  private def spillBuffer(
       buffer: RapidsBuffer,
       spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Unit = {
+      stream: Cuda.Stream): Option[RapidsBuffer] = {
     if (buffer.addReference()) {
       withResource(buffer) { _ =>
         logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
@@ -570,6 +603,8 @@ class RapidsBufferCatalog(
         if (!bufferHasSpilled) {
           // if the spillStore specifies a maximum size spill taking this ceiling
           // into account before trying to create a buffer there
+          // TODO: we may need to handle what happens if we can't spill anymore
+          //   because all host buffers are being referenced.
           trySpillToMaximumSize(buffer, spillStore, stream)
 
           // copy the buffer to spillStore
@@ -584,8 +619,11 @@ class RapidsBufferCatalog(
       }
       // we can now remove the old tier linkage
       removeBufferTier(buffer.id, buffer.storageTier)
-      // and free
-      buffer.safeFree()
+
+      // return the buffer
+      Some(buffer)
+    } else {
+      None
     }
   }
 
@@ -747,11 +785,12 @@ object RapidsBufferCatalog extends Logging {
       deviceStorage.setSpillStore(gdsStorage)
     } else {
       val hostSpillStorageSize = if (rapidsConf.hostSpillStorageSize == -1) {
-        rapidsConf.pinnedPoolSize + rapidsConf.pageablePoolSize
+        // + 1 GiB by default to match backwards compatibility
+        rapidsConf.pinnedPoolSize + (1024 * 1024 * 1024)
       } else {
         rapidsConf.hostSpillStorageSize
       }
-      hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize, rapidsConf.pageablePoolSize)
+      hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize)
       diskStorage = new RapidsDiskStore(diskBlockManager)
       deviceStorage.setSpillStore(hostStorage)
       hostStorage.setSpillStore(diskStorage)
@@ -784,6 +823,13 @@ object RapidsBufferCatalog extends Logging {
   def close(): Unit = {
     logInfo("Closing storage")
     closeImpl()
+  }
+
+  /**
+   * Only used in unit tests, it returns the number of buffers in the catalog.
+   */
+  def numBuffers: Int = {
+    _singleton.numBuffers
   }
 
   private def closeImpl(): Unit = synchronized {
@@ -837,7 +883,7 @@ object RapidsBufferCatalog extends Logging {
   }
 
   /**
-   * Adds a buffer to the device storage. This does NOT take ownership of the
+   * Adds a buffer to the catalog and store. This does NOT take ownership of the
    * buffer, so it is the responsibility of the caller to close it.
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
@@ -845,7 +891,7 @@ object RapidsBufferCatalog extends Logging {
    * @return RapidsBufferHandle associated with this buffer
    */
   def addBuffer(
-      buffer: DeviceMemoryBuffer,
+      buffer: MemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long): RapidsBufferHandle = {
     singleton.addBuffer(buffer, tableMeta, initialSpillPriority)
@@ -869,7 +915,7 @@ object RapidsBufferCatalog extends Logging {
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
 
   /**
-   * Given a `DeviceMemoryBuffer` find out if a `MemoryBuffer.EventHandler` is associated
+   * Given a `MemoryBuffer` find out if a `MemoryBuffer.EventHandler` is associated
    * with it.
    *
    * After getting the `RapidsBuffer` try to acquire it via `addReference`.
@@ -878,7 +924,7 @@ object RapidsBufferCatalog extends Logging {
    * are adding it again).
    *
    * @note public for testing
-   * @param buffer - the `DeviceMemoryBuffer` to inspect
+   * @param buffer - the `MemoryBuffer` to inspect
    * @return - Some(RapidsBuffer): the handler is associated with a rapids buffer
    *         and the rapids buffer is currently valid, or
    *
@@ -887,7 +933,7 @@ object RapidsBufferCatalog extends Logging {
    *           about to be removed).
    */
   private def getExistingRapidsBufferAndAcquire(
-      buffer: DeviceMemoryBuffer): Option[RapidsBuffer] = {
+      buffer: MemoryBuffer): Option[RapidsBuffer] = {
     val eh = buffer.getEventHandler
     eh match {
       case null =>

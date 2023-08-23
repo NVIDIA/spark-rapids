@@ -63,7 +63,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
 
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegerType, LongType))
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(new NvtxRange("GpuRand", NvtxColor.RED)) { _ =>
       val partId = TaskContext.getPartitionId()
       if (partId != previousPartition || !wasInitialized) {

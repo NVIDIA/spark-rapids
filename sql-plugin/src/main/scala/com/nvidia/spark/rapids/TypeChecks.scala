@@ -671,7 +671,7 @@ object TypeSig {
   val integral: TypeSig = BYTE + SHORT + INT + LONG
 
   /**
-   * All numeric types fp + integral + DECIMAL_64
+   * All numeric types fp + integral + DECIMAL_128
    */
   val gpuNumeric: TypeSig = integral + fp + DECIMAL_128
 

@@ -21,8 +21,8 @@ import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.mockito.Mockito._
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar.mock
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar.mock
 
 import org.apache.spark.sql.RuntimeConfig
 import org.apache.spark.sql.execution.datasources.{PartitionDirectory, PartitionedFile}
@@ -61,7 +61,7 @@ class AlluxioFSMock extends AlluxioFS {
   }
 }
 
-class AlluxioUtilsSuite extends FunSuite {
+class AlluxioUtilsSuite extends AnyFunSuite {
 
   def setMockOnAlluxioUtils(): Unit = {
     AlluxioUtils.setAlluxioFS(new AlluxioFSMock())

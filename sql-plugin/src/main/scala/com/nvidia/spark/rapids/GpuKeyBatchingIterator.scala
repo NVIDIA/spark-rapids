@@ -22,8 +22,8 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -44,13 +44,12 @@ class GpuKeyBatchingIterator(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
     concatTime: GpuMetric,
-    opTime: GpuMetric,
-    peakDevMemory: GpuMetric)
+    opTime: GpuMetric)
     extends Iterator[ColumnarBatch] {
   private val pending = mutable.Queue[SpillableColumnarBatch]()
   private var pendingSize: Long = 0
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  onTaskCompletion(close())
 
   def close(): Unit = {
     pending.foreach(_.close())
@@ -125,32 +124,25 @@ class GpuKeyBatchingIterator(
     pendingSize = 0
     spillableBuffers.appendAll(last)
     RmmRapidsRetryIterator.withRetryNoSplit(spillableBuffers) { spillableBuffers =>
-      var peak = 0L
-      try {
-        withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
-          withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
-            spillableBuffers.foreach { spillable =>
-              withResource(spillable.getColumnarBatch()) { cb =>
-                peak += GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-                toConcat.append(GpuColumnVector.from(cb))
-              }
-            }
-
-            if (toConcat.length > 1) {
-              withResource(Table.concatenate(toConcat: _*)) { concated =>
-                peak += GpuColumnVector.getTotalDeviceMemoryUsed(concated)
-                GpuColumnVector.from(concated, types)
-              }
-            } else if (toConcat.nonEmpty) {
-              GpuColumnVector.from(toConcat.head, types)
-            } else {
-              // We got nothing but have to do something
-              GpuColumnVector.emptyBatchFromTypes(types)
+      withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
+        withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
+          spillableBuffers.foreach { spillable =>
+            withResource(spillable.getColumnarBatch()) { cb =>
+              toConcat.append(GpuColumnVector.from(cb))
             }
           }
+
+          if (toConcat.length > 1) {
+            withResource(Table.concatenate(toConcat: _*)) { concated =>
+              GpuColumnVector.from(concated, types)
+            }
+          } else if (toConcat.nonEmpty) {
+            GpuColumnVector.from(toConcat.head, types)
+          } else {
+            // We got nothing but have to do something
+            GpuColumnVector.emptyBatchFromTypes(types)
+          }
         }
-      } finally {
-        peakDevMemory.set(Math.max(peakDevMemory.value, peak))
       }
     }
   }
@@ -172,21 +164,20 @@ class GpuKeyBatchingIterator(
     val cutoff = closeOnExcept(cb)(getKeyCutoff)
     if (cutoff <= 0) {
       val cbSize = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-      peakDevMemory.set(Math.max(peakDevMemory.value, cbSize))
       // Everything is for a single key, so save it away and try the next batch...
       pending +=
           SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       pendingSize += cbSize
       None
     } else {
-      var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
       val table = withResource(cb)(GpuColumnVector.from)
       val tables = withResource(table) { table =>
         table.contiguousSplit(cutoff)
       }
-      val (firstSpill, secondSpill) = withResource(tables) { tables =>
+      val (firstSpill, secondSpill) = closeOnExcept(tables) { tables =>
         assert(tables.length == 2)
-        val tmp = tables.safeMap { t =>
+        val tmp = tables.zipWithIndex.safeMap { case (t, ix) =>
+          tables(ix) = null
           SpillableColumnarBatch(t, types, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         }
         (tmp(0), tmp(1))
@@ -195,12 +186,9 @@ class GpuKeyBatchingIterator(
         concatPending(Some(firstSpill))
       }
       closeOnExcept(ret) { ret =>
-        peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
         val savedSize = secondSpill.sizeInBytes
-        peak += savedSize
         pending += secondSpill
         pendingSize += savedSize
-        peakDevMemory.set(Math.max(peakDevMemory.value, peak))
         Some(ret)
       }
     }
@@ -247,14 +235,13 @@ object GpuKeyBatchingIterator {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       concatTime: GpuMetric,
-      opTime: GpuMetric,
-      peakDevMemory: GpuMetric): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
+      opTime: GpuMetric): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
     val sorter = new GpuSorter(unboundOrderSpec, schema)
     val types = schema.map(_.dataType)
     def makeIter(iter: Iterator[ColumnarBatch]): GpuKeyBatchingIterator = {
       new GpuKeyBatchingIterator(iter, sorter, types, targetSizeBytes,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-        concatTime, opTime, peakDevMemory)
+        concatTime, opTime)
     }
     makeIter
   }

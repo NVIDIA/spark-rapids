@@ -20,8 +20,8 @@
 
 set -ex
 
-CUDF_VER=${CUDF_VER:-23.06}
-CUDA_VER=${CUDA_VER:-11.0}
+CUDF_VER=${CUDF_VER:-23.10}
+CUDA_VER=${CUDA_VER:-11.8}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
@@ -50,7 +50,7 @@ conda install -y -c conda-forge mamba python=$PYTHON_VERSION
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas || true
 
 REQUIRED_PACKAGES=(
-  cudatoolkit=$CUDA_VER
+  cuda-version=$CUDA_VER
   cudf=$CUDF_VER
   findspark
   pandas

@@ -30,13 +30,14 @@
 {"spark": "332"}
 {"spark": "333"}
 {"spark": "340"}
+{"spark": "341"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import org.apache.spark.api.python._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.util._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuArrowPythonRunnerShims(
@@ -46,7 +47,7 @@ case class GpuArrowPythonRunnerShims(
   dedupAttrs: StructType,
   pythonOutputSchema: StructType) {
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+  val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
   def getRunner(): GpuPythonRunnerBase[ColumnarBatch] = {
     new GpuArrowPythonRunner(

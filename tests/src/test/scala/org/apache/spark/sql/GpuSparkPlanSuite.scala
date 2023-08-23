@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,12 @@ package org.apache.spark.sql
 
 import com.nvidia.spark.rapids.SparkSessionHolder
 import com.nvidia.spark.rapids.shims.SparkShimImpl
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.plans.logical.Range
 
-class GpuSparkPlanSuite extends FunSuite {
+class GpuSparkPlanSuite extends AnyFunSuite {
 
   test("leafNodeDefaultParallelism for GpuRangeExec") {
 

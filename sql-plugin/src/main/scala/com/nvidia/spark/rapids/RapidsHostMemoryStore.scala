@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, PinnedMemoryPool}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_DIRECT_OFFSET, HOST_MEMORY_BUFFER_PAGEABLE_OFFSET, HOST_MEMORY_BUFFER_PINNED_OFFSET}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, freeOnExcept, withResource}
+import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_SPILL_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -28,43 +28,52 @@ import com.nvidia.spark.rapids.format.TableMeta
  * @param pageableMemoryPoolSize maximum size in bytes for the internal pageable memory pool
  */
 class RapidsHostMemoryStore(
-    maxSize: Long,
-    pageableMemoryPoolSize: Long)
+    maxSize: Long)
     extends RapidsBufferStore(StorageTier.HOST) {
-  private[this] val pool = HostMemoryBuffer.allocate(pageableMemoryPoolSize, false)
-  private[this] val addressAllocator = new AddressSpaceAllocator(pageableMemoryPoolSize)
-  private[this] var haveLoggedMaxExceeded = false
 
-  private sealed abstract class AllocationMode(val spillPriorityOffset: Long)
-  private case object Pinned extends AllocationMode(HOST_MEMORY_BUFFER_PINNED_OFFSET)
-  private case object Pooled extends AllocationMode(HOST_MEMORY_BUFFER_PAGEABLE_OFFSET)
-  private case object Direct extends AllocationMode(HOST_MEMORY_BUFFER_DIRECT_OFFSET)
+  override def spillableOnAdd: Boolean = false
+
+  override protected def setSpillable(buffer: RapidsBufferBase, spillable: Boolean): Unit = {
+    doSetSpillable(buffer, spillable)
+  }
 
   override def getMaxSize: Option[Long] = Some(maxSize)
 
   private def allocateHostBuffer(
       size: Long,
-      preferPinned: Boolean = true): (HostMemoryBuffer, AllocationMode) = {
+      preferPinned: Boolean = true): HostMemoryBuffer = {
     var buffer: HostMemoryBuffer = null
     if (preferPinned) {
       buffer = PinnedMemoryPool.tryAllocate(size)
       if (buffer != null) {
-        return (buffer, Pinned)
+        return buffer
       }
     }
 
-    val allocation = addressAllocator.allocate(size)
-    if (allocation.isDefined) {
-      buffer = pool.slice(allocation.get, size)
-      return (buffer, Pooled)
-    }
+    HostMemoryBuffer.allocate(size, false)
+  }
 
-    if (!haveLoggedMaxExceeded) {
-      logWarning(s"Exceeding host spill max of $pageableMemoryPoolSize bytes to accommodate " +
-          s"a buffer of $size bytes. Consider increasing pageable memory store size.")
-      haveLoggedMaxExceeded = true
+  def addBuffer(
+      id: RapidsBufferId,
+      buffer: HostMemoryBuffer,
+      tableMeta: TableMeta,
+      initialSpillPriority: Long,
+      needsSync: Boolean): RapidsBuffer = {
+    buffer.incRefCount()
+    val rapidsBuffer = new RapidsHostMemoryBuffer(
+      id,
+      buffer.getLength,
+      tableMeta,
+      initialSpillPriority,
+      buffer)
+    freeOnExcept(rapidsBuffer) { _ =>
+      logDebug(s"Adding host buffer for: [id=$id, size=${buffer.getLength}, " +
+        s"uncompressed=${rapidsBuffer.meta.bufferMeta.uncompressedSize}, " +
+        s"meta_id=${tableMeta.bufferMeta.id}, " +
+        s"meta_size=${tableMeta.bufferMeta.size}]")
+      addBuffer(rapidsBuffer, needsSync)
+      rapidsBuffer
     }
-    (HostMemoryBuffer.allocate(size, false), Direct)
   }
 
   override protected def createBuffer(
@@ -73,8 +82,7 @@ class RapidsHostMemoryStore(
     withResource(other.getCopyIterator) { otherBufferIterator =>
       val isChunked = otherBufferIterator.isChunked
       val totalCopySize = otherBufferIterator.getTotalCopySize
-      val (hostBuffer, allocationMode) = allocateHostBuffer(totalCopySize)
-      closeOnExcept(hostBuffer) { _ =>
+      closeOnExcept(allocateHostBuffer(totalCopySize)) { hostBuffer =>
         withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
           var hostOffset = 0L
           val start = System.nanoTime()
@@ -95,55 +103,94 @@ class RapidsHostMemoryStore(
           val end = System.nanoTime()
           val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
           val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
-          logDebug(s"Spill to host (mode=$allocationMode, chunked=$isChunked) " +
+          logDebug(s"Spill to host (chunked=$isChunked) " +
               s"size=$szMB MiB bandwidth=$bw MiB/sec")
         }
         new RapidsHostMemoryBuffer(
           other.id,
           totalCopySize,
           other.meta,
-          applyPriorityOffset(other.getSpillPriority, allocationMode.spillPriorityOffset),
-          hostBuffer,
-          allocationMode)
+          applyPriorityOffset(other.getSpillPriority, HOST_MEMORY_BUFFER_SPILL_OFFSET),
+          hostBuffer)
       }
     }
   }
 
   def numBytesFree: Long = maxSize - currentSize
 
-  override def close(): Unit = {
-    super.close()
-    pool.close()
-  }
-
   class RapidsHostMemoryBuffer(
       id: RapidsBufferId,
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      buffer: HostMemoryBuffer,
-      allocationMode: AllocationMode)
-      extends RapidsBufferBase(
-        id, meta, spillPriority) {
+      buffer: HostMemoryBuffer)
+      extends RapidsBufferBase(id, meta, spillPriority)
+        with MemoryBuffer.EventHandler {
     override val storageTier: StorageTier = StorageTier.HOST
 
-    override def getMemoryBuffer: MemoryBuffer = {
-      buffer.incRefCount()
-      buffer
+    override def getMemoryBuffer: MemoryBuffer = synchronized {
+      buffer.synchronized {
+        setSpillable(this, false)
+        buffer.incRefCount()
+        buffer
+      }
+    }
+
+    override def updateSpillability(): Unit = {
+      if (buffer.getRefCount == 1) {
+        setSpillable(this, true)
+      }
     }
 
     override protected def releaseResources(): Unit = {
-      allocationMode match {
-        case Pooled =>
-          assert(buffer.getAddress >= pool.getAddress)
-          assert(buffer.getAddress < pool.getAddress + pool.getLength)
-          addressAllocator.free(buffer.getAddress - pool.getAddress)
-        case _ =>
-      }
       buffer.close()
     }
 
     /** The size of this buffer in bytes. */
     override def getMemoryUsedBytes: Long = size
+
+    // If this require triggers, we are re-adding a `HostMemoryBuffer` outside of
+    // the catalog lock, which should not possible. The event handler is set to null
+    // when we free the `RapidsHostMemoryBuffer` and if the buffer is not free, we
+    // take out another handle (in the catalog).
+    // TODO: This is not robust (to rely on outside locking and addReference/free)
+    //  and should be revisited.
+    require(buffer.setEventHandler(this) == null,
+      "HostMemoryBuffer with non-null event handler failed to add!!")
+
+    /**
+     * Override from the MemoryBuffer.EventHandler interface.
+     *
+     * If we are being invoked we have the `buffer` lock, as this callback
+     * is being invoked from `MemoryBuffer.close`
+     *
+     * @param refCount - buffer's current refCount
+     */
+    override def onClosed(refCount: Int): Unit = {
+      // refCount == 1 means only 1 reference exists to `buffer` in the
+      // RapidsHostMemoryBuffer (we own it)
+      if (refCount == 1) {
+        // setSpillable is being called here as an extension of `MemoryBuffer.close()`
+        // we hold the MemoryBuffer lock and we could be called from a Spark task thread
+        // Since we hold the MemoryBuffer lock, `incRefCount` waits for us. The only other
+        // call to `setSpillable` is also under this same MemoryBuffer lock (see:
+        // `getMemoryBuffer`)
+        setSpillable(this, true)
+      }
+    }
+
+    /**
+     * We overwrite free to make sure we don't have a handler for the underlying
+     * buffer, since this `RapidsBuffer` is no longer tracked.
+     */
+    override def free(): Unit = synchronized {
+      if (isValid) {
+        // it is going to be invalid when calling super.free()
+        buffer.setEventHandler(null)
+      }
+      super.free()
+    }
   }
 }
+
+

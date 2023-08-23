@@ -52,3 +52,10 @@ def pytest_addoption(parser):
         "--test_oom_injection_mode", action='store', default="random",
         help="in what way, if any, should the tests inject OOMs at test time. Valid options are: random, always, or never"
     )
+    parser.addoption(
+        "--force_parquet_testing_tests", action="store_true", default=False,
+        help="if true forces parquet-testing tests to fail if input data cannot be found"
+    )
+    parser.addoption(
+        "--large_data_test", action='store_true', default=False, help="if enable tests with large data"
+    )

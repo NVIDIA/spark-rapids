@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import locale
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_error, \
+    assert_gpu_and_cpu_error, \
     assert_gpu_sql_fallback_collect
 from data_gen import *
 from marks import *
@@ -520,7 +519,7 @@ def test_word_boundaries():
                 'regexp_replace(a, "\\\\B", "#")',
             ),
         conf=_regexp_conf)
-        
+
 def test_character_classes():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -808,7 +807,7 @@ def test_regexp_extract_all_idx_negative():
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_out_of_bounds():
-    gen = mk_str_gen('[abcd]{0,3}')
+    gen = mk_str_gen('[a-d]{1,2}.{0,1}[0-9]{1,2}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract_all(a, "([a-d]+).*([0-9])", 3)'
@@ -841,11 +840,12 @@ def test_regexp_replace_unicode_support():
             'REGEXP_REPLACE(a, "TEST.*\\\\d", "PROD")',
             'REGEXP_REPLACE(a, "TEST[85]*$", "PROD")',
             'REGEXP_REPLACE(a, "TEST.+$", "PROD")',
+            'REGEXP_REPLACE("TEST䤫", "TEST.+$", "PROD")',
         ),
         conf=_regexp_conf)
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_fallback():
+def test_regexp_replace_fallback_configured_off():
     gen = mk_str_gen('[abcdef]{0,2}')
 
     conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
@@ -858,6 +858,69 @@ def test_regexp_replace_fallback():
         cpu_fallback_class_name='RegExpReplace',
         conf=conf
     )
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_regexp_extract():
+    gen = mk_str_gen('[abcdef]{0,2}')
+    regex_gen = StringGen(r'\[a-z\]\+')
+    num_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
+
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [
+                ("a", gen),
+                ("reg_ex", regex_gen),
+                ("num", num_gen)], length=10).selectExpr(sql_text),
+        'RegExpExtract')
+
+    assert_gpu_did_fallback('REGEXP_EXTRACT(a, "[a-z]+", num)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT(a, reg_ex, 0)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT(a, reg_ex, num)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT("PROD", "[a-z]+", num)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT("PROD", reg_ex, 0)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT("PROD", reg_ex, num)')
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_regexp_extract_all():
+    gen = mk_str_gen('[abcdef]{0,2}')
+    regex_gen = StringGen(r'\[a-z\]\+')
+    num_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [
+                ("a", gen),
+                ("reg_ex", regex_gen),
+                ("num", num_gen)], length=10).selectExpr(sql_text),
+            'RegExpExtractAll')
+
+    assert_gpu_did_fallback('REGEXP_EXTRACT_ALL(a, "[a-z]+", num)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT_ALL(a, reg_ex, 0)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT_ALL(a, reg_ex, num)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT_ALL("PROD", "[a-z]+", num)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT_ALL("PROD", reg_ex, 0)')
+    assert_gpu_did_fallback('REGEXP_EXTRACT_ALL("PROD", reg_ex, num)')
+
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_unsupported_fallback_regexp_replace():
+    gen = mk_str_gen('[abcdef]{0,2}')
+    regex_gen = StringGen(r'\[a-z\]\+')
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [
+                ("a", gen),
+                ("reg_ex", regex_gen)], length=10).selectExpr(sql_text),
+            'RegExpReplace')
+
+    assert_gpu_did_fallback('REGEXP_REPLACE(a, "[a-z]+", a)')
+    assert_gpu_did_fallback('REGEXP_REPLACE(a, reg_ex, "PROD")')
+    assert_gpu_did_fallback('REGEXP_REPLACE(a, reg_ex, a)')
+    assert_gpu_did_fallback('REGEXP_REPLACE("PROD", "[a-z]+", a)')
+    assert_gpu_did_fallback('REGEXP_REPLACE("PROD", reg_ex, "PROD")')
+    assert_gpu_did_fallback('REGEXP_REPLACE("PROD", reg_ex, a)')
+
 
 @pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
 def test_regexp_replace_simple(regexp_enabled):
@@ -928,7 +991,7 @@ def test_regexp_memory_fallback():
             'a rlike "1|2|3|4|5|6"'
         ),
         cpu_fallback_class_name='RLike',
-        conf={ 
+        conf={
             'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
@@ -950,9 +1013,19 @@ def test_regexp_memory_ok():
             'a rlike "(1)(2)(3)"',
             'a rlike "1|2|3|4|5|6"'
         ),
-        conf={ 
+        conf={
             'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
     )
+
+def test_re_replace_all():
+    """
+    regression test for https://github.com/NVIDIA/spark-rapids/issues/8323
+    """
+    gen = mk_str_gen('[a-z]{0,2}\n{0,2}[a-z]{0,2}\n{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, ".*$", "PROD", 1)'),
+        conf=_regexp_conf)

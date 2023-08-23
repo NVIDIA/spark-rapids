@@ -21,7 +21,7 @@ import java.nio.file.Files
 
 import scala.collection.JavaConverters._
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, HostColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.CodecType
 import org.apache.arrow.memory.RootAllocator
@@ -32,6 +32,7 @@ import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.catalyst.expressions.ExprId
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
@@ -263,7 +264,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         concatTime = NoopMetric,
         copyBufTime = NoopMetric,
         opTime = NoopMetric,
-        peakDevMemory = NoopMetric,
         opName = "concat test",
         useArrowCopyOpt = false)
     coalesceIter.foreach { batch =>
@@ -290,7 +290,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -314,7 +313,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -353,7 +351,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -388,7 +385,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
-      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = false)
 
@@ -527,7 +523,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      dummyMetric,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 
@@ -610,7 +605,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      dummyMetric,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 
@@ -664,6 +658,99 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
       withResource(compressor.finish()) { compressed =>
         GpuCompressedColumnVector.from(compressed.head)
+      }
+    }
+  }
+
+  /** tests for the filtering mode */
+
+  test("test entering filtering mode with not enough nulls") {
+    // We are entering the filtering mode during processing the second batch (3 null rows),
+    // but the filtered rows number (12 = 5 + 7) is still too big, so it blows up before
+    // switching into the filtering mode.
+    val dataWithNulls = (1 to 3).map(_ => null) ++ (6 to 12).map(Integer.valueOf)
+    val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
+      newOneIntColumnBatch(dataWithNulls)
+    ))
+    assert(coalIter.hasNext)
+    // batch is too big to fit the rows number as an int
+    assertThrows[IllegalStateException](coalIter.next())
+    // we are on the way to the filtering mode but not reach yet.
+    assert(!coalIter.isInFilteringMode)
+  }
+
+  test("test entering filtering mode with enough nulls") {
+    // We succeed in entering the filtering mode after processing the second
+    // batch (8 null rows), because the filtered rows number (7 = 5 + 2) is smaller
+    // than the threshold (10) of filtering mode now.
+    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(Integer.valueOf)
+    val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
+      newOneIntColumnBatch(dataWithNulls)
+    ))
+    assert(coalIter.hasNext)
+    withResource(coalIter.next()) { cb =>
+      assertResult(expected = 7)(cb.numRows())
+    }
+    // only one batch and it should be in filtering mode
+    assert(!coalIter.hasNext)
+    assert(coalIter.isInFilteringMode)
+  }
+
+  test("test in filtering mode with not enough nulls") {
+    // We are already in the filtering mode after processing the second batch, but
+    // the total filtered rows number (12 = 5 + 2 + 5) is still too big when the
+    // third batch comes, so it blows up.
+    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(Integer.valueOf)
+    val dataWithNulls2 = (1 to 8).map(_ => null) ++ (8 to 12).map(Integer.valueOf)
+    val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
+      newOneIntColumnBatch(dataWithNulls),
+      newOneIntColumnBatch(dataWithNulls2)
+    ))
+    assert(coalIter.hasNext)
+    // batch is too big to fit the rows number as an int
+    assertThrows[IllegalStateException](coalIter.next())
+    assert(coalIter.isInFilteringMode)
+  }
+
+  test("test in filtering mode with enough nulls") {
+    // We are already in the filtering mode after processing the second batch, and even
+    // including the third batch, the total filtered rows number (9 = 5 + 2 + 2) is still
+    // smaller than the threshold (10) of filtering mode.
+    val dataWithNulls = (1 to 8).map(_ => null) ++ (6 to 7).map(Integer.valueOf)
+    val dataWithNulls2 = (1 to 8).map(_ => null) ++ (8 to 9).map(Integer.valueOf)
+    val coalIter = newGpuCoalesceIteratorForNullFiltering(Iterator(
+      newOneIntColumnBatch((1 to 5).map(Integer.valueOf)),
+      newOneIntColumnBatch(dataWithNulls),
+      newOneIntColumnBatch(dataWithNulls2)
+    ))
+    assert(coalIter.hasNext)
+    withResource(coalIter.next()) { cb =>
+      assertResult(expected = 9)(cb.numRows())
+    }
+    // only one batch and it should be in filtering mode
+    assert(!coalIter.hasNext)
+    assert(coalIter.isInFilteringMode)
+  }
+
+  private def newGpuCoalesceIteratorForNullFiltering(
+      iter: Iterator[ColumnarBatch],
+      sparkTypes: Array[DataType] = Array(IntegerType)): GpuCoalesceIterator = {
+    val goal = RequireSingleBatchWithFilter(
+      GpuIsNotNull(GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), ""))
+    )
+    new GpuCoalesceIterator(iter, sparkTypes, goal, NoopMetric, NoopMetric, NoopMetric,
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric, "NullFilteringModeTest") {
+      override protected val filteringModeRowsThreshold: Int = 10
+    }
+  }
+
+  private def newOneIntColumnBatch(data: Seq[Integer]): ColumnarBatch = {
+    withResource(ColumnVector.fromBoxedInts(data: _*)) { cudfCol =>
+      withResource(new Table(cudfCol)) { table =>
+        GpuColumnVector.from(table, Array(IntegerType))
       }
     }
   }

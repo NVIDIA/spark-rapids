@@ -20,11 +20,11 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark321cdh
 
 import com.nvidia.spark.rapids._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
-class SparkShimsSuite extends FunSuite with FQSuiteName {
+class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
   test("spark shims version") {
     assert(VersionUtils.cmpSparkVersion(3, 2, 1) === 0)
   }

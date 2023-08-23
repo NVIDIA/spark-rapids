@@ -22,14 +22,20 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.06.0-SNAPSHOT</version>
+        <version>23.10.0-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>rapids-4-spark-delta-21x_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Delta Lake 2.1.x Support</name>
     <description>Delta Lake 2.1.x support for the RAPIDS Accelerator for Apache Spark</description>
-    <version>23.06.0-SNAPSHOT</version>
+    <version>23.10.0-SNAPSHOT</version>
+
+    <properties>
+        <rapids.compressed.artifact>false</rapids.compressed.artifact>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -71,17 +77,6 @@
                         </configuration>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <!-- transient jar, writing compressed can take several x time -->
-                        <compress>false</compress>
-                    </archive>
-                    <classifier>${spark.version.classifier}</classifier>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>

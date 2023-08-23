@@ -19,17 +19,21 @@ from data_gen import *
 from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from delta_lake_merge_test import read_delta_path, read_delta_path_with_cdf, setup_dest_tables
 from marks import *
-from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, \
+    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
                                              "spark.rapids.sql.command.UpdateCommandEdge": "true"})
 
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+
 def delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql,
-                          check_func, partition_columns=None):
+                          check_func, partition_columns=None, enable_deletion_vectors=False):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
+        setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
     def do_update(spark, path):
         return spark.sql(update_sql.format(path=path))
     with_cpu_session(setup_tables)
@@ -37,6 +41,7 @@ def delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql,
 
 def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, update_sql,
                                     partition_columns=None,
+                                    enable_deletion_vectors=False,
                                     conf=delta_update_enabled_conf):
     def read_data(spark, path):
         read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
@@ -58,9 +63,9 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
         if not is_databricks_runtime() or not partition_columns:
             with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql, checker,
-                          partition_columns)
+                          partition_columns, enable_deletion_vectors)
 
-@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("disable_conf",
@@ -81,7 +86,7 @@ def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
         spark.sql(update_sql)
     with_cpu_session(setup_tables)
     assert_gpu_fallback_write(write_func, read_delta_path, data_path,
-                              "ExecutedCommandExec", disable_conf)
+                              delta_write_fallback_check, disable_conf)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -132,6 +137,25 @@ def test_delta_update_rows(spark_tmp_path, use_cdf, partition_columns):
     update_sql = "UPDATE delta.`{path}` SET c = b WHERE b >= 'd'"
     assert_delta_sql_update_collect(spark_tmp_path, use_cdf, generate_dest_data,
                                     update_sql, partition_columns)
+
+@allow_non_gpu("HashAggregateExec,ColumnarToRowExec,RapidsDeltaWriteExec,GenerateExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.parametrize("partition_columns", [None, ["a"]], ids=idfn)
+@pytest.mark.parametrize("enable_deletion_vectors", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors are new in Spark 3.4.0 / DBR 12.2")
+def test_delta_update_rows_with_dv(spark_tmp_path, use_cdf, partition_columns, enable_deletion_vectors):
+    # Databricks changes the number of files being written, so we cannot compare logs unless there's only one slice
+    num_slices_to_test = 1 if is_databricks_runtime() else 10
+    def generate_dest_data(spark):
+        return three_col_df(spark,
+                            SetValuesGen(IntegerType(), range(5)),
+                            SetValuesGen(StringType(), "abcdefg"),
+                            string_gen, num_slices=num_slices_to_test)
+    update_sql = "UPDATE delta.`{path}` SET c = b WHERE b >= 'd'"
+    assert_delta_sql_update_collect(spark_tmp_path, use_cdf, generate_dest_data,
+                                    update_sql, partition_columns, enable_deletion_vectors)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake

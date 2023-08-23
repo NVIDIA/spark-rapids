@@ -921,6 +921,8 @@ case class GpuMergeIntoCommand(
         matchedOutputs = matchedOutputs,
         notMatchedConditions = notMatchedConditions,
         notMatchedOutputs = notMatchedOutputs,
+        notMatchedBySourceConditions = Seq.empty, // only since Delta Lake 2.4.0
+        notMatchedBySourceOutputs = Seq.empty, // only since Delta Lake 2.4.0
         noopCopyOutput = noopCopyOutput,
         deleteRowOutput = deleteRowOutput)
       Dataset.ofRows(spark, processedJoinPlan)

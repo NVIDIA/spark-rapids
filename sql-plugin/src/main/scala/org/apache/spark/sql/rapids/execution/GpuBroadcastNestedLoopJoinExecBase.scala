@@ -332,8 +332,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
                 BooleanType)
             }
           } else {
-            withResource(GpuExpressionsUtils.columnarEvalToColumn(
-              boundCondition, streamBatch)) { condEval =>
+            withResource(boundCondition.columnarEval(streamBatch)) { condEval =>
               withResource(Scalar.fromBool(false)) { falseScalar =>
                 GpuColumnVector.from(condEval.getBase.replaceNulls(falseScalar), BooleanType)
               }

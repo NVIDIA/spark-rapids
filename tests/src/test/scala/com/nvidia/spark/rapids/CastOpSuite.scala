@@ -25,22 +25,16 @@ import java.util.TimeZone
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
-import org.scalatest.BeforeAndAfterAll
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-class CastOpSuite extends GpuExpressionTestSuite with BeforeAndAfterAll {
+class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
 
-  override def afterAll(): Unit = {
-    TrampolineUtil.cleanupAnyExistingSession()
-  }
 
   private val sparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
@@ -450,12 +444,11 @@ class CastOpSuite extends GpuExpressionTestSuite with BeforeAndAfterAll {
   test("cast decimal to string") {
     val sqlCtx = SparkSession.getActiveSession.get.sqlContext
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
-    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
 
     Seq(10, 15, 28).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
-          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+          comparisonFunc = None)
       }
     }
   }

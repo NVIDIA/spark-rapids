@@ -22,7 +22,7 @@ import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
-import org.scalatest.mockito.MockitoSugar
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.types.{DataType, LongType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -264,7 +264,6 @@ class GpuCoalesceBatchesRetrySuite
       NoopMetric,
       NoopMetric,
       NoopMetric,
-      NoopMetric,
       "test",
       false)
     with CoalesceIteratorMocks {
@@ -289,7 +288,6 @@ class GpuCoalesceBatchesRetrySuite
         Seq(LongType).toArray,
         goal,
         maxDecompressBatchMemory=10240,
-        NoopMetric,
         NoopMetric,
         NoopMetric,
         NoopMetric,
@@ -322,7 +320,6 @@ class GpuCoalesceBatchesRetrySuite
         batchesToConcat.iterator,
         Seq(LongType).toArray,
         goal,
-        NoopMetric,
         NoopMetric,
         NoopMetric,
         NoopMetric,

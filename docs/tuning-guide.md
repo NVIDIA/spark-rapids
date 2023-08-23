@@ -210,6 +210,16 @@ rather than megabytes or smaller.
 Note that the GPU can encode Parquet and ORC data much faster than the CPU, so the costs of
 writing large files can be significantly lower.
 
+Use Hive Parquet or ORC tables instead of Hive Text tables as the intermediate tables for
+CTAS(`Create Table As Select`) queries. The suggested change is to add `stored as parquet` for CTAS.
+Alternatively, you can set `hive.default.fileformat=Parquet` to create Parquet files by default.
+Refer to this
+[Hive Doc](https://cwiki.apache.org/confluence/display/Hive/Configuration+Properties#ConfigurationProperties-hive.default.fileformat)
+for more details.
+
+If the query scans Hive ORC tables, make sure `spark.sql.hive.convertMetastoreOrc=true` to avoid CPU
+fallback.
+
 ## Input Files' column order
 When there are a large number of columns for file formats like Parquet and ORC the size of the 
 contiguous data for each individual column can be very small. This can result in doing lots of very 
@@ -336,7 +346,6 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 | numPartitions     | partitions                   | Number of output partitions from a file scan or shuffle exchange.                                                                                                                                                                                                      |
 | opTime            | op time                      | Time that an operator takes, exclusive of the time for executing or fetching results from child operators, and typically outside of the time it takes to acquire the GPU semaphore. <br/> Note: Sometimes contains CPU times, e.g.: concatTime                         |
 | partitionSize     | partition data size          | Total size in bytes of output partitions.                                                                                                                                                                                                                              |
-| peakDevMemory     | peak device memory           | Peak GPU memory used during execution of an operator.                                                                                                                                                                                                                  |
 | sortTime          | sort time                    | Time spent in sort operations in GpuSortExec and GpuTopN.                                                                                                                                                                                                              |                                                                                                                                                                                          |
 | streamTime        | stream time                  | Time spent reading data from a child. This generally happens for the stream side of a hash join or for columnar to row and row to columnar operations.                                                                                                                 |
 
@@ -369,14 +378,15 @@ or even a different stage or job in the plan.  The spill read time metric is how
 long it took to read back in the data it needed to complete the task. This does not
 correspond to the data that was spilled by this task.
 
-| Name              | Description                                                                                                                                                                   |
-|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| gpuSemaphoreWait  | The time the task spent waiting on the GPU semaphore.                                                                                                                         |
-| gpuSpillBlockTime | The time that this task was blocked spilling data from the GPU.                                                                                                               |
-| gpuSpillReadTime  | The time that this task was blocked reading data to the GPU that was spilled previously.                                                                                      |
-| gpuRetryCount | The number of times that a retry exception was thrown in an attempt to roll back processing to free memory.                                                                   |
-| gpuSplitAndRetryCount | The number of times that a split and retry exception was thrown in an attempt to roll back processing to free memory, and split the input to make more room.                  |
+| Name              | Description                                                                                                                                                                  |
+|-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| gpuSemaphoreWait  | The time the task spent waiting on the GPU semaphore.                                                                                                                        |
+| gpuSpillBlockTime | The time that this task was blocked spilling data from the GPU.                                                                                                              |
+| gpuSpillReadTime  | The time that this task was blocked reading data to the GPU that was spilled previously.                                                                                     |
+| gpuRetryCount | The number of times that a retry exception was thrown in an attempt to roll back processing to free memory.                                                                  |
+| gpuSplitAndRetryCount | The number of times that a split and retry exception was thrown in an attempt to roll back processing to free memory, and split the input to make more room.                 |
 | gpuRetryBlockTime | The amount of time that this task was blocked either hoping that other tasks will free up more memory or after a retry exception was thrown to wait until the task can go on. |
+| gpuRetryComputationTime | The amount of time that this task spent doing computation that arguably was lost when a retry happened. This does not include time that the task was blocked on retry.|
 
 The spill data sizes going to host/CPU memory and disk are the same as used by Spark task level
 metrics.
@@ -498,3 +508,28 @@ For all other cases large windows, including skewed values in partition by and o
 result in slow performance. If you do run into one of these situations please file an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) so we can properly prioritize
 our work to support more optimizations.
+
+## Shuffle Disks
+Dataproc: [Local SSD](https://cloud.google.com/dataproc/docs/concepts/compute/dataproc-local-ssds)
+is recommended for Spark scratch space to improve IO. For example, when creating Dataproc cluster,
+you can add below:
+
+```
+--worker-local-ssd-interface=NVME
+--num-secondary-worker-local-ssds=2
+--worker-local-ssd-interface=NVME
+--secondary-worker-local-ssd-interface=NVME
+```
+
+Refer to [Getting Started on GCP Dataproc](./get-started/getting-started-gcp.md) for more details.
+
+On-Prem cluster: Try to use enough NVME or SSDs as shuffling disks to avoid local disk IO bottleneck.
+
+## Exclude bad nodes from YARN resource
+
+Just in case there are bad nodes due to hardware failure issues (including GPU failure), we suggest
+setting `spark.yarn.executor.launch.excludeOnFailure.enabled=true` so that the problematic node can
+be excluded.
+
+Refer to [Running Spark on YARN](https://spark.apache.org/docs/latest/running-on-yarn.html) for more
+details.

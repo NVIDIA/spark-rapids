@@ -21,6 +21,7 @@ import java.util
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.{HostConcatResult, SerializedTableHeader}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -50,6 +51,8 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
   )
+
+  override protected val outputBatchesLevel = MODERATE_LEVEL
 
   override def output: Seq[Attribute] = child.output
 
@@ -92,7 +95,12 @@ class HostShuffleCoalesceIterator(
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   override def close(): Unit = {
     serializedTables.forEach(_.close())

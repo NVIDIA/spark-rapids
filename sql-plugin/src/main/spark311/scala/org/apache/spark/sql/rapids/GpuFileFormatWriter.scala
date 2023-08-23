@@ -57,6 +57,7 @@ import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
+import org.apache.spark.sql.rapids.shims.RapidsHadoopWriterUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
@@ -248,14 +249,15 @@ object GpuFileFormatWriter extends Logging {
         rdd
       }
 
-      val jobIdInstant = new Date().getTime
+      // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
+      val jobTrackerId = SparkHadoopWriterUtils.createJobTrackerID(new Date)
       val ret = new Array[WriteTaskResult](rddWithNonEmptyPartitions.partitions.length)
       sparkSession.sparkContext.runJob(
         rddWithNonEmptyPartitions,
         (taskContext: TaskContext, iter: Iterator[ColumnarBatch]) => {
           executeTask(
             description = description,
-            jobIdInstant = jobIdInstant,
+            jobTrackerId = jobTrackerId,
             sparkStageId = taskContext.stageId(),
             sparkPartitionId = taskContext.partitionId(),
             sparkAttemptNumber = taskContext.taskAttemptId().toInt & Integer.MAX_VALUE,
@@ -289,7 +291,7 @@ object GpuFileFormatWriter extends Logging {
   /** Writes data out in a single Spark task. */
   private def executeTask(
       description: GpuWriteJobDescription,
-      jobIdInstant: Long,
+      jobTrackerId: String,
       sparkStageId: Int,
       sparkPartitionId: Int,
       sparkAttemptNumber: Int,
@@ -297,7 +299,7 @@ object GpuFileFormatWriter extends Logging {
       iterator: Iterator[ColumnarBatch],
       concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec]): WriteTaskResult = {
 
-    val jobId = SparkHadoopWriterUtils.createJobID(new Date(jobIdInstant), sparkStageId)
+    val jobId = RapidsHadoopWriterUtils.createJobID(jobTrackerId, sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
     val taskAttemptId = new TaskAttemptID(taskId, sparkAttemptNumber)
 
@@ -326,7 +328,7 @@ object GpuFileFormatWriter extends Logging {
         concurrentOutputWriterSpec match {
           case Some(spec) =>
             new GpuDynamicPartitionDataConcurrentWriter(
-              description, taskAttemptContext, committer, spec)
+              description, taskAttemptContext, committer, spec, TaskContext.get())
           case _ =>
             new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
         }
