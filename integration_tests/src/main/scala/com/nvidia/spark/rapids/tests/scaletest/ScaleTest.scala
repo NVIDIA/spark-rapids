@@ -32,40 +32,59 @@ object ScaleTest {
       complexity: Int = 1,
       inputDir: String = "",
       outputDir: String = "",
-      queryFile: String = "",
       reportPath: String = "",
       format: String = "parquet",
       version: String = "1.0.0",
       seed: Int = 41,
+      iterations: Int = 1,
+      queries: Map[String, Int] = Map(),
       overwrite: Boolean = false)
 
+  /**
+   *
+   * @param query the final query string to run in Spark SQL
+   * @param iterations number of iterations for the query to run in a line
+   * @param baseOutputPath base path for the output, the final output will append a postfix for
+   *                       iterations
+   * @param overwrite overwrite the output or not
+   * @param format parquet or orc are possible to pass in now
+   * @param spark SparkSession instance
+   * @return a Sequence of elapses for all iterations
+   */
+  private def runOneQueryForIterations(query: String,
+      iterations: Int,
+      baseOutputPath: String,
+      overwrite: Boolean,
+      format: String,
+      spark: SparkSession): Seq[Long]
+  = {
+    val mode = if (overwrite == true) "overwrite" else "error"
+    (1 to iterations).map(i => {
+      println(s"Iteration: $i")
+      val start = System.nanoTime()
+      spark.sql(query).write.mode(mode).format(format).save(s"${baseOutputPath}_$i")
+      val end = System.nanoTime()
+      val elapsed = NANOSECONDS.toMillis(end - start)
+      elapsed
+    })
+  }
   private def runScaleTest(config: Config): Unit = {
     // Init SparkSession
     val spark = SparkSession.builder()
-      .appName("Scale Test ")
+      .appName("Scale Test")
       .getOrCreate()
     val querySpecs = new QuerySpecs(config, spark)
     querySpecs.initViews()
-    val queryMap = querySpecs.processQueryFile(config.queryFile)
-    // TODO: more iterations: we want one query to run several time in a line or want the whole
-    //  suite to run round by round? The following code should change accordingly
-    var executionTime = Map[String, Long]()
-
+    val queryMap = querySpecs.getCandidateQueries()
+    var executionTime = Map[String, Seq[Long]]()
     for ((queryName, query) <- queryMap) {
-      println(s"Running Query: $queryName")
-      println(s"$query")
       val outputPath = s"${config.outputDir}/$queryName"
-      val start = System.nanoTime()
-
-      config.overwrite match {
-        case true =>
-          spark.sql(query).write.mode("overwrite").format(config.format).save(outputPath)
-        case false =>
-          spark.sql(query).write.format(config.format).save(outputPath)
-      }
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      executionTime += (queryName -> elapsed)
+      println(s"Running Query: $queryName for ${query.iterations} iterations")
+      println(s"${query.content}")
+      // run one query for several iterations in a row
+      val elapses = runOneQueryForIterations(query.content, query.iterations, outputPath, config
+        .overwrite, config.format, spark)
+      executionTime += (queryName -> elapses)
     }
     val report = new TestReport(config, executionTime)
     report.save()
@@ -73,8 +92,8 @@ object ScaleTest {
 
   private def initArgParser(): OptionParser[Config] = {
     val supportFormats = List("parquet", "orc")
-    new OptionParser[Config]("DataGenEntry") {
-      head("Scale Test Data Generation Application", "1.0.0")
+    new OptionParser[Config]("ScaleTest") {
+      head("Scale Test", "1.0.0")
       arg[Int]("<scale factor>")
         .action((x, c) => c.copy(scaleFactor = x))
         .text("scale factor for data size")
@@ -97,10 +116,6 @@ object ScaleTest {
         .required()
         .action((x, c) => c.copy(outputDir = x))
         .text("directory for query output")
-      arg[String]("<path to query file>")
-        .required()
-        .action((x, c) => c.copy(queryFile = x))
-        .text("text file contains template queries")
       arg[String]("<path to save report file>")
         .required()
         .action((x, c) => c.copy(reportPath = x))
@@ -113,6 +128,19 @@ object ScaleTest {
         .optional()
         .action((_, c) => c.copy(overwrite = true))
         .text("Flag argument. Whether to overwrite the existing data in the path.")
+      opt[Int]("iterations")
+        .optional()
+        .action((x, c) => c.copy(iterations = x))
+        .text("iterations to run for each query. default: 1")
+      opt[String]("queries")
+        .optional()
+        .action((x, c) => c.copy(queries = x.split(",").map{ pair =>
+          val Array(qName, iter) = pair.split(":")
+          qName.toLowerCase -> iter.toInt
+        }.toMap))
+        .text("Specify queries with iterations to run specifically. the format must be " +
+          "<query-name>:<iterations-for-this-query> with comma separated entries. e.g. --tables " +
+          "q1:2,q2:3,q3:4. If not specified, all queries will be run for `--iterations` rounds")
     }
   }
 

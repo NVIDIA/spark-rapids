@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids.tests.scaletest
 
-import scala.io.Source
-
 import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
 
 import org.apache.spark.sql.SparkSession
+
+// TODO: add timeout field
+case class TestQuery(name: String, content: String, iterations: Int, description: String)
 
 class QuerySpecs(config: Config, spark: SparkSession) {
   private val baseInputPath = s"${config.inputDir}/" +
@@ -39,7 +40,18 @@ class QuerySpecs(config: Config, spark: SparkSession) {
     "g_data")
 
   /**
-   *  Read data and initialize temp views in Spark
+   *
+   * @param prefix     column name prefix e.g. "b_data"
+   * @param startIndex start column index e.g. 1
+   * @param endIndex   end column index e.g. 10
+   * @return an expanded string for all columns with comma separated
+   */
+  private def expandDataColumnWithRange(prefix: String, startIndex: Int, endIndex: Int): String = {
+    (startIndex to endIndex).map(i => s"${prefix}_$i").mkString(",")
+  }
+
+  /**
+   * Read data and initialize temp views in Spark
    */
   def initViews(): Unit = {
 
@@ -49,47 +61,39 @@ class QuerySpecs(config: Config, spark: SparkSession) {
     }
   }
 
-  /**
-   * Parse one query template to get the real query string that Spark SQL accepts
-   * @param queryTemplate template query
-   * @return Spark SQL compatible query
-   */
-  private def parseQueryTemplate(queryTemplate: String): String = {
-    // pattern for example: "..., b_data_{1-10}, ..."
-    val placeholderRegex = "([a-zA-Z0-9_]+)\\{([0-9]+)-([0-9]+)\\}".r
-    // Function to replace placeholders with actual values
-    def replacePlaceholder(matched: scala.util.matching.Regex.Match): String = {
-      val prefix = matched.group(1)
-      val start = matched.group(2).toInt
-      val end = matched.group(3).toInt
-      (start to end).map(i => s"${prefix}$i").mkString(", ")
-    }
-    // Replace placeholders in the template string
-    placeholderRegex.replaceAllIn(queryTemplate, replacePlaceholder _)
-  }
+  def getCandidateQueries(): Map[String, TestQuery] = {
+    /*
+    All queries are defined here
+     */
+    val allQueries = Map[String, TestQuery](
+      "q1" -> TestQuery("q1",
+        "SELECT a_facts.*, " +
+          expandDataColumnWithRange("b_data", 1, 10) +
+          " FROM b_data JOIN a_facts WHERE " +
+          "primary_a = b_foreign_a",
+        config.iterations,
+        "Inner join with lots of ride along columns"),
 
-  /**
-   * Read the query template file extract the template queries inside, Produce the real queries
-   * @param queryFilePath
-   * @return a map of query name as key and query content as value
-   */
-  def processQueryFile(queryFilePath: String): Map[String, String] = {
-    var queryMap: Map[String, String] = Map()
-    val source = Source.fromFile(queryFilePath)
-    for (line <- source.getLines()) {
-      val parts = line.split(":")
-      if (parts.length == 2) {
-        val queryName = parts(0).trim
-        // TODO: error when execution time > timeout
-//        val timeout = parts(1).trim
-        val queryContent = parts(1).trim
-        // Add the query to the map
-        queryMap += (queryName -> parseQueryTemplate(queryContent))
-      }
-      else throw new IllegalArgumentException(s"Invalid query line format: $line. Expected " +
-        s"'queryName: queryContent' format")
+      "q2" -> TestQuery("q2",
+        "SELECT a_facts.*," +
+          expandDataColumnWithRange("b_data", 1, 10) +
+          " FROM b_data FULL OUTER JOIN a_facts WHERE primary_a = b_foreign_a",
+        config.iterations,
+        "Full outer join with lots of ride along columns"),
+
+      "q3" -> TestQuery("q3",
+        "SELECT a_facts.*," +
+          expandDataColumnWithRange("b_data", 1, 10) +
+          " FROM b_data LEFT OUTER JOIN a_facts WHERE primary_a = b_foreign_a",
+        config.iterations,
+        "Left outer join with lots of ride along columns")
+    )
+    if (config.queries.isEmpty) {
+      allQueries
+    } else {
+      config.queries.map(q => {
+        (q._1, allQueries(q._1).copy(iterations = q._2))
+      })
     }
-    source.close()
-    queryMap
   }
 }
