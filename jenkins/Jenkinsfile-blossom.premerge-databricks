@@ -142,12 +142,8 @@ void databricksBuild() {
 
                     // handle init scripts if exist
                     if (env.INIT_SCRIPTS) {
-                        sh "bash -c 'databricks workspace mkdirs $ws_path'"
-                        env.INIT_SCRIPTS.split(',').each {
-                            sh "bash -c 'databricks workspace import --overwrite -l R jenkins/databricks/${it} $ws_path/${it}'"
-                        }
                         // foo.sh,bar.sh --> /path/foo.sh,/path/bar.sh
-                        CREATE_PARAMS += " -f $ws_path/" + env.INIT_SCRIPTS.replace(',', ",$ws_path/")
+                        CREATE_PARAMS += " -f " + DbUtils.uploadFiles(this, env.INIT_SCRIPTS, ws_path)
                     }
 
                     CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS",
@@ -194,7 +190,7 @@ void databricksBuild() {
             container('cpu') {
                 retry(3) {
                     if (env.INIT_SCRIPTS) {
-                        sh "bash -c 'databricks workspace rm -r $ws_path'"
+                        DbUtils.cleanUp(this, ws_path)
                     }
                     sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
                 }
