@@ -240,7 +240,7 @@ class GpuSorter(
    * @param sortTime metric for the time spent doing the merge sort
    * @return the sorted data.
    */
-  final def mergeSortAndClose(
+  final def mergeSortWithRetry(
       spillableBatches: mutable.ArrayStack[SpillableColumnarBatch],
       sortTime: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
@@ -261,20 +261,21 @@ class GpuSorter(
               // It is slower, but it works
               val concatenated = closeOnExcept(tablesToMerge) { _ =>
                 while (spillableBatches.nonEmpty) {
-                  withResource(spillableBatches.pop()) { sb =>
+                  val tl = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.pop()) { sb =>
                     withResource(sb.getColumnarBatch()) { cb =>
-                      tablesToMerge.push(GpuColumnVector.from(cb))
+                      GpuColumnVector.from(cb)
                     }
                   }
+                  tablesToMerge.push(tl)
                 }
-                val concatenated = withResource(tablesToMerge) { _ =>
+                val concatenated = RmmRapidsRetryIterator.withRetryNoSplit(tablesToMerge) { _ =>
                   Table.concatenate(tablesToMerge: _*)
                 }
                 // we no longer care about the old tables, we closed them
                 tablesToMerge.clear()
                 concatenated
               }
-              withResource(concatenated) { _ =>
+              RmmRapidsRetryIterator.withRetryNoSplit(concatenated) { _ =>
                 concatenated.orderBy(cudfOrdering: _*)
               }
             } else {
@@ -290,15 +291,18 @@ class GpuSorter(
                   withResource(spillableCandidate) {
                     _.foreach { sb =>
                       // materialize a potentially spilled batch
-                      withResource(sb.getColumnarBatch()) { batch =>
-                        tablesToMerge.push(GpuColumnVector.from(batch))
+                      val tl = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+                        withResource(sb.getColumnarBatch()) { batch =>
+                          GpuColumnVector.from(batch)
+                        }
                       }
+                      tablesToMerge.push(tl)
                     }
                   }
                 }
 
                 if (tablesToMerge.size > 1) {
-                  val merged = withResource(tablesToMerge) { _ =>
+                  val merged = RmmRapidsRetryIterator.withRetryNoSplit(tablesToMerge) { _ =>
                     Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
                   }
                   // we no longer care about the old tables, we closed them

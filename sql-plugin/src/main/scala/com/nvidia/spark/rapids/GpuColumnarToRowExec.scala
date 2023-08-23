@@ -141,10 +141,12 @@ class AcceleratedColumnarToRowIterator(
           }
         }
         setCurrentBatch(pendingCvs.dequeue())
-        return true
+        true
       }
+    } else { // scb.numRows() <= 0
+      scb.close()
+      false
     }
-    false
   }
 
   private[this] def loadNextBatch(): Unit = {
