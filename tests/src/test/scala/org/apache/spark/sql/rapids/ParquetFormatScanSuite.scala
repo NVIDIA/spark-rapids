@@ -391,7 +391,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
     test(s"FIXED_LEN_BYTE_ARRAY(16) BINARY $parserType") {
       assume(isSpark340OrLater)
-      withCpuSparkSession(spark => {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required fixed_len_byte_array(16) test;
@@ -428,7 +428,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       val conf = new SparkConf()
           .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType)
           .set("spark.sql.parquet.binaryAsString", "true")
-      withCpuSparkSession(spark => {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required fixed_len_byte_array(16) test;
@@ -463,7 +463,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       // Parquet does not let us tag a FIXED_LEN_BYTE_ARRAY with utf8 to make it a string
       // Spark also fails the task if we try to read it as a String so we should verify that
       // We also throw an exception.
-      withCpuSparkSession(spark => {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required fixed_len_byte_array(16) test;
