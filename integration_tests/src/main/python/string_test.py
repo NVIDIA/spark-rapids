@@ -794,5 +794,6 @@ def test_conv_dec_to_from_hex(from_base, to_base, pattern):
         pattern = r' ?' + pattern
     gen = mk_str_gen(pattern)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base))
+        lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),
+        conf={'spark.rapids.sql.expression.Conv': True}
     )

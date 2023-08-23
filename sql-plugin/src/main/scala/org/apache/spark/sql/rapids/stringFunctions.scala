@@ -29,7 +29,6 @@ import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -2006,9 +2005,6 @@ class GpuConvMeta(
         if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
       case _ =>
         willNotWorkOnGpu(because = "only literal 10 or 16 for from_base and to_base are supported")
-    }
-    if (SQLConf.get.ansiEnabled) {
-      willNotWorkOnGpu(because = " the GPU has no overflow checking.")
     }
   }
 
