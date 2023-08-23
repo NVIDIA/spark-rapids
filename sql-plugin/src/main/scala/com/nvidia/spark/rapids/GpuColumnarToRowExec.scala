@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{ColumnVector, Cuda, HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.splitSpillableInHalfByRows
@@ -45,12 +45,10 @@ class AcceleratedColumnarToRowIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
-    streamTime: GpuMetric,
-    inTestMode: Boolean = false) extends Iterator[InternalRow] with Serializable {
+    streamTime: GpuMetric) extends Iterator[InternalRow] with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
-  @transient private var splitIter: Iterator[Array[ColumnVector]] = Iterator.empty
   // This only works on fixedWidth types for now...
   assert(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
   // We want to remap the rows to improve packing.  This means that they should be sorted by
@@ -76,9 +74,11 @@ class AcceleratedColumnarToRowIterator(
   private var at: Int = 0
   private var total: Int = 0
 
-  // There is no TaskContext during unit tests.
-  if (!inTestMode) {
-    onTaskCompletion(closeAllPendingBatches())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeAllPendingBatches()
+    }
   }
 
   private def setCurrentBatch(wip: HostColumnVector): Unit = {
@@ -106,15 +106,7 @@ class AcceleratedColumnarToRowIterator(
     new Table(rearrangedColumns : _*)
   }
 
-  private def appendRowColumnsAndClose(rowCvs: Array[ColumnVector]): Unit = {
-    withResource(rowCvs) { _ =>
-      rowCvs.foreach { cv =>
-        pendingCvs += cv.copyToHost()
-      }
-    }
-  }
-
-  private[this] def setupBatch(scb: SpillableColumnarBatch): Boolean = {
+  private[this] def setupBatchAndClose(scb: SpillableColumnarBatch): Boolean = {
     numInputBatches += 1
     // In order to match the numOutputRows metric in the generated code we update
     // numOutputRows for each batch. This is less accurate than doing it at output
@@ -141,12 +133,12 @@ class AcceleratedColumnarToRowIterator(
           }
         }
         assert(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
-        appendRowColumnsAndClose(it.next())
-        if(it.hasNext) {
-          // the previous cached iterator should be all consumed.
-          assert(splitIter.isEmpty)
-          // cache the iterator for next call
-          splitIter = it
+        it.foreach { rowsCvList =>
+          withResource(rowsCvList) { - =>
+            rowsCvList.foreach { rowsCv =>
+              pendingCvs += rowsCv.copyToHost()
+            }
+          }
         }
         setCurrentBatch(pendingCvs.dequeue())
         return true
@@ -159,9 +151,6 @@ class AcceleratedColumnarToRowIterator(
     closeCurrentBatch()
     if (pendingCvs.nonEmpty) {
       setCurrentBatch(pendingCvs.dequeue())
-    } else if(splitIter.hasNext) {
-      appendRowColumnsAndClose(splitIter.next())
-      setCurrentBatch(pendingCvs.dequeue())
     } else {
       populateBatch()
     }
@@ -173,7 +162,7 @@ class AcceleratedColumnarToRowIterator(
     // keep fetching input batches until we have a non-empty batch ready
     val nextBatch = fetchNextBatch()
     if (nextBatch.isDefined) {
-      if (!withResource(nextBatch.get)(setupBatch)) {
+      if (!setupBatchAndClose(nextBatch.get)) {
         populateBatch()
       }
     }

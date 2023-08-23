@@ -39,7 +39,7 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val aCol2RowIter = new AcceleratedColumnarToRowIterator(
       attrs,
       Iterator(buildBatch),
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, inTestMode = true)
+      NoopMetric, NoopMetric, NoopMetric, NoopMetric)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
@@ -52,7 +52,7 @@ class ColumnToRowIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val aCol2RowIter = new AcceleratedColumnarToRowIterator(
       attrs,
       Iterator(buildBatch),
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, inTestMode = true)
+      NoopMetric, NoopMetric, NoopMetric, NoopMetric)
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
     var numRows = 0
     aCol2RowIter.foreach { _ =>
