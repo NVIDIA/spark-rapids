@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, is_spark_350_or_later, \
+from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
     is_databricks113_or_later, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
