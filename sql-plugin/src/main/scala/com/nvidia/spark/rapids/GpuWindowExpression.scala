@@ -1323,41 +1323,49 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
 
   private var previousValue: Option[Scalar] = None
 
+  private var hasOverflowed = false
+
   private val numeric = TypeUtils.getNumeric(resultType, failOnError)
 
   override def updateState(scalar: Scalar): Unit = {
-    if (scalar.isValid) {
-      previousValue match {
-        case None =>
-          previousValue = Some(scalar.incRefCount())
-        case Some(prev) =>
-          withResource(prev) { _ =>
-            previousValue = None
-            prev.getType.getTypeId match {
-              case DType.DTypeEnum.INT64 =>
-                if (failOnError) {
-                  previousValue = Some(Scalar.fromLong(Math.addExact(
-                    scalar.getLong, prev.getLong)))
-                } else {
-                  previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
-                }
-              case DType.DTypeEnum.FLOAT32 =>
-                previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
-              case DType.DTypeEnum.FLOAT64 =>
-                previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
-              case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
-                   DType.DTypeEnum.DECIMAL128 =>
-                val decimal = numeric.plus(Decimal(prev.getBigDecimal),
-                  Decimal(scalar.getBigDecimal)).asInstanceOf[Decimal]
-                val dt = resultType.asInstanceOf[DecimalType]
-                previousValue = Option(TrampolineUtil.checkDecimalOverflow(
-                    decimal, dt.precision, dt.scale, failOnError))
-                  .map(n => Scalar.fromDecimal(n.toJavaBigDecimal))
-              case other =>
-                throw new IllegalStateException(s"unhandled type: $other")
-            }
+    if (hasOverflowed) {
+      return
+    }
+    previousValue match {
+      case None =>
+        previousValue = Some(scalar.incRefCount())
+      case Some(prev) if scalar.isValid =>
+        withResource(prev) { _ =>
+          previousValue = None
+          prev.getType.getTypeId match {
+            case DType.DTypeEnum.INT64 =>
+              if (failOnError) {
+                previousValue = Some(Scalar.fromLong(Math.addExact(
+                  scalar.getLong, prev.getLong)))
+              } else {
+                previousValue = Some(Scalar.fromLong(scalar.getLong + prev.getLong))
+              }
+            case DType.DTypeEnum.FLOAT32 =>
+              previousValue = Some(Scalar.fromFloat(scalar.getFloat + prev.getFloat))
+            case DType.DTypeEnum.FLOAT64 =>
+              previousValue = Some(Scalar.fromDouble(scalar.getDouble + prev.getDouble))
+            case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 |
+                 DType.DTypeEnum.DECIMAL128 =>
+              val decimal = numeric.plus(Decimal(prev.getBigDecimal),
+                Decimal(scalar.getBigDecimal)).asInstanceOf[Decimal]
+              val dt = resultType.asInstanceOf[DecimalType]
+              previousValue = Option(TrampolineUtil.checkDecimalOverflow(
+                  decimal, dt.precision, dt.scale, failOnError))
+                .map(n => Scalar.fromDecimal(n.toJavaBigDecimal))
+              if (previousValue.isEmpty) {
+                hasOverflowed = true
+              }
+            case other =>
+              throw new IllegalStateException(s"unhandled type: $other")
           }
         }
+      case _ =>
+        // ignore null
     }
   }
 
@@ -1367,7 +1375,7 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
 
     def makeScalar(): Scalar = previousValue match {
       case Some(value) =>
-        value
+        value.incRefCount()
       case _ => resultType match {
         case DataTypes.LongType => Scalar.fromNull(DType.INT64)
         case DataTypes.FloatType => Scalar.fromNull(DType.FLOAT32)
@@ -1380,19 +1388,21 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
           } else {
             DType.DTypeEnum.DECIMAL32.getNativeId
           }
-          Scalar.fromNull(DType.fromNative(dt, d.scale))
+          Scalar.fromNull(DType.fromNative(dt, -d.scale))
         case other =>
           throw new IllegalStateException(s"unhandled type: $other")
       }
     }
 
-    samePartitionMask match {
-      case scala.Left(cv) =>
-        cv.ifElse(makeScalar(), column)
-      case scala.Right(true) =>
-        ColumnVector.fromScalar(makeScalar(), column.getRowCount.toInt)
-      case _ =>
-        column.incRefCount()
+    withResource(makeScalar()) { scalar =>
+      samePartitionMask match {
+        case scala.Left(cv) =>
+          cv.ifElse(scalar, column)
+        case scala.Right(true) =>
+          ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+        case _ =>
+          column.incRefCount()
+      }
     }
   }
 
