@@ -207,9 +207,9 @@ provides work for all GPUs.
 GPUs process data much more efficiently when they have a large amount of data to process in
 parallel.  Loading data from fewer, large input files will perform better than loading data
 from many small input files.  Ideally input files should be on the order of a few gigabytes
-rather than megabytes or smaller. We can increase the default value(4 MB) of `spark.sql.files.openCostInBytes`
-to a larger one to reduce the task number in data scan stage to improve the performance if there are
-too much small table files.
+rather than megabytes or smaller. The `spark.sql.files.openCostInBytes` config can be tuned to
+a larger value than the default (4 MB) to reduce the number of tasks in a data scan stage
+to improve performance if there are many small files in a table.
 
 Note that the GPU can encode Parquet and ORC data much faster than the CPU, so the costs of
 writing large files can be significantly lower.
