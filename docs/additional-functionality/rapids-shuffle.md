@@ -28,6 +28,7 @@ in our plugin:
 | 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
 | 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
 | 3.3.2           | com.nvidia.spark.rapids.spark332.RapidsShuffleManager    |
+| 3.3.3           | com.nvidia.spark.rapids.spark333.RapidsShuffleManager    |
 | 3.4.0           | com.nvidia.spark.rapids.spark340.RapidsShuffleManager    |
 | 3.4.1           | com.nvidia.spark.rapids.spark341.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
