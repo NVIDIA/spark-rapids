@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
 
 import org.apache.spark.sql.SparkSession
 
-// TODO: add timeout field
-case class TestQuery(name: String, content: String, iterations: Int, description: String)
+case class TestQuery(name: String, content: String, iterations: Int, timeout: Long,
+  description: String)
 
 class QuerySpecs(config: Config, spark: SparkSession) {
   private val baseInputPath = s"${config.inputDir}/" +
@@ -72,6 +72,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           " FROM b_data JOIN a_facts WHERE " +
           "primary_a = b_foreign_a",
         config.iterations,
+        100000L,
         "Inner join with lots of ride along columns"),
 
       "q2" -> TestQuery("q2",
@@ -79,6 +80,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           expandDataColumnWithRange("b_data", 1, 10) +
           " FROM b_data FULL OUTER JOIN a_facts WHERE primary_a = b_foreign_a",
         config.iterations,
+        100000L,
         "Full outer join with lots of ride along columns"),
 
       "q3" -> TestQuery("q3",
@@ -86,14 +88,15 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           expandDataColumnWithRange("b_data", 1, 10) +
           " FROM b_data LEFT OUTER JOIN a_facts WHERE primary_a = b_foreign_a",
         config.iterations,
+        100000L,
         "Left outer join with lots of ride along columns")
     )
     if (config.queries.isEmpty) {
       allQueries
     } else {
       config.queries.map(q => {
-        (q._1, allQueries(q._1).copy(iterations = q._2))
-      })
+        (q, allQueries(q))
+      }).toMap
     }
   }
 }

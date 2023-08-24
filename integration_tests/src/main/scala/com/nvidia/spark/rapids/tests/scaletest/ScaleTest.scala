@@ -16,7 +16,11 @@
 
 package com.nvidia.spark.rapids.tests.scaletest
 
+import java.util.concurrent._
+
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.duration.NANOSECONDS
+import scala.concurrent.ExecutionContext.Implicits.global
 
 import scopt.OptionParser
 
@@ -37,7 +41,7 @@ object ScaleTest {
       version: String = "1.0.0",
       seed: Int = 41,
       iterations: Int = 1,
-      queries: Map[String, Int] = Map(),
+      queries: Seq[String] = Seq(),
       overwrite: Boolean = false)
 
   /**
@@ -53,26 +57,56 @@ object ScaleTest {
    */
   private def runOneQueryForIterations(query: String,
       iterations: Int,
+      timeout: Long,
       baseOutputPath: String,
       overwrite: Boolean,
       format: String,
-      spark: SparkSession): Seq[Long]
+      spark: SparkSession,
+      idleSessionListener: IdleSessionListener): Seq[Long]
   = {
     val mode = if (overwrite == true) "overwrite" else "error"
-    (1 to iterations).map(i => {
+    val executionTimes = ListBuffer[Long]()
+
+    (1 to iterations).foreach(i => {
+      idleSessionListener.isIdle()
       println(s"Iteration: $i")
-      val start = System.nanoTime()
-      spark.sql(query).write.mode(mode).format(format).save(s"${baseOutputPath}_$i")
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      elapsed
+      while (idleSessionListener.isBusy()){
+        // Scala Test aims for stability not performance. And the sleep time will not be calculated
+        // into execution time.
+        Thread.sleep(1000)
+      }
+      try {
+        val future = scala.concurrent.Future {
+          val start = System.nanoTime()
+          spark.sql(query).write.mode(mode).format(format).save(s"${baseOutputPath}_$i")
+          val end = System.nanoTime()
+          val elapsed = NANOSECONDS.toMillis(end - start)
+          executionTimes += elapsed
+        }
+        scala.concurrent.Await.result(future,
+          scala.concurrent.duration.Duration(timeout, TimeUnit.MILLISECONDS))
+      } catch {
+        case _: java.util.concurrent.TimeoutException =>
+          println(s"Timeout at iteration $i")
+          // use "-1" to mark timeout execution
+          executionTimes += -1
+          spark.sparkContext.cancelAllJobs()
+        case e: Exception =>
+          // We don't want a query failure to fail over the whole test.
+          println(s"Query failed: $query - ${e.getMessage}")
+      }
     })
+    executionTimes
   }
+
+
   private def runScaleTest(config: Config): Unit = {
     // Init SparkSession
     val spark = SparkSession.builder()
       .appName("Scale Test")
       .getOrCreate()
+    val idleSessionListener = new IdleSessionListener()
+    spark.sparkContext.addSparkListener(idleSessionListener)
     val querySpecs = new QuerySpecs(config, spark)
     querySpecs.initViews()
     val queryMap = querySpecs.getCandidateQueries()
@@ -82,11 +116,11 @@ object ScaleTest {
       println(s"Running Query: $queryName for ${query.iterations} iterations")
       println(s"${query.content}")
       // run one query for several iterations in a row
-      val elapses = runOneQueryForIterations(query.content, query.iterations, outputPath, config
-        .overwrite, config.format, spark)
+      val elapses = runOneQueryForIterations(query.content, query.iterations, query.timeout,
+        outputPath, config.overwrite, config.format, spark, idleSessionListener)
       executionTime += (queryName -> elapses)
     }
-    val report = new TestReport(config, executionTime)
+    val report = new TestReport(config, executionTime, spark)
     report.save()
   }
 
@@ -119,7 +153,7 @@ object ScaleTest {
       arg[String]("<path to save report file>")
         .required()
         .action((x, c) => c.copy(reportPath = x))
-        .text("path to save the report file that contains test results")
+        .text("path to save the JSON report file that contains test results")
       opt[Int]('d', "seed")
         .optional()
         .action((x, c) => c.copy(seed = x))
@@ -134,13 +168,10 @@ object ScaleTest {
         .text("iterations to run for each query. default: 1")
       opt[String]("queries")
         .optional()
-        .action((x, c) => c.copy(queries = x.split(",").map{ pair =>
-          val Array(qName, iter) = pair.split(":")
-          qName.toLowerCase -> iter.toInt
-        }.toMap))
-        .text("Specify queries with iterations to run specifically. the format must be " +
-          "<query-name>:<iterations-for-this-query> with comma separated entries. e.g. --tables " +
-          "q1:2,q2:3,q3:4. If not specified, all queries will be run for `--iterations` rounds")
+        .action((x, c) => c.copy(queries = x.split(",").map(t => t.toLowerCase())))
+        .text("Specify queries to run specifically. the format must be " +
+          "query names with comma separated. e.g. --tables " +
+          "q1,q2,q3. If not specified, all queries will be run for `--iterations` rounds")
     }
   }
 

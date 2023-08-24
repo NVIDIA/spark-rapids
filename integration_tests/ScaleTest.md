@@ -26,22 +26,23 @@ The queries are define in the source code. You can check the table below to see 
 
 ## Submit
 
-The Scale Test can be submit to Spark just as a normal Spark application.
-The input arguments for the application is shown as below:
+The Scale Test can be submitted to Spark just as a normal Spark application.
+The input arguments for the application are shown below:
 
 ```bash
-Usage: Scale Test [options] <scale factor> <complexity> <format> <input directory> <output directory> <path to query file> <path to save report file>
+Usage: ScaleTest [options] <scale factor> <complexity> <format> <input directory> <output directory> <path to save report file>
 
-  <scale factor>               scale factor for data size
-  <complexity>                 complexity level for processing
-  <format>                     output format for the data
-  <input directory>            input directory for table data
-  <output directory>           directory for query output
-  <path to save report file>   path to save the report file that contains test results
-  -d, --seed <value>           seed used to generate random data columns. default is 41 if not specified
-  --overwrite                  Flag argument. Whether to overwrite the existing data in the path.
-  --iterations <value>         iterations to run for each query. default: 1
-  --queries <value>            Specify queries with iterations to run specifically. the format must be <query-name>:<iterations-for-this-query> with comma separated entries. e.g. --tables q1:2,q2:3,q3:4. If not specified, all queries will be run for `--iterations` rounds
+  <scale factor>           scale factor for data size
+  <complexity>             complexity level for processing
+  <format>                 output format for the data
+  <input directory>        input directory for table data
+  <output directory>       directory for query output
+  <path to save report file>
+                           path to save the report file that contains test results
+  -d, --seed <value>       seed used to generate random data columns. default is 41 if not specified
+  --overwrite              Flag argument. Whether to overwrite the existing data in the path.
+  --iterations <value>     iterations to run for each query. default: 1
+  --queries <value>        Specify queries to run specifically. the format must be query names with comma separated. e.g. --tables q1,q2,q3. If not specified, all queries will be run for `--iterations` rounds
 ```
 
 An example command to launch the Scale Test:
@@ -61,18 +62,15 @@ $SPARK_HOME/bin/spark-submit \
 parquet \
 <path-to-data-generated-by-data-gen-tool> \
 ./output \
-./report.csv \
+./report.json \
 --overwrite \
---queries q1:2,q2:3
+--queries q1,q2
 ```
 
 ## Test Report
 
-Test results are recorded in the report file in CSV format. Currently only execution time is recorded. The record looks like below:
+Test results are recorded in the report file in JSON format. Currently only execution time is recorded. The record looks like below:
 
-```csv
-query,iteration_elapses/millis,average_elapse/millis
-q1,[5569,2774], 4171
-q2,[2621,2553], 2587
-q3,[2397,2509], 2453
+```json
+
 ```
