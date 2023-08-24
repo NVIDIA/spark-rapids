@@ -107,6 +107,9 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       for (rightEmpty <- Seq(false, true)) {
         def generateLeftTable(spark: SparkSession): DataFrame = {
           if (leftEmpty) {
+            // Use a filter on a non-existent value to try to avoid Spark's query optimization
+            // from potentially optimizing out the nested loop join by realizing at query
+            // planning time that one of the dataframes is empty.
             longsDf(spark).filter("longs = 132435465768")
           } else {
             longsDf(spark)
@@ -115,6 +118,9 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
         def generateRightTable(spark: SparkSession): DataFrame = {
           if (rightEmpty) {
+            // Use a filter on a non-existent value to try to avoid Spark's query optimization
+            // from potentially optimizing out the nested loop join by realizing at query
+            // planning time that one of the dataframes is empty.
             biggerLongsDf(spark).filter("longs = 132435465768")
           } else {
             biggerLongsDf(spark)
