@@ -261,6 +261,12 @@ class GpuSorter(
               // It is slower, but it works
               val concatenated = closeOnExcept(tablesToMerge) { _ =>
                 while (spillableBatches.nonEmpty) {
+                  // We retry work with a single spillable batch, then it can be closed
+                  // eagerly. (See https://github.com/NVIDIA/spark-rapids/pull/6931)
+                  // If we want to retry the whole work of moving data to GPU, concatenating
+                  // tables and sorting the result table in a single block, we need to change
+                  // to hold all the batches in `spillableBatches` until the work is done.
+                  // Then they can not be closed eagerly. Not sure whether we should do it.
                   val tl = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.pop()) { sb =>
                     withResource(sb.getColumnarBatch()) { cb =>
                       GpuColumnVector.from(cb)
