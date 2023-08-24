@@ -61,5 +61,7 @@ class SpillableColumnarBatchSuite extends AnyFunSuite {
     override def close(): Unit = {}
     override def getColumnarBatch(
       sparkTypes: Array[DataType]): ColumnarBatch = null
+    override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = { body(null) }
+    override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = { body(null) }
   }
 }

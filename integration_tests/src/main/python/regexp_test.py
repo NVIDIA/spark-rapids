@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import locale
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_error, \
+    assert_gpu_and_cpu_error, \
     assert_gpu_sql_fallback_collect
 from data_gen import *
 from marks import *
@@ -525,7 +524,7 @@ def test_word_boundaries():
                 'regexp_replace(a, "\\\\B", "#")',
             ),
         conf=_regexp_conf)
-        
+
 def test_character_classes():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -874,7 +873,7 @@ def test_regexp_replace_fallback_configured_off():
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_regexp_extract():
     gen = mk_str_gen('[abcdef]{0,2}')
-    regex_gen = StringGen('\[a-z\]\+')
+    regex_gen = StringGen(r'\[a-z\]\+')
     num_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
 
     def assert_gpu_did_fallback(sql_text):
@@ -896,7 +895,7 @@ def test_unsupported_fallback_regexp_extract():
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_regexp_extract_all():
     gen = mk_str_gen('[abcdef]{0,2}')
-    regex_gen = StringGen('\[a-z\]\+')
+    regex_gen = StringGen(r'\[a-z\]\+')
     num_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
@@ -917,7 +916,7 @@ def test_unsupported_fallback_regexp_extract_all():
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_unsupported_fallback_regexp_replace():
     gen = mk_str_gen('[abcdef]{0,2}')
-    regex_gen = StringGen('\[a-z\]\+')
+    regex_gen = StringGen(r'\[a-z\]\+')
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
             gen_df(spark, [
@@ -1002,7 +1001,7 @@ def test_regexp_memory_fallback():
             'a rlike "1|2|3|4|5|6"'
         ),
         cpu_fallback_class_name='RLike',
-        conf={ 
+        conf={
             'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
@@ -1024,7 +1023,7 @@ def test_regexp_memory_ok():
             'a rlike "(1)(2)(3)"',
             'a rlike "1|2|3|4|5|6"'
         ),
-        conf={ 
+        conf={
             'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch

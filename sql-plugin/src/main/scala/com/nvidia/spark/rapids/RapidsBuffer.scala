@@ -333,6 +333,32 @@ trait RapidsBuffer extends AutoCloseable {
    * @param priority new priority value for this buffer
    */
   def setSpillPriority(priority: Long): Unit
+
+  /**
+   * Function invoked by the `RapidsBufferStore.addBuffer` method that prompts
+   * the specific `RapidsBuffer` to check its reference counting to make itself
+   * spillable or not. Only `RapidsTable` and `RapidsHostMemoryBuffer` implement
+   * this method.
+   */
+  def updateSpillability(): Unit = {}
+
+  /**
+   * Obtains a read lock on this instance of `RapidsBuffer` and calls the function
+   * in `body` while holding the lock.
+   * @param body function that takes a `MemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(memoryBuffer)
+   */
+  def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K
+
+  /**
+   * Obtains a write lock on this instance of `RapidsBuffer` and calls the function
+   * in `body` while holding the lock.
+   * @param body function that takes a `MemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(memoryBuffer)
+   */
+  def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K
 }
 
 /**
@@ -384,6 +410,14 @@ sealed class DegenerateRapidsBuffer(
   override def getSpillPriority: Long = Long.MaxValue
 
   override def setSpillPriority(priority: Long): Unit = {}
+
+  override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = {
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+  }
+
+  override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = {
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+  }
 
   override def close(): Unit = {}
 }

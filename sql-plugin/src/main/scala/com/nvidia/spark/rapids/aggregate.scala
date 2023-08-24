@@ -1173,8 +1173,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     }
   }
 
-  private val orderable =
-    (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested()
+  private val orderable = pluginSupportedOrderableSig
 
   override def convertToGpu(): GpuExec = {
     lazy val aggModes = agg.aggregateExpressions.map(_.mode).toSet
