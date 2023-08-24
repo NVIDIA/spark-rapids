@@ -240,7 +240,7 @@ class GpuSorter(
    * @param sortTime metric for the time spent doing the merge sort
    * @return the sorted data.
    */
-  final def mergeSortWithRetry(
+  final def mergeSortAndCloseWithRetry(
       spillableBatches: mutable.ArrayStack[SpillableColumnarBatch],
       sortTime: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
