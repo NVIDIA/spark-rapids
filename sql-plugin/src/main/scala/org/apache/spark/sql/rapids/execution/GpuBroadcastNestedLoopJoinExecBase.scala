@@ -597,7 +597,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
-  /** Special-case handling of an unconditional existence join that just needs to output*/
   /**
    * Special-case handling of an unconditional existence join that just needs to output the left
    * table along with an existence column that is all true if the right table has any rows or

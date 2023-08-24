@@ -21,7 +21,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.ExistenceJoin
 import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.TestTrampolineUtil
 import org.apache.spark.sql.types.BooleanType
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
@@ -139,12 +139,12 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
               JoinHint(Some(HintInfo(Some(BROADCAST))), None)
             }
             val cpuPlan = Join(
-              TrampolineUtil.toLogicalPlan(df1),
-              TrampolineUtil.toLogicalPlan(df2),
+              TestTrampolineUtil.toLogicalPlan(df1),
+              TestTrampolineUtil.toLogicalPlan(df2),
               ExistenceJoin(AttributeReference("exists", BooleanType, false)()),
               None,
               joinHint)
-            TrampolineUtil.toDataFrame(df1.sparkSession, cpuPlan)
+            TestTrampolineUtil.toDataFrame(df1.sparkSession, cpuPlan)
           }
         }
       }

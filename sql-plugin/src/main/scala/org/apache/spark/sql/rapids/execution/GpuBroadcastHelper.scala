@@ -80,7 +80,10 @@ object GpuBroadcastHelper {
     }
   }
 
-  /** Given a broadcast relation return an RDD of that relation. */
+  /**
+   * Given a broadcast relation return an RDD of that relation.
+   * @note This can only be called from driver code.
+   */
   def asRDD(sc: SparkContext, broadcast: Broadcast[Any]): RDD[ColumnarBatch] = {
     broadcast.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>

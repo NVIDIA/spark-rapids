@@ -24,9 +24,8 @@ import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.memory.TaskMemoryManager
-import org.apache.spark.sql.{AnalysisException, DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
@@ -172,11 +171,5 @@ object TrampolineUtil {
 
   def getSparkConf(spark: SparkSession): SQLConf = {
     spark.sqlContext.conf
-  }
-
-  def toLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
-
-  def toDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
-    Dataset.ofRows(spark, plan)
   }
 }
