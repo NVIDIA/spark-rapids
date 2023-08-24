@@ -47,10 +47,9 @@ import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetr
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)(
-    cpuOutputPartitioning: Partitioning,
-    val advisoryPartitionSize: Option[Long] = None
-)
+    shuffleOrigin: ShuffleOrigin,
+    advisoryPartitionSize: Option[Long] = None)(
+    cpuOutputPartitioning: Partitioning)
     extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
         with ShuffleExchangeLike {
 
