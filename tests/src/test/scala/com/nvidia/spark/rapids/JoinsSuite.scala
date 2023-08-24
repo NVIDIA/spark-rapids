@@ -103,44 +103,43 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   }
 
   for (buildRight <- Seq(false, true)) {
-    for (buildEmpty <- Seq(false, true)) {
-      def generateLeftTable(spark: SparkSession): DataFrame = {
-        import spark.sqlContext.implicits._
-        if (buildEmpty && !buildRight) {
-          Seq[(Long, Long)]().toDF("longs", "more_longs")
-        } else {
-          longsDf(spark)
-        }
-      }
-
-      def generateRightTable(spark: SparkSession): DataFrame = {
-        import spark.sqlContext.implicits._
-        if (buildEmpty && buildRight) {
-          Seq[(Long, Long)]().toDF("longs", "more_longs")
-        } else {
-          biggerLongsDf(spark)
-        }
-      }
-
-      IGNORE_ORDER_testSparkResultsAreEqual2(
-        "Test unconditional nested loop existence join " +
-          s"buildRight=$buildRight buildEmpty=$buildEmpty",
-        generateLeftTable,
-        generateRightTable,
-        conf = new SparkConf().set("spark.rapids.sql.debug.logTransformations", "true")) {
-        (df1, df2) => {
-          val joinHint = if (buildRight) {
-            JoinHint(None, Some(HintInfo(Some(BROADCAST))))
+    for (leftEmpty <- Seq(false, true)) {
+      for (rightEmpty <- Seq(false, true)) {
+        def generateLeftTable(spark: SparkSession): DataFrame = {
+          if (leftEmpty) {
+            longsDf(spark).filter("longs = 132435465768")
           } else {
-            JoinHint(Some(HintInfo(Some(BROADCAST))), None)
+            longsDf(spark)
           }
-          val cpuPlan = Join(
-            TrampolineUtil.toLogicalPlan(df1),
-            TrampolineUtil.toLogicalPlan(df2),
-            ExistenceJoin(AttributeReference("exists", BooleanType, false)()),
-            None,
-            joinHint)
-          TrampolineUtil.toDataFrame(df1.sparkSession, cpuPlan)
+        }
+
+        def generateRightTable(spark: SparkSession): DataFrame = {
+          if (rightEmpty) {
+            biggerLongsDf(spark).filter("longs = 132435465768")
+          } else {
+            biggerLongsDf(spark)
+          }
+        }
+
+        IGNORE_ORDER_testSparkResultsAreEqual2(
+          "Test unconditional nested loop existence join " +
+            s"buildRight=$buildRight leftEmpty=$leftEmpty rightEmpty=$rightEmpty",
+          generateLeftTable,
+          generateRightTable) {
+          (df1, df2) => {
+            val joinHint = if (buildRight) {
+              JoinHint(None, Some(HintInfo(Some(BROADCAST))))
+            } else {
+              JoinHint(Some(HintInfo(Some(BROADCAST))), None)
+            }
+            val cpuPlan = Join(
+              TrampolineUtil.toLogicalPlan(df1),
+              TrampolineUtil.toLogicalPlan(df2),
+              ExistenceJoin(AttributeReference("exists", BooleanType, false)()),
+              None,
+              joinHint)
+            TrampolineUtil.toDataFrame(df1.sparkSession, cpuPlan)
+          }
         }
       }
     }
