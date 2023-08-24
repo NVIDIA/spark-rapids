@@ -21,7 +21,7 @@ import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Tab
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -608,19 +608,22 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): RDD[ColumnarBatch] = {
     def addExistsColumn(iter: Iterator[ColumnarBatch], exists: Boolean): Iterator[ColumnarBatch] = {
-      iter.map { batch =>
-        withResource(batch) { _ =>
-          GpuColumnVector.incRefCounts(batch)
-          val newCols = new Array[ColumnVector](batch.numCols + 1)
-          (0 until newCols.length - 1).foreach { i =>
-            newCols(i) = batch.column(i)
+      iter.flatMap { batch =>
+        val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        withRetry(spillable, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { spillBatch =>
+          withResource(spillBatch.getColumnarBatch()) { batch =>
+            GpuColumnVector.incRefCounts(batch)
+            val newCols = new Array[ColumnVector](batch.numCols + 1)
+            (0 until newCols.length - 1).foreach { i =>
+              newCols(i) = batch.column(i)
+            }
+            val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
+              GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
+                BooleanType)
+            }
+            newCols(batch.numCols) = existsCol
+            new ColumnarBatch(newCols, batch.numRows)
           }
-          val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
-            GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
-              BooleanType)
-          }
-          newCols(batch.numCols) = existsCol
-          new ColumnarBatch(newCols, batch.numRows)
         }
       }
     }
