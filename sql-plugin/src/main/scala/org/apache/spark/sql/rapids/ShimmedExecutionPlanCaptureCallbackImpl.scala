@@ -79,7 +79,7 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     }
   }
 
-  def assertCapturedAndGpuFellBack(
+  override def assertCapturedAndGpuFellBack(
       // used by python code, should not be Array[String]
       fallbackCpuClassList: java.util.ArrayList[String],
       timeoutMs: Long): Unit = {
@@ -128,13 +128,13 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     }
   }
 
-  def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
+  override def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
     val gpuPlans = getResultsWithTimeout(timeoutMs = timeoutMs)
     assert(gpuPlans.nonEmpty, "Did not capture a plan")
     assertDidFallBack(gpuPlans, fallbackCpuClass)
   }
 
-  def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit = {
+  override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit = {
     val executedPlans = gpuPlans.map(extractExecutedPlan)
     // Verify at least one of the plans has the fallback class
     val found = executedPlans.exists { executedPlan =>

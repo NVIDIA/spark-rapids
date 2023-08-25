@@ -35,8 +35,14 @@ trait ExecutionPlanCaptureCallbackBase {
   def assertNotContain(df: DataFrame, gpuClass: String): Unit
   def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit
   def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit
-  def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean
+  def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit
+  def assertCapturedAndGpuFellBack(
+      // used by python code, should not be Array[String]
+      fallbackCpuClassList: java.util.ArrayList[String],
+      timeoutMs: Long): Unit
+  def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit
   def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit
+  def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean
 }
 
 object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
@@ -78,11 +84,23 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
   override def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit =
     impl.assertDidFallBack(df, fallbackCpuClass)
 
+  override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit = 
+    impl.assertDidFallBack(gpuPlans, fallbackCpuClass)
+
+  override def assertCapturedAndGpuFellBack(
+      // used by python code, should not be Array[String]
+      fallbackCpuClassList: java.util.ArrayList[String],
+      timeoutMs: Long): Unit = 
+    impl.assertCapturedAndGpuFellBack(fallbackCpuClassList, timeoutMs)
+
+  override def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit =
+    impl.assertCapturedAndGpuFellBack(fallbackCpuClass, timeoutMs)
+
+  override def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit =
+    impl.assertSchemataMatch(cpuDf, gpuDf, expectedSchema)
+
   override def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean =
     impl.didFallBack(plan, fallbackCpuClass)
-
-  def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit =
-    impl.assertSchemataMatch(cpuDf, gpuDf, expectedSchema)
 }
 
 /**
