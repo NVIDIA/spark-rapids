@@ -425,5 +425,5 @@ object ShimLoader extends Logging {
   def newExecutionPlanCaptureCallbackBase(): ExecutionPlanCaptureCallbackBase =
     ShimReflectionUtils.
         newInstanceOf[ExecutionPlanCaptureCallbackBase](
-          "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallbackImpl")
+          "org.apache.spark.sql.rapids.ShimmedExecutionPlanCaptureCallbackImpl")
 }

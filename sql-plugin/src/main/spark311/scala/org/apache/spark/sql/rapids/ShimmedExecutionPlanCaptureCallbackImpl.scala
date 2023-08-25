@@ -47,7 +47,12 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStag
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 
-class ExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallbackBase {
+/**
+ * Note that the name is prefixed with "Shimmed" such that wildcard rules
+ * under unshimmed-common-from-spark311.txt don't get confused and pick this class to be
+ * un-shimmed.
+ */
+class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallbackBase {
   private[this] var shouldCapture: Boolean = false
   private[this] val execPlans: ArrayBuffer[SparkPlan] = ArrayBuffer.empty
 
