@@ -24,6 +24,7 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
 
@@ -34,7 +35,7 @@ import scala.collection.JavaConverters._
 
 import com.nvidia.spark.CurrentBatchIterator
 import com.nvidia.spark.rapids.ParquetCachedBatch
-import com.nvidia.spark.rapids.shims.ParquetTimestampNTZShims
+import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetTimestampNTZShims}
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
 import org.apache.parquet.column.page.PageReadStore
@@ -44,7 +45,6 @@ import org.apache.spark.memory.MemoryMode
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
 object ParquetVectorizedReader {
@@ -150,9 +150,9 @@ class ShimCurrentBatchIterator(
           column.required,
           pages,
           null,
-          LegacyBehaviorPolicy.CORRECTED.toString,
-          LegacyBehaviorPolicy.EXCEPTION.toString,
-          LegacyBehaviorPolicy.EXCEPTION.toString,
+          LegacyBehaviorPolicyShim.CORRECTED_STR,
+          LegacyBehaviorPolicyShim.EXCEPTION_STR,
+          LegacyBehaviorPolicyShim.EXCEPTION_STR,
           null,
           writerVersion)
         cv.setColumnReader(reader)

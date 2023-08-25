@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_jvm_charset_utf8
+from spark_session import is_before_spark_320, is_before_spark_350, is_jvm_charset_utf8
 
 if not is_jvm_charset_utf8():
     pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
@@ -465,22 +465,27 @@ def test_regexp_extract_no_match():
 # Spark take care of the error handling
 @allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_negative():
+    message = "The specified group index cannot be less than zero" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract` is invalid"
+
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", -1)').collect(),
-            error_message = "The specified group index cannot be less than zero",
+            error_message = message,
         conf=_regexp_conf)
 
 # if we determine that the index is out of range we fall back to CPU and let
 # Spark take care of the error handling
 @allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_out_of_bounds():
+    message = "Regex group count is 3, but the specified group index is 4" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract` is invalid: Expects group index between 0 and 3, but got 4."
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 4)').collect(),
-            error_message = "Regex group count is 3, but the specified group index is 4",
+            error_message = message,
             conf=_regexp_conf)
 
 def test_regexp_extract_multiline():
@@ -797,22 +802,27 @@ def test_regexp_extract_all_idx_positive():
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_negative():
+    message = "The specified group index cannot be less than zero" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract_all` is invalid"
+
     gen = mk_str_gen('[abcd]{0,3}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract_all(a, "(a)", -1)'
             ).collect(),
-        error_message="The specified group index cannot be less than zero",
+        error_message=message,
         conf=_regexp_conf)
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_out_of_bounds():
+    message = "Regex group count is 2, but the specified group index is 3" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract_all` is invalid: Expects group index between 0 and 2, but got 3."
     gen = mk_str_gen('[a-d]{1,2}.{0,1}[0-9]{1,2}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract_all(a, "([a-d]+).*([0-9])", 3)'
             ).collect(),
-        error_message="Regex group count is 2, but the specified group index is 3",
+        error_message=message,
         conf=_regexp_conf)
 
 def test_rlike_unicode_support():
