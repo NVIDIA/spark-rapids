@@ -111,7 +111,8 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
    * The method checks the schemata used in the GPU and CPU executed plans and compares it to the
    * expected schemata to make sure we are not reading more data than needed
    */
-  override def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit = {
+  override def assertSchemataMatch(
+      cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit = {
     import org.apache.spark.sql.execution.FileSourceScanExec
     import org.apache.spark.sql.types.StructType
     import org.apache.spark.sql.catalyst.parser.CatalystSqlParser

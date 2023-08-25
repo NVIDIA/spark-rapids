@@ -18,9 +18,9 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.ShimLoader
 
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
 import org.apache.spark.sql.util.QueryExecutionListener
-import org.apache.spark.sql.DataFrame
 
 trait ExecutionPlanCaptureCallbackBase {
   def captureIfNeeded(qe: QueryExecution): Unit
