@@ -45,7 +45,9 @@ class AcceleratedColumnarToRowIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
-    streamTime: GpuMetric) extends Iterator[InternalRow] with Serializable {
+    streamTime: GpuMetric,
+    inputSize: GpuMetric,
+    execBandwidth: GpuMetric) extends Iterator[InternalRow] with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -124,6 +126,7 @@ class AcceleratedColumnarToRowIterator(
               // start with that until we have tested it more. We branching over the size of
               // the output to know which kernel to call. If schema.length < 100 we call the
               // fixed-width optimized version, otherwise the generic one
+              inputSize += GpuColumnVector.getTotalDeviceMemoryUsed(attemptCb)
               if (schema.length < 100) {
                 table.convertToRowsFixedWidthOptimized()
               } else {
@@ -219,6 +222,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
     streamTime: GpuMetric,
+    inputSize: GpuMetric,
+    execBandwidth: GpuMetric,
     nullSafe: Boolean = false,
     releaseSemaphore: Boolean = true) extends Iterator[InternalRow] {
   // GPU batches read in must be closed by the receiver (us)
@@ -263,6 +268,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
             // because it will over count the number of rows output in the case of a limit,
             // but it is more efficient.
             numOutputRows += cb.numRows()
+            inputSize += GpuColumnVector.getTotalDeviceMemoryUsed(devCb)
           }
         }
       }
@@ -343,6 +349,8 @@ case class GpuColumnarToRowExec(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
+    INPUT_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_INPUT_SIZE),
+    EXEC_BANDWIDTH -> createMetric(MODERATE_LEVEL, DESCRIPTION_EXEC_BANDWIDTH),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
@@ -350,9 +358,11 @@ case class GpuColumnarToRowExec(
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
+    val inputSize = gpuLongMetric(INPUT_SIZE)
+    val execBandwidth = gpuLongMetric(EXEC_BANDWIDTH)
 
     val f = GpuColumnarToRowExec.makeIteratorFunc(child.output, numOutputRows, numInputBatches,
-      opTime, streamTime)
+      opTime, streamTime, inputSize, execBandwidth)
 
     val cdata = child.executeColumnar()
     if (exportColumnarRdd) {
@@ -389,7 +399,9 @@ object GpuColumnarToRowExec {
       numOutputRows: GpuMetric,
       numInputBatches: GpuMetric,
       opTime: GpuMetric,
-      streamTime: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
+      streamTime: GpuMetric,
+      inputSize: GpuMetric ,
+      execBandwidth: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
     if (CudfRowTransitions.areAllSupported(output) &&
         // For a small number of columns it is still best to do it the original way
         output.length > 4 &&
@@ -407,10 +419,11 @@ object GpuColumnarToRowExec {
         // Check that the accelerated transpose works correctly on the current CUDA device.
         if (isAcceleratedTransposeSupported) {
           new AcceleratedColumnarToRowIterator(output, batches, numInputBatches, numOutputRows,
-            opTime, streamTime).map(toUnsafe)
+            opTime, streamTime, inputSize, execBandwidth).map(toUnsafe)
         } else {
           new ColumnarToRowIterator(batches,
-            numInputBatches, numOutputRows, opTime, streamTime).map(toUnsafe)
+            numInputBatches, numOutputRows, opTime, streamTime, inputSize,
+            execBandwidth).map(toUnsafe)
         }
       }
     } else {
@@ -418,7 +431,8 @@ object GpuColumnarToRowExec {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new ColumnarToRowIterator(batches,
-          numInputBatches, numOutputRows, opTime, streamTime).map(toUnsafe)
+          numInputBatches, numOutputRows, opTime, streamTime, inputSize,
+          execBandwidth).map(toUnsafe)
       }
     }
   }

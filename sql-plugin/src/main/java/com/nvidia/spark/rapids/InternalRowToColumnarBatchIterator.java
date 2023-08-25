@@ -57,6 +57,8 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
   protected final GpuMetric numInputRows;
   protected final GpuMetric numOutputRows;
   protected final GpuMetric numOutputBatches;
+  protected final GpuMetric inputSize;
+  protected final GpuMetric execBandwidth;
 
   protected InternalRowToColumnarBatchIterator(
       Iterator<InternalRow> input,
@@ -66,7 +68,9 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
       GpuMetric opTime,
       GpuMetric numInputRows,
       GpuMetric numOutputRows,
-      GpuMetric numOutputBatches) {
+      GpuMetric numOutputBatches,
+      GpuMetric inputSize,
+      GpuMetric execBandwidth) {
     this.input = input;
     int sizePerRowEstimate = CudfUnsafeRow.getRowSizeEstimate(schema);
     numRowsEstimate = (int)Math.max(1,
@@ -84,6 +88,8 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     this.numInputRows = numInputRows;
     this.numOutputRows = numOutputRows;
     this.numOutputBatches = numOutputBatches;
+    this.inputSize = inputSize;
+    this.execBandwidth = execBandwidth;
   }
 
   @Override
@@ -170,7 +176,9 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
              // optimized version, otherwise the generic one
              Table.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
              Table.convertFromRows(cv, rapidsTypes)) {
-      return GpuColumnVector.from(tab, outputTypes);
+      ColumnarBatch result = GpuColumnVector.from(tab, outputTypes);
+      inputSize.add(GpuColumnVector.getTotalDeviceMemoryUsed(result));
+      return result;
     }
   }
 

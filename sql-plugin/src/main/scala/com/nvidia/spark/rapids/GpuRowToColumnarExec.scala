@@ -593,7 +593,9 @@ class RowToColumnarIterator(
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
     streamTime: GpuMetric = NoopMetric,
-    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+    opTime: GpuMetric = NoopMetric,
+    inputSize: GpuMetric = NoopMetric,
+    execBandwidth: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -665,6 +667,7 @@ class RowToColumnarIterator(
         // refine the targetRows estimate based on the average of all batches processed so far
         totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
         totalOutputRows += rowCount
+        inputSize += totalOutputRows
         if (totalOutputRows > 0 && totalOutputBytes > 0) {
           targetRows =
             GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
@@ -687,7 +690,9 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
       opTime: GpuMetric,
       numInputRows: GpuMetric,
       numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric): InternalRowToColumnarBatchIterator = {
+      numOutputBatches: GpuMetric,
+      inputSize: GpuMetric,
+      execBandwidth: GpuMetric): InternalRowToColumnarBatchIterator = {
     val ctx = new CodegenContext
     // setup code generation context to use our custom row variable
     val internalRow = ctx.freshName("internalRow")
@@ -709,6 +714,10 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
     val numOutputRowsRef = ctx.addReferenceObj("numOutputRows", numOutputRows,
       classOf[GpuMetric].getName)
     val numOutputBatchesRef = ctx.addReferenceObj("numOutputBatches", numOutputBatches,
+      classOf[GpuMetric].getName)
+    val inputSizeRef = ctx.addReferenceObj("inputSize", inputSize,
+      classOf[GpuMetric].getName)
+    val execBandwidthRef = ctx.addReferenceObj("execBandwidth", execBandwidth,
       classOf[GpuMetric].getName)
 
     val rowBaseObj = ctx.freshName("rowBaseObj")
@@ -780,7 +789,9 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
          |      $opTimeRef,
          |      $numInputRowsRef,
          |      $numOutputRowsRef,
-         |      $numOutputBatchesRef);
+         |      $numOutputBatchesRef,
+         |      $inputSizeRef,
+         |      $execBandwidthRef);
          |
          |      ${ctx.initMutableStates()}
          |  }
@@ -882,6 +893,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
+    INPUT_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_INPUT_SIZE),
+    EXEC_BANDWIDTH -> createMetric(MODERATE_LEVEL, DESCRIPTION_EXEC_BANDWIDTH),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
   )
 
@@ -893,6 +906,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val opTime = gpuLongMetric(OP_TIME)
+    val inputSize = gpuLongMetric(INPUT_SIZE)
+    val execBandwidth = gpuLongMetric(EXEC_BANDWIDTH)
     val localGoal = goal
     val rowBased = child.execute()
 
@@ -909,12 +924,12 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedInternalRowToCudfRowIterator(
         rowIter, localOutput.toArray, localGoal, streamTime, opTime,
-        numInputRows, numOutputRows, numOutputBatches))
+        numInputRows, numOutputRows, numOutputBatches, inputSize, execBandwidth))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, converters,
-        numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
+        localSchema, localGoal, converters, numInputRows, numOutputRows, numOutputBatches,
+        streamTime, opTime, inputSize, execBandwidth))
     }
   }
 }

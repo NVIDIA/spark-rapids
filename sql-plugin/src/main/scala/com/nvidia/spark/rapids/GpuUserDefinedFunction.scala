@@ -134,6 +134,8 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
             NoopMetric,
             NoopMetric,
             NoopMetric,
+            NoopMetric,
+            NoopMetric,
             nullSafe,
             // ensure `releaseSemaphore` is false so we don't release the semaphore
             // mid projection.
