@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,12 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.plans.ExistenceJoin
+import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
+import org.apache.spark.sql.rapids.TestTrampolineUtil
+import org.apache.spark.sql.types.BooleanType
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
@@ -94,5 +100,54 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual2("Test left anti self join with nulls with partition sort",
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
+  }
+
+  for (buildRight <- Seq(false, true)) {
+    for (leftEmpty <- Seq(false, true)) {
+      for (rightEmpty <- Seq(false, true)) {
+        def generateLeftTable(spark: SparkSession): DataFrame = {
+          if (leftEmpty) {
+            // Use a filter on a non-existent value to try to avoid Spark's query optimization
+            // from potentially optimizing out the nested loop join by realizing at query
+            // planning time that one of the dataframes is empty.
+            longsDf(spark).filter("longs = 132435465768")
+          } else {
+            longsDf(spark)
+          }
+        }
+
+        def generateRightTable(spark: SparkSession): DataFrame = {
+          if (rightEmpty) {
+            // Use a filter on a non-existent value to try to avoid Spark's query optimization
+            // from potentially optimizing out the nested loop join by realizing at query
+            // planning time that one of the dataframes is empty.
+            biggerLongsDf(spark).filter("longs = 132435465768")
+          } else {
+            biggerLongsDf(spark)
+          }
+        }
+
+        IGNORE_ORDER_testSparkResultsAreEqual2(
+          "Test unconditional nested loop existence join " +
+            s"buildRight=$buildRight leftEmpty=$leftEmpty rightEmpty=$rightEmpty",
+          generateLeftTable,
+          generateRightTable) {
+          (df1, df2) => {
+            val joinHint = if (buildRight) {
+              JoinHint(None, Some(HintInfo(Some(BROADCAST))))
+            } else {
+              JoinHint(Some(HintInfo(Some(BROADCAST))), None)
+            }
+            val cpuPlan = Join(
+              TestTrampolineUtil.toLogicalPlan(df1),
+              TestTrampolineUtil.toLogicalPlan(df2),
+              ExistenceJoin(AttributeReference("exists", BooleanType, false)()),
+              None,
+              joinHint)
+            TestTrampolineUtil.toDataFrame(df1.sparkSession, cpuPlan)
+          }
+        }
+      }
+    }
   }
 }
