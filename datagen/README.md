@@ -458,30 +458,32 @@ which will install a `NullProbabilityGenerationFunction` or by calling the
 ### LengthGeneratorFunction
 
 For variable length types, like strings and arrays, a pluggable length generator
-function is used to produce those lengths. Currently only fixed lengths are
-supported out of the box. This is because the naive way to generate a length
+function is used to produce those lengths. Fixed length generator is preferred
+to avoid data skew in the resulting column. This is because the naive way to generate a length
 where all possible lengths have an equal probability produces skew in the
 resulting values. A length of 0 has one and only one possible value in it.
 So if we restrict the length to 0 or 1, then half of all values generated will be
-zero length strings, which is not ideal.
+zero length strings, which is not ideal. 
 
 If you want to set the length of a String or Array you can navigate to the 
-column or sub-column you want and call `setLength` on it. This will install
-and updated `FixedLengthGeneratorFunction`.
+column or sub-column you want and call `setLength(fixedLen)` on it. This will install
+an updated `FixedLengthGeneratorFunction`. You may set a range of lengths using
+setLength(minLen, maxLen), but this may introduce skew in the resulting data.
 
 ```scala
-val dataTable = DBGen().addTable("data", "a string, b array<string>", 3)
+val dataTable = DBGen().addTable("data", "a string, b array<string>, c string", 3)
 dataTable("a").setLength(1)
 dataTable("b").setLength(2)
 dataTable("b")("data").setLength(3)
+dataTable("c").setLength(1,5)
 dataTable.toDF(spark).show(false)
-+---+----------+
-|a  |b         |
-+---+----------+
-|t  |[X]6, /<E]|
-|y  |[[d", uu=]|
-|^  |[uH[, wjX]|
-+---+----------+
++---+----------+----+
+|a  |b         |c   |
++---+----------+----+
+|t  |[X]6, /<E]|_,sA|
+|y  |[[d", uu=]|H:  |
+|^  |[uH[, wjX]|ooa>|
++---+----------+----+
 ```
 
 You can also set a `LengthGeneratorFunction` instance for any column or sub-column 
@@ -541,3 +543,8 @@ follow a given pattern you can do that. Or provide a distribution where a very
 specific seed shows up 99% of the time, and the rest of the time it falls back
 to the regular `FlatDistribution`, you can also do that. It is designed to be very
 flexible.
+
+# Scale Test Data Generation Entry
+In order to generate large scale dataset to test the query engine, we use the data
+generation library above to create a test suite. For more details like the data schema,
+how to use the test suite etc, please refer to [ScaleTest.md](./ScaleTest.md).

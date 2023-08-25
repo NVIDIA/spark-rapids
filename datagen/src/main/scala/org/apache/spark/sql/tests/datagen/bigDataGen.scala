@@ -291,6 +291,19 @@ case class FixedLengthGeneratorFunction(length: Int) extends LengthGeneratorFunc
 }
 
 /**
+ * Generate the data with a variable length. Note this will cause skew due to different
+ * possible cardinality for the different lengths.
+ */
+case class VarLengthGeneratorFunction(minLength: Int, maxLength: Int) extends
+  LengthGeneratorFunction {
+  override def withLocationToSeedMapping(mapping: LocationToSeedMapping): LengthGeneratorFunction =
+    this
+  override def apply(rowLoc: RowLocation): Int = {
+    Random.nextInt(maxLength - minLength + 1) + minLength
+  }
+}
+
+/**
  * Generate nulls with a given probability.
  * @param prob 0.0 to 1.0 for how often nulls should appear in the output.
  */
@@ -626,6 +639,11 @@ abstract class DataGen(var conf: ColumnConf,
    */
   def setLength(len: Int): DataGen = {
     this.lengthGen = FixedLengthGeneratorFunction(len)
+    this
+  }
+
+  def setLength(minLen: Int, maxLen: Int) = {
+    this.lengthGen = VarLengthGeneratorFunction(minLen, maxLen)
     this
   }
 
@@ -1712,6 +1730,11 @@ class ColumnGen(val dataGen: DataGen) {
 
   def setLength(len: Int): ColumnGen = {
     dataGen.setLength(len)
+    this
+  }
+
+  def setLength(minLen: Int, maxLen: Int): ColumnGen = {
+    dataGen.setLength(minLen, maxLen)
     this
   }
 

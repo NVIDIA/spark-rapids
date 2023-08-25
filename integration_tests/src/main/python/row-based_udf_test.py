@@ -31,6 +31,8 @@ def load_hive_udf(spark, udfname, udfclass):
     # if UDF failed to load, throws AnalysisException, check if the udf class is in the class path
     spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udfname, udfclass))
 
+@pytest.mark.xfail(condition=is_spark_350_or_later(),
+                   reason='https://github.com/NVIDIA/spark-rapids/issues/9064')
 def test_hive_empty_simple_udf():
 
     with_spark_session(skip_if_no_hive)

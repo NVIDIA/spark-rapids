@@ -155,12 +155,11 @@ object MetaUtils {
   }
 
   /**
-   * Constructs a table metadata buffer from a device buffer without describing any schema
+   * Constructs a table metadata buffer from a buffer length without describing any schema
    * for the buffer.
    */
-  def getTableMetaNoTable(buffer: DeviceMemoryBuffer): TableMeta = {
+  def getTableMetaNoTable(bufferSize: Long): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
-    val bufferSize = buffer.getLength
     BufferMeta.startBufferMeta(fbb)
     BufferMeta.addId(fbb, 0)
     BufferMeta.addSize(fbb, bufferSize)

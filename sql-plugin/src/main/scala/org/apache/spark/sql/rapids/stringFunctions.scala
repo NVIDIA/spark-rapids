@@ -25,9 +25,10 @@ import ai.rapids.cudf.{BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, Co
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -1986,4 +1987,96 @@ case class GpuStringInstr(str: Expression, substr: Expression)
       doColumnar(expandedLhs, rhs)
     }
   }
+}
+
+
+
+class GpuConvMeta(
+  expr: Conv,
+  conf: RapidsConf,
+  parent: Option[RapidsMeta[_,_,_]],
+  rule: DataFromReplacementRule) extends TernaryExprMeta(expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    val fromBaseLit = GpuOverrides.extractLit(expr.fromBaseExpr)
+    val toBaseLit = GpuOverrides.extractLit(expr.toBaseExpr)
+    (fromBaseLit, toBaseLit) match {
+      case (Some(Literal(fromBaseVal, IntegerType)), Some(Literal(toBaseVal, IntegerType)))
+        if Set(fromBaseVal, toBaseVal).subsetOf(Set(10, 16)) => ()
+      case _ =>
+        willNotWorkOnGpu(because = "only literal 10 or 16 for from_base and to_base are supported")
+    }
+  }
+
+  override def convertToGpu(
+    numStr: Expression,
+    fromBase: Expression,
+    toBase: Expression): GpuExpression = GpuConv(numStr, fromBase, toBase)
+}
+
+
+case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
+  extends GpuTernaryExpression {
+
+  override def doColumnar(
+    v1: GpuColumnVector,
+    v2: GpuColumnVector,
+    v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(v1: GpuScalar, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(v1: GpuScalar, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(v1: GpuColumnVector, v2: GpuScalar, v3: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(v1: GpuColumnVector, v2: GpuColumnVector, v3: GpuScalar): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(
+    numRows: Int,
+    strScalar: GpuScalar,
+    fromBase: GpuScalar,
+    toBase: GpuScalar
+  ): ColumnVector = {
+    withResource(GpuColumnVector.from(strScalar, numRows, strScalar.dataType)) { strCV =>
+      doColumnar(strCV, fromBase, toBase)
+    }
+  }
+
+  override def doColumnar(
+    str: GpuColumnVector,
+    fromBase: GpuScalar,
+    toBase: GpuScalar
+  ): ColumnVector = {
+    (fromBase.getValue, toBase.getValue) match {
+      case (fromRadix: Int, toRadix: Int) =>
+        withResource(
+          CastStrings.toIntegersWithBase(str.getBase, fromRadix, false, DType.UINT64)
+        ) { intCV =>
+          CastStrings.fromIntegersWithBase(intCV, toRadix)
+        }
+      case _ => throw new UnsupportedOperationException()
+    }
+  }
+
+  override def first: Expression = num
+
+  override def second: Expression = fromBase
+
+  override def third: Expression = toBase
+
+  override def dataType: DataType = StringType
 }

@@ -35,7 +35,7 @@ class GpuShuffleMeta(
     GpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
       childPlans.head.convertIfNeeded(),
-      shuffle.shuffleOrigin
-    )(shuffle.outputPartitioning,
-      shuffle.advisoryPartitionSize)
+      shuffle.shuffleOrigin,
+      shuffle.advisoryPartitionSize
+    )(shuffle.outputPartitioning)
 }
