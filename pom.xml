@@ -675,10 +675,10 @@
             333,
             330cdh,
             340,
-            341,
-            350
+            341
         </noSnapshot.buildvers>
         <snapshot.buildvers>
+            350
         </snapshot.buildvers>
         <databricks.buildvers>
             321db,
