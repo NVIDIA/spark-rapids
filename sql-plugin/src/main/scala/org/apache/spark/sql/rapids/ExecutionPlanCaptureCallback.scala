@@ -93,10 +93,12 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
       timeoutMs: Long): Unit = 
     impl.assertCapturedAndGpuFellBack(fallbackCpuClassList, timeoutMs)
 
-  override def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit =
+  override def assertCapturedAndGpuFellBack(
+      fallbackCpuClass: String, timeoutMs: Long = 2000): Unit =
     impl.assertCapturedAndGpuFellBack(fallbackCpuClass, timeoutMs)
 
-  override def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit =
+  override def assertSchemataMatch(
+      cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit =
     impl.assertSchemataMatch(cpuDf, gpuDf, expectedSchema)
 
   override def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean =

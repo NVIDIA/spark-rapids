@@ -128,7 +128,8 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     }
   }
 
-  override def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
+  override def assertCapturedAndGpuFellBack(
+      fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
     val gpuPlans = getResultsWithTimeout(timeoutMs = timeoutMs)
     assert(gpuPlans.nonEmpty, "Did not capture a plan")
     assertDidFallBack(gpuPlans, fallbackCpuClass)
