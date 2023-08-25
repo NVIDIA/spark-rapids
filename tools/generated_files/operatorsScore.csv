@@ -80,6 +80,7 @@ CollectSet,4
 Concat,4
 ConcatWs,4
 Contains,4
+Conv,4
 Cos,4
 Cosh,4
 Cot,4

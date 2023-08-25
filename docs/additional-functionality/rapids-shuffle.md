@@ -28,6 +28,7 @@ in our plugin:
 | 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
 | 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
 | 3.3.2           | com.nvidia.spark.rapids.spark332.RapidsShuffleManager    |
+| 3.3.3           | com.nvidia.spark.rapids.spark333.RapidsShuffleManager    |
 | 3.4.0           | com.nvidia.spark.rapids.spark340.RapidsShuffleManager    |
 | 3.4.1           | com.nvidia.spark.rapids.spark341.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
@@ -393,7 +394,7 @@ sudo dpkg -i ucx-1.14.0.deb ucx-cuda-1.14.0.deb &&
 rm ucx-1.14.0-ubuntu20.04-mofed5-cuda11.tar.bz2 ucx-1.14.0.deb ucx-cuda-1.14.0.deb
 ```
 
-Save the script in DBFS and add it to the "Init Scripts" list:
+Save the script in Databricks workspace and add it to the "Init Scripts" list:
 
 ![Init scripts panel showing UCX init script](../img/Databricks/initscript_ucx.png)
 

@@ -14,23 +14,15 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "333"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark333
+package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.SparkShimVersion
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 3, 3)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
+object TestTrampolineUtil {
+  def toLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
 
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+  def toDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
+    Dataset.ofRows(spark, plan)
   }
 }

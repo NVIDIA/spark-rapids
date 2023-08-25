@@ -513,78 +513,76 @@ class RapidsBufferCatalog(
     if (spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
     }
-    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
-    logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
-      s"Current total ${store.currentSize}. " +
-      s"Current spillable ${store.currentSpillableSize}")
-
-    // we try to spill in this thread. If another thread is also spilling, we let that
-    // thread win and we return letting RMM retry the alloc
-    var rmmShouldRetryAlloc = false
 
     // total amount spilled in this invocation
     var totalSpilled: Long = 0
 
-    if (store.currentSpillableSize > targetTotalSize) {
-      withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
-        logWarning(s"${store.name} store spilling to reduce usage from " +
-          s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
-          s"to $targetTotalSize bytes")
+    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
-        // If the store has 0 spillable bytes left, it has exhausted.
-        var exhausted = false
+    val mySpillCount = spillCount
 
-        val buffersToFree = new ArrayBuffer[RapidsBuffer]()
-        try {
-          while (!exhausted && !rmmShouldRetryAlloc &&
-            store.currentSpillableSize > targetTotalSize) {
-            val mySpillCount = spillCount
-            synchronized {
-              if (spillCount == mySpillCount) {
-                spillCount += 1
+    // we have to hold this lock while freeing buffers, otherwise we could run
+    // into the case where a buffer is spilled yet it is aliased in addBuffer
+    // via an event handler that hasn't been reset (it resets during the free)
+    synchronized {
+      if (mySpillCount != spillCount) {
+        // a different thread already spilled, returning
+        // None which lets the calling code know that rmm should retry allocation
+        None
+      } else {
+        // this thread win the race and should spill
+        spillCount += 1
+
+        logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
+          s"Current total ${store.currentSize}. " +
+          s"Current spillable ${store.currentSpillableSize}")
+
+        if (store.currentSpillableSize > targetTotalSize) {
+          withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
+            logWarning(s"${store.name} store spilling to reduce usage from " +
+              s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
+              s"to $targetTotalSize bytes")
+
+            // If the store has 0 spillable bytes left, it has exhausted.
+            var exhausted = false
+
+            val buffersToFree = new ArrayBuffer[RapidsBuffer]()
+
+            try {
+              while (!exhausted &&
+                store.currentSpillableSize > targetTotalSize) {
                 val nextSpillable = store.nextSpillable()
                 if (nextSpillable != null) {
                   // we have a buffer (nextSpillable) to spill
-                  // spill it and store it in `buffersToFree` to
-                  // free all in one go after a synchronize.
                   spillBuffer(nextSpillable, spillStore, stream)
                     .foreach(buffersToFree.append(_))
                   totalSpilled += nextSpillable.getMemoryUsedBytes
                 }
-              } else {
-                rmmShouldRetryAlloc = true
+              }
+              if (totalSpilled <= 0) {
+                // we didn't spill in this iteration, exit loop
+                exhausted = true
+                logWarning("Unable to spill enough to meet request. " +
+                  s"Total=${store.currentSize} " +
+                  s"Spillable=${store.currentSpillableSize} " +
+                  s"Target=$targetTotalSize")
+              }
+            } finally {
+              if (buffersToFree.nonEmpty) {
+                // This is a hack in order to completely synchronize with the GPU before we free
+                // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
+                // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
+                // all launched GPU work, otherwise crashes or data corruption could occur.
+                // A more performant implementation would be to synchronize on the thread that read
+                // the buffer via events.
+                // https://github.com/NVIDIA/spark-rapids/issues/8610
+                Cuda.deviceSynchronize()
+                buffersToFree.safeFree()
               }
             }
-            if (!rmmShouldRetryAlloc && totalSpilled <= 0) {
-              // we didn't spill in this iteration, exit loop
-              exhausted = true
-              logWarning("Unable to spill enough to meet request. " +
-                s"Total=${store.currentSize} " +
-                s"Spillable=${store.currentSpillableSize} " +
-                s"Target=$targetTotalSize")
-            }
-          }
-        } finally {
-          if (buffersToFree.nonEmpty) {
-            // This is a hack in order to completely synchronize with the GPU before we free
-            // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
-            // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
-            // all launched GPU work, otherwise crashes or data corruption could occur.
-           // A more performant implementation would be to synchronize on the thread that read
-           // the buffer via events.
-            // https://github.com/NVIDIA/spark-rapids/issues/8610
-            Cuda.deviceSynchronize()
-            buffersToFree.safeFree()
           }
         }
       }
-    }
-
-    if (rmmShouldRetryAlloc) {
-      // if we are going to retry, and didn't spill, returning None prevents extra
-      // logs where we say we spilled 0 bytes from X store
-      None
-    } else {
       Some(totalSpilled)
     }
   }

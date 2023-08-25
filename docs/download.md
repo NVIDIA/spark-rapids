@@ -31,7 +31,7 @@ The plugin is tested on the following architectures:
 
 	NVIDIA Driver*: 470+
 
-	Python 3.6+, Scala 2.12, Java 8, Java 17
+	Python 3.6+, Scala 2.12, Java 8, Java 11, Java 17
 
 	Supported Spark versions:
 		Apache Spark 3.1.1, 3.1.2, 3.1.3 

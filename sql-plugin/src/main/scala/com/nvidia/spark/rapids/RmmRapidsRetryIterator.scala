@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
+import ai.rapids.cudf.CudfColumnSizeOverflowException
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -212,6 +214,14 @@ object RmmRapidsRetryIterator extends Logging {
     (causedByRetry, causedBySplit)
   }
 
+  private def isColumnSizeOverflow(ex: Throwable): Boolean =
+    ex.isInstanceOf[CudfColumnSizeOverflowException]
+
+  @tailrec
+  private def isOrCausedByColumnSizeOverflow(ex: Throwable): Boolean = {
+    ex != null && (isColumnSizeOverflow(ex) || isOrCausedByColumnSizeOverflow(ex.getCause))
+  }
+
   /**
    * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
    * returns the result. In the event of an OOM Retry exception, it calls the restore() method
@@ -232,7 +242,7 @@ object RmmRapidsRetryIterator extends Logging {
       case ex: Throwable =>
         // Only restore on retry exceptions
         val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
-        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.restore()
         }
         throw ex
@@ -259,7 +269,7 @@ object RmmRapidsRetryIterator extends Logging {
       case ex: Throwable =>
         // Only restore on retry exceptions
         val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
-        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.foreach(_.restore())
         }
         throw ex
@@ -580,9 +590,14 @@ object RmmRapidsRetryIterator extends Logging {
             lastException = ex
 
             if (!topLevelIsRetry && !causedByRetry) {
-              // we want to throw early here, since we got an exception
-              // we were not prepared to handle
-              throw lastException
+              if (isOrCausedByColumnSizeOverflow(ex)) {
+                // CUDF column size overflow? Attempt split-retry.
+                doSplit = true
+              } else {
+                // we want to throw early here, since we got an exception
+                // we were not prepared to handle
+                throw lastException
+              }
             }
             // else another exception wrapped a retry. So we are going to try again
         }
