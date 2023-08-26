@@ -35,7 +35,9 @@ The plugin is tested on the following architectures:
 		Scala 2.12
 		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
 
-		* Check the Spark documentation for Python and Java version compatibility at `https://spark.apache.org/docs/{spark-version}/`. Please be aware that we do not currently support Spark builds with Scala 2.13.
+		* Check the Spark documentation for Python and Java version compatibility at 
+		`https://spark.apache.org/docs/{spark-version}`. Please be aware that we do not 
+		currently support Spark builds with Scala 2.13.
 
 	Supported Spark versions:
 		Apache Spark 3.1.1, 3.1.2, 3.1.3 
