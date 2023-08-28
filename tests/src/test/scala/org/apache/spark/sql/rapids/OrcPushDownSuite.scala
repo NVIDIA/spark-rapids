@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.{GpuFilterExec, SparkQueryCompareTestSuite}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.FilterExec
 
-class OrcPushDownSuite extends SparkQueryCompareTestSuite {
+class PredicatePushDownSuite extends SparkQueryCompareTestSuite {
 
   private def checkPredicatePushDown(spark: SparkSession, filepath: String, numRows: Int, 
       predicate: String): Unit = {
