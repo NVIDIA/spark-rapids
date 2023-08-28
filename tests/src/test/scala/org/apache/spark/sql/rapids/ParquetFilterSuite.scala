@@ -59,7 +59,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  def testPushDownPredicate[A](spark: SparkSession, writeDf: DataFrame, predicate: String, length: Int): Unit = {
+  def testPushDownPredicate[A](spark: SparkSession, writeDf: DataFrame, predicate: String, 
+      length: Int): Unit = {
     withAllParquetReaders {
       withTempPath { path =>
         withSQLConf(
@@ -67,16 +68,11 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
             // row group level filtering.
             SQLConf.PARQUET_RECORD_FILTER_ENABLED.key -> "false",
             SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> "true") {
-          // withGpuSparkSession(spark => {
-            // object testImplicits extends SQLImplicits {
-            //   protected override def _sqlContext: SQLContext = spark.sqlContext
-            // }
-            // import testImplicits._
-            // val data2 = (1 to 1024).map(identity(_))
             writeDf.coalesce(1)
               .write.option("parquet.block.size", 512)
               .parquet(path.getAbsolutePath)
             val df = spark.read.parquet(path.getAbsolutePath).filter(predicate)
+            println(df.explain())
             // Here, we strip the Spark side filter and check the actual results from Parquet.
             val actual = stripSparkFilter(spark, df).collect().length
             println(s"actual: $actual")
@@ -88,7 +84,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Parquet filter pushdown - int") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).toDF("a")
       val predicate = "a == 500"
@@ -97,7 +93,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Parquet filter pushdown - long") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(_.toLong).toDF("a")
       val predicate = "a == 500"
@@ -106,7 +102,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Parquet filter pushdown - float") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(_.toFloat).toDF("a")
       val predicate = "a == 500"
@@ -115,7 +111,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Parquet filter pushdown - double") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(_.toDouble).toDF("a")
       val predicate = "a == 500"
@@ -124,7 +120,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Parquet filter pushdown - string") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(_.toString).toDF("a")
       val predicate = "a == '500'"
@@ -132,17 +128,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
     })
   }
 
-  // test("Parquet filter pushdown - boolean") {
-  //   withGpuSparkSession(spark => {
-  //     import spark.implicits._
-  //     val df = (1 to 1024).map(i => i % 2 == 0).toDF("a")
-  //     val predicate = "a == true"
-  //     testPushDownPredicate(spark, df, predicate, 1024)
-  //   })
-  // }
-
   test("Parquet filter pushdown - decimal") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(i => BigDecimal.valueOf(i)).toDF("a")
       val predicate = "a == 500"
@@ -151,21 +138,12 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("Parquet filter pushdown - timestamp") {
-    withGpuSparkSession(spark => {
+    withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(i => new java.sql.Timestamp(i)).toDF("a")
       val predicate = "a == '1970-01-01 00:00:00.500'"
       testPushDownPredicate(spark, df, predicate, 1024)
     })
   }
-
-  // test("Parquet filter pushdown - date") {
-  //   withGpuSparkSession(spark => {
-  //     import spark.implicits._
-  //     val df = (1 to 1024).map(i => new java.sql.Date(i)).toDF("a")
-  //     val predicate = "a == '1970-01-02'"
-  //     testPushDownPredicate(spark, df, predicate, 1024)
-  //   })
-  // }
 
 }
