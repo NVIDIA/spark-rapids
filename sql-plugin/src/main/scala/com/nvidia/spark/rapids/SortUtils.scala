@@ -296,17 +296,20 @@ class GpuSorter(
                       Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
                     }
                   }
+
                   // we no longer care about the old batches, we closed them
-                  batchesToMerge.safeClose()
-                  batchesToMerge.clear()
+                  closeOnExcept(merged) { _ =>
+                    batchesToMerge.safeClose()
+                    batchesToMerge.clear()
+                  }
 
                   // add the result to be merged with the next spillable batch
-                  val mergedSb = withResource(merged) { _ =>
+                  withResource(merged) { _ =>
                     closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-                      SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+                      batchesToMerge.push(
+                        SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
                     }
                   }
-                  batchesToMerge.push(mergedSb)
                 }
               }
               batchesToMerge.pop()
