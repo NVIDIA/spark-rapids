@@ -16,7 +16,7 @@
 
 package com.nvidia.spark
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
@@ -24,28 +24,30 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper {
-  private[this] def isDateRebaseNeeded(column: ColumnVector,
-      startDay: Int): Boolean = {
-    // TODO update this for nested column checks
-    //  https://github.com/NVIDIA/spark-rapids/issues/1126
+  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
     val dtype = column.getType
     if (dtype == DType.TIMESTAMP_DAYS) {
-      val hasBad = withResource(Scalar.timestampDaysFromInt(startDay)) {
-        column.lessThan
+      val hasBad = withResource(Scalar.timestampDaysFromInt(startDay)) {column.lessThan}
+      val anyBad = withResource(hasBad) {_.any()}
+      withResource(anyBad) { _ => anyBad.isValid && anyBad.getBoolean }
+    } else if (dtype == DType.LIST) {
+      withResource(column.getChildColumnView(0)) { child =>
+        isDateRebaseNeeded(child, startDay)
       }
-      val anyBad = withResource(hasBad) {
-        _.any()
+    } else if(dtype == DType.STRUCT) {
+      for (i <- 0 until column.getNumChildren) {
+        withResource(column.getChildColumnView(i)) { child =>
+          if(isDateRebaseNeeded(child, startDay)) {
+            return true
+          }
+        }
       }
-      withResource(anyBad) { _ =>
-        anyBad.isValid && anyBad.getBoolean
-      }
-    } else {
-      false
+      // if we get here then none of the children needed a rebase and will return false below
     }
+   false // default for everything else
   }
 
-  private[this] def isTimeRebaseNeeded(column: ColumnVector,
-      startTs: Long): Boolean = {
+  private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
     val dtype = column.getType
     if (dtype.hasTimeResolution) {
       require(dtype == DType.TIMESTAMP_MICROSECONDS)
@@ -57,21 +59,33 @@ object RebaseHelper {
           }
         }
       }
-    } else {
-      false
+    } else if (dtype == DType.LIST) {
+      withResource(column.getChildColumnView(0)) { child =>
+        isTimeRebaseNeeded(child, startTs)
+      }
+    } else if (dtype == DType.STRUCT) {
+      for (i <- 0 until column.getNumChildren) {
+        withResource(column.getChildColumnView(i)) { child =>
+          if (isTimeRebaseNeeded(child, startTs)) {
+            return true
+          }
+        }
+      }
+      // if we get here then none of the children needed a rebase and will return false below
     }
+    false // default for everything else
   }
 
-  def isDateRebaseNeededInRead(column: ColumnVector): Boolean =
+  def isDateRebaseNeededInRead(column: ColumnView): Boolean =
     isDateRebaseNeeded(column, RebaseDateTime.lastSwitchJulianDay)
 
-  def isTimeRebaseNeededInRead(column: ColumnVector): Boolean =
+  def isTimeRebaseNeededInRead(column: ColumnView): Boolean =
     isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchJulianTs)
 
-  def isDateRebaseNeededInWrite(column: ColumnVector): Boolean =
+  def isDateRebaseNeededInWrite(column: ColumnView): Boolean =
     isDateRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianDay)
 
-  def isTimeRebaseNeededInWrite(column: ColumnVector): Boolean =
+  def isTimeRebaseNeededInWrite(column: ColumnView): Boolean =
     isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianTs)
 
   def newRebaseExceptionInRead(format: String): Exception = {
