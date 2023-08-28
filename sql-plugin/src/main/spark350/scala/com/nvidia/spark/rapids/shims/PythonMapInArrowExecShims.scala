@@ -25,6 +25,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PythonMapInArrowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StringType, StructType}
 
 object PythonMapInArrowExecShims {
 
@@ -39,7 +40,26 @@ object PythonMapInArrowExecShims {
           override def tagPlanForGpu() {
             super.tagPlanForGpu()
             if (SQLConf.get.getConf(SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES)) {
-              willNotWorkOnGpu(s"${SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES.key} is not supported on GPU")
+
+              def containsStringOrBinary(dataType: DataType): Boolean = dataType match {
+                case StringType | BinaryType => true
+                case ArrayType(elementType, _) => containsStringOrBinary(elementType)
+                case StructType(fields) => fields.exists(field =>
+                  containsStringOrBinary(field.dataType))
+                case MapType(keyType, valueType, _) =>
+                  containsStringOrBinary(keyType) || containsStringOrBinary(valueType)
+                case _ => false
+              }
+
+              val inputHasStringOrBinary = mapPy.child.schema.fields.exists(
+                f => containsStringOrBinary(f.dataType))
+              val outputHasStringOrBinary = mapPy.output.exists(
+                f => containsStringOrBinary(f.dataType))
+              if (inputHasStringOrBinary || outputHasStringOrBinary) {
+                willNotWorkOnGpu(s"${SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES.key} is " +
+                  s"enabled and the schema contains string or binary types. This is not " +
+                  s"supported on the GPU.")
+              }
             }
           }
       })
