@@ -21,7 +21,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions._
+import org.apache.spark.sql.functions.{col, lower, upper}
 import org.apache.spark.sql.rapids.GpuRegExpUtils
 
  /*

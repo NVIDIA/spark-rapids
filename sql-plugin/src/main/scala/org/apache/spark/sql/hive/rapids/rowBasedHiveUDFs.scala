@@ -29,13 +29,13 @@ import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory.Obje
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecializedGetters}
-import org.apache.spark.sql.hive.{DeferredObjectAdapter, HiveInspectors}
+import org.apache.spark.sql.hive.DeferredObjectAdapter
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
-import org.apache.spark.sql.hive.rapids.shims.GpuRowBasedHiveGenericUDFShim
+import org.apache.spark.sql.hive.rapids.shims.{GpuRowBasedHiveGenericUDFShim, HiveInspectorsShim}
 import org.apache.spark.sql.types.DataType
 
 /** Common implementation across row-based Hive UDFs */
-trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveInspectors {
+trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveInspectorsShim {
   val funcWrapper: HiveFunctionWrapper
 
   @transient
@@ -135,7 +135,7 @@ case class GpuRowBasedHiveSimpleUDF(
       method.getGenericReturnType, ObjectInspectorOptions.JAVA))
 
   override protected def evaluateRow(childrenRow: InternalRow): Any = {
-    val inputs = wrap(childRowAccessors.map(_(childrenRow)), wrappers, cached, inputDataTypes)
+    val inputs = wrapRow(childRowAccessors.map(_(childrenRow)), wrappers, cached, inputDataTypes)
     val ret = FunctionRegistry.invoke(
       method,
       function,

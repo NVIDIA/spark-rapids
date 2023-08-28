@@ -26,7 +26,6 @@ import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 case class GpuArrowPythonRunnerShims(
   conf: org.apache.spark.sql.internal.SQLConf,
   chainedFunc: Seq[ChainedPythonFunctions],

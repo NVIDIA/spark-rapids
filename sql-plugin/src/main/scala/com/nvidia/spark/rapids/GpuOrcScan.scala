@@ -37,9 +37,9 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
-import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
+import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -2443,7 +2443,7 @@ case class OrcStripeWithMeta(stripe: OrcOutputStripe, ctx: OrcPartitionReaderCon
 
   lazy val stripeLength: Long = {
     // calculate the true stripe footer size
-    val out = new CountingOutputStream(NullOutputStream.NULL_OUTPUT_STREAM)
+    val out = new CountingOutputStream(NullOutputStreamShim.INSTANCE)
     val footerLen = withCodecOutputStream(ctx, out) { protoWriter =>
       protoWriter.writeAndFlush(stripe.footer)
       out.getByteCount

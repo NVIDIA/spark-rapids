@@ -153,6 +153,9 @@ def is_before_spark_331():
 def is_before_spark_340():
     return spark_version() < "3.4.0"
 
+def is_before_spark_350():
+    return spark_version() < "3.5.0"
+
 def is_spark_320_or_later():
     return spark_version() >= "3.2.0"
 
@@ -161,6 +164,9 @@ def is_spark_330_or_later():
 
 def is_spark_340_or_later():
     return spark_version() >= "3.4.0"
+
+def is_spark_350_or_later():
+    return spark_version() >= "3.5.0"
 
 def is_spark_330():
     return spark_version() == "3.3.0"
