@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids.tests.scaletest
 
 import java.io.{File, FileOutputStream}
 
+import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
 import org.json4s._
 import org.json4s.jackson.Serialization.writePretty
-import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
 
 case class QueryMeta(name: String, executionTime: Seq[Long])
 

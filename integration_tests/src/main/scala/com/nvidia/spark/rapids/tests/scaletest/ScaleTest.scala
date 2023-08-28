@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.tests.scaletest
 import java.util.concurrent._
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.duration.NANOSECONDS
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration.NANOSECONDS
 
 import scopt.OptionParser
 
