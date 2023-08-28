@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_spark_350_or_later
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -372,3 +372,23 @@ def test_map_arrow_apply_udf(data_gen):
         lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
             .mapInArrow(filter_func, schema="a long, b long"),
         conf=arrow_udf_conf)
+
+
+@pytest.mark.parametrize('data_gen', [LongGen(nullable=False)], ids=idfn)
+@allow_non_gpu('PythonMapInArrowExec')
+@pytest.mark.skipif(is_before_spark_350(), reason='spark.sql.execution.arrow.useLargeVarTypes is introduced in Pyspark 3.5.0')
+def test_map_arrow_large_var_types_fallback(data_gen):
+    def filter_func(iterator):
+        for batch in iterator:
+            pdf = batch.to_pandas()
+            yield pyarrow.RecordBatch.from_pandas(pdf[pdf.b <= pdf.a])
+
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.sql.execution.arrow.useLargeVarTypes': True
+    })
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
+            .mapInArrow(filter_func, schema="a long, b long"),
+        "PythonMapInArrowExec",
+        conf=conf)
