@@ -20,7 +20,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -286,7 +286,7 @@ class GpuSorter(
                   batchesToMerge.push(spillableBatches.pop())
                 }
                 if (batchesToMerge.size > 1) {
-                  val merged = RmmRapidsRetryIterator.withRetryNoSplit(batchesToMerge) { _ =>
+                  val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
                     val tablesToMerge = batchesToMerge.safeMap { sb =>
                       withResource(sb.getColumnarBatch()) { cb =>
                         GpuColumnVector.from(cb)
@@ -297,6 +297,7 @@ class GpuSorter(
                     }
                   }
                   // we no longer care about the old batches, we closed them
+                  batchesToMerge.safeClose()
                   batchesToMerge.clear()
 
                   // add the result to be merged with the next spillable batch
