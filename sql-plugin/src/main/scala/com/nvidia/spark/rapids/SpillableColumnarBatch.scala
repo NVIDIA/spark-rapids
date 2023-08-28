@@ -151,19 +151,20 @@ class SpillableHostColumnarBatchImpl (
   extends SpillableColumnarBatch {
 
   override def dataTypes: Array[DataType] = sparkTypes
+
   /**
    * The number of rows stored in this batch.
    */
   override def numRows(): Int = rowCount
 
-  private def withRapidsBuffer[T](fn: RapidsBuffer => T): T = {
-    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+  private def withRapidsHostBatchBuffer[T](fn: RapidsHostBatchBuffer => T): T = {
+    withResource(catalog.acquireHostBatchBuffer(handle)) { rapidsBuffer =>
       fn(rapidsBuffer)
     }
   }
 
   override lazy val sizeInBytes: Long = {
-    withRapidsBuffer(_.getMemoryUsedBytes)
+    withRapidsHostBatchBuffer(_.getMemoryUsedBytes)
   }
 
   /**
@@ -174,8 +175,8 @@ class SpillableHostColumnarBatchImpl (
   }
 
   override def getColumnarBatch(): ColumnarBatch = {
-    withRapidsBuffer { rapidsBuffer =>
-      rapidsBuffer.getHostColumnarBatch(sparkTypes)
+    withRapidsHostBatchBuffer { hostBatchBuffer =>
+      hostBatchBuffer.getHostColumnarBatch(sparkTypes)
     }
   }
 

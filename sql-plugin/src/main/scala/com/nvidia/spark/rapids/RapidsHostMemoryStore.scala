@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.OutputStream
+import java.io.DataOutputStream
+import java.nio.channels.{Channels, WritableByteChannel}
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable
@@ -27,6 +28,7 @@ import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -73,8 +75,7 @@ class RapidsHostMemoryStore(
       buffer.getLength,
       tableMeta,
       initialSpillPriority,
-      buffer,
-      needsSerialization = false)
+      buffer)
     freeOnExcept(rapidsBuffer) { _ =>
       logDebug(s"Adding host buffer for: [id=$id, size=${buffer.getLength}, " +
         s"uncompressed=${rapidsBuffer.meta.bufferMeta.uncompressedSize}, " +
@@ -147,9 +148,9 @@ class RapidsHostMemoryStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      buffer: HostMemoryBuffer,
-      override val needsSerialization: Boolean = false)
+      buffer: HostMemoryBuffer)
       extends RapidsBufferBase(id, meta, spillPriority)
+        with RapidsBufferChannelWritable
         with MemoryBuffer.EventHandler {
     override val storageTier: StorageTier = StorageTier.HOST
 
@@ -159,6 +160,21 @@ class RapidsHostMemoryStore(
         buffer.incRefCount()
         buffer
       }
+    }
+
+    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+      var written: Long = 0L
+      val iter = new HostByteBufferIterator(buffer)
+      iter.foreach { bb =>
+        try {
+          while (bb.hasRemaining) {
+            written += outputChannel.write(bb)
+          }
+        } finally {
+          RapidsStorageUtils.dispose(bb)
+        }
+      }
+      written
     }
 
     override def updateSpillability(): Unit = {
@@ -289,11 +305,11 @@ class RapidsHostMemoryStore(
       extends RapidsBufferBase(
         id,
         null,
-        spillPriority) {
+        spillPriority)
+          with RapidsBufferChannelWritable
+          with RapidsHostBatchBuffer {
 
     override val storageTier: StorageTier = StorageTier.HOST
-
-    override val needsSerialization: Boolean = true
 
     // This is the current size in batch form. It is to be used while this
     // batch hasn't migrated to another store.
@@ -367,9 +383,14 @@ class RapidsHostMemoryStore(
         "RapidsHostColumnarBatch does not support getCopyIterator")
     }
 
-    override def serializeToStream(outputStream: OutputStream): Unit = {
-      val columns = RapidsHostColumnVector.extractBases(hostCb)
-      JCudfSerialization.writeToStream(columns, outputStream, 0, hostCb.numRows())
+    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+      withResource(Channels.newOutputStream(outputChannel)) { outputStream =>
+        withResource(new DataOutputStream(outputStream)) { dos =>
+          val columns = RapidsHostColumnVector.extractBases(hostCb)
+          JCudfSerialization.writeToStream(columns, dos, 0, hostCb.numRows())
+          dos.size()
+        }
+      }
     }
 
     override def free(): Unit = {

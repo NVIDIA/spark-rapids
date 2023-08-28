@@ -457,6 +457,23 @@ class RapidsBufferCatalog(
   }
 
   /**
+   * Acquires a RapidsBuffer that the caller expects to be host-backed and not
+   * device bound. This ensures that the buffer acquired implements the correct
+   * trait, otherwise it throws and removes its buffer acquisition.
+   *
+   * @param handle handle associated with this `RapidsBuffer`
+   * @return host-backed RapidsBuffer that has been acquired
+   */
+  def acquireHostBatchBuffer(handle: RapidsBufferHandle): RapidsHostBatchBuffer = {
+    closeOnExcept(acquireBuffer(handle)) {
+      case hrb: RapidsHostBatchBuffer => hrb
+      case other =>
+        throw new IllegalStateException(
+          s"Attempted to acquire a RapidsHostBatchBuffer, but got $other instead")
+    }
+  }
+
+  /**
    * Lookup the buffer that corresponds to the specified buffer ID at the specified storage tier,
    * and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
@@ -939,6 +956,17 @@ object RapidsBufferCatalog extends Logging {
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer =
     singleton.acquireBuffer(handle)
+
+  /**
+   * Acquires a RapidsBuffer that the caller expects to be host-backed and not
+   * device bound. This ensures that the buffer acquired implements the correct
+   * trait, otherwise it throws and removes its buffer acquisition.
+   *
+   * @param handle handle associated with this `RapidsBuffer`
+   * @return host-backed RapidsBuffer that has been acquired
+   */
+  def acquireHostBatchBuffer(handle: RapidsBufferHandle): RapidsHostBatchBuffer =
+    singleton.acquireHostBatchBuffer(handle)
 
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
 

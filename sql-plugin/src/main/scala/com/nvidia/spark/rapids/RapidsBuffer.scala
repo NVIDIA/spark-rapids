@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.io.OutputStream
+import java.nio.channels.WritableByteChannel
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -245,23 +245,11 @@ trait RapidsBuffer extends AutoCloseable {
   def getCopyIterator: RapidsBufferCopyIterator =
     new RapidsBufferCopyIterator(this)
 
-  /**
-   * At spill time, the tier we are spilling to may need to hand the rapids buffer an output stream
-   * to write to. This is the case for a `RapidsHostColumnarBatch`.
-   * @param outputStream stream that the `RapidsBuffer` will serialize itself to
-   */
-  def serializeToStream(outputStream: OutputStream): Unit = {
-    throw new IllegalStateException(s"Buffer $this does not support serializeToStream")
-  }
-
   /** Descriptor for how the memory buffer is formatted */
   def meta: TableMeta
 
   /** The storage tier for this buffer */
   val storageTier: StorageTier
-
-  /** A RapidsBuffer that needs to be serialized/deserialized at spill/materialization time */
-  val needsSerialization: Boolean = false
 
   /**
    * Get the columnar batch within this buffer. The caller must have
@@ -447,4 +435,31 @@ sealed class DegenerateRapidsBuffer(
   }
 
   override def close(): Unit = {}
+}
+
+trait RapidsHostBatchBuffer extends AutoCloseable {
+  /**
+   * Get the host-backed columnar batch from this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   *
+   * If this `RapidsBuffer` was added originally to the device tier, or if this is
+   * a just a buffer (not a batch), this function will throw.
+   *
+   * @param sparkTypes the spark data types the batch should have
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
+   */
+  def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
+
+  def getMemoryUsedBytes(): Long
+}
+
+trait RapidsBufferChannelWritable {
+  /**
+   * At spill time, write this buffer to an nio WritableByteChannel.
+   * @param writableChannel that this buffer can just write itself to, either byte-for-byte
+   *                        or via serialization if needed.
+   * @return the amount of bytes written to the channel
+   */
+  def writeToChannel(writableChannel: WritableByteChannel): Long
 }
