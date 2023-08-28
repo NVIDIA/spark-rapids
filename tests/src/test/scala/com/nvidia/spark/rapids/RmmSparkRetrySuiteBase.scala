@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler}
 import com.nvidia.spark.rapids.jni.RmmSpark
+import org.mockito.Mockito.spy
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -25,6 +26,7 @@ import org.apache.spark.sql.SparkSession
 
 class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
+  protected var deviceStorage: RapidsDeviceMemoryStore = null
 
   override def beforeEach(): Unit = {
     super.beforeEach()
@@ -34,7 +36,7 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-    val deviceStorage = new RapidsDeviceMemoryStore()
+    deviceStorage = spy(new RapidsDeviceMemoryStore())
     val catalog = new RapidsBufferCatalog(deviceStorage)
     RapidsBufferCatalog.setDeviceStorage(deviceStorage)
     RapidsBufferCatalog.setCatalog(catalog)
