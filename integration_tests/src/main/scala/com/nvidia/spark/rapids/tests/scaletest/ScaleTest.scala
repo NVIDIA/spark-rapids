@@ -55,25 +55,27 @@ object ScaleTest {
    * @param spark SparkSession instance
    * @return a Sequence of elapses for all iterations
    */
-  private def runOneQueryForIterations(query: String,
+  private def runOneQueryForIterations(name: String,
+      query: String,
       iterations: Int,
       timeout: Long,
       baseOutputPath: String,
       overwrite: Boolean,
       format: String,
       spark: SparkSession,
-      idleSessionListener: IdleSessionListener): Seq[Long]
+      idleSessionListener: IdleSessionListener): QueryMeta
   = {
     val mode = if (overwrite == true) "overwrite" else "error"
     val executionTimes = ListBuffer[Long]()
 
     (1 to iterations).foreach(i => {
-      idleSessionListener.isIdle()
       println(s"Iteration: $i")
       while (idleSessionListener.isBusy()){
         // Scala Test aims for stability not performance. And the sleep time will not be calculated
         // into execution time.
-        Thread.sleep(1000)
+        val sleepTime = 1
+        println(s"There are still jobs running, waiting for $sleepTime seconds.")
+        Thread.sleep(sleepTime * 1000)
       }
       try {
         val future = scala.concurrent.Future {
@@ -96,7 +98,7 @@ object ScaleTest {
           println(s"Query failed: $query - ${e.getMessage}")
       }
     })
-    executionTimes
+    QueryMeta(name, executionTimes)
   }
 
 
@@ -110,17 +112,18 @@ object ScaleTest {
     val querySpecs = new QuerySpecs(config, spark)
     querySpecs.initViews()
     val queryMap = querySpecs.getCandidateQueries()
-    var executionTime = Map[String, Seq[Long]]()
+    var results = Seq[QueryMeta]()
     for ((queryName, query) <- queryMap) {
       val outputPath = s"${config.outputDir}/$queryName"
       println(s"Running Query: $queryName for ${query.iterations} iterations")
       println(s"${query.content}")
       // run one query for several iterations in a row
-      val elapses = runOneQueryForIterations(query.content, query.iterations, query.timeout,
+      val queryMeta = runOneQueryForIterations(query.name, query.content, query.iterations, query
+        .timeout,
         outputPath, config.overwrite, config.format, spark, idleSessionListener)
-      executionTime += (queryName -> elapses)
+      results  = results :+ queryMeta
     }
-    val report = new TestReport(config, executionTime, spark)
+    val report = new TestReport(config, results)
     report.save()
   }
 

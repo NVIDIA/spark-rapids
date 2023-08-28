@@ -16,15 +16,20 @@
 
 package com.nvidia.spark.rapids.tests.scaletest
 
-import java.io.{File, FileWriter}
-import org.apache.spark.sql.SparkSession
+import java.io.{File, FileOutputStream}
+
+import org.json4s._
+import org.json4s.jackson.Serialization.writePretty
 import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
+
+case class QueryMeta(name: String, executionTime: Seq[Long])
+
 /**
  * A Class for the report of Scale Test.
  * Only execution time are included at the beginning, will add more metadata for the test.
  * TODO: task failures, memory peak info, gpu usage etc.
  */
-class TestReport(config: Config, executionElapseMap: Map[String, Seq[Long]], spark:SparkSession) {
+class TestReport(config: Config, queryMetas: Seq[QueryMeta]) {
   def save(): Unit = {
     if (config.overwrite != true) {
       val file = new File(config.reportPath)
@@ -33,21 +38,10 @@ class TestReport(config: Config, executionElapseMap: Map[String, Seq[Long]], spa
           s"--overwrite argument to force overwrite.")
       }
     }
-    val data = executionElapseMap.map { case (key, value) =>
-      (key, value, value.sum/value.length)
-    }.toSeq
-    import spark.implicits._
-    val df = data.toDF("query", "iteration_elapses/millis", "average_elapse/millis")
-    val collectedData: Array[String] = df.toJSON.collect()
-    val file = new FileWriter(config.reportPath)
-    try {
-      collectedData.foreach { jsonStr =>
-        file.write(jsonStr)
-        file.write("\n") // Add a newline separator if needed
-      }
-    } finally {
-      file.close()
-    }
-    println(s"CSV report file saved at: ${config.reportPath}")
+    implicit val formats = DefaultFormats
+    val os = new FileOutputStream(config.reportPath)
+    os.write(writePretty(queryMetas).getBytes)
+    os.close()
+    println(s"JSON report file saved at: ${config.reportPath}")
   }
 }

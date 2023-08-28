@@ -72,5 +72,12 @@ parquet \
 Test results are recorded in the report file in JSON format. Currently only execution time is recorded. The record looks like below:
 
 ```json
+[ {
+  "name" : "q1",
+  "executionTime" : [ 5175 ]
+}, {
+  "name" : "q2",
+  "executionTime" : [ 2830 ]
+} ]
 
 ```
