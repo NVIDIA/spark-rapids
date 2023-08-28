@@ -26,7 +26,7 @@ import scala.ref.WeakReference
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
-import ai.rapids.cudf.JCudfSerialization.{HostConcatResult, SerializedTableHeader}
+import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -50,43 +50,6 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-
-object SerializedHostTableUtils {
-  /**
-   * Read in a cuDF serialized table into host memory from an input stream.
-   */
-  def readTableHeaderAndBuffer(
-      in: ObjectInputStream): (JCudfSerialization.SerializedTableHeader, HostMemoryBuffer) = {
-    val din = new DataInputStream(in)
-    val header = new JCudfSerialization.SerializedTableHeader(din)
-    if (!header.wasInitialized()) {
-      throw new IllegalStateException("Could not read serialized table header")
-    }
-    closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen)) { buffer =>
-      JCudfSerialization.readTableIntoBuffer(din, header, buffer)
-      if (!header.wasDataRead()) {
-        throw new IllegalStateException("Could not read serialized table data")
-      }
-      (header, buffer)
-    }
-  }
-
-  /**
-   * Deserialize a cuDF serialized table to host build column vectors
-   */
-  def buildHostColumns(
-      header: SerializedTableHeader,
-      buffer: HostMemoryBuffer,
-      dataTypes: Array[DataType]): Array[RapidsHostColumnVector] = {
-    assert(dataTypes.length == header.getNumColumns)
-    closeOnExcept(JCudfSerialization.unpackHostColumnVectors(header, buffer)) { hostColumns =>
-      assert(hostColumns.length == dataTypes.length)
-      dataTypes.zip(hostColumns).safeMap { case (dataType, hostColumn) =>
-        new RapidsHostColumnVector(dataType, hostColumn)
-      }
-    }
-  }
-}
 
 /**
  * Class that is used to broadcast results (a contiguous host batch) to executors.
