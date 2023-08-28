@@ -456,13 +456,7 @@ case class GpuOutOfCoreSortIterator(
         }
       }
 
-      val mergedSpillBatch = {
-        val mergedBatch = sorter.mergeSortAndCloseWithRetry(pendingSort, sortTime)
-        closeOnExcept(mergedBatch) { _ =>
-          SpillableColumnarBatch(mergedBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        }
-      }
-
+      val mergedSpillBatch = sorter.mergeSortAndCloseWithRetry(pendingSort, sortTime)
       val (retBatch, sortedOffset) = closeOnExcept(mergedSpillBatch) { _ =>
         // First we want figure out what is fully sorted from what is not
         val sortSplitOffset = if (pending.isEmpty) {
