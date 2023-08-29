@@ -1724,6 +1724,9 @@ class GpuCachedDoublePassWindowIterator(
 
   override def isRunningBatched: Boolean = true
 
+  // firstPassIter returns tuples where the first element is the result of calling
+  // computeBasicWindow on a batch, and the second element is a projection of boundPartitionSpec
+  // against the batch
   private var firstPassIter: Option[Iterator[(Array[cudf.ColumnVector], ColumnarBatch)]] = None
   private var postProcessedIter: Option[Iterator[ColumnarBatch]] = None
   private var readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
