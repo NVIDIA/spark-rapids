@@ -31,7 +31,13 @@ The plugin is tested on the following architectures:
 
 	NVIDIA Driver*: 470+
 
-	Python 3.6+, Scala 2.12, Java 8, Java 17
+	Runtime: 
+		Scala 2.12
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1. 
+		Please be aware that we do not currently support Spark builds with Scala 2.13.
 
 	Supported Spark versions:
 		Apache Spark 3.1.1, 3.1.2, 3.1.3 
@@ -39,11 +45,10 @@ The plugin is tested on the following architectures:
 		Apache Spark 3.3.0, 3.3.1, 3.3.2
 		Apache Spark 3.4.0, 3.4.1
 	
-	Supported Databricks runtime versions: 
-		Azure/AWS:
-			Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
-			Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
-			Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
 	
 	Supported Dataproc versions:
 		GCP Dataproc 2.0
