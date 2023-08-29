@@ -527,7 +527,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
     val nonQueryStagePlan = GpuTransitionOverrides.getNonQueryStagePlan(plan)
-    if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec]) {
+    if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec] &&
+      !nonQueryStagePlan.isInstanceOf[AdaptiveSparkPlanExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
