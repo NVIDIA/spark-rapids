@@ -24,15 +24,15 @@ import com.nvidia.spark.rapids.Arm._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, times, verify, when}
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, LongType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-
-class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
+class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
@@ -55,13 +55,44 @@ class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
     }
   }
 
+  private def buildHostBatch(): ColumnarBatch = {
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
+    val hostCols = withResource(buildContiguousTable()) { ct =>
+      withResource(ct.getTable) { tbl =>
+        (0 until tbl.getNumberOfColumns)
+          .map(c => tbl.getColumn(c).copyToHost())
+      }
+    }.toArray
+    new ColumnarBatch(
+      hostCols.zip(sparkTypes).map { case (hostCol, dataType) =>
+        new RapidsHostColumnVector(dataType, hostCol)
+      }, hostCols.head.getRowCount.toInt)
+  }
+
+  private def buildHostBatchWithDuplicate(): ColumnarBatch = {
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
+    val hostCols = withResource(buildContiguousTable()) { ct =>
+      withResource(ct.getTable) { tbl =>
+        (0 until tbl.getNumberOfColumns)
+          .map(c => tbl.getColumn(c).copyToHost())
+      }
+    }.toArray
+    hostCols.foreach(_.incRefCount())
+    new ColumnarBatch(
+      (hostCols ++ hostCols).zip(sparkTypes ++ sparkTypes).map { case (hostCol, dataType) =>
+        new RapidsHostColumnVector(dataType, hostCol)
+      }, hostCols.head.getRowCount.toInt)
+  }
+
   test("spill updates catalog") {
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = spy(new RapidsBufferCatalog(devStore))
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           assertResult(0)(hostStore.currentSize)
           assertResult(hostStoreMaxSize)(hostStore.numBytesFree)
@@ -99,7 +130,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
     val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           hostStore.setSpillStore(mockStore)
@@ -134,7 +165,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
     val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           hostStore.setSpillStore(mockStore)
@@ -162,6 +193,296 @@ class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
     }
   }
 
+  test("host buffer originated: get host memory buffer") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val mockStore = mock[RapidsDiskStore]
+    withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsDeviceMemoryStore) { devStore =>
+        val catalog = new RapidsBufferCatalog(devStore, hostStore)
+        devStore.setSpillStore(hostStore)
+        hostStore.setSpillStore(mockStore)
+        val hmb = HostMemoryBuffer.allocate(1L * 1024)
+        val spillableBuffer =
+          SpillableHostBuffer(hmb, hmb.getLength, spillPriority, catalog)
+        withResource(spillableBuffer) { _ =>
+          // the refcount of 1 is the store
+          assertResult(1)(hmb.getRefCount)
+          spillableBuffer.withHostBufferReadOnly { memoryBuffer =>
+            assertResult(hmb)(memoryBuffer)
+            assertResult(2)(memoryBuffer.getRefCount)
+          }
+        }
+        assertResult(0)(hmb.getRefCount)
+      }
+    }
+  }
+
+  test("host buffer originated: get host memory buffer after spill") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(diskStore)
+          val hmb = HostMemoryBuffer.allocate(1L * 1024)
+          val spillableBuffer = SpillableHostBuffer(
+            hmb,
+            hmb.getLength,
+            spillPriority,
+            catalog)
+          assertResult(1)(hmb.getRefCount)
+          //  we spill it
+          catalog.synchronousSpill(hostStore, 0)
+          withResource(spillableBuffer) { _ =>
+            // the refcount of the original buffer is 0 because it spilled
+            assertResult(0)(hmb.getRefCount)
+            spillableBuffer.withHostBufferReadOnly { memoryBuffer =>
+              assertResult(memoryBuffer.getLength)(hmb.getLength)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  test("host buffer originated: get host memory buffer OOM when unable to spill") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(diskStore)
+          val hmb = HostMemoryBuffer.allocate(1L * 1024)
+          val spillableBuffer = SpillableHostBuffer(
+            hmb,
+            hmb.getLength,
+            spillPriority,
+            catalog)
+          // spillable is 1K
+          assertResult(hmb.getLength)(hostStore.currentSpillableSize)
+          spillableBuffer.withHostBufferReadOnly { memoryBuffer =>
+            // 0 because we have a reference to the memoryBuffer
+            assertResult(0)(hostStore.currentSpillableSize)
+            val spilled = catalog.synchronousSpill(hostStore, 0)
+            assertResult(0)(spilled.get)
+          }
+          assertResult(hmb.getLength)(hostStore.currentSpillableSize)
+          val spilled = catalog.synchronousSpill(hostStore, 0)
+          assertResult(1L * 1024)(spilled.get)
+          spillableBuffer.close()
+        }
+      }
+    }
+  }
+
+  test("host batch originated: get host memory batch") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(diskStore)
+
+          val hostCb = buildHostBatch()
+
+          val sizeOnHost = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
+
+          withResource(
+              SpillableHostColumnarBatch(hostCb, spillPriority, catalog)) { spillableBuffer =>
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+
+            withResource(spillableBuffer.getColumnarBatch()) { hostCb =>
+              // 0 because we have a reference to the memoryBuffer
+              assertResult(0)(hostStore.currentSpillableSize)
+              val spilled = catalog.synchronousSpill(hostStore, 0)
+              assertResult(0)(spilled.get)
+            }
+
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+            val spilled = catalog.synchronousSpill(hostStore, 0)
+            assertResult(sizeOnHost)(spilled.get)
+
+            val sizeOnDisk = diskStore.currentSpillableSize
+
+            // reconstitute batch from disk
+            withResource(spillableBuffer.getColumnarBatch()) { hostCbFromDisk =>
+              // disk has a different size, so this spillable batch has a different sizeInBytes
+              // right now, because this is the serialized represenation size
+              assertResult(sizeOnDisk)(spillableBuffer.sizeInBytes)
+              // lets recreate our original batch and compare to make sure contents match
+              withResource(buildHostBatch()) { expectedHostCb =>
+                TestUtils.compareBatches(expectedHostCb, hostCbFromDisk)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  test("a host batch is not spillable when we leak it") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(diskStore)
+
+          val hostCb = buildHostBatch()
+
+          val sizeOnHost = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
+
+          val leakedBatch = withResource(
+            SpillableHostColumnarBatch(hostCb, spillPriority, catalog)) { spillableBuffer =>
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+
+            val leakedBatch = spillableBuffer.getColumnarBatch()
+            // 0 because we have a reference to the host batch
+            assertResult(0)(hostStore.currentSpillableSize)
+            val spilled = catalog.synchronousSpill(hostStore, 0)
+            assertResult(0)(spilled.get)
+            leakedBatch
+          }
+
+          withResource(leakedBatch) { _ =>
+            // 0 because we have leaked that the host batch
+            assertResult(0)(hostStore.currentSize)
+            assertResult(0)(hostStore.currentSpillableSize)
+            val spilled = catalog.synchronousSpill(hostStore, 0)
+            assertResult(0)(spilled.get)
+          }
+          // after closing we still have 0 bytes in the store or available to spill
+          assertResult(0)(hostStore.currentSize)
+          assertResult(0)(hostStore.currentSpillableSize)
+        }
+      }
+    }
+  }
+
+  test("a host batch is not spillable when columns are incRefCounted") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(diskStore)
+
+          val hostCb = buildHostBatch()
+
+          val sizeOnHost = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
+
+          withResource(
+            SpillableHostColumnarBatch(hostCb, spillPriority, catalog)) { spillableBuffer =>
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+
+            val leakedFirstColumn = withResource(spillableBuffer.getColumnarBatch()) { hostCb =>
+              // 0 because we have a reference to the host batch
+              assertResult(0)(hostStore.currentSpillableSize)
+              val spilled = catalog.synchronousSpill(hostStore, 0)
+              assertResult(0)(spilled.get)
+              // leak it by increasing the ref count of the underlying cuDF column
+              RapidsHostColumnVector.extractBases(hostCb).head.incRefCount()
+            }
+            withResource(leakedFirstColumn) { _ =>
+              // 0 because we have a reference to the first column
+              assertResult(0)(hostStore.currentSpillableSize)
+              val spilled = catalog.synchronousSpill(hostStore, 0)
+              assertResult(0)(spilled.get)
+            }
+            // batch is now spillable because we close our reference to the column
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+            val spilled = catalog.synchronousSpill(hostStore, 0)
+            assertResult(sizeOnHost)(spilled.get)
+          }
+        }
+      }
+    }
+  }
+
+  test("an aliased host batch is not spillable (until closing the original) ") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          val hostBatch = buildHostBatch()
+          val sizeOnHost = RapidsHostColumnVector.getTotalHostMemoryUsed(hostBatch)
+          val handle = withResource(hostBatch) { _ =>
+            catalog.addBatch(hostBatch, spillPriority)
+          }
+          withResource(handle) { _ =>
+            val types: Array[DataType] =
+              Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
+            assertResult(sizeOnHost)(hostStore.currentSize)
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+            withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+              // extract the batch from the table we added, and add it back as a batch
+              withResource(rapidsBuffer.getHostColumnarBatch(types)) { batch =>
+                catalog.addBatch(batch, spillPriority)
+              }
+            } // we now have two copies in the store
+            assertResult(sizeOnHost * 2)(hostStore.currentSize)
+            assertResult(0)(hostStore.currentSpillableSize)
+          } // remove the original
+          assertResult(sizeOnHost)(hostStore.currentSize)
+          assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+        }
+      }
+    }
+  }
+
+  test("an aliased host batch supports duplicated columns") {
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    val bm = new RapidsDiskBlockManager(new SparkConf())
+    withResource(new RapidsDiskStore(bm)) { diskStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        withResource(new RapidsDeviceMemoryStore) { devStore =>
+          val catalog = new RapidsBufferCatalog(devStore, hostStore)
+          val hostBatch = buildHostBatchWithDuplicate()
+          val sizeOnHost = RapidsHostColumnVector.getTotalHostMemoryUsed(hostBatch)
+          val handle = withResource(hostBatch) { _ =>
+            catalog.addBatch(hostBatch, spillPriority)
+          }
+          withResource(handle) { _ =>
+            val types: Array[DataType] =
+              Seq(IntegerType, StringType, DoubleType, DecimalType(10, 5)).toArray
+            assertResult(sizeOnHost)(hostStore.currentSize)
+            assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+            withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+              // extract the batch from the table we added, and add it back as a batch
+              withResource(rapidsBuffer.getHostColumnarBatch(types)) { batch =>
+                catalog.addBatch(batch, spillPriority)
+              }
+            } // we now have two copies in the store
+            assertResult(sizeOnHost * 2)(hostStore.currentSize)
+            assertResult(0)(hostStore.currentSpillableSize)
+          } // remove the original
+          assertResult(sizeOnHost)(hostStore.currentSize)
+          assertResult(sizeOnHost)(hostStore.currentSpillableSize)
+        }
+      }
+    }
+  }
+
   test("buffer exceeds maximum size") {
     val sparkTypes = Array[DataType](LongType)
     val spillPriority = -10
@@ -177,7 +498,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with MockitoSugar {
       when(mockStore.getMaxSize).thenAnswer(_ => None)
       when(mockStore.copyBuffer(any(), any())).thenReturn(mockBuff)
       when(mockStore.tier) thenReturn (StorageTier.DISK)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
         devStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         var bigHandle: RapidsBufferHandle = null

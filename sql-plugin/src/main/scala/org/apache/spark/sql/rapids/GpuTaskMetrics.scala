@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
+import java.{lang => jl}
 import java.io.ObjectInputStream
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -24,8 +25,8 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
-import java.{lang => jl}
 
 import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -84,6 +85,7 @@ class GpuTaskMetrics extends Serializable {
   private val retryCount = new LongAccumulator
   private val splitAndRetryCount = new LongAccumulator
   private val retryBlockTime = new NanoSecondAccumulator
+  private val retryComputationTime = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
@@ -91,7 +93,8 @@ class GpuTaskMetrics extends Serializable {
     "gpuReadSpillTime" -> readSpillTimeNs,
     "gpuRetryCount" -> retryCount,
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
-    "gpuRetryBlockTime" -> retryBlockTime)
+    "gpuRetryBlockTime" -> retryBlockTime,
+    "gpuRetryComputationTime" -> retryComputationTime)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -148,6 +151,11 @@ class GpuTaskMetrics extends Serializable {
     if (timeNs > 0) {
       retryBlockTime.add(timeNs)
     }
+
+    val compNs = RmmSpark.getAndResetComputeTimeLostToRetryNs(taskAttemptId)
+    if (compNs > 0) {
+      retryComputationTime.add(compNs)
+    }
   }
 }
 
@@ -164,11 +172,11 @@ object GpuTaskMetrics extends Logging {
       // avoid double registering the task metrics...
       if (!taskLevelMetrics.contains(id)) {
         taskLevelMetrics.put(id, metrics)
-        tc.addTaskCompletionListener { tc =>
+        onTaskCompletion(tc, tc =>
           synchronized {
             taskLevelMetrics.remove(tc.taskAttemptId())
           }
-        }
+        )
       }
     }
   }

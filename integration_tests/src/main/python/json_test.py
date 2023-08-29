@@ -380,41 +380,52 @@ def test_from_json_map_fallback():
         'JsonToStructs',
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.parametrize('data_gen', [StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1234}')])
-@pytest.mark.parametrize('schema', [StructType([StructField("a", StringType())]),
-                                    StructType([StructField("d", StringType())]),
-                                    StructType([StructField("a", StringType()), StructField("b", StringType())]),
-                                    StructType([StructField("c", IntegerType()), StructField("a", StringType())]),
-                                    StructType([StructField("a", StringType()), StructField("a", StringType())])
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<a:string>',
+                                    'struct<d:string>',
+                                    'struct<a:string,b:string>',
+                                    'struct<c:int,a:string>',
+                                    'struct<a:string,a:string>',
                                     ])
-def test_from_json_struct(data_gen, schema):
+def test_from_json_struct(schema):
+    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1\d\d\d}').with_special_pattern('', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen) \
-            .select(f.from_json(f.col('a'), schema)),
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": {"name": "Bob", "age": 20}}')])
-@pytest.mark.parametrize('schema', [StructType([StructField("teacher", StringType())]),
-                                    StructType([StructField("student", StructType([StructField("name", StringType()), \
-                                                                                   StructField("age", IntegerType())]))])])
-def test_from_json_struct_of_struct(data_gen, schema):
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<teacher:string>',
+                                    'struct<student:struct<name:string,age:int>>',
+                                    'struct<teacher:string,student:struct<name:string,age:int>>'])
+def test_from_json_struct_of_struct(schema):
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}').with_special_pattern('', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen) \
-            .select(f.from_json(f.col('a'), schema)),
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.parametrize('data_gen', [StringGen(r'{"teacher": "Alice", "student": \[{"name": "Bob", "class": "junior"},' \
-                                                r'{"name": "Charlie", "class": "freshman"}\]}')])
-@pytest.mark.parametrize('schema', [StructType([StructField("teacher", StringType())]),
-                                    StructType([StructField("student", ArrayType(StructType([StructField("name", StringType()), \
-                                                                                             StructField("class", StringType())])))]),
-                                    StructType([StructField("teacher", StringType()), \
-                                                StructField("student", ArrayType(StructType([StructField("name", StringType()), \
-                                                                                             StructField("class", StringType())])))])])
-def test_from_json_struct_of_list(data_gen, schema):
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<teacher:string>',
+                                    'struct<student:array<struct<name:string,class:string>>>',
+                                    'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
+def test_from_json_struct_of_list(schema):
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
+                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}').with_special_pattern('', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen) \
-            .select(f.from_json(f.col('a'), schema)),
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
+def test_from_json_struct_all_empty_string_input(schema):
+    json_string_gen = StringGen('')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @allow_non_gpu('FileSourceScanExec')
@@ -436,6 +447,7 @@ def test_json_datetime_parsing_fallback_no_datetime(std_input_path, filename, sc
         lambda spark : spark.read.schema(schema).option('enableDateTimeParsingFallback', "true").json(data_path),
         conf=_enable_all_types_conf)
 
+@pytest.mark.skip(reason=str("https://github.com/NVIDIA/spark-rapids/issues/8403"))
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
 @pytest.mark.parametrize('col_name', ['K0', 'k0', 'K3', 'k3', 'V0', 'v0'], ids=idfn)
 @ignore_order

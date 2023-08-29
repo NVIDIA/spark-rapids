@@ -24,8 +24,9 @@ package com.databricks.sql.transaction.tahoe.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.databricks.sql.transaction.tahoe.constraints.{CheckDeltaInvariant, Constraint}
 import com.databricks.sql.transaction.tahoe.constraints.Constraints.{Check, NotNull}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, GpuBindReferences, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuOverrides, RapidsConf, RapidsMeta, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, GpuBindReferences, GpuColumnVector, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.shims.InvariantViolationExceptionShim
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
@@ -62,8 +63,8 @@ case class GpuCheckDeltaInvariant(
       constraint)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(child, batch)) { col =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(child.columnarEval(batch)) { col =>
       constraint match {
         case n: NotNull =>
           if (col.getBase.hasNulls) {

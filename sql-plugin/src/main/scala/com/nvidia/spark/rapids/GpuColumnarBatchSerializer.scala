@@ -26,6 +26,7 @@ import ai.rapids.cudf.{HostColumnVector, HostMemoryBuffer, JCudfSerialization, N
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
@@ -38,12 +39,13 @@ class SerializedBatchIterator(dIn: DataInputStream)
   private[this] var toBeReturned: Option[ColumnarBatch] = None
   private[this] var streamClosed: Boolean = false
 
-  Option(TaskContext.get()).foreach {
-    _.addTaskCompletionListener[Unit]((_: TaskContext) => {
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
       toBeReturned.foreach(_.close())
       toBeReturned = None
       dIn.close()
-    })
+    }
   }
 
   def tryReadNextHeader(): Option[Long] = {

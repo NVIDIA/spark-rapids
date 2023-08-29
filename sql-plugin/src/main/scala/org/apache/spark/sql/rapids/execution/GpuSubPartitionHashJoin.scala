@@ -15,6 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
@@ -25,6 +26,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.InnerLike
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -105,7 +107,8 @@ class GpuBatchSubPartitioner(
     inputIter: Iterator[ColumnarBatch],
     inputBoundKeys: Seq[GpuExpression],
     numPartitions: Int,
-    hashSeed: Int) extends AutoCloseable {
+    hashSeed: Int,
+    name: String = "GpuBatchSubPartitioner") extends AutoCloseable with Logging {
 
   private var isNotInited = true
   private var numCurBatches = 0
@@ -166,7 +169,20 @@ class GpuBatchSubPartitioner(
     if (isNotInited) {
       partitionBatches()
       isNotInited = false
+      logDebug(subPartitionsInfoAsString())
     }
+  }
+
+  private def subPartitionsInfoAsString(): String = {
+    val stringBuilder = new mutable.StringBuilder()
+    stringBuilder.append(s"$name subpartitions: \n")
+    stringBuilder.append(s"    Part Id        Part Size        Batch number\n")
+    pendingParts.zipWithIndex.foreach { case (part, id) =>
+      val batchNum = if (part == null) 0 else part.length
+      val partSize = if (part == null) 0L else part.map(_.sizeInBytes).sum
+      stringBuilder.append(s"    $id        $partSize        $batchNum\n")
+    }
+    stringBuilder.toString()
   }
 
   private[this] def partitionBatches(): Unit = {
@@ -186,6 +202,7 @@ class GpuBatchSubPartitioner(
           subTables.zipWithIndex.foreach { case (table, id) =>
             // skip empty tables
             if (table.getRowCount > 0) {
+              subTables(id) = null
               pendingParts(id) += SpillableColumnarBatch(table, types,
                 SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               numCurBatches += 1
@@ -338,9 +355,9 @@ class GpuSubPartitionPairIterator(
   private[this] var hashSeed = 100
 
   private[this] var buildSubPartitioner =
-    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions, hashSeed)
+    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions, hashSeed, "initBuild")
   private[this] var streamSubPartitioner =
-    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions, hashSeed)
+    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions, hashSeed, "initStream")
   private[this] var buildSubIterator =
     new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
 
@@ -445,7 +462,7 @@ class GpuSubPartitionPairIterator(
     bigBuildBatches.clear()
     buildSubPartitioner.safeClose(new Exception())
     buildSubPartitioner = new GpuBatchSubPartitioner(buildIt, boundBuildKeys,
-      realNumPartitions, hashSeed)
+      realNumPartitions, hashSeed, "repartedBuild")
     buildSubIterator = new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
 
     // stream partitioner
@@ -454,7 +471,7 @@ class GpuSubPartitionPairIterator(
     bigStreamBatches.clear()
     streamSubPartitioner.safeClose(new Exception())
     streamSubPartitioner = new GpuBatchSubPartitioner(streamIt, boundStreamKeys,
-      realNumPartitions, hashSeed)
+      realNumPartitions, hashSeed, "repartedStream")
   }
 
   private[this] def computeNumPartitions(parts: Seq[SpillableColumnarBatch]): Int = {
@@ -543,7 +560,7 @@ abstract class BaseSubHashJoinIterator(
 
 trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
 
-  protected lazy val buildSchema: StructType = StructType.fromAttributes(buildPlan.output)
+  protected lazy val buildSchema: StructType = DataTypeUtilsShim.fromAttributes(buildPlan.output)
 
   def doJoinBySubPartition(
       builtIter: Iterator[ColumnarBatch],

@@ -653,8 +653,10 @@ class RowToColumnarIterator(
             .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
         val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
-          opTime)) { _ =>
-          builders.build(rowCount)
+            opTime)) { _ =>
+          RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
+            builders.tryBuild(rowCount)
+          }
         }
         numInputRows += rowCount
         numOutputRows += rowCount

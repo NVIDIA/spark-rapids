@@ -21,6 +21,7 @@ import scala.collection.mutable
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
@@ -74,7 +75,7 @@ case class GpuLambdaFunction(
   override def dataType: DataType = function.dataType
   override def nullable: Boolean = function.nullable
 
-  override def columnarEval(batch: ColumnarBatch): Any =
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     function.asInstanceOf[GpuExpression].columnarEval(batch)
 }
 
@@ -273,11 +274,10 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
   protected def transformListColumnView(
     lambdaTransformedCV: cudf.ColumnView): GpuColumnVector
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
-      val dataCol = withResource(
-        makeElementProjectBatch(batch, arg.getBase)) { cb =>
-        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(argument.columnarEval(batch)) { arg =>
+      val dataCol = withResource(makeElementProjectBatch(batch, arg.getBase)) { cb =>
+        function.columnarEval(cb)
       }
       withResource(dataCol) { _ =>
         val cv = GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)
@@ -490,11 +490,10 @@ case class GpuTransformKeys(
     GpuTransformKeys(boundArg, boundFunc, isBound = true, boundIntermediate)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
-      val newKeysCol = withResource(
-        makeElementProjectBatch(batch, arg.getBase)) { cb =>
-        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(argument.columnarEval(batch)) { arg =>
+      val newKeysCol = withResource(makeElementProjectBatch(batch, arg.getBase)) { cb =>
+        function.columnarEval(cb)
       }
       withResource(newKeysCol) { newKeysCol =>
         withResource(GpuMapUtils.replaceExplodedKeyAsView(arg.getBase, newKeysCol.getBase)) {
@@ -540,11 +539,10 @@ case class GpuTransformValues(
     GpuTransformValues(boundArg, boundFunc, isBound = true, boundIntermediate)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
-      val newValueCol = withResource(
-        makeElementProjectBatch(batch, arg.getBase)) { cb =>
-        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(argument.columnarEval(batch)) { arg =>
+      val newValueCol = withResource(makeElementProjectBatch(batch, arg.getBase)) { cb =>
+        function.columnarEval(cb)
       }
       withResource(newValueCol) { newValueCol =>
         withResource(GpuMapUtils.replaceExplodedValueAsView(arg.getBase, newValueCol.getBase)) {
@@ -572,11 +570,11 @@ case class GpuMapFilter(argument: Expression,
     GpuMapFilter(boundArg, boundFunc, isBound = true, boundIntermediate)
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { mapArg =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(argument.columnarEval(batch)) { mapArg =>
       // `mapArg` is list of struct(key, value)
       val plainBoolCol = withResource(makeElementProjectBatch(batch, mapArg.getBase)) { cb =>
-        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+        function.columnarEval(cb)
       }
 
       withResource(plainBoolCol) { plainBoolCol =>

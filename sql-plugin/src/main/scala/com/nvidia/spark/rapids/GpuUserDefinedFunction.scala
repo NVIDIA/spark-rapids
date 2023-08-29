@@ -51,8 +51,8 @@ trait GpuUserDefinedFunction extends GpuExpression
   private[this] lazy val inputTypesString = children.map(_.dataType.catalogString).mkString(", ")
   private[this] lazy val outputType = dataType.catalogString
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    val cols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val cols = children.safeMap(_.columnarEval(batch))
     withResource(cols) { exprResults =>
       val funcInputs = exprResults.map(_.getBase()).toArray
       withResource(new NvtxRange(nvtxRangeName, NvtxColor.PURPLE)) { _ =>
@@ -109,10 +109,10 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
   override def hasSideEffects: Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val cpuUDFStart = System.nanoTime
     // These child columns will be closed by `ColumnarToRowIterator`.
-    val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
+    val argCols = children.safeMap(_.columnarEval(batch))
     val prepareArgsEnd = System.nanoTime
     try {
       // 1 Convert the argument columns to row.

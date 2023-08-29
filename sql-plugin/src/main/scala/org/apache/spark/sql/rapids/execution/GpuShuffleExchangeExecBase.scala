@@ -89,7 +89,9 @@ abstract class GpuShuffleMetaBase(
       case _: RoundRobinPartitioning
         if SparkShimImpl.sessionFromPlan(shuffle).sessionState.conf
             .sortBeforeRepartition =>
-        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128
+        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig +
+            TypeSig.ARRAY.nested(GpuOverrides.gpuCommonTypes)
+
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin)
             .foreach { dataType =>
@@ -299,7 +301,7 @@ object GpuShuffleExchangeExecBase {
     }
     val partitioner: GpuExpression = getPartitioner(newRdd, outputAttributes, newPartitioning)
     def getPartitioned: ColumnarBatch => Any = {
-      batch => partitioner.columnarEval(batch)
+      batch => partitioner.columnarEvalAny(batch)
     }
     val rddWithPartitionIds: RDD[Product2[Int, ColumnarBatch]] = {
       newRdd.mapPartitions { iter =>

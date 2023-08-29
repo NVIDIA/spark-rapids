@@ -28,6 +28,7 @@ com/nvidia/spark/rapids/SparkShimVersion*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/rapids/optimizer/SQLOptimizerPlugin*
 com/nvidia/spark/udf/Plugin*
+org/apache/spark/sql/rapids/AdaptiveSparkPlanHelperShim*
 org/apache/spark/sql/rapids/ExecutionPlanCaptureCallback*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/execution/Unshimmed*

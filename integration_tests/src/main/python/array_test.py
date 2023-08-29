@@ -21,7 +21,7 @@ from marks import incompat
 from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, col, element_at, lit
+from pyspark.sql.functions import array_contains, col, element_at, lit, array
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -218,6 +218,9 @@ def test_array_contains(data_gen):
         return two_col_df(spark, arr_gen, data_gen)
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: get_input(spark).select(
+                                            array_contains(array(lit(None)), col('b')),
+                                            array_contains(array(), col('b')),
+                                            array_contains(array(lit(literal), lit(literal)), col('b')),
                                             array_contains(col('a'), literal.cast(data_gen.data_type)),
                                             array_contains(col('a'), col('b')),
                                             array_contains(col('a'), col('a')[5])))
@@ -368,8 +371,6 @@ def test_array_repeat_with_count_column(data_gen):
             'array_repeat("abc", cnt)'))
 
 
-# TODO: revert skip after https://github.com/NVIDIA/spark-rapids/issues/8409 is resolved
-@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/8409')
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
 def test_array_repeat_with_count_scalar(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -679,4 +680,11 @@ def test_array_remove(data_gen):
         lambda spark: gen_df(spark, gen).selectExpr(
             'array_remove(a, b)',
             'array_remove(a, null)')
+    )
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in array_gens_sample], ids=idfn)
+def test_flatten_array(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('flatten(a)')
     )

@@ -20,7 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -290,6 +290,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       override def getFileExtension(context: TaskAttemptContext): String = {
         CodecConfig.from(context).getCodec.getExtension + ".parquet"
       }
+
+      override def partitionFlushSize(context: TaskAttemptContext): Long =
+        context.getConfiguration.getLong("write.parquet.row-group-size-bytes",
+          128L * 1024L * 1024L) // 128M
     }
   }
 }
@@ -306,9 +310,9 @@ class GpuParquetWriter(
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
-  override def scanTableBeforeWrite(table: Table): Unit = {
-    (0 until table.getNumberOfColumns).foreach { i =>
-      val col = table.getColumn(i)
+  override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
+    val cols = GpuColumnVector.extractBases(batch)
+    cols.foreach { col =>
       // if col is a day
       if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
@@ -320,12 +324,14 @@ class GpuParquetWriter(
     }
   }
 
-  override def transform(batch: ColumnarBatch): Option[ColumnarBatch] = {
-    val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
-      new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
-        .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+  override def transformAndClose(batch: ColumnarBatch): ColumnarBatch = {
+    withResource(batch) { _ =>
+      val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
+        new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
+            .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+      }
+      new ColumnarBatch(transformedCols)
     }
-    Some(new ColumnarBatch(transformedCols))
   }
 
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
@@ -335,37 +341,9 @@ class GpuParquetWriter(
       // included in Spark's `TimestampType`.
       case (cv, _) if cv.getType.isTimestampType && cv.getType != DType.TIMESTAMP_DAYS =>
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-        val typeInt96 = ParquetOutputTimestampType.INT96.toString
-
         outputTimestampType match {
           case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
             cv.castTo(DType.TIMESTAMP_MILLISECONDS)
-
-          case `typeInt96` =>
-            val inRange = withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
-              withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
-                withResource(cv.bitCastTo(DType.INT64)) { int64 =>
-                  withResource(int64.greaterOrEqualTo(upper)) { a =>
-                    withResource(int64.lessOrEqualTo(lower)) { b =>
-                      a.or(b)
-                    }
-                  }
-                }
-              }
-            }
-            val anyInRange = withResource(inRange)(_.any())
-            withResource(anyInRange) { _ =>
-              require(!(anyInRange.isValid && anyInRange.getBoolean),
-                // Its the writer's responsibility to close the input batch when this
-                // exception is thrown.
-                "INT96 column contains one " +
-                "or more values that can overflow and will result in data " +
-                "corruption. Please set " +
-                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false " +
-                "so we can fallback on CPU for writing parquet but still take " +
-                "advantage of parquet read on the GPU.")
-            }
-            cv.copyToColumnVector() /* the input is unchanged */
 
           // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`
           case _ => cv.copyToColumnVector() /* the input is unchanged */

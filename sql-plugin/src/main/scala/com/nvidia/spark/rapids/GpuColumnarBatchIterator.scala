@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
@@ -40,8 +41,11 @@ abstract class GpuColumnarBatchIterator(closeWithTask: Boolean)
     extends Iterator[ColumnarBatch] with AutoCloseable {
   private var isClosed = false
   if (closeWithTask) {
-    Option(TaskContext.get).foreach { tc =>
-      tc.addTaskCompletionListener[Unit](_ => close())
+    // Don't install the callback if in a unit test
+    Option(TaskContext.get()).foreach { tc =>
+      onTaskCompletion(tc) {
+        close()
+      }
     }
   }
 
@@ -95,7 +99,7 @@ class SingleGpuColumnarBatchIterator(private var batch: ColumnarBatch)
  * @param partSchema the partition schema
  */
 class GpuColumnarBatchWithPartitionValuesIterator(
-    inputIter: GpuColumnarBatchIterator,
+    inputIter: Iterator[ColumnarBatch],
     partValues: Array[InternalRow],
     partRowNums: Array[Long],
     partSchema: StructType) extends Iterator[ColumnarBatch] {

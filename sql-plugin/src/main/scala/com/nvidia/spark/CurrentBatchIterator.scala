@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import java.io.IOException
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.{ByteArrayInputFile, ParquetCachedBatch}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.{ParquetReadOptions, VersionParser}
 import org.apache.parquet.VersionParser.ParsedVersion
 import org.apache.parquet.hadoop.ParquetFileReader
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport}
 import org.apache.spark.sql.execution.vectorized.OffHeapColumnVector
@@ -105,9 +105,7 @@ abstract class CurrentBatchIterator(
     }
   }
 
-  TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
-    close()
-  })
+  onTaskCompletion(close())
 
   override def close(): Unit = {
     parquetFileReader.close()

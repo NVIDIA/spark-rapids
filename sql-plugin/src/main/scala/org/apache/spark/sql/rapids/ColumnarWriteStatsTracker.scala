@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,9 @@ trait ColumnarWriteTaskStatsTracker {
   /**
    * Process a new column batch to update the tracked statistics accordingly.
    * The batch will be written to the most recently witnessed file (via `newFile`).
+   * @note Call this function only once per `batch` to be written. If the batch is going to be
+   *       split later because of a retry, that is OK, but don't call newBatch again with the
+   *       splitted out parts.
    * @param filePath Path of the file which the batch is written to.
    * @param batch Current data batch to be processed.
    */

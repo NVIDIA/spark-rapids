@@ -24,14 +24,14 @@ import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
-import org.scalatest.FunSuite
-import org.scalatest.mockito.MockitoSugar
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
+class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
   test("lookup unknown buffer") {
     val catalog = new RapidsBufferCatalog
     val bufferId = new RapidsBufferId {
@@ -215,12 +215,12 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     withResource(spy(new RapidsDeviceMemoryStore)) { deviceStore =>
       val mockStore = mock[RapidsBufferStore]
       withResource(
-        new RapidsHostMemoryStore(10000, 1000)) { hostStore =>
+        new RapidsHostMemoryStore(10000)) { hostStore =>
         deviceStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         val catalog = new RapidsBufferCatalog(deviceStore)
         val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
-          val meta = MetaUtils.getTableMetaNoTable(buff)
+          val meta = MetaUtils.getTableMetaNoTable(buff.getLength)
           catalog.addBuffer(
             buff, meta, -1)
         }
@@ -353,6 +353,9 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
       override def setSpillPriority(priority: Long): Unit = {
         currentPriority = priority
       }
+
+      override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = { body(null) }
+      override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = { body(null) }
       override def close(): Unit = {}
     })
   }

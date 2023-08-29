@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class AlluxioConfigReaderSuite extends FunSuite {
+class AlluxioConfigReaderSuite extends AnyFunSuite {
 
   test("testReadAlluxioMasterAndPort") {
     val homeDir = Files.createTempDirectory("tmpAlluxioHomePrefix")

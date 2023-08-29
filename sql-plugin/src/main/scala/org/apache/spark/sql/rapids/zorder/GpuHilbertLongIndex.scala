@@ -42,7 +42,7 @@ case class GpuHilbertLongIndex(numBits: Int, children: Seq[Expression])
 
   override def nullable: Boolean = false
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val ret = withResource(GpuProjectExec.project(batch, children)) { inputs =>
       withResource(new NvtxRange("HILBERT INDEX", NvtxColor.PURPLE)) { _ =>
         val bases = GpuColumnVector.extractBases(inputs)

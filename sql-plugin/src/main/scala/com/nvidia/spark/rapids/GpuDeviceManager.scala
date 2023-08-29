@@ -26,6 +26,7 @@ import ai.rapids.cudf._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 
 sealed trait MemoryState
@@ -41,6 +42,13 @@ object GpuDeviceManager extends Logging {
   var rmmTaskInitEnabled = {
     java.lang.Boolean.getBoolean("com.nvidia.spark.rapids.memory.gpu.rmm.init.task")
   }
+
+  private var numCores = 0
+
+  /**
+   * Get an approximate count on the number of cores this executor will use.
+   */
+  def getNumCores: Int = numCores
 
   // Memory resource used only for cudf::chunked_pack to allocate scratch space
   // during spill to host. This is done to set aside some memory for this operation
@@ -60,6 +68,15 @@ object GpuDeviceManager extends Logging {
    * Exposes the device id used while initializing the RMM pool
    */
   def getDeviceId(): Option[Int] = deviceId
+
+  @volatile private var poolSizeLimit = 0L
+
+  // Never split below 100 MiB (but this is really just for testing)
+  def getSplitUntilSize: Long = {
+    val conf = new RapidsConf(SQLConf.get)
+    conf.splitUntilSizeOverride
+        .getOrElse(Math.max(poolSizeLimit / 8, 100 * 1024 * 1024))
+  }
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
@@ -131,7 +148,8 @@ object GpuDeviceManager extends Logging {
   }
 
   def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
-      conf: RapidsConf): Unit = {
+      conf: RapidsConf, numCores: Int): Unit = {
+    this.numCores = numCores
     // as long in execute mode initialize everything because we could enable it after startup
     if (conf.isSqlExecuteOnGPU) {
       // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
@@ -149,6 +167,7 @@ object GpuDeviceManager extends Logging {
 
     chunkedPackMemoryResource.foreach(_.close)
     chunkedPackMemoryResource = None
+    poolSizeLimit = 0L
 
     RapidsBufferCatalog.close()
     GpuShuffleEnv.shutdown()
@@ -180,14 +199,15 @@ object GpuDeviceManager extends Logging {
   /**
    * Always set the GPU if it was assigned by Spark and initialize the RMM if its configured
    * to do so in the task.
-   * We expect the plugin to be run with 1 task and 1 GPU per executor.
+   * We expect the plugin to be run with 1 GPU per executor.
    */
   def initializeFromTask(): Unit = {
     if (threadGpuInitialized.get() == false) {
       val resources = getResourcesFromTaskContext
       val conf = new RapidsConf(SparkEnv.get.conf)
       if (rmmTaskInitEnabled) {
-        initializeGpuAndMemory(resources, conf)
+        val numCores = RapidsPluginUtils.estimateCoresOnExec(SparkEnv.get.conf)
+        initializeGpuAndMemory(resources, conf, numCores)
       } else {
         // just set the device if provided so task thread uses right GPU
         initializeGpu(resources, conf)
@@ -338,6 +358,7 @@ object GpuDeviceManager extends Logging {
 
       Cuda.setDevice(gpuId)
       try {
+        poolSizeLimit = poolAllocation
         Rmm.initialize(init, logConf, poolAllocation)
       } catch {
         case firstEx: CudfException if ((init & RmmAllocationMode.CUDA_ASYNC) != 0) => {
@@ -351,6 +372,7 @@ object GpuDeviceManager extends Logging {
               logError(
                 "Failed to initialize RMM with either ASYNC or ARENA allocators. Exiting...")
               secondEx.addSuppressed(firstEx)
+              poolSizeLimit = 0L
               throw secondEx
             }
           }
@@ -362,11 +384,65 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def allocatePinnedMemory(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
+  private def initializeOffHeapLimits(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-    if (!PinnedMemoryPool.isInitialized && conf.pinnedPoolSize > 0) {
-      logInfo(s"Initializing pinned memory pool (${conf.pinnedPoolSize / 1024 / 1024.0} MB)")
-      PinnedMemoryPool.initialize(conf.pinnedPoolSize, gpuId)
+    val pinnedSize = if (conf.offHeapLimitEnabled) {
+      logWarning("OFF HEAP MEMORY LIMITS IS ENABLED. " +
+          "THIS IS EXPERIMENTAL FOR NOW USE WITH CAUTION")
+      val perTaskOverhead = conf.perTaskOverhead
+      val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
+      val confPinnedSize = conf.pinnedPoolSize
+      val confLimit = conf.offHeapLimit
+      // TODO the min limit size of overhead + 1 GiB is arbitrary and we should have some
+      ///  better tests to see what an ideal value really should be.
+      val minMemoryLimit = totalOverhead + (1024 * 1024 * 1024)
+
+      val memoryLimit = if (confLimit.isDefined) {
+        confLimit.get
+      } else if (confPinnedSize > 0) {
+        // TODO 1 GiB above the pinned size probably should change, we are using it to match the
+        //  old behavior for the pool, but that is not great and we want to have hard evidence
+        //  for a better value before just picking something else that is arbitrary
+        val ret = confPinnedSize + (1024 * 1024 * 1024)
+        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set using " +
+            s"${RapidsConf.PINNED_POOL_SIZE} + 1 GiB instead for memory limit " +
+            s"${ret / 1024 / 1024.0} MiB")
+        ret
+      } else {
+        // We don't have pinned or a conf limit set, so go with the min
+        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set and neither is " +
+            s"${RapidsConf.PINNED_POOL_SIZE}. Using the minimum memory size for the limit " +
+            s"which is ${RapidsConf.TASK_OVERHEAD_SIZE} * cores (${GpuDeviceManager.numCores}) " +
+            s"+ 1 GiB => ${minMemoryLimit / 1024 / 1024.0} MiB")
+        minMemoryLimit
+      }
+
+      val finalMemoryLimit = if (memoryLimit < minMemoryLimit) {
+        logWarning(s"The memory limit ${memoryLimit / 1024 / 1024.0} MiB " +
+            s"is smaller than the minimum limit size ${minMemoryLimit / 1024 / 1024.0} MiB " +
+            s"using the minimum instead")
+        minMemoryLimit
+      } else {
+        memoryLimit
+      }
+      // TODO need to configure the limits when we have those APIs available, and log what those
+      //  limits are
+      if (confPinnedSize + totalOverhead <= finalMemoryLimit) {
+        confPinnedSize
+      } else {
+        val ret = finalMemoryLimit - totalOverhead
+        logWarning(s"The configured pinned memory ${confPinnedSize / 1024 / 1024.0} MiB " +
+            s"plus the overhead ${totalOverhead / 1024 / 1024.0} MiB " +
+            s"is larger than the off heap limit ${finalMemoryLimit / 1024 / 1024.0} MiB " +
+            s"dropping pinned memory to ${ret / 1024 / 1024.0} MiB")
+        ret
+      }
+    } else {
+      conf.pinnedPoolSize
+    }
+    if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
+      logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
+      PinnedMemoryPool.initialize(pinnedSize, gpuId)
     }
   }
 
@@ -374,6 +450,7 @@ object GpuDeviceManager extends Logging {
    * Initialize the GPU memory for gpuId according to the settings in rapidsConf.  It is assumed
    * that if gpuId is set then that gpu is already the default device.  If gpuId is not set
    * this will search all available GPUs starting at 0 looking for the appropriate one.
+   *
    * @param gpuId the id of the gpu to use
    * @param rapidsConf the config to use.
    */
@@ -388,7 +465,7 @@ object GpuDeviceManager extends Logging {
         } else if (singletonMemoryInitialized == Uninitialized) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
           initializeRmm(gpu, rapidsConf)
-          allocatePinnedMemory(gpu, rapidsConf)
+          initializeOffHeapLimits(gpu, rapidsConf)
           singletonMemoryInitialized = Initialized
         }
       }

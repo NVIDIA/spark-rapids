@@ -61,7 +61,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (batch.numCols() <= 0) {
       return Array(batch).zipWithIndex
     }
@@ -77,9 +77,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
           partitionRange.close()
         }
       }
-      val ret: Array[ColumnarBatch] =
-        sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
-      ret.zipWithIndex.filter(_._1 != null)
+      sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
     } finally {
       totalRange.close()
     }

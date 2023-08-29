@@ -22,6 +22,7 @@ import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -44,6 +45,8 @@ object RapidsProcessDeltaMergeJoinStrategy extends SparkStrategy {
         matchedOutputs = p.matchedOutputs,
         notMatchedConditions = p.notMatchedConditions,
         notMatchedOutputs = p.notMatchedOutputs,
+        notMatchedBySourceConditions = p.notMatchedBySourceConditions,
+        notMatchedBySourceOutputs = p.notMatchedBySourceOutputs,
         noopCopyOutput = p.noopCopyOutput,
         deleteRowOutput = p.deleteRowOutput))
     case _ => Nil
@@ -59,6 +62,8 @@ case class RapidsProcessDeltaMergeJoin(
     matchedOutputs: Seq[Seq[Seq[Expression]]],
     notMatchedConditions: Seq[Expression],
     notMatchedOutputs: Seq[Seq[Seq[Expression]]],
+    notMatchedBySourceConditions: Seq[Expression],
+    notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
     noopCopyOutput: Seq[Expression],
     deleteRowOutput: Seq[Expression]) extends UnaryNode {
 
@@ -77,6 +82,8 @@ case class RapidsProcessDeltaMergeJoinExec(
     sourceRowHasNoMatch: Expression,
     matchedConditions: Seq[Expression],
     matchedOutputs: Seq[Seq[Seq[Expression]]],
+    notMatchedBySourceConditions: Seq[Expression],
+    notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
     notMatchedConditions: Seq[Expression],
     notMatchedOutputs: Seq[Seq[Seq[Expression]]],
     noopCopyOutput: Seq[Expression],
@@ -111,6 +118,8 @@ class RapidsProcessDeltaMergeJoinMeta(
       matchedOutputs = p.matchedOutputs.map(_.map(_.map(convertExprToGpu))),
       notMatchedConditions = p.notMatchedConditions.map(convertExprToGpu),
       notMatchedOutputs = p.notMatchedOutputs.map(_.map(_.map(convertExprToGpu))),
+      notMatchedBySourceConditions = p.notMatchedBySourceConditions.map(convertExprToGpu),
+      notMatchedBySourceOutputs = p.notMatchedBySourceOutputs.map(_.map(_.map(convertExprToGpu))),
       noopCopyOutput = p.noopCopyOutput.map(convertExprToGpu),
       deleteRowOutput = p.deleteRowOutput.map(convertExprToGpu))
   }
@@ -136,10 +145,17 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
     matchedOutputs: Seq[Seq[Seq[Expression]]],
     notMatchedConditions: Seq[Expression],
     notMatchedOutputs: Seq[Seq[Seq[Expression]]],
+    notMatchedBySourceConditions: Seq[Expression],
+    notMatchedBySourceOutputs: Seq[Seq[Seq[Expression]]],
     noopCopyOutput: Seq[Expression],
     deleteRowOutput: Seq[Expression]) extends UnaryExecNode with GpuExec {
   require(matchedConditions.length == matchedOutputs.length)
   require(notMatchedConditions.length == notMatchedOutputs.length)
+
+  // TODO add support for notMatchedBy*
+  // see https://github.com/NVIDIA/spark-rapids/issues/8415
+  require(notMatchedBySourceConditions.isEmpty)
+  require(notMatchedBySourceOutputs.isEmpty)
 
   private lazy val inputTypes: Array[DataType] = GpuColumnVector.extractTypes(child.schema)
   private lazy val outputExprs: Seq[GpuBoundReference] = output.zipWithIndex.map {
@@ -219,12 +235,17 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
     metrics: Map[String, GpuMetric])
     extends Iterator[ColumnarBatch] with AutoCloseable {
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-
   private[this] val intermediateTypes: Array[DataType] = noopCopyOutput.map(_.dataType).toArray
   private[this] var nextBatch: Option[ColumnarBatch] = None
   private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME, NoopMetric)
   private[this] val numOutputRows = metrics.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric)
+
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   override def hasNext: Boolean = {
     nextBatch = nextBatch.orElse(processNextBatch())
@@ -342,7 +363,7 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
       predicate: Expression): (ColumnarBatch, ColumnarBatch) = {
     withResource(input) { _ =>
       withResource(GpuColumnVector.from(input)) { inTable =>
-        val predCol = GpuExpressionsUtils.columnarEvalToColumn(predicate, input)
+        val predCol = predicate.columnarEval(input)
         val matchedBatch = closeOnExcept(predCol) { _ =>
           withResource(inTable.filter(predCol.getBase)) { matchedTable =>
             GpuColumnVector.from(matchedTable, inputTypes)

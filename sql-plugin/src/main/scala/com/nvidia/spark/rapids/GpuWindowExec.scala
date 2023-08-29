@@ -25,9 +25,9 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
@@ -636,7 +636,47 @@ case class BoundGpuWindowFunction(
   val dataType: DataType = windowFunc.dataType
 }
 
-case class ParsedBoundary(isUnbounded: Boolean, value: Either[BigInt, Long])
+/**
+ * Abstraction for possible range-boundary specifications.
+ *
+ * This provides type disjunction for Long, BigInt and Double,
+ * the three types that might represent a range boundary.
+ */
+abstract class RangeBoundaryValue {
+  def long: Long = RangeBoundaryValue.long(this)
+  def bigInt: BigInt = RangeBoundaryValue.bigInt(this)
+  def double: Double = RangeBoundaryValue.double(this)
+}
+
+case class LongRangeBoundaryValue(value: Long) extends RangeBoundaryValue
+case class BigIntRangeBoundaryValue(value: BigInt) extends RangeBoundaryValue
+case class DoubleRangeBoundaryValue(value: Double) extends RangeBoundaryValue
+
+object RangeBoundaryValue {
+
+  def long(boundary: RangeBoundaryValue): Long = boundary match {
+    case LongRangeBoundaryValue(l) => l
+    case other => throw new NoSuchElementException(s"Cannot get `long` from $other")
+  }
+
+  def bigInt(boundary: RangeBoundaryValue): BigInt = boundary match {
+    case BigIntRangeBoundaryValue(b) => b
+    case other => throw new NoSuchElementException(s"Cannot get `bigInt` from $other")
+  }
+
+  def double(boundary: RangeBoundaryValue): Double = boundary match {
+    case DoubleRangeBoundaryValue(d) => d
+    case other => throw new NoSuchElementException(s"Cannot get `double` from $other")
+  }
+
+  def long(value: Long): LongRangeBoundaryValue = LongRangeBoundaryValue(value)
+
+  def bigInt(value: BigInt): BigIntRangeBoundaryValue = BigIntRangeBoundaryValue(value)
+
+  def double(value: Double): DoubleRangeBoundaryValue = DoubleRangeBoundaryValue(value)
+}
+
+case class ParsedBoundary(isUnbounded: Boolean, value: RangeBoundaryValue)
 
 object GroupedAggregations {
   /**
@@ -654,9 +694,10 @@ object GroupedAggregations {
       case RowFrame =>
         withResource(getRowBasedLower(frame)) { lower =>
           withResource(getRowBasedUpper(frame)) { upper =>
-            WindowOptions.builder()
-                .minPeriods(1)
-                .window(lower, upper).build()
+            val builder = WindowOptions.builder().minPeriods(1)
+            if (isUnbounded(frame.lower)) builder.unboundedPreceding() else builder.preceding(lower)
+            if (isUnbounded(frame.upper)) builder.unboundedFollowing() else builder.following(upper)
+            builder.build
           }
         }
       case RangeFrame =>
@@ -712,6 +753,11 @@ object GroupedAggregations {
     }
   }
 
+  private def isUnbounded(boundary: Expression): Boolean = boundary match {
+    case special: GpuSpecialFrameBoundary => special.isUnbounded
+    case _ => false
+  }
+
   private def getRowBasedLower(windowFrameSpec : GpuSpecifiedWindowFrame): Scalar = {
     val lower = getRowBoundaryValue(windowFrameSpec.lower)
 
@@ -754,22 +800,23 @@ object GroupedAggregations {
     if (bound.isUnbounded) {
       None
     } else {
-      val valueLong = bound.value.right // Used for all cases except DECIMAL128.
       val s = orderByType match {
-        case DType.INT8 => Scalar.fromByte(valueLong.get.toByte)
-        case DType.INT16 => Scalar.fromShort(valueLong.get.toShort)
-        case DType.INT32 => Scalar.fromInt(valueLong.get.toInt)
-        case DType.INT64 => Scalar.fromLong(valueLong.get)
+        case DType.INT8 => Scalar.fromByte(bound.value.long.toByte)
+        case DType.INT16 => Scalar.fromShort(bound.value.long.toShort)
+        case DType.INT32 => Scalar.fromInt(bound.value.long.toInt)
+        case DType.INT64 => Scalar.fromLong(bound.value.long)
+        case DType.FLOAT32 => Scalar.fromFloat(bound.value.double.toFloat)
+        case DType.FLOAT64 => Scalar.fromDouble(bound.value.double)
         // Interval is not working for DateType
-        case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, valueLong.get)
+        case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, bound.value.long)
         case DType.TIMESTAMP_MICROSECONDS =>
-          Scalar.durationFromLong(DType.DURATION_MICROSECONDS, valueLong.get)
+          Scalar.durationFromLong(DType.DURATION_MICROSECONDS, bound.value.long)
         case x if x.getTypeId == DType.DTypeEnum.DECIMAL32 =>
-          Scalar.fromDecimal(x.getScale, valueLong.get.toInt)
+          Scalar.fromDecimal(x.getScale, bound.value.long.toInt)
         case x if x.getTypeId == DType.DTypeEnum.DECIMAL64 =>
-          Scalar.fromDecimal(x.getScale, valueLong.get)
+          Scalar.fromDecimal(x.getScale, bound.value.long)
         case x if x.getTypeId == DType.DTypeEnum.DECIMAL128 =>
-          Scalar.fromDecimal(x.getScale, bound.value.left.get.underlying())
+          Scalar.fromDecimal(x.getScale, bound.value.bigInt.underlying())
         case x if x.getTypeId == DType.DTypeEnum.STRING =>
           // Not UNBOUNDED. The only other supported boundary for String is CURRENT ROW, i.e. 0.
           Scalar.fromString("")
@@ -782,36 +829,52 @@ object GroupedAggregations {
   private def getRangeBoundaryValue(boundary: Expression, orderByType: DType): ParsedBoundary =
     boundary match {
     case special: GpuSpecialFrameBoundary =>
-      val isUnBounded = special.isUnbounded
-      val isDecimal128 = orderByType.getTypeId == DType.DTypeEnum.DECIMAL128
-      ParsedBoundary(isUnBounded, if (isDecimal128) Left(special.value) else Right(special.value))
+      ParsedBoundary(
+        isUnbounded = special.isUnbounded,
+        value = orderByType.getTypeId match {
+          case DType.DTypeEnum.DECIMAL128 => RangeBoundaryValue.bigInt(special.value)
+          case DType.DTypeEnum.FLOAT32 | DType.DTypeEnum.FLOAT64 =>
+            RangeBoundaryValue.double(special.value)
+          case _ => RangeBoundaryValue.long(special.value)
+        }
+    )
     case GpuLiteral(ci: CalendarInterval, CalendarIntervalType) =>
       // Get the total microseconds for TIMESTAMP_MICROSECONDS
       var x = TimeUnit.DAYS.toMicros(ci.days) + ci.microseconds
       if (x == Long.MinValue) x = Long.MaxValue
-      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.long(Math.abs(x)))
     case GpuLiteral(value, ByteType) =>
       var x = value.asInstanceOf[Byte]
       if (x == Byte.MinValue) x = Byte.MaxValue
-      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.long(Math.abs(x)))
     case GpuLiteral(value, ShortType) =>
       var x = value.asInstanceOf[Short]
       if (x == Short.MinValue) x = Short.MaxValue
-      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.long(Math.abs(x)))
     case GpuLiteral(value, IntegerType) =>
       var x = value.asInstanceOf[Int]
       if (x == Int.MinValue) x = Int.MaxValue
-      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.long(Math.abs(x)))
     case GpuLiteral(value, LongType) =>
       var x = value.asInstanceOf[Long]
       if (x == Long.MinValue) x = Long.MaxValue
-      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.long(Math.abs(x)))
+    case GpuLiteral(value, FloatType) =>
+      var x = value.asInstanceOf[Float]
+      if (x == Float.MinValue) x = Float.MaxValue
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.double(Math.abs(x)))
+    case GpuLiteral(value, DoubleType) =>
+      var x = value.asInstanceOf[Double]
+      if (x == Double.MinValue) x = Double.MaxValue
+      ParsedBoundary(isUnbounded = false, RangeBoundaryValue.double(Math.abs(x)))
     case GpuLiteral(value: Decimal, DecimalType()) =>
       orderByType.getTypeId match {
         case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 =>
-          ParsedBoundary(isUnbounded = false, Right(Math.abs(value.toUnscaledLong)))
+          ParsedBoundary(isUnbounded = false,
+            RangeBoundaryValue.long(Math.abs(value.toUnscaledLong)))
         case DType.DTypeEnum.DECIMAL128 =>
-          ParsedBoundary(isUnbounded = false, Left(value.toJavaBigDecimal.unscaledValue().abs))
+          ParsedBoundary(isUnbounded = false,
+            RangeBoundaryValue.bigInt(value.toJavaBigDecimal.unscaledValue().abs))
         case anythingElse =>
           throw new UnsupportedOperationException(s"Unexpected Decimal type: $anythingElse")
       }
@@ -1420,7 +1483,6 @@ class GpuRunningWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1431,6 +1493,8 @@ class GpuRunningWindowIterator(
   private var lastParts: Array[Scalar] = Array.empty
   private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
+
+  onTaskCompletion(close())
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -1657,7 +1721,6 @@ class GpuCachedDoublePassWindowIterator(
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
 
@@ -1671,6 +1734,8 @@ class GpuCachedDoublePassWindowIterator(
   private var lastPartsCaching: Array[Scalar] = Array.empty
   private var lastPartsProcessing: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
+
+  onTaskCompletion(close())
 
   private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
     lastPartsCaching.foreach(_.close())

@@ -23,6 +23,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
@@ -308,7 +309,7 @@ class RapidsShuffleIterator(
 
   private[this] val taskContext: Option[TaskContext] = Option(TaskContext.get())
 
-  taskContext.foreach(_.addTaskCompletionListener[Unit](_ => receiveBufferCleaner()))
+  taskContext.foreach(onTaskCompletion(_)(receiveBufferCleaner()))
 
   def pollForResult(timeoutSeconds: Long): Option[ShuffleClientResult] = {
     Option(resolvedBatches.poll(timeoutSeconds, TimeUnit.SECONDS))

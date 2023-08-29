@@ -24,11 +24,47 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf._
 import ai.rapids.cudf.ColumnWriterOptions._
 import com.nvidia.spark.rapids.Arm.withResource
+import org.apache.commons.io.IOUtils
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object DumpUtils extends Logging {
+  /**
+   * Debug utility to dump a host memory buffer to a file.
+   * @param conf Hadoop configuration
+   * @param data buffer containing data to dump to a file
+   * @param offset starting offset in the buffer of the data
+   * @param len size of the data in bytes
+   * @param prefix prefix for a path to write the data
+   * @param suffix suffix for a path to write the data
+   * @return Hadoop path for where the data was written or null on error
+   */
+  def dumpBuffer(
+      conf: Configuration,
+      data: HostMemoryBuffer,
+      offset: Long,
+      len: Long,
+      prefix: String,
+      suffix: String): String = {
+    try {
+      val (out, path) = FileUtils.createTempFile(conf, prefix, suffix)
+      withResource(out) { _ =>
+        withResource(data.slice(offset, len)) { hmb =>
+          withResource(new HostMemoryInputStream(hmb, hmb.getLength)) { in =>
+            IOUtils.copy(in, out)
+          }
+        }
+      }
+      path.toString
+    } catch {
+      case e: Exception =>
+        log.error(s"Error attempting to dump data", e)
+        s"<error writing data $e>"
+    }
+  }
+
   /**
    * Debug utility to dump columnar batch to parquet file. <br>
    * It's running on GPU. Parquet column names are generated from columnar batch type info. <br>

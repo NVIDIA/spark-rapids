@@ -66,6 +66,8 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
   private val EXECUTOR_CORES_KEY = "spark.executor.cores"
+  private val TASK_GPU_AMOUNT_KEY = "spark.task.resource.gpu.amount"
+  private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -108,7 +110,13 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  def fixupConfigs(conf: SparkConf): Unit = {
+  def estimateCoresOnExec(conf: SparkConf): Int = {
+    conf.getOption(RapidsPluginUtils.EXECUTOR_CORES_KEY)
+        .map(_.toInt)
+        .getOrElse(Runtime.getRuntime.availableProcessors)
+  }
+
+  def fixupConfigsOnDriver(conf: SparkConf): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
       for (pluginName <- Array(SQL_PLUGIN_NAME, UDF_PLUGIN_NAME)){
@@ -157,6 +165,25 @@ object RapidsPluginUtils extends Logging {
           conf.get(EXECUTOR_CORES_KEY).toInt).toString
         conf.set(numThreadsKey, numThreads)
         logWarning(s"$numThreadsKey is set to $numThreads.")
+      }
+    }
+
+    // If spark.task.resource.gpu.amount is larger than
+    // (spark.executor.resource.gpu.amount / spark.executor.cores) then GPUs will be the limiting
+    // resource for task scheduling, but we can only output the warning if executor cores is set
+    // because this is happening on the driver so the number of cores in the runtime is not
+    // relevant
+    if (conf.contains(TASK_GPU_AMOUNT_KEY) &&
+        conf.contains(EXECUTOR_GPU_AMOUNT_KEY) &&
+        conf.contains(EXECUTOR_CORES_KEY)) {
+      val taskGpuAmountSetByUser = conf.get(TASK_GPU_AMOUNT_KEY).toDouble
+      val executorCores = conf.get(EXECUTOR_CORES_KEY).toDouble
+      val executorGpuAmount = conf.get(EXECUTOR_GPU_AMOUNT_KEY).toDouble
+      if (executorCores != 0 && taskGpuAmountSetByUser > executorGpuAmount / executorCores) {
+        logWarning("The current setting of spark.task.resource.gpu.amount " +
+        s"($taskGpuAmountSetByUser) is not ideal to get the best performance from the " +
+        "RAPIDS Accelerator plugin. It's recommended to be 1/{executor core count} unless " +
+        "you have a special use case.")
       }
     }
   }
@@ -228,8 +255,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def receive(msg: Any): AnyRef = {
     msg match {
       case m: FileCacheLocalityMsg =>
+        // handleMsg should not block current thread
         FileCacheLocalityManager.get.handleMsg(m)
-        null
       case RapidsExecutorStartupMsg(id) =>
         if (rapidsShuffleHeartbeatManager == null) {
           throw new IllegalStateException(
@@ -249,7 +276,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def init(
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
-    RapidsPluginUtils.fixupConfigs(sparkConf)
+    RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
     RapidsPluginUtils.logPluginMode(conf)
 
@@ -263,7 +290,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
       }
     }
 
-    FileCacheLocalityManager.init(pluginContext.conf())
+    FileCacheLocalityManager.init(sc)
 
     logDebug("Loading extra driver plugins: " +
       s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")
@@ -294,12 +321,14 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: java.util.Map[String, String]): Unit = {
     try {
       if (Cuda.getComputeCapabilityMajor < 6) {
-        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" + 
+        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
           " is unsupported, requires 6.0+")
       }
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 
+      val sparkConf = pluginContext.conf()
+      val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
@@ -326,7 +355,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // on executor startup.
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
-        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
+        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf,
+          numCores)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
           if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {

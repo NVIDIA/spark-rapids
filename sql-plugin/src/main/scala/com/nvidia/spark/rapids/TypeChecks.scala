@@ -283,6 +283,10 @@ final class TypeSig private(
       dataTypes.foldLeft(initialTypes)(_+_), maxAllowedDecimalPrecision, childTypes,
       litOnlyTypes, dataTypes.foldLeft(notes)((notes, dataType) => notes.+((dataType, note))))
 
+  def withInitialTypesPsNote(note: String): TypeSig = {
+    withPsNote(initialTypes.toSeq, note)
+  }
+
   private def isSupportedType(dataType: TypeEnum.Value): Boolean =
       initialTypes.contains(dataType)
 
@@ -671,7 +675,7 @@ object TypeSig {
   val integral: TypeSig = BYTE + SHORT + INT + LONG
 
   /**
-   * All numeric types fp + integral + DECIMAL_64
+   * All numeric types fp + integral + DECIMAL_128
    */
   val gpuNumeric: TypeSig = integral + fp + DECIMAL_128
 

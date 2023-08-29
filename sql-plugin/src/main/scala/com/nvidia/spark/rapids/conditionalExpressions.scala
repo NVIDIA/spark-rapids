@@ -156,8 +156,8 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
       trueExpr: Expression,
       falseValue: Any): GpuColumnVector = {
     withResourceIfAllowed(falseValue) { falseRet =>
-      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
-        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
+      withResource(predExpr.columnarEval(batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEvalAny(batch)) { trueRet =>
           val finalRet = (trueRet, falseRet) match {
             case (t: GpuColumnVector, f: GpuColumnVector) =>
               pred.getBase.ifElse(t.getBase, f.getBase)
@@ -206,26 +206,26 @@ case class GpuIf(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
 
     val gpuTrueExpr = trueExpr.asInstanceOf[GpuExpression]
     val gpuFalseExpr = falseExpr.asInstanceOf[GpuExpression]
     val trueExprHasSideEffects = gpuTrueExpr.hasSideEffects
     val falseExprHasSideEffects = gpuFalseExpr.hasSideEffects
 
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { pred =>
+    withResource(predicateExpr.columnarEval(batch)) { pred =>
       // It is unlikely that pred is all true or all false, and in many cases it is as expensive
       // to calculate isAllTrue as it would be to calculate the expression so only do it when
       // it would help with side effect processing, because that is very expensive to do.
       if (falseExprHasSideEffects && isAllTrue(pred)) {
-        GpuExpressionsUtils.columnarEvalToColumn(trueExpr, batch)
+        trueExpr.columnarEval(batch)
       } else if (trueExprHasSideEffects && isAllFalse(pred)) {
-        GpuExpressionsUtils.columnarEvalToColumn(falseExpr, batch)
+        falseExpr.columnarEval(batch)
       } else if (trueExprHasSideEffects || falseExprHasSideEffects) {
         conditionalWithSideEffects(batch, pred, gpuTrueExpr, gpuFalseExpr)
       } else {
-        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
-          withResourceIfAllowed(falseExpr.columnarEval(batch)) { falseRet =>
+        withResourceIfAllowed(trueExpr.columnarEvalAny(batch)) { trueRet =>
+          withResourceIfAllowed(falseExpr.columnarEvalAny(batch)) { falseRet =>
             val finalRet = (trueRet, falseRet) match {
               case (t: GpuColumnVector, f: GpuColumnVector) =>
                 pred.getBase.ifElse(t.getBase, f.getBase)
@@ -272,12 +272,12 @@ case class GpuIf(
       withResource(pred.getBase.unaryOp(UnaryOp.NOT)) { inverted =>
         // evaluate true expression against true batch
         val tt = withResource(filterBatch(tbl, pred.getBase, colTypes)) { trueBatch =>
-          gpuTrueExpr.columnarEval(trueBatch)
+          gpuTrueExpr.columnarEvalAny(trueBatch)
         }
         withResourceIfAllowed(tt) { _ =>
           // evaluate false expression against false batch
           val ff = withResource(filterBatch(tbl, inverted, colTypes)) { falseBatch =>
-            gpuFalseExpr.columnarEval(falseBatch)
+            gpuFalseExpr.columnarEvalAny(falseBatch)
           }
           withResourceIfAllowed(ff) { _ =>
             val finalRet = (tt, ff) match {
@@ -355,18 +355,19 @@ case class GpuCaseWhen(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (branchesWithSideEffects) {
       columnarEvalWithSideEffects(batch)
     } else {
       // `elseRet` will be closed in `computeIfElse`.
       val elseRet = elseValue
-        .map(_.columnarEval(batch))
+        .map(_.columnarEvalAny(batch))
         .getOrElse(GpuScalar(null, branches.last._2.dataType))
-      branches.foldRight[Any](elseRet) {
+      val any = branches.foldRight[Any](elseRet) {
         case ((predicateExpr, trueExpr), falseRet) =>
           computeIfElse(batch, predicateExpr, trueExpr, falseRet)
       }
+      GpuExpressionsUtils.resolveColumnVector(any, batch.numRows())
     }
   }
 
@@ -374,7 +375,7 @@ case class GpuCaseWhen(
    * Perform lazy evaluation of each branch so that we only evaluate the THEN expressions
    * against rows where the WHEN expression is true.
    */
-  private def columnarEvalWithSideEffects(batch: ColumnarBatch): Any = {
+  private def columnarEvalWithSideEffects(batch: ColumnarBatch): GpuColumnVector = {
     val colTypes = GpuColumnVector.extractTypes(batch)
 
     // track cumulative state of predicate evaluation per row so that we never evaluate expressions
@@ -392,7 +393,7 @@ case class GpuCaseWhen(
         branches.foreach {
           case (whenExpr, thenExpr) =>
             // evaluate the WHEN predicate
-            withResource(GpuExpressionsUtils.columnarEvalToColumn(whenExpr, batch)) { whenBool =>
+            withResource(whenExpr.columnarEval(batch)) { whenBool =>
               // we only want to evaluate where this WHEN is true and no previous WHEN has been true
               val firstTrueWhen = isFirstTrueWhen(cumulativePred, whenBool)
 
@@ -400,7 +401,7 @@ case class GpuCaseWhen(
                 if (isAllTrue(firstTrueWhen)) {
                   // if this WHEN predicate is true for all rows and no previous predicate has
                   // been true then we can return immediately
-                  return GpuExpressionsUtils.columnarEvalToColumn(thenExpr, batch)
+                  return thenExpr.columnarEval(batch)
                 }
                 val thenValues = filterEvaluateWhenThen(colTypes, tbl, firstTrueWhen.getBase,
                   thenExpr)
@@ -423,7 +424,7 @@ case class GpuCaseWhen(
           elseValue match {
             case Some(expr) =>
               if (isAllFalse(cumulativePred.get)) {
-                GpuExpressionsUtils.columnarEvalToColumn(expr, batch)
+                expr.columnarEval(batch)
               } else {
                 val elseValues = filterEvaluateWhenThen(colTypes, tbl, elsePredNoNulls, expr)
                 withResource(elseValues) { _ =>
@@ -464,7 +465,7 @@ case class GpuCaseWhen(
       thenExpr: Expression): ColumnVector = {
     val filteredBatch = filterBatch(tbl, whenBool, colTypes)
     val thenValues = withResource(filteredBatch) { trueBatch =>
-      GpuExpressionsUtils.columnarEvalToColumn(thenExpr, trueBatch)
+      thenExpr.columnarEval(trueBatch)
     }
     withResource(thenValues) { _ =>
       gather(whenBool, thenValues)

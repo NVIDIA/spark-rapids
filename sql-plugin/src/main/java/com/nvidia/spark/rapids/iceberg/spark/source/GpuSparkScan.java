@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -283,7 +283,8 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.useChunkedReader(),
-          task.getParquetDebugDumpPrefix(), task.getNumThreads(), task.getMaxNumFileProcessed(),
+          task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
+          task.getNumThreads(), task.getMaxNumFileProcessed(),
           useMultiThread, ff, metrics, queryUsesInputFile);
     }
   }
@@ -293,7 +294,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.useChunkedReader(),
-          task.getParquetDebugDumpPrefix(), metrics);
+          task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(), metrics);
     }
   }
 
@@ -308,7 +309,8 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final long maxBatchSizeBytes;
 
     private final long targetBatchSizeBytes;
-    private final String parquetDebugDumpPrefix;
+    private final scala.Option<String> parquetDebugDumpPrefix;
+    private final boolean parquetDebugDumpAlways;
     private final int numThreads;
     private final int maxNumFileProcessed;
 
@@ -333,6 +335,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       this.maxBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes();
       this.targetBatchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes();
       this.parquetDebugDumpPrefix = rapidsConf.parquetDebugDumpPrefix();
+      this.parquetDebugDumpAlways = rapidsConf.parquetDebugDumpAlways();
       this.numThreads = rapidsConf.multiThreadReadNumThreads();
       this.maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel();
       this.useChunkedReader = rapidsConf.chunkedReaderEnabled();
@@ -371,8 +374,12 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       return targetBatchSizeBytes;
     }
 
-    public String getParquetDebugDumpPrefix() {
+    public scala.Option<String> getParquetDebugDumpPrefix() {
       return parquetDebugDumpPrefix;
+    }
+
+    public boolean getParquetDebugDumpAlways() {
+      return parquetDebugDumpAlways;
     }
 
     public int getNumThreads() {

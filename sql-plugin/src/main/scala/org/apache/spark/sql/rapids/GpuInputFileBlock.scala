@@ -44,7 +44,7 @@ case class GpuInputFileName() extends GpuLeafExpression {
    */
   override def disableCoalesceUntilInput(): Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(Scalar.fromString(InputFileBlockHolder.getInputFilePath.toString)) { scalar =>
       GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
     }
@@ -79,7 +79,7 @@ case class GpuInputFileBlockStart() extends GpuLeafExpression {
    */
   override def disableCoalesceUntilInput(): Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(Scalar.fromLong(InputFileBlockHolder.getStartOffset)) { scalar =>
       GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
     }
@@ -106,7 +106,7 @@ case class GpuInputFileBlockLength() extends GpuLeafExpression {
    */
   override def disableCoalesceUntilInput(): Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(Scalar.fromLong(InputFileBlockHolder.getLength)) { scalar =>
       GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
     }

@@ -8,11 +8,13 @@ parent: Getting-Started
 # Getting Started with RAPIDS Accelerator with on premise cluster or local mode
 ## Spark Deployment Methods
 The way you decide to deploy Spark affects the steps you must take to install and setup Spark and
-the RAPIDS Accelerator for Apache Spark. The primary methods of deploy Spark are:
-- Local mode - this is for dev/testing only, not for production
-- Standalone Mode
-- On a YARN cluster
-- On a Kubernetes cluster
+the RAPIDS Accelerator for Apache Spark. Please see [Software Requirements](../download.md#software-requirements) 
+section for complete list of Spark versions supported by RAPIDS plugin. The primary methods to 
+deploy Spark are:
+* [Local mode](#local-mode) - this is for dev/testing only, not for production
+* [Standalone Mode](#spark-standalone-cluster)
+* [On a YARN cluster](#running-on-yarn)
+* [On a Kubernetes cluster](#running-on-kubernetes)
 
 ## Apache Spark Setup for GPU
 Each GPU node where you are running Spark needs to have the following installed. If you are running
@@ -34,6 +36,9 @@ sudo apt-get update
 sudo apt-get -y install cuda
 ```	
 
+You can check if the GPU driver and CUDA toolkit is 
+installed successfully by running the [nvidia-smi](https://developer.download.nvidia.com/compute/DCGM/docs/nvidia-smi-367.38.pdf) command.
+
 Below are sections on installing Spark and the RAPIDS Accelerator on a single node.  You may want
 to read the deployment method sections before doing any installations.
 
@@ -53,13 +58,13 @@ CUDA and will not run on other versions. The jars use a classifier to keep them 
 - CUDA 11.x => classifier cuda11
 
 For example, here is a sample version of the jar with CUDA 11.x support:
-- rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar
+- rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar
 
 For simplicity export the location to this jar. This example assumes the sample jar above has
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -131,13 +136,13 @@ Now for each worker node:
     - `SPARK_WORKER_OPTS="-Dspark.worker.resource.gpu.amount=4 -Dspark.worker.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh"`
 - Start the worker(s)
   - For multiple workers:
-    - You can add each hostname to the file `$SPARK_HOME/conf/slaves` and use the scripts provided
+    - You can add each hostname to the file `$SPARK_HOME/conf/workers` and use the scripts provided
       by Spark to start all of them. This requires password-less ssh to be setup. If you do not
       have a password-less setup, you can set the environment variable `SPARK_SSH_FOREGROUND` and
       serially provide a password for each worker.
-    - Run `$SPARK_HOME/sbin/start-slaves.sh`
+    - Run `$SPARK_HOME/sbin/start-workers.sh`
 - For a single worker:
-  - `$SPARK_HOME/sbin/start-slave.sh spark://${MASTER_HOST}:7077`
+  - `$SPARK_HOME/sbin/start-worker.sh spark://${MASTER_HOST}:7077`
   
 Now you can go to the master UI at `http://${MASTER_HOST}:8080` and verify all the workers have
 started.
@@ -190,7 +195,8 @@ in process-exclusive mode. See the `nvidia-smi` documentation for more details o
 process-exclusive mode. If you have a pre-existing method for allocating GPUs and dealing with
 multiple applications you could write your own custom discovery class to deal with that.
 
-This assumes you have YARN already installed and set up. Setting up a YARN cluster is not covered
+This assumes you have [YARN](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-common/ClusterSetup.html) 
+already installed and set up. Setting up a YARN cluster is not covered
 in these instructions. Spark must have been built specifically for the Hadoop/YARN version you
 use - either 3.x or 2.x.
 
@@ -369,7 +375,7 @@ df.select( $"value" as "a").join(df2.select($"value" as "b"), $"a" === $"b").cou
 ```
 Go to the Spark UI and click on the application you ran and on the “SQL” tab. If you click the
 operation “count at ...”, you should see the graph of Spark Execs and some of those should have
-the label Gpu...  For instance, in the screenshot below you will see `GpuRowToColumn`, `GpuFilter`,
+the label Gpu...  For instance, in the screenshot below you will see `GpuRowToColumn`, `GpuProject`,
 and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
 ![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)

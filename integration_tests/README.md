@@ -250,7 +250,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-23.06.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-23.06.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-23.10.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-23.10.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -273,7 +273,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -372,7 +372,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-23.06.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-23.10.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -397,6 +397,10 @@ Some tests require that Delta Lake has been configured in the Spark environment 
 properly without it. These tests assume Delta Lake is not configured and are disabled by default.
 If Spark has been configured to support Delta Lake then these tests can be enabled by adding the
 `--delta_lake` option to the command.
+
+### Enabling large data tests
+Some tests are testing large data which will take a long time. By default, these tests are disabled.
+These tests can be enabled by adding the `--large_data_test` option to the command.
 
 ## Writing tests
 

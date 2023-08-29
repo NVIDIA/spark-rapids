@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{DataOutputStream, FileNotFoundException, IOException}
+import java.io.{ByteArrayInputStream, FileNotFoundException, IOException, OutputStream}
 import java.net.URI
 import java.nio.ByteBuffer
-import java.nio.channels.{Channels, WritableByteChannel}
+import java.nio.channels.Channels
+import java.nio.charset.StandardCharsets
 import java.util
 import java.util.concurrent.{Callable, TimeUnit}
 import java.util.regex.Pattern
@@ -35,11 +36,15 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
-import com.nvidia.spark.rapids.shims.{OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.filecache.FileCache
+import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import org.apache.commons.io.IOUtils
+import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
+import org.apache.hadoop.io.Text
+import org.apache.orc.{CompressionKind, DataReader, FileFormatException, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
@@ -525,13 +530,17 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
-  private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
+  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val debugDumpAlways = rapidsConf.orcDebugDumpAlways
   private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
-  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters,
+  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, metrics, broadcastedConf, filters,
     rapidsConf.isOrcFloatTypesToStringEnable)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
+  private val combineThresholdSize = rapidsConf.getMultithreadedCombineThreshold
+  private val combineWaitTime = rapidsConf.getMultithreadedCombineWaitTime
+  private val keepReadsInOrder = rapidsConf.getMultithreadedReaderKeepOrder
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -550,9 +559,11 @@ case class GpuOrcMultiFilePartitionReaderFactory(
    */
   override def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
       PartitionReader[ColumnarBatch] = {
+    val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
-      debugDumpPrefix, filters, filterHandler, metrics, ignoreMissingFiles, ignoreCorruptFiles)
+      debugDumpPrefix, debugDumpAlways, filters, filterHandler, metrics, ignoreMissingFiles,
+      ignoreCorruptFiles, queryUsesInputFile, keepReadsInOrder, combineConf)
   }
 
   /**
@@ -591,9 +602,9 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
-    new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
-      maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics, partitionSchema, numThreads,
-      filterHandler.isCaseSensitive)
+    new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema,
+      debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
+      partitionSchema, numThreads, filterHandler.isCaseSensitive)
   }
 
   /**
@@ -618,11 +629,12 @@ case class GpuOrcPartitionReaderFactory(
   extends ShimFilePartitionReaderFactory(params) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
+  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val debugDumpAlways = rapidsConf.orcDebugDumpAlways
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
-  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, pushedFilters,
-    rapidsConf.isOrcFloatTypesToStringEnable)
+  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, metrics, broadcastedConf,
+    pushedFilters, rapidsConf.isOrcFloatTypesToStringEnable)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -643,8 +655,8 @@ case class GpuOrcPartitionReaderFactory(
       val conf = broadcastedConf.value.value
       OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
       val reader = new PartitionReaderWithBytesRead(new GpuOrcPartitionReader(conf, partFile, ctx,
-        readDataSchema, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
-        filterHandler.isCaseSensitive))
+        readDataSchema, debugDumpPrefix, debugDumpAlways,  maxReadBatchSizeRows,
+        maxReadBatchSizeBytes, metrics, filterHandler.isCaseSensitive))
       ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
     }
   }
@@ -693,37 +705,53 @@ case class OrcPartitionReaderContext(
     blockIterator: BufferedIterator[OrcOutputStripe],
     requestedMapping: Option[Array[Int]])
 
+case class OrcBlockMetaForSplitCheck(
+    filePath: Path,
+    typeDescription: TypeDescription,
+    compressionKind: CompressionKind,
+    requestedMapping: Option[Array[Int]]) {
+}
+
+object OrcBlockMetaForSplitCheck {
+  def apply(singleBlockMeta: OrcSingleStripeMeta): OrcBlockMetaForSplitCheck = {
+    OrcBlockMetaForSplitCheck(
+      singleBlockMeta.filePath,
+      singleBlockMeta.schema.schema,
+      singleBlockMeta.dataBlock.stripeMeta.ctx.compressionKind,
+      singleBlockMeta.extraInfo.requestedMapping)
+  }
+
+  def apply(filePathStr: String, typeDescription: TypeDescription,
+      compressionKind: CompressionKind,
+      requestedMapping: Option[Array[Int]]): OrcBlockMetaForSplitCheck = {
+    OrcBlockMetaForSplitCheck(new Path(new URI(filePathStr)), typeDescription,
+      compressionKind, requestedMapping)
+  }
+}
+
 /** Collections of some common functions for ORC */
 trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionReaderBase =>
-  private val orcFormat = Some("orc")
+  /** Whether debug dumping is enabled and the path prefix where to dump */
+  val debugDumpPrefix: Option[String]
 
-  def debugDumpPrefix: Option[String]
+  /** Whether to always debug dump or only on errors */
+  val debugDumpAlways: Boolean
+
+  val conf: Configuration
 
   // The Spark schema describing what will be read
   def readDataSchema: StructType
 
   /** Copy the stripe to the channel */
   protected def copyStripeData(
-      ctx: OrcPartitionReaderContext,
-      out: WritableByteChannel,
+      dataReader: GpuOrcDataReader,
+      out: HostMemoryOutputStream,
       inputDataRanges: DiskRangeList): Unit = {
 
-    withResource(OrcTools.buildDataReader(ctx)) { dataReader =>
-      val start = System.nanoTime()
-      val bufferChunks = OrcShims.readFileData(dataReader, inputDataRanges)
-      val mid = System.nanoTime()
-      var current = bufferChunks
-      while (current != null) {
-        out.write(current.getData)
-        if (dataReader.isTrackingDiskRanges && current.isInstanceOf[BufferChunk]) {
-          dataReader.releaseBuffer(current.getData)
-        }
-        current = current.next
-      }
-      val end = System.nanoTime()
-      metrics.get(READ_FS_TIME).foreach(_.add(mid - start))
-      metrics.get(WRITE_BUFFER_TIME).foreach(_.add(end - mid))
-    }
+    val start = System.nanoTime()
+    dataReader.copyFileDataToHostStream(out, inputDataRanges)
+    val end = System.nanoTime()
+    metrics.get(READ_FS_TIME).foreach(_.add(end - start))
   }
 
   /** Get the ORC schema corresponding to the file being constructed for the GPU */
@@ -745,39 +773,58 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     }.getOrElse(updatedSchema)
   }
 
-  /** write the ORC file Footer and PostScript  */
-  protected def writeOrcFileFooter(
+  protected final def writeOrcFileHeader(outStream: HostMemoryOutputStream): Long = {
+    val startOffset = outStream.getPos
+    outStream.write(OrcTools.ORC_MAGIC)
+    outStream.getPos - startOffset
+  }
+
+  /** write the ORC file footer and PostScript  */
+  protected final def writeOrcFileTail(
+      outStream: HostMemoryOutputStream,
       ctx: OrcPartitionReaderContext,
-      fileFooterBuilder: OrcProto.Footer.Builder,
-      rawOut: HostMemoryOutputStream,
       footerStartOffset: Long,
-      numRows: Long,
-      protoWriter: shims.OrcProtoWriterShim) = {
+      stripes: Seq[OrcOutputStripe]): Unit = {
 
-    val startPoint = rawOut.getPos
-
-    // write the footer
-    val footer = fileFooterBuilder.setHeaderLength(OrcFile.MAGIC.length)
-      .setContentLength(footerStartOffset) // the content length is everything before file footer
+    // 1) Build and write the file footer
+    val allStripes = stripes.map(_.infoBuilder.build())
+    val footer = OrcProto.Footer.newBuilder
+      .addAllStripes(allStripes.asJava)
+      .setHeaderLength(OrcTools.ORC_MAGIC.length)
+      .setContentLength(footerStartOffset) // the content length is all before file footer
       .addAllTypes(org.apache.orc.OrcUtils.getOrcTypes(buildReaderSchema(ctx)))
-      .setNumberOfRows(numRows)
+      .setNumberOfRows(allStripes.map(_.getNumberOfRows).sum)
       .build()
 
-    protoWriter.writeAndFlush(footer)
+    val posBeforeFooter = outStream.getPos
+    withCodecOutputStream(ctx, outStream) { protoWriter =>
+      protoWriter.writeAndFlush(footer)
+    }
 
-    val footerLen = rawOut.getPos - startPoint
-
-    // write the postscript (uncompressed)
+    // 2) Write the PostScript (uncompressed)
+    val footerLen = outStream.getPos - posBeforeFooter
     val postscript = OrcProto.PostScript.newBuilder(ctx.fileTail.getPostscript)
       .setFooterLength(footerLen)
       .setMetadataLength(0)
       .build()
-    postscript.writeTo(rawOut)
-    val postScriptLength = rawOut.getPos - startPoint - footerLen
+    postscript.writeTo(outStream)
+    val postScriptLength = outStream.getPos - posBeforeFooter - footerLen
     if (postScriptLength > 255) {
-      throw new IllegalArgumentException(s"PostScript length is too large at $postScriptLength")
+      throw new IllegalStateException(s"PostScript length is too large at $postScriptLength")
     }
-    rawOut.write(postScriptLength.toInt)
+
+    // 3) Write length of the PostScript
+    outStream.write(postScriptLength.toInt)
+  }
+
+  protected final def calculateFileTailSize(
+      ctx: OrcPartitionReaderContext,
+      footerStartOffset: Long,
+      stripes: Seq[OrcOutputStripe]): Long = {
+    withResource(new NullHostMemoryOutputStream) { nullStream =>
+      writeOrcFileTail(nullStream, ctx, footerStartOffset, stripes)
+      nullStream.getPos
+    }
   }
 
   /**
@@ -825,9 +872,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       requestedMapping: Option[Array[Int]],
       isCaseSensitive: Boolean,
       splits: Array[PartitionedFile]): Table = {
-    // Dump ORC data into a file
-    dumpDataToFile(hostBuf, bufSize, splits, debugDumpPrefix, orcFormat)
-
     val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
     val includedColumns = tableSchema.getFieldNames.asScala
     val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
@@ -841,7 +885,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     // about to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    try {
+    val table = try {
       RmmRapidsRetryIterator.withRetryNoSplit[Table] {
         val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
           metrics(GPU_DECODE_TIME))) { _ =>
@@ -854,9 +898,88 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       }
     } catch {
       case e: Exception =>
-        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+        val dumpMsg = debugDumpPrefix.map { prefix =>
+          val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".orc")
+          s", data dumped to $p"
+        }.getOrElse("")
+        throw new IOException(
+          s"Error when processing file splits [${splits.mkString("; ")}]$dumpMsg", e)
     }
+    debugDumpPrefix.foreach { prefix =>
+      if (debugDumpAlways) {
+        val p = DumpUtils.dumpBuffer(conf, hostBuf, 0, bufSize, prefix, ".orc")
+        logWarning(s"Dumped data for [${splits.mkString("; ")}] to $p")
+      }
+    }
+    table
   }
+
+  protected final def isNeedToSplitDataBlock(
+      curMeta: OrcBlockMetaForSplitCheck,
+      nextMeta: OrcBlockMetaForSplitCheck): Boolean = {
+    if (!nextMeta.typeDescription.equals(curMeta.typeDescription)) {
+      logInfo(s"ORC schema for the next file ${nextMeta.filePath}" +
+        s" schema ${nextMeta.typeDescription} doesn't match current ${curMeta.filePath}" +
+        s" schema ${curMeta.typeDescription}, splitting it into another batch!")
+      return true
+    }
+
+    if (nextMeta.compressionKind != curMeta.compressionKind) {
+      logInfo(s"ORC File compression for the next file ${nextMeta.filePath}" +
+        s" doesn't match current ${curMeta.filePath}, splitting it into another batch!")
+      return true
+    }
+
+    val ret = (nextMeta.requestedMapping, curMeta.requestedMapping) match {
+      case (None, None) => true
+      case (Some(cols1), Some(cols2)) =>
+        if (cols1.sameElements(cols2)) true else false
+      case (_, _) => {
+        false
+      }
+    }
+
+    if (!ret) {
+      logInfo(s"ORC requested column ids for the next file ${nextMeta.filePath}" +
+        s" doesn't match current ${curMeta.filePath}, splitting it into another batch!")
+      return true
+    }
+
+    false
+  }
+
+  protected implicit def toStripe(block: DataBlockBase): OrcStripeWithMeta =
+    block.asInstanceOf[OrcDataStripe].stripeMeta
+
+  protected implicit def toDataStripes(stripes: Seq[DataBlockBase]): Seq[OrcStripeWithMeta] =
+    stripes.map(_.asInstanceOf[OrcDataStripe].stripeMeta)
+
+  protected final def estimateOutputSizeFromBlocks(blocks: Seq[OrcStripeWithMeta]): Long = {
+    // Start with header magic
+    val headerLen = OrcTools.ORC_MAGIC.length
+    val stripesLen = blocks.map { block =>
+      // Account for the size of every stripe, and
+      // the StripeInformation size in advance which should be calculated in Footer.
+      block.stripeLength + OrcTools.sizeOfStripeInformation
+    }.sum
+
+    val footerLen = if (blocks.nonEmpty) {
+      // Add the first orc file's footer length to cover ORC schema and other info.
+      // Here uses the file footer size from the OrcPartitionReaderContext of the first
+      // stripe as the worst-case.
+      blocks.head.ctx.fileTail.getPostscript.getFooterLength
+    } else {
+      0L
+    }
+
+    val fileLen = headerLen + stripesLen + footerLen +
+      256 + // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
+      1 // And the single-byte postscript length at the end of the file.
+    // Add in a bit of fudging in case the whole file is being consumed and
+    // our codec version isn't as efficient as the original writer's codec.
+    fileLen + OrcTools.INEFFICIENT_CODEC_BUF_SIZE
+  }
+
 }
 
 /**
@@ -985,7 +1108,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
 
     // Add in a bit of fudging in case the whole file is being consumed and
     // our codec version isn't as efficient as the original writer's codec.
-    size + 128 * 1024
+    size + OrcTools.INEFFICIENT_CODEC_BUF_SIZE
   }
 
   /**
@@ -1002,27 +1125,22 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
       stripes: Seq[OrcOutputStripe]): Unit = {
 
     // write ORC header
-    val dataOut = new DataOutputStream(rawOut)
-    dataOut.writeBytes(OrcFile.MAGIC)
-    dataOut.flush()
+    writeOrcFileHeader(rawOut)
 
-    withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter) =>
-      var numRows = 0L
-      val fileFooterBuilder = OrcProto.Footer.newBuilder
-      // write the stripes
-      stripes.foreach { stripe =>
-        stripe.infoBuilder.setOffset(rawOut.getPos)
-        copyStripeData(ctx, outChannel, stripe.inputDataRanges)
-        val stripeFooterStartOffset = rawOut.getPos
-        protoWriter.writeAndFlush(stripe.footer)
-        stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
-        fileFooterBuilder.addStripes(stripe.infoBuilder.build())
-        numRows += stripe.infoBuilder.getNumberOfRows
+    // write the stripes
+    withCodecOutputStream(ctx, rawOut) { protoWriter =>
+      withResource(OrcTools.buildDataReader(ctx, metrics)) { dataReader =>
+        stripes.foreach { stripe =>
+          stripe.infoBuilder.setOffset(rawOut.getPos)
+          copyStripeData(dataReader, rawOut, stripe.inputDataRanges)
+          val stripeFooterStartOffset = rawOut.getPos
+          protoWriter.writeAndFlush(stripe.footer)
+          stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
+        }
       }
-
-      writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, rawOut.getPos, numRows,
-        protoWriter)
     }
+    // write the file tail (file footer + postscript)
+    writeOrcFileTail(rawOut, ctx, rawOut.getPos, stripes)
   }
 }
 
@@ -1038,17 +1156,19 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
  * @param ctx     the context to provide some necessary information
  * @param readDataSchema Spark schema of what will be read from the file
  * @param debugDumpPrefix path prefix for dumping the memory file or null
+ * @param debugDumpAlways whether to always debug dump or only on errors
  * @param maxReadBatchSizeRows maximum number of rows to read in a batch
  * @param maxReadBatchSizeBytes maximum number of bytes to read in a batch
  * @param execMetrics metrics to update during read
  * @param isCaseSensitive whether the name check should be case sensitive or not
  */
 class GpuOrcPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     partFile: PartitionedFile,
     ctx: OrcPartitionReaderContext,
     override val readDataSchema: StructType,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics : Map[String, GpuMetric],
@@ -1110,14 +1230,16 @@ class GpuOrcPartitionReader(
 
 private object OrcTools {
 
-  /** Build an ORC data reader using OrcPartitionReaderContext */
-  def buildDataReader(ctx: OrcPartitionReaderContext): DataReader = {
+  /** Build a GPU ORC data reader using OrcPartitionReaderContext */
+  def buildDataReader(
+      ctx: OrcPartitionReaderContext,
+      metrics: Map[String, GpuMetric]): GpuOrcDataReader = {
     val fs = ctx.filePath.getFileSystem(ctx.conf)
     buildDataReader(ctx.compressionSize, ctx.compressionKind, ctx.fileSchema, ctx.readerOpts,
-      ctx.filePath, fs, ctx.conf)
+      ctx.filePath, fs, ctx.conf, metrics)
   }
 
-  /** Build an ORC data reader */
+  /** Build a GPU ORC data reader */
   def buildDataReader(
       compressionSize: Int,
       compressionKind: CompressionKind,
@@ -1125,31 +1247,46 @@ private object OrcTools {
       readerOpts: Reader.Options,
       filePath: Path,
       fs: FileSystem,
-      conf: Configuration): DataReader = {
-    if (readerOpts.getDataReader != null) {
-      readerOpts.getDataReader
+      conf: Configuration,
+      metrics: Map[String, GpuMetric]): GpuOrcDataReader = {
+    require(readerOpts.getDataReader == null, "unexpected data reader")
+    val zeroCopy: Boolean = if (readerOpts.getUseZeroCopy != null) {
+      readerOpts.getUseZeroCopy
     } else {
-      val zeroCopy: Boolean = if (readerOpts.getUseZeroCopy != null) {
-        readerOpts.getUseZeroCopy
-      } else {
-        OrcConf.USE_ZEROCOPY.getBoolean(conf)
-      }
-      val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
+      OrcConf.USE_ZEROCOPY.getBoolean(conf)
+    }
+    val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
 
-      val typeCount = org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size
-      //noinspection ScalaDeprecation
-      val reader = RecordReaderUtils.createDefaultDataReader(
-        OrcShims.newDataReaderPropertiesBuilder(compressionSize, compressionKind, typeCount)
+    val typeCount = org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size
+    //noinspection ScalaDeprecation
+    val reader = new GpuOrcDataReader(
+      OrcShims.newDataReaderPropertiesBuilder(compressionSize, compressionKind, typeCount)
           .withFileSystem(fs)
           .withPath(filePath)
           .withZeroCopy(zeroCopy)
           .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-          .build())
-      reader.open()
-      reader
-    }
+          .build(), conf, metrics)
+    reader.open()
+    reader
   }
 
+  // 128k buffer in case of inefficient codec on GPU
+  val INEFFICIENT_CODEC_BUF_SIZE: Int = 128 * 1024
+
+  // Estimate the size of StripeInformation with the worst case.
+  // The serialized size may be different because of the different values.
+  // Here set most of values to "Long.MaxValue" to get the worst case.
+  lazy val sizeOfStripeInformation: Int = {
+    OrcProto.StripeInformation.newBuilder()
+      .setOffset(Long.MaxValue)
+      .setIndexLength(0) // Index stream is pruned
+      .setDataLength(Long.MaxValue)
+      .setFooterLength(Int.MaxValue) // StripeFooter size should be small
+      .setNumberOfRows(Long.MaxValue)
+      .build().getSerializedSize
+  }
+
+  val ORC_MAGIC: Array[Byte] = OrcFile.MAGIC.getBytes(StandardCharsets.US_ASCII)
 }
 
 /**
@@ -1161,6 +1298,7 @@ private object OrcTools {
  */
 private case class GpuOrcFileFilterHandler(
     @transient sqlConf: SQLConf,
+    metrics: Map[String, GpuMetric],
     broadcastedConf: Broadcast[SerializableConfiguration],
     pushedFilters: Array[Filter],
     isOrcFloatTypesToStringEnable: Boolean) {
@@ -1178,7 +1316,9 @@ private case class GpuOrcFileFilterHandler(
 
     val filePath = new Path(new URI(partFile.filePath.toString()))
     val fs = filePath.getFileSystem(conf)
-    val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
+    val orcFileReaderOpts = OrcFile.readerOptions(conf)
+        .filesystem(fs)
+        .orcTail(GpuOrcFileFilterHandler.getOrcTail(filePath, fs, conf,  metrics))
 
     // After getting the necessary information from ORC reader, we must close the ORC reader
     OrcShims.withReader(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
@@ -1216,7 +1356,8 @@ private case class GpuOrcFileFilterHandler(
         val readerOpts = buildOrcReaderOpts(taskConf, orcReader, partFile, fullSchema)
 
         withResource(OrcTools.buildDataReader(orcReader.getCompressionSize,
-          orcReader.getCompressionKind, orcReader.getSchema, readerOpts, filePath, fs, taskConf)) {
+          orcReader.getCompressionKind, orcReader.getSchema, readerOpts, filePath, fs, taskConf,
+          metrics)) {
           dataReader =>
             new GpuOrcPartitionReaderUtils(filePath, taskConf, partFile, orcFileReaderOpts,
               orcReader, readerOpts, dataReader, requestedMapping).getOrcPartitionReaderContext
@@ -1391,7 +1532,8 @@ private case class GpuOrcFileFilterHandler(
             footerBuilder.addStreams(
               OrcProto.Stream.newBuilder(stream).setColumn(outputColumn).build)
             outputStripeDataLength += stream.getLength
-            rangeCreator.addOrMerge(inputFileOffset, streamEndOffset, true, true)
+            rangeCreator.addOrMerge(inputFileOffset, streamEndOffset,
+              GpuOrcDataReader.shouldMergeDiskRanges, true)
           }
         }
 
@@ -1589,6 +1731,208 @@ private case class GpuOrcFileFilterHandler(
   }
 }
 
+private object GpuOrcFileFilterHandler {
+  // footer buffer is prefixed by a file size and a file modification timestamp
+  private val TAIL_PREFIX_SIZE = 2 * java.lang.Long.BYTES
+
+  private def getOrcTail(
+      filePath: Path,
+      fs: FileSystem,
+      conf: Configuration,
+      metrics: Map[String, GpuMetric]): OrcTail = {
+    val filePathStr = filePath.toString
+    val cachedFooter = FileCache.get.getFooter(filePathStr, conf)
+    val bb = cachedFooter.map { hmb =>
+      // ORC can only deal with on-heap buffers
+      val bb = withResource(hmb) { _ =>
+        val bb = ByteBuffer.allocate(hmb.getLength.toInt)
+        hmb.getBytes(bb.array(), 0, 0, hmb.getLength.toInt)
+        bb
+      }
+      metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS, NoopMetric) += 1
+      metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS_SIZE, NoopMetric) += hmb.getLength
+      bb
+    }.getOrElse {
+      metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES, NoopMetric) += 1
+      val bb = readOrcTailBuffer(filePath, fs)
+      val bbSize = bb.remaining()
+      metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES_SIZE, NoopMetric) += bbSize
+      // footer was not cached, so try to cache it
+      // If we get a filecache token then we can complete the caching by providing the data.
+      // If we do not get a token then we should not cache this data.
+      val cacheToken = FileCache.get.startFooterCache(filePathStr, conf)
+      cacheToken.foreach { t =>
+        val hmb = closeOnExcept(HostMemoryBuffer.allocate(bbSize, false)) { hmb =>
+          hmb.setBytes(0, bb.array(), 0, bbSize)
+          hmb
+        }
+        t.complete(hmb)
+      }
+      bb
+    }
+    loadOrcTailFromBuffer(bb)
+  }
+
+  private def loadOrcTailFromBuffer(bb: ByteBuffer): OrcTail = {
+    if (bb.remaining == 0) {
+      buildEmptyTail()
+    } else {
+      // Beginning of cached buffer is the file length and modification timestamp
+      val fileSize = bb.getLong
+      val modificationTime = bb.getLong
+      val serializedTail = bb.slice()
+      bb.position(0)
+      // last byte is the size of the postscript section
+      val psSize = bb.get(bb.limit() - 1) & 0xff
+      val ps = loadPostScript(bb, psSize)
+      val footer = OrcShims.parseFooterFromBuffer(bb, ps, psSize)
+      val fileTail = OrcProto.FileTail.newBuilder()
+          .setFileLength(fileSize)
+          .setPostscriptLength(psSize)
+          .setPostscript(ps)
+          .setFooter(footer)
+          .build()
+      new OrcTail(fileTail, serializedTail, modificationTime)
+    }
+  }
+
+  private def loadPostScript(bb: ByteBuffer, psSize: Int): OrcProto.PostScript = {
+    val psOffset = bb.limit() - 1 - psSize
+    val in = new ByteArrayInputStream(bb.array(), bb.arrayOffset() + psOffset, psSize)
+    OrcProto.PostScript.parseFrom(in)
+  }
+
+  private def readOrcTailBuffer(filePath: Path, fs: FileSystem): ByteBuffer = {
+    withResource(fs.open(filePath)) { in =>
+      val fileStatus = fs.getFileStatus(filePath)
+      val fileSize = fileStatus.getLen
+      val modificationTime = fileStatus.getModificationTime
+      if (fileSize == 0) {
+        // file is empty
+        ByteBuffer.allocate(0)
+      } else {
+        val footerSizeGuess = 16 * 1024
+        val bb = ByteBuffer.allocate(footerSizeGuess)
+        val readSize = fileSize.min(footerSizeGuess).toInt
+        in.readFully(fileSize - readSize, bb.array(), bb.arrayOffset(), readSize)
+        bb.position(0)
+        bb.limit(readSize)
+        val psLen = bb.get(readSize - 1) & 0xff
+        ensureOrcFooter(in, filePath, psLen, bb)
+        val psOffset = readSize - 1 - psLen
+        val ps = extractPostScript(bb, filePath, psLen, psOffset)
+        val tailSize = (1 + psLen + ps.getFooterLength + ps.getMetadataLength +
+            OrcShims.getStripeStatisticsLength(ps)).toInt
+        val tailBuffer = ByteBuffer.allocate(tailSize + TAIL_PREFIX_SIZE)
+        // calculate the amount of tail data that was missed in the speculative initial read
+        val unreadRemaining = Math.max(0, tailSize - readSize)
+        // copy tail bytes from original buffer
+        bb.position(Math.max(0, readSize - tailSize))
+        tailBuffer.position(TAIL_PREFIX_SIZE + unreadRemaining)
+        tailBuffer.put(bb)
+        if (unreadRemaining > 0) {
+          // first read did not grab the entire tail, need to read more
+          tailBuffer.position(TAIL_PREFIX_SIZE)
+          in.readFully(fileSize - readSize - unreadRemaining, tailBuffer.array(),
+            tailBuffer.arrayOffset() + tailBuffer.position(), unreadRemaining)
+        }
+        tailBuffer.putLong(0, fileSize)
+        tailBuffer.putLong(java.lang.Long.BYTES, modificationTime)
+        tailBuffer.position(0)
+        tailBuffer
+      }
+    }
+  }
+
+  private def extractPostScript(
+      bb: ByteBuffer,
+      filePath: Path,
+      psLen: Int,
+      psAbsOffset: Int): OrcProto.PostScript = {
+    // TODO: when PB is upgraded to 2.6, newInstance(ByteBuffer) method should be used here.
+    assert(bb.hasArray)
+    val in = new ByteArrayInputStream(bb.array(), bb.arrayOffset() + psAbsOffset, psLen)
+    val ps = OrcProto.PostScript.parseFrom(in)
+    checkOrcVersion(filePath, ps)
+    ps
+  }
+
+  /**
+   * Ensure this is an ORC file to prevent users from trying to read text
+   * files or RC files as ORC files.
+   *
+   * @param in     the file being read
+   * @param path   the filename for error messages
+   * @param psLen  the postscript length
+   * @param buffer the tail of the file
+   */
+  private def ensureOrcFooter(
+      in: FSDataInputStream,
+      path: Path,
+      psLen: Int,
+      buffer: ByteBuffer): Unit = {
+    val magicLength = OrcFile.MAGIC.length
+    val fullLength = magicLength + 1
+    if (psLen < fullLength || buffer.remaining < fullLength) {
+      throw new FileFormatException("Malformed ORC file " + path +
+          ". Invalid postscript length " + psLen)
+    }
+    val offset = buffer.arrayOffset() + buffer.position() + buffer.limit() - fullLength
+    val array = buffer.array
+    // now look for the magic string at the end of the postscript.
+    if (!Text.decode(array, offset, magicLength).equals(OrcFile.MAGIC)) {
+      // If it isn't there, this may be the 0.11.0 version of ORC.
+      // Read the first 3 bytes of the file to check for the header
+      val header = new Array[Byte](magicLength)
+      in.readFully(0, header, 0, magicLength)
+      // if it isn't there, this isn't an ORC file
+      if (!Text.decode(header, 0, magicLength).equals(OrcFile.MAGIC)) {
+        throw new FileFormatException("Malformed ORC file " + path +
+            ". Invalid postscript.")
+      }
+    }
+  }
+
+  private def checkOrcVersion(path: Path, postscript: OrcProto.PostScript): Unit = {
+    val versionList = postscript.getVersionList
+    if (ReaderImpl.getFileVersion(versionList) == OrcFile.Version.FUTURE) {
+      throw new IOException(path + " was written by a future ORC version " +
+          versionList.asScala.mkString(".") +
+          ". This file is not readable by this version of ORC.\n")
+    }
+  }
+
+  private def buildEmptyTail(): OrcTail = {
+    val postscript = OrcProto.PostScript.newBuilder()
+    val version = OrcFile.Version.CURRENT
+    postscript.setMagic(OrcFile.MAGIC)
+        .setCompression(OrcProto.CompressionKind.NONE)
+        .setFooterLength(0)
+        .addVersion(version.getMajor)
+        .addVersion(version.getMinor)
+        .setMetadataLength(0)
+        .setWriterVersion(OrcFile.CURRENT_WRITER.getId)
+
+    // Use a struct with no fields
+    val struct = OrcProto.Type.newBuilder()
+    struct.setKind(OrcProto.Type.Kind.STRUCT)
+
+    val footer = OrcProto.Footer.newBuilder()
+    footer.setHeaderLength(0)
+        .setContentLength(0)
+        .addTypes(struct)
+        .setNumberOfRows(0)
+        .setRowIndexStride(0)
+
+    val result = OrcProto.FileTail.newBuilder()
+    result.setFooter(footer)
+    result.setPostscript(postscript)
+    result.setFileLength(0)
+    result.setPostscriptLength(0)
+    new OrcTail(result.build(), null)
+  }
+}
+
 /**
  * A PartitionReader that can read multiple ORC files in parallel. This is most efficient
  * running in a cloud environment where the I/O of reading is slow.
@@ -1608,6 +1952,7 @@ private case class GpuOrcFileFilterHandler(
  * @param maxNumFileProcessed threshold to control the maximum file number to be
  *                            submitted to threadpool
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated ORC data or null
+ * @param debugDumpAlways whether to always debug dump or only on errors
  * @param filters filters passed into the filterHandler
  * @param filterHandler used to filter the ORC stripes
  * @param execMetrics the metrics
@@ -1615,7 +1960,7 @@ private case class GpuOrcFileFilterHandler(
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
 class MultiFileCloudOrcPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     files: Array[PartitionedFile],
     dataSchema: StructType,
     override val readDataSchema: StructType,
@@ -1625,32 +1970,41 @@ class MultiFileCloudOrcPartitionReader(
     numThreads: Int,
     maxNumFileProcessed: Int,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     filters: Array[Filter],
     filterHandler: GpuOrcFileFilterHandler,
     execMetrics: Map[String, GpuMetric],
     ignoreMissingFiles: Boolean,
-    ignoreCorruptFiles: Boolean)
+    ignoreCorruptFiles: Boolean,
+    queryUsesInputFile: Boolean,
+    keepReadsInOrder: Boolean,
+    combineConf: CombineConf)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-    ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
+    execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
+    keepReadsInOrder = keepReadsInOrder, combineConf = combineConf)
+  with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(
-    override val partitionedFile: PartitionedFile,
-    bufferSize: Long,
-    override val bytesRead: Long,
-    readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
+      override val partitionedFile: PartitionedFile,
+      numRows: Long,
+      override val bytesRead: Long,
+      readSchema: StructType,
+      override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
+    extends HostMemoryBuffersWithMetaDataBase {
 
     override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
-      Array(SingleHMBAndMeta.empty(bufferSize))
+      Array(SingleHMBAndMeta.empty(numRows))
   }
 
   private case class HostMemoryBuffersWithMetaData(
-    override val partitionedFile: PartitionedFile,
-    override val memBuffersAndSizes: Array[SingleHMBAndMeta],
-    override val bytesRead: Long,
-    updatedReadSchema: TypeDescription,
-    requestedMapping: Option[Array[Int]]) extends HostMemoryBuffersWithMetaDataBase
-
+      override val partitionedFile: PartitionedFile,
+      override val memBuffersAndSizes: Array[SingleHMBAndMeta],
+      override val bytesRead: Long,
+      updatedReadSchema: TypeDescription,
+      compressionKind: CompressionKind,
+      requestedMapping: Option[Array[Int]],
+      override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
+    extends HostMemoryBuffersWithMetaDataBase
 
   private class ReadBatchRunner(
       taskContext: TaskContext,
@@ -1691,36 +2045,42 @@ class MultiFileCloudOrcPartitionReader(
       val result = try {
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
-          // no blocks so return null buffer and size 0
+          logDebug(s"Read no blocks from file: ${partFile.filePath.toString}")
           HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
         } else {
           blockChunkIter = ctx.blockIterator
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
+            logDebug("Reader is closed, return empty buffer for the current read for " +
+              s"file: ${partFile.filePath.toString}")
             HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
           } else {
             if (ctx.updatedReadSchema.isEmpty) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
-              val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
-              // overload size to be number of rows with null buffer
+              val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum
+              logDebug(s"Return empty buffer but with row number: $numRows for " +
+                s"file: ${partFile.filePath.toString}")
               HostMemoryEmptyMetaData(partFile, numRows, bytesRead, readDataSchema)
             } else {
               while (blockChunkIter.hasNext) {
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
                   maxReadBatchSizeBytes)
-                val info = readPartFile(ctx, blocksToRead)
-                val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum.toInt
-                hostBuffers += SingleHMBAndMeta(info._1, info._2, numRows, Seq.empty, null)
+                val (hostBuf, bufSize) = readPartFile(ctx, blocksToRead)
+                val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum
+                val metas = blocksToRead.map(b => OrcDataStripe(OrcStripeWithMeta(b, ctx)))
+                hostBuffers += SingleHMBAndMeta(hostBuf, bufSize, numRows, metas)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
                 hostBuffers.foreach(_.hmb.safeClose())
+                logDebug("Reader is closed, return empty buffer for the current read for " +
+                  s"file: ${partFile.filePath.toString}")
                 HostMemoryEmptyMetaData(partFile, 0, bytesRead, readDataSchema)
               } else {
                 HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
-                  ctx.updatedReadSchema, ctx.requestedMapping)
+                  ctx.updatedReadSchema, ctx.compressionKind, ctx.requestedMapping)
               }
             }
           }
@@ -1735,6 +2095,11 @@ class MultiFileCloudOrcPartitionReader(
       result
     }
   }
+
+  private case class CombinedMeta(
+    combinedEmptyMeta: Option[HostMemoryEmptyMetaData],
+    allPartValues: Array[(Long, InternalRow)],
+    toCombine: Array[HostMemoryBuffersWithMetaDataBase])
 
   /**
    * The sub-class must implement the real file reading logic in a Callable
@@ -1763,6 +2128,31 @@ class MultiFileCloudOrcPartitionReader(
    */
   override def getFileFormatShortName: String = "ORC"
 
+  override def canUseCombine: Boolean = {
+    if (queryUsesInputFile) {
+      logDebug("Can't use combine mode because query uses 'input_file_xxx' function(s)")
+      false
+    } else {
+      val canUse = combineConf.combineThresholdSize > 0
+      if (!canUse) {
+        logDebug("Can not use combine mode because the threshold size <= 0")
+      }
+      canUse
+    }
+  }
+
+  override def combineHMBs(
+      buffers: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
+    if (buffers.length == 1) {
+      logDebug("No need to combine because there is only one buffer.")
+      buffers.head
+    } else {
+      assert(buffers.length > 1)
+      logDebug(s"Got ${buffers.length} buffers, combine them")
+      doCombineHmbs(buffers)
+    }
+  }
+
   /**
    * Decode HostMemoryBuffers in GPU
    *
@@ -1774,7 +2164,7 @@ class MultiFileCloudOrcPartitionReader(
     fileBufsAndMeta match {
       case meta: HostMemoryEmptyMetaData =>
         // Not reading any data, but add in partition data if needed
-        val rows = meta.bufferSize.toInt
+        val rows = meta.numRows.toInt
         val batch = if (rows == 0) {
           new ColumnarBatch(Array.empty, 0)
         } else {
@@ -1784,18 +2174,28 @@ class MultiFileCloudOrcPartitionReader(
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
         }
-        new SingleGpuColumnarBatchIterator(addPartitionValues(batch,
-          meta.partitionedFile.partitionValues, partitionSchema))
+        val tmp = meta.allPartValues.map { partRowsAndValues =>
+          val (rowsPerPart, partValues) = partRowsAndValues.unzip
+          MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch,
+            partValues, rowsPerPart, partitionSchema)
+        }.getOrElse {
+          addPartitionValues(batch, meta.partitionedFile.partitionValues, partitionSchema)
+        }
+        new SingleGpuColumnarBatchIterator(tmp)
 
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val hmbInfo = memBuffersAndSize.head
         val batchReader = decodeToBatch(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
-          buffer.requestedMapping, filterHandler.isCaseSensitive,
-          files) match {
+            buffer.requestedMapping, filterHandler.isCaseSensitive, files) match {
           case Some(batch) =>
-            val tmp = addPartitionValues(batch,
-            buffer.partitionedFile.partitionValues, partitionSchema)
+            val tmp = buffer.allPartValues.map { partRowsAndValues =>
+              val (rowsPerPart, partValues) = partRowsAndValues.unzip
+              MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch,
+                partValues, rowsPerPart, partitionSchema)
+            }.getOrElse {
+              addPartitionValues(batch, buffer.partitionedFile.partitionValues, partitionSchema)
+            }
             new SingleGpuColumnarBatchIterator(tmp)
           case _ =>
             EmptyGpuColumnarBatchIterator
@@ -1813,6 +2213,188 @@ class MultiFileCloudOrcPartitionReader(
     }
   }
 
+  private def doCombineHmbs(
+      input: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
+    val combinedMeta = computeCombinedHmbMeta(input)
+    if (combinedMeta.combinedEmptyMeta.isDefined) {
+      val ret = combinedMeta.combinedEmptyMeta.get
+      logDebug(s"Got an empty buffer after combination, number rows ${ret.numRows}")
+      ret
+    } else { // There is at least one nonempty buffer
+      // ignore the empty buffers
+      val toCombine = combinedMeta.toCombine.filterNot(_.isInstanceOf[HostMemoryEmptyMetaData])
+      logDebug(s"Using Combine mode and actually combining, number files ${toCombine.length}" +
+        s" , files: ${toCombine.map(_.partitionedFile.filePath).mkString(",")}")
+
+      val startCombineTime = System.currentTimeMillis()
+      val metaToUse = toCombine.head.asInstanceOf[HostMemoryBuffersWithMetaData]
+      val blockMetas = toCombine.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta)).toSeq
+
+      // 1) Estimate the host buffer size: header + stripes + tail (footer + postscript)
+      val combinedBufSize = estimateOutputSizeFromBlocks(blockMetas)
+
+      // 2) Allocate the buffer with the estimated size
+      val combined = closeOnExcept(HostMemoryBuffer.allocate(combinedBufSize)) { combinedBuf =>
+        // 3) Build the combined memory file:
+        var offset = withResource(new HostMemoryOutputStream(combinedBuf)) { outStream =>
+          // a: Write the ORC header
+          writeOrcFileHeader(outStream)
+        }
+
+        // b: Copy the stripes from read buffers
+        val allOutputStripes = new ArrayBuffer[OrcOutputStripe]()
+        toCombine.foreach { hmbWithMeta =>
+          hmbWithMeta.memBuffersAndSizes.foreach { buf =>
+            val dataCopyAmount = buf.blockMeta.map(_.getBlockSize).sum
+            if (dataCopyAmount > 0 && buf.hmb != null) {
+              combinedBuf.copyFromHostBuffer(
+                offset, buf.hmb, OrcTools.ORC_MAGIC.length, dataCopyAmount)
+            }
+            // update the offset for each stripe
+            var stripeOffset = offset
+            buf.blockMeta.foreach { block =>
+              block.stripe.infoBuilder.setOffset(stripeOffset)
+              stripeOffset += block.getBlockSize
+            }
+            offset += dataCopyAmount
+            if (buf.hmb != null) {
+              buf.hmb.close()
+            }
+            allOutputStripes ++= buf.blockMeta.map(_.stripe)
+          }
+        }
+
+        // c: check if there is enough buffer for file tail, and reallocate the buf if needed
+        val actualTailSize = calculateFileTailSize(blockMetas.head.ctx, offset, allOutputStripes)
+        val maybeNewBuf = if ((combinedBufSize - offset) < actualTailSize) {
+          val newBufferSize = offset + actualTailSize
+          logWarning(s"The original estimated size $combinedBufSize is too small, " +
+            s"reallocating and copying data to bigger buffer size: $newBufferSize")
+          // Copy the old buffer to a new allocated bigger buffer and close the old buffer
+          withResource(combinedBuf) { _ =>
+            withResource(new HostMemoryInputStream(combinedBuf, offset)) { in =>
+              // realloc memory and copy
+              closeOnExcept(HostMemoryBuffer.allocate(newBufferSize)) { newhmb =>
+                withResource(new HostMemoryOutputStream(newhmb)) { out =>
+                  IOUtils.copy(in, out)
+                }
+                newhmb
+              }
+            }
+          }
+        } else {
+          combinedBuf
+        }
+
+        withResource(new HostMemoryOutputStream(maybeNewBuf)) { outStream =>
+          // d: Write the ORC footer
+          // Use the context of the first meta for codec type and schema, it's OK
+          // because we have checked the compatibility for them.
+          outStream.seek(offset)
+          writeOrcFileTail(outStream, blockMetas.head.ctx, offset, allOutputStripes)
+
+          // e: Create the new meta for the combined buffer
+          val numRows = combinedMeta.allPartValues.map(_._1).sum
+          val combinedRet = SingleHMBAndMeta(maybeNewBuf, outStream.getPos, numRows, blockMetas)
+          val newHmbWithMeta = metaToUse.copy(
+            memBuffersAndSizes = Array(combinedRet),
+            allPartValues = Some(combinedMeta.allPartValues))
+          val filterTime = combinedMeta.toCombine.map(_.getFilterTime).sum
+          val bufferTime = combinedMeta.toCombine.map(_.getBufferTime).sum
+          newHmbWithMeta.setMetrics(filterTime, bufferTime)
+          newHmbWithMeta
+        }
+      }
+
+      logDebug(s"Took ${(System.currentTimeMillis() - startCombineTime)} " +
+        s"ms to do combine of ${toCombine.length} files, " +
+        s"task id: ${TaskContext.get().taskAttemptId()}")
+      combined
+    }
+  }
+
+  private def checkIfNeedToSplitDataBlock(
+      curMeta: HostMemoryBuffersWithMetaData,
+      nextMeta: HostMemoryBuffersWithMetaData): Boolean = {
+    isNeedToSplitDataBlock(
+      OrcBlockMetaForSplitCheck(curMeta.partitionedFile.filePath.toString(),
+        curMeta.updatedReadSchema, curMeta.compressionKind, curMeta.requestedMapping),
+      OrcBlockMetaForSplitCheck(nextMeta.partitionedFile.filePath.toString(),
+        nextMeta.updatedReadSchema, nextMeta.compressionKind, nextMeta.requestedMapping))
+  }
+
+  private def computeCombinedHmbMeta(
+      input: Array[HostMemoryBuffersWithMetaDataBase]): CombinedMeta = {
+    // common vars
+    val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
+    val toCombine = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
+    var allEmpty = true
+    var needsSplit = false
+    var numCombined, iterLoc = 0
+    // vars for non empty meta
+    val leftOversWhenNotKeepReadsInOrder = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
+    var firstNonEmpty: HostMemoryBuffersWithMetaData = null
+    // vars for empty meta
+    var metaForEmpty: HostMemoryEmptyMetaData = null
+    var emptyNumRows, emptyTotalBytesRead = 0L
+    // iterate through this to handle the case of keeping the files in the same order as Spark
+    while (!needsSplit && iterLoc < input.length) {
+      val bufAndMeta = input(iterLoc)
+      val partValues = bufAndMeta.partitionedFile.partitionValues
+      bufAndMeta match {
+        case emptyHmbData: HostMemoryEmptyMetaData =>
+          if (metaForEmpty == null || emptyHmbData.numRows > 0) {
+            // Empty metadata is due to either ignoring missing files or row counts,
+            // and we want to make sure to take the metadata from the ones with row counts
+            // because the ones from ignoring missing files has less information with it.
+            metaForEmpty = emptyHmbData
+          }
+          allPartValues.append((emptyHmbData.numRows, partValues))
+          emptyNumRows += emptyHmbData.numRows
+          emptyTotalBytesRead += emptyHmbData.bytesRead
+          numCombined += 1
+          toCombine += emptyHmbData
+        case hmbData: HostMemoryBuffersWithMetaData =>
+          allEmpty = false
+          if (firstNonEmpty != null && checkIfNeedToSplitDataBlock(firstNonEmpty, hmbData)) {
+            // if we need to keep the same order as Spark we just stop here and put rest in
+            // leftOverFiles, but if we don't then continue so we combine as much as possible
+            if (keepReadsInOrder) {
+              needsSplit = true
+              combineLeftOverFiles = Some(input.drop(numCombined))
+            } else {
+              leftOversWhenNotKeepReadsInOrder += hmbData
+            }
+          } else {
+            if (firstNonEmpty == null) {
+              firstNonEmpty = hmbData
+            }
+            val totalNumRows = hmbData.memBuffersAndSizes.map(_.numRows).sum
+            allPartValues.append((totalNumRows, partValues))
+            numCombined += 1
+            toCombine += hmbData
+          }
+        case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
+      }
+      iterLoc += 1
+    }
+
+    if (!keepReadsInOrder && leftOversWhenNotKeepReadsInOrder.nonEmpty) {
+      combineLeftOverFiles = Some(leftOversWhenNotKeepReadsInOrder.toArray)
+    }
+
+    val combinedEmptyMeta = if (allEmpty) {
+      // metaForEmpty should not be null here
+      Some(HostMemoryEmptyMetaData(
+        metaForEmpty.partitionedFile, // not used, so pick one
+        emptyNumRows, emptyTotalBytesRead,
+        metaForEmpty.readSchema,
+        Some(allPartValues.toArray)))
+    } else {
+      None
+    }
+    CombinedMeta(combinedEmptyMeta, allPartValues.toArray, toCombine.toArray)
+  }
 }
 
 trait OrcCodecWritingHelper {
@@ -1820,8 +2402,8 @@ trait OrcCodecWritingHelper {
   /** Executes the provided code block in the codec environment */
   def withCodecOutputStream[T](
       ctx: OrcPartitionReaderContext,
-      out: HostMemoryOutputStream)
-    (block: (WritableByteChannel, shims.OrcProtoWriterShim) => T): T = {
+      out: OutputStream)
+    (block: shims.OrcProtoWriterShim => T): T = {
 
     withResource(Channels.newChannel(out)) { outChannel =>
       val outReceiver = new PhysicalWriter.OutputReceiver {
@@ -1841,7 +2423,7 @@ trait OrcCodecWritingHelper {
         withResource(OrcShims.newOrcOutStream(
           getClass.getSimpleName, orcBufferSize, codec, outReceiver)) { codecStream =>
           val protoWriter = shims.OrcProtoWriterShim(codecStream)
-          block(outChannel, protoWriter)
+          block(protoWriter)
         }
       } finally {
         OrcCodecPool.returnCodec(ctx.compressionKind, codec)
@@ -1857,44 +2439,29 @@ private case class OrcSchemaWrapper(schema: TypeDescription) extends SchemaBase 
 }
 
 case class OrcStripeWithMeta(stripe: OrcOutputStripe, ctx: OrcPartitionReaderContext)
+    extends OrcCodecWritingHelper {
+
+  lazy val stripeLength: Long = {
+    // calculate the true stripe footer size
+    val out = new CountingOutputStream(NullOutputStreamShim.INSTANCE)
+    val footerLen = withCodecOutputStream(ctx, out) { protoWriter =>
+      protoWriter.writeAndFlush(stripe.footer)
+      out.getByteCount
+    }
+    // The stripe size in ORC should be equal to (INDEX + DATA + STRIPE_FOOTER)
+    stripe.infoBuilder.getIndexLength + stripe.infoBuilder.getDataLength + footerLen
+  }
+}
+
 // OrcOutputStripe wrapper
-private case class OrcDataStripe(stripeMeta: OrcStripeWithMeta) extends DataBlockBase
-    with OrcCodecWritingHelper {
+private[rapids] case class OrcDataStripe(stripeMeta: OrcStripeWithMeta) extends DataBlockBase {
 
   override def getRowCount: Long = stripeMeta.stripe.infoBuilder.getNumberOfRows
 
   override def getReadDataSize: Long =
     stripeMeta.stripe.infoBuilder.getIndexLength + stripeMeta.stripe.infoBuilder.getDataLength
 
-  // The stripe size in ORC should be equal to INDEX+DATA+STRIPE_FOOTER
-  override def getBlockSize: Long = {
-    stripeSize
-  }
-
-  // Calculate the true stripe size
-  private lazy val stripeSize: Long = {
-    val stripe = stripeMeta.stripe
-    val ctx = stripeMeta.ctx
-    val stripeDataSize = stripe.infoBuilder.getIndexLength + stripe.infoBuilder.getDataLength
-    var initialSize: Long = 0
-    // use stripe footer uncompressed size as a reference.
-    // the size of compressed stripe footer can be < or = or > uncompressed size
-    initialSize += stripe.footer.getSerializedSize
-    // Add in a bit of fudging in case the whole file is being consumed and
-    // our codec version isn't as efficient as the original writer's codec.
-    initialSize += 128 * 1024
-
-    // calculate the true stripe footer size
-    withResource(HostMemoryBuffer.allocate(initialSize)) { hmb =>
-      withResource(new HostMemoryOutputStream(hmb)) { rawOut =>
-        withCodecOutputStream(ctx, rawOut) { (_, protoWriter) =>
-          protoWriter.writeAndFlush(stripe.footer)
-          val stripeFooterSize = rawOut.getPos
-          stripeDataSize + stripeFooterSize
-        }
-      }
-    }
-  }
+  override def getBlockSize: Long = stripeMeta.stripeLength
 }
 
 /** Orc extra information containing the requested column ids for the current coalescing stripes */
@@ -1918,6 +2485,7 @@ private case class OrcSingleStripeMeta(
  *                              to only contain the column chunks to be read
  * @param readDataSchema        the Spark schema describing what will be read
  * @param debugDumpPrefix       a path prefix to use for dumping the fabricated Orc data or null
+ * @param debugDumpAlways       whether to always debug dump or only on errors
  * @param maxReadBatchSizeRows  soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
  * @param execMetrics           metrics
@@ -1926,11 +2494,12 @@ private case class OrcSingleStripeMeta(
  * @param isCaseSensitive       whether the name check should be case sensitive or not
  */
 class MultiFileOrcPartitionReader(
-    conf: Configuration,
+    override val conf: Configuration,
     files: Array[PartitionedFile],
     clippedStripes: Seq[OrcSingleStripeMeta],
     override val readDataSchema: StructType,
     override val debugDumpPrefix: Option[String],
+    override val debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],
@@ -1945,27 +2514,8 @@ class MultiFileOrcPartitionReader(
   implicit def toTypeDescription(schema: SchemaBase): TypeDescription =
     schema.asInstanceOf[OrcSchemaWrapper].schema
 
-  implicit def toStripe(block: DataBlockBase): OrcStripeWithMeta =
-    block.asInstanceOf[OrcDataStripe].stripeMeta
-
-  implicit def toOrcStripeWithMetas(stripes: Seq[DataBlockBase]): Seq[OrcStripeWithMeta] =
-    stripes.map(_.asInstanceOf[OrcDataStripe].stripeMeta)
-
   implicit def toOrcExtraInfo(in: ExtraInfo): OrcExtraInfo =
     in.asInstanceOf[OrcExtraInfo]
-
-  // Estimate the size of StripeInformation with the worst case.
-  // The serialized size may be different because of the different values.
-  // Here set most of values to "Long.MaxValue" to get the worst case.
-  lazy val sizeOfStripeInformation = {
-    OrcProto.StripeInformation.newBuilder()
-      .setOffset(Long.MaxValue)
-      .setIndexLength(0) // Index stream is pruned
-      .setDataLength(Long.MaxValue)
-      .setFooterLength(Int.MaxValue) // StripeFooter size should be small
-      .setNumberOfRows(Long.MaxValue)
-      .build().getSerializedSize
-  }
 
   // The runner to copy stripes to the offset of HostMemoryBuffer and update
   // the StripeInformation to construct the file Footer
@@ -1993,15 +2543,17 @@ class MultiFileOrcPartitionReader(
         withResource(new HostMemoryOutputStream(outhmb)) { rawOut =>
           // All stripes are from the same file, so it's safe to use the first stripe's ctx
           val ctx = stripes(0).ctx
-          withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter) =>
-            // write the stripes including INDEX+DATA+STRIPE_FOOTER
-            stripes.foreach { stripeWithMeta =>
-              val stripe = stripeWithMeta.stripe
-              stripe.infoBuilder.setOffset(offset + rawOut.getPos)
-              copyStripeData(ctx, outChannel, stripe.inputDataRanges)
-              val stripeFooterStartOffset = rawOut.getPos
-              protoWriter.writeAndFlush(stripe.footer)
-              stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
+          withCodecOutputStream(ctx, rawOut) { protoWriter =>
+            withResource(OrcTools.buildDataReader(ctx, metrics)) { dataReader =>
+              // write the stripes including INDEX+DATA+STRIPE_FOOTER
+              stripes.foreach { stripeWithMeta =>
+                val stripe = stripeWithMeta.stripe
+                stripe.infoBuilder.setOffset(offset + rawOut.getPos)
+                copyStripeData(dataReader, rawOut, stripe.inputDataRanges)
+                val stripeFooterStartOffset = rawOut.getPos
+                protoWriter.writeAndFlush(stripe.footer)
+                stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
+              }
             }
           }
         }
@@ -2022,37 +2574,9 @@ class MultiFileOrcPartitionReader(
   override def checkIfNeedToSplitDataBlock(
       currentBlockInfo: SingleDataBlockInfo,
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
-    if (!nextBlockInfo.schema.equals(currentBlockInfo.schema)) {
-      logInfo(s"ORC schema for the next file ${nextBlockInfo.filePath}" +
-        s" schema ${nextBlockInfo.schema} doesn't match current ${currentBlockInfo.filePath}" +
-        s" schema ${currentBlockInfo.schema}, splitting it into another batch!")
-      return true
-    }
-
-    if (currentBlockInfo.dataBlock.ctx.compressionKind !=
-        nextBlockInfo.dataBlock.ctx.compressionKind) {
-      logInfo(s"ORC File compression for the next file ${nextBlockInfo.filePath}" +
-        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
-      return true
-    }
-
-    val ret = (currentBlockInfo.extraInfo.requestedMapping,
-      nextBlockInfo.extraInfo.requestedMapping) match {
-      case (None, None) => true
-      case (Some(cols1), Some(cols2)) =>
-        if (cols1.sameElements(cols2)) true else false
-      case (_, _) => {
-        false
-      }
-    }
-
-    if (!ret) {
-      logInfo(s"ORC requested column ids for the next file ${nextBlockInfo.filePath}" +
-        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
-      return true
-    }
-
-    false
+    isNeedToSplitDataBlock(
+      OrcBlockMetaForSplitCheck(currentBlockInfo.asInstanceOf[OrcSingleStripeMeta]),
+      OrcBlockMetaForSplitCheck(nextBlockInfo.asInstanceOf[OrcSingleStripeMeta]))
   }
 
   /**
@@ -2066,39 +2590,7 @@ class MultiFileOrcPartitionReader(
    */
   override def calculateEstimatedBlocksOutputSize(batchContext: BatchContext): Long = {
     val filesAndBlocks = batchContext.origChunkedBlocks
-    // start with header magic
-    var size: Long = OrcFile.MAGIC.length
-
-    filesAndBlocks.foreach {
-      case (_, stripes) =>
-        // path is not needed here anymore, since filesAndBlocks is already a map: file -> stripes.
-        // and every stripe in the same file has the OrcPartitionReaderContext. we just get the
-        // OrcPartitionReaderContext from the first stripe and use the file footer size as
-        // the worst-case
-        stripes.foreach { stripeMeta =>
-          // account for the size of every stripe including index + data + stripe footer
-          size += stripeMeta.getBlockSize
-
-          // add StripeInformation size in advance which should be calculated in Footer
-          size += sizeOfStripeInformation
-        }
-    }
-
-    val blockIter = filesAndBlocks.valuesIterator
-    if (blockIter.hasNext) {
-      val blocks = blockIter.next()
-
-      // add the first orc file's footer length to cover ORC schema and other information
-      size += blocks(0).ctx.fileTail.getPostscript.getFooterLength
-    }
-
-    // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
-    size += 256
-    // finally the single-byte postscript length at the end of the file
-    size += 1
-    // Add in a bit of fudging in case the whole file is being consumed and
-    // our codec version isn't as efficient as the original writer's codec.
-    size + 128 * 1024
+    estimateOutputSizeFromBlocks(filesAndBlocks.values.flatten.toSeq)
   }
 
   /**
@@ -2196,12 +2688,8 @@ class MultiFileOrcPartitionReader(
    * @return how many bytes written
    */
   override def writeFileHeader(buffer: HostMemoryBuffer, batchContext: BatchContext): Long = {
-    withResource(new HostMemoryOutputStream(buffer)) { out =>
-      withResource(new DataOutputStream(out)) { dataOut =>
-        dataOut.writeBytes(OrcFile.MAGIC)
-        dataOut.flush()
-      }
-      out.getPos
+    withResource(new HostMemoryOutputStream(buffer)) { stream =>
+      writeOrcFileHeader(stream)
     }
   }
 
@@ -2226,27 +2714,11 @@ class MultiFileOrcPartitionReader(
       footerOffset: Long,
       stripes: Seq[DataBlockBase],
       batchContext: BatchContext): (HostMemoryBuffer, Long) = {
-    val lenLeft = bufferSize - footerOffset
     closeOnExcept(buffer) { _ =>
-      withResource(buffer.slice(footerOffset, lenLeft)) { finalizehmb =>
-        withResource(new HostMemoryOutputStream(finalizehmb)) { rawOut =>
-          // We use the first stripe's ctx
-          // What if the codec is different for the files which need to be combined?
-          val ctx = stripes(0).ctx
-          withCodecOutputStream(ctx, rawOut) { (_, protoWriter) =>
-            var numRows = 0L
-            val fileFooterBuilder = OrcProto.Footer.newBuilder
-            // get all the StripeInformation and the total number rows
-            stripes.foreach { stripeWithMeta =>
-              numRows += stripeWithMeta.stripe.infoBuilder.getNumberOfRows
-              fileFooterBuilder.addStripes(stripeWithMeta.stripe.infoBuilder.build())
-            }
-
-            writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, footerOffset, numRows,
-              protoWriter)
-            (buffer, rawOut.getPos + footerOffset)
-          }
-        }
+      withResource(new HostMemoryOutputStream(buffer)) { rawOut =>
+        rawOut.seek(footerOffset)
+        writeOrcFileTail(rawOut, stripes.head.ctx, footerOffset, stripes.map(_.stripe))
+        (buffer, rawOut.getPos)
       }
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,11 @@ trait ShimTaggingExpression extends TaggingExpression with ShimUnaryExpression
  */
 case class GpuKnownFloatingPointNormalized(child: Expression) extends ShimTaggingExpression
     with GpuExpression {
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    child.columnarEvalAny(batch)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     child.columnarEval(batch)
   }
 }
@@ -44,7 +48,11 @@ case class GpuKnownNotNull(child: Expression) extends ShimTaggingExpression
     with GpuExpression {
   override def nullable: Boolean = false
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    child.columnarEvalAny(batch)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     child.columnarEval(batch)
   }
 }

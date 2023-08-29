@@ -163,8 +163,6 @@ class GpuDeltaTaskStatisticsTracker(
   }
 
   override def getFinalStats(taskCommitTime: Long): GpuDeltaFileStatistics = {
-    submittedFiles.keys.foreach(closeFile)
-    submittedFiles.clear()
     GpuDeltaFileStatistics(results.toMap)
   }
 }

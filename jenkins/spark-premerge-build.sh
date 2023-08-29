@@ -28,7 +28,7 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
-MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
+MVN_BUILD_ARGS="-Drat.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."
@@ -57,7 +57,7 @@ mvn_verify() {
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
         fi
     done
-    
+
     # enable UTF-8 for regular expression tests
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
@@ -65,7 +65,7 @@ mvn_verify() {
           -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
-    
+
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \

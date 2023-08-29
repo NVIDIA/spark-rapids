@@ -17,11 +17,13 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.{GpuColumnVector, RmmRapidsRetryIterator}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuColumnVector
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
+import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -43,8 +45,10 @@ object GpuBroadcastHelper {
                         broadcastSchema: StructType): ColumnarBatch = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
-          broadcastBatch.batch.getColumnarBatch()
+        RmmRapidsRetryIterator.withRetryNoSplit {
+          withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
+            broadcastBatch.batch.getColumnarBatch()
+          }
         }
       case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
@@ -73,6 +77,22 @@ object GpuBroadcastHelper {
       case v if SparkShimImpl.isEmptyRelation(v) => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
+    }
+  }
+
+  /**
+   * Given a broadcast relation return an RDD of that relation.
+   * @note This can only be called from driver code.
+   */
+  def asRDD(sc: SparkContext, broadcast: Broadcast[Any]): RDD[ColumnarBatch] = {
+    broadcast.value match {
+      case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
+        val hostBatchRDD = sc.makeRDD(Seq(broadcastBatch), 1)
+        hostBatchRDD.map { serializedBatch =>
+          serializedBatch.batch.getColumnarBatch()
+        }
+      case v if SparkShimImpl.isEmptyRelation(v) => sc.emptyRDD
+      case t => throw new IllegalStateException(s"Invalid broadcast batch received $t")
     }
   }
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -191,21 +191,27 @@ def test_repartition_df(data_gen, num_parts, length):
     assert_gpu_and_cpu_are_equal_collect(
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
             lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
-            # disable sort before shuffle so round robin works for arrays
+            # disable sort before shuffle so round robin works for maps
             conf = {'spark.sql.execution.sortBeforeRepartition': 'false'})
 
+@pytest.mark.parametrize('data_gen', [
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
+    pytest.param([('_c' + str(i), ArrayGen(gen)) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+], ids=idfn)
+@pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
+@pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
+@ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+def test_repartition_df_for_round_robin(data_gen, num_parts, length):
+    from pyspark.sql.functions import lit
+    assert_gpu_and_cpu_are_equal_collect(
+        # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
+        lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
+        # Enable sort for round robin partition
+        conf = {'spark.sql.execution.sortBeforeRepartition': 'true'})  # default is true
+
 @allow_non_gpu('ShuffleExchangeExec', 'RoundRobinPartitioning')
-@pytest.mark.parametrize('data_gen', [[('ag', ArrayGen(string_gen))],
-    [('a', StructGen([
-      ('a_1', StructGen([
-        ('a_1_1', int_gen),
-        ('a_1_2', float_gen),
-        ('a_1_3', double_gen)
-      ])),
-      ('b_1', long_gen),
-      ('c_1', int_gen)
-    ]))],
-    [('a', simple_string_to_string_map_gen)]], ids=idfn)
+@pytest.mark.parametrize('data_gen', [[('a', simple_string_to_string_map_gen)]], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 def test_round_robin_sort_fallback(data_gen):
     from pyspark.sql.functions import lit
@@ -214,10 +220,30 @@ def test_round_robin_sort_fallback(data_gen):
             lambda spark : gen_df(spark, data_gen).withColumn('extra', lit(1)).repartition(13),
             'ShuffleExchangeExec')
 
+@allow_non_gpu("ProjectExec", "ShuffleExchangeExec")
+@ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@pytest.mark.parametrize('num_parts', [2, 10, 17, 19, 32], ids=idfn)
+@pytest.mark.parametrize('gen', [([('ag', ArrayGen(StructGen([('b1', long_gen)])))], ['ag'])], ids=idfn)
+def test_hash_repartition_exact_fallback(gen, num_parts):
+    data_gen = gen[0]
+    part_on = gen[1]
+    assert_gpu_fallback_collect(
+        lambda spark : gen_df(spark, data_gen, length=1024) \
+            .repartition(num_parts, *part_on) \
+            .withColumn('id', f.spark_partition_id()) \
+            .selectExpr('*'), "ShuffleExchangeExec")
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
+def test_hash_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen, length=1024) \
+            .selectExpr('*', 'hash(a) as h'), "ProjectExec")
+
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [
-    ([('a', boolean_gen)], ['a']), 
+    ([('a', boolean_gen)], ['a']),
     ([('a', byte_gen)], ['a']), 
     ([('a', short_gen)], ['a']),
     ([('a', int_gen)], ['a']),
@@ -235,7 +261,9 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', long_gen), ('b', StructGen([('b1', long_gen)]))], ['a']),
     ([('a', long_gen), ('b', ArrayGen(long_gen, max_length=2))], ['a']),
     ([('a', byte_gen)], [f.col('a') - 5]), 
-    ([('a', long_gen)], [f.col('a') + 15]), 
+    ([('a', long_gen)], [f.col('a') + 15]),
+    ([('a', ArrayGen(long_gen, max_length=2)), ('b', long_gen)], ['a']),
+    ([('a', StructGen([('aa', ArrayGen(long_gen, max_length=2))])), ('b', long_gen)], ['a']),
     ([('a', byte_gen), ('b', boolean_gen)], ['a', 'b']),
     ([('a', short_gen), ('b', string_gen)], ['a', 'b']),
     ([('a', int_gen), ('b', byte_gen)], ['a', 'b']),

@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.nio.channels.WritableByteChannel
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -175,7 +176,6 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
   } else {
     None
   }
-
   def isChunked: Boolean = chunkedPacker.isDefined
 
   // this is used for the single shot case to flag when `next` is call
@@ -264,6 +264,21 @@ trait RapidsBuffer extends AutoCloseable {
   def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
   /**
+   * Get the host-backed columnar batch from this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   *
+   * If this `RapidsBuffer` was added originally to the device tier, or if this is
+   * a just a buffer (not a batch), this function will throw.
+   *
+   * @param sparkTypes the spark data types the batch should have
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
+   */
+  def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+    throw new IllegalStateException(s"$this does not support host columnar batches.")
+  }
+
+  /**
    * Get the underlying memory buffer. This may be either a HostMemoryBuffer or a DeviceMemoryBuffer
    * depending on where the buffer currently resides.
    * The caller must have successfully acquired the buffer beforehand.
@@ -333,6 +348,32 @@ trait RapidsBuffer extends AutoCloseable {
    * @param priority new priority value for this buffer
    */
   def setSpillPriority(priority: Long): Unit
+
+  /**
+   * Function invoked by the `RapidsBufferStore.addBuffer` method that prompts
+   * the specific `RapidsBuffer` to check its reference counting to make itself
+   * spillable or not. Only `RapidsTable` and `RapidsHostMemoryBuffer` implement
+   * this method.
+   */
+  def updateSpillability(): Unit = {}
+
+  /**
+   * Obtains a read lock on this instance of `RapidsBuffer` and calls the function
+   * in `body` while holding the lock.
+   * @param body function that takes a `MemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(memoryBuffer)
+   */
+  def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K
+
+  /**
+   * Obtains a write lock on this instance of `RapidsBuffer` and calls the function
+   * in `body` while holding the lock.
+   * @param body function that takes a `MemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(memoryBuffer)
+   */
+  def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K
 }
 
 /**
@@ -385,5 +426,40 @@ sealed class DegenerateRapidsBuffer(
 
   override def setSpillPriority(priority: Long): Unit = {}
 
+  override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = {
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+  }
+
+  override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = {
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+  }
+
   override def close(): Unit = {}
+}
+
+trait RapidsHostBatchBuffer extends AutoCloseable {
+  /**
+   * Get the host-backed columnar batch from this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   *
+   * If this `RapidsBuffer` was added originally to the device tier, or if this is
+   * a just a buffer (not a batch), this function will throw.
+   *
+   * @param sparkTypes the spark data types the batch should have
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
+   */
+  def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
+
+  def getMemoryUsedBytes(): Long
+}
+
+trait RapidsBufferChannelWritable {
+  /**
+   * At spill time, write this buffer to an nio WritableByteChannel.
+   * @param writableChannel that this buffer can just write itself to, either byte-for-byte
+   *                        or via serialization if needed.
+   * @return the amount of bytes written to the channel
+   */
+  def writeToChannel(writableChannel: WritableByteChannel): Long
 }

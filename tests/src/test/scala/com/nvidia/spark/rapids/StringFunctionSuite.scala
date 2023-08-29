@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.{FunSuite, Ignore}
+import org.scalatest.Ignore
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions._
+import org.apache.spark.sql.functions.{col, lower, upper}
 import org.apache.spark.sql.rapids.GpuRegExpUtils
 
  /*
@@ -196,7 +197,7 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   }
 }
 
-class RegExpUtilsSuite extends FunSuite {
+class RegExpUtilsSuite extends AnyFunSuite {
   test("get list of choices from regexp for multi-replace") {
     val regexChoices = Map(
       "aa|bb" -> Seq("aa", "bb"),

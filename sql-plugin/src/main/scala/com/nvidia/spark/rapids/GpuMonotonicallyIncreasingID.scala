@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ case class GpuMonotonicallyIncreasingID() extends GpuLeafExpression {
   @transient private[this] var partitionMask: Long = _
   @transient private[this] var wasInitialized: Boolean = _
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (!wasInitialized) {
       count = 0
       partitionMask = TaskContext.getPartitionId().toLong << 33

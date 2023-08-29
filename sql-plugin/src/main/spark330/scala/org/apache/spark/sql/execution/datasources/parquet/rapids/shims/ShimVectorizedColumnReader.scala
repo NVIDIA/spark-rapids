@@ -20,8 +20,10 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
+{"spark": "341"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
@@ -43,8 +45,8 @@ class ShimParquetRowConverter(
     parquetType: GroupType,
     catalystType: StructType,
     convertTz: Option[ZoneId],
-    datetimeRebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.CORRECTED
-    int96RebaseMode: LegacyBehaviorPolicy.Value,  // always LegacyBehaviorPolicy.EXCEPTION
+    datetimeRebaseMode: String,  // always LegacyBehaviorPolicy.CORRECTED
+    int96RebaseMode: String,  // always LegacyBehaviorPolicy.EXCEPTION
     int96CDPHive3Compatibility: Boolean,
     updater: ParentContainerUpdater
 ) extends ParquetRowConverter(
@@ -52,8 +54,10 @@ class ShimParquetRowConverter(
       parquetType,
       catalystType,
       convertTz,
-      RebaseSpec(datetimeRebaseMode), // no need to rebase, so set originTimeZone as default
-      RebaseSpec(int96RebaseMode), // no need to rebase, so set originTimeZone as default
+      // no need to rebase, so set originTimeZone as default
+      RebaseSpec(LegacyBehaviorPolicy.withName(datetimeRebaseMode)),
+      // no need to rebase, so set originTimeZone as default
+      RebaseSpec(LegacyBehaviorPolicy.withName(int96RebaseMode)),
       updater)
 
 class ShimVectorizedColumnReader(

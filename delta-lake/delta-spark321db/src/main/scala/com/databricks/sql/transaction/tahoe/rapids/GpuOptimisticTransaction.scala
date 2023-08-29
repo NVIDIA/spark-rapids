@@ -133,7 +133,11 @@ class GpuOptimisticTransaction(
       val prefixLength =
         spark.sessionState.conf.getConf(DeltaSQLConf.DATA_SKIPPING_STRING_PREFIX_LENGTH)
 
+      val _spark = spark
+
       val statsCollection = new GpuStatisticsCollection {
+        override val spark = _spark
+        override val deletionVectorsSupported = false
         override val tableDataSchema: StructType = statsDataSchema.toStructType
         override val dataSchema: StructType = tableDataSchema
         override val numIndexedCols: Int = indexedCols
