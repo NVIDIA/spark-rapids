@@ -74,8 +74,6 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       length: Int)(writeGpu: Boolean, readGpu: Boolean): Unit = {
     withAllParquetReaders {
       withTempPath { path =>
-        // Makes sure disabling 'spark.sql.parquet.recordFilter' still enables
-        // row group level filtering.
         withSQLConf(
           SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
           "spark.rapids.sql.test.enabled" -> "false",
@@ -106,8 +104,6 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       (writeGpu: Boolean, readGpu: Boolean): Unit = {
     withAllParquetReaders {
       withTempPath { path =>
-        // Makes sure disabling 'spark.sql.parquet.recordFilter' still enables
-        // row group level filtering.
         withSQLConf(
           SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
           "spark.rapids.sql.test.enabled" -> "false",
