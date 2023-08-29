@@ -1762,10 +1762,7 @@ class GpuCachedDoublePassWindowIterator(
       waitingForFirstPass.foreach(_.close())
       waitingForFirstPass = None
 
-      firstPassIter.foreach(_.foreach(_._1.foreach(_.close())))
       firstPassIter = None
-
-      postProcessedIter.foreach(_.foreach(_.close()))
       postProcessedIter = None
     }
   }
