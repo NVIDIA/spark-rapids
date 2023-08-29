@@ -43,8 +43,8 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       .set("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") // for Spark 32x, 33x and ...
       .set("spark.rapids.sql.explain", "ALL")
 
-  // by default cuDF splits row groups by 1,000,000 rows, we expect one row group
   /**
+   * By default cuDF splits row groups by 1,000,000 rows, we expect one row group
    * Refer to cuDF parquet.hpp
    * default_row_group_size_bytes   = 128 * 1024 * 1024;  ///< 128MB per row group
    * default_row_group_size_rows = 1000000;     ///< 1 million rows per row group
@@ -121,7 +121,9 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     ParquetStat(columnTypes, groupStats)
   }
 
-  private def checkStats(genDf: SparkSession => DataFrame): Unit = {
+  private def checkStats(
+      genDf: SparkSession => DataFrame,
+      skipCheckSchema: Boolean = false): (ParquetStat, ParquetStat) = {
     withTempPath { testDataFile =>
       // Write test data to a file on CPU
       writeScaleTestDataOnCpu(testDataFile, genDf)
@@ -135,10 +137,16 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       val gpuFileSize = testDataFile.listFiles(f => f.getName.endsWith(".parquet"))(0).length()
 
       // compare stats
-      assertResult(cpuStats)(gpuStats)
+      if (skipCheckSchema) {
+        assertResult(cpuStats.rowGroupStats)(gpuStats.rowGroupStats)
+      } else {
+        assertResult(cpuStats)(gpuStats)
+      }
 
       // Check the Gpu file size is not too large.
       assert(gpuFileSize < 2 * cpuFileSize)
+
+      (cpuStats, gpuStats)
     }
   }
 
@@ -157,13 +165,13 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
 
   test("Statistics tests for Parquet files written by GPU, float/double") {
     assume(false, "Blocked by https://github.com/rapidsai/cudf/issues/13948")
-    assume(false, "Move to scale test")
+    assume(true, "Move to scale test")
 
     val schema = StructType(Seq(
       StructField("c01", FloatType),
       StructField("c02", DoubleType)
     ))
-    // test 2 rows with NaN
+    // 2 rows with NaN
     val data = Seq(Row(1.1f, Double.NaN), Row(Float.NaN, 2.2d))
 
     def genDf(schema: StructType, data: Seq[Row]): SparkSession => DataFrame = spark =>
@@ -217,20 +225,8 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
 
   test("Statistics tests for Parquet files written by GPU, array") {
     assume(true, "Move to scale test")
-    val types = Seq(
-      "array<boolean>",
-      "array<byte>",
-      "array<short>",
-      "array<int>",
-      "array<long>",
-      "array<decimal>",
-      "array<string>",
-      "array<date>",
-      "array<timestamp>")
-    // "float",  "Blocked by https://github.com/rapidsai/cudf/issues/13948"
-    // "double", "Blocked by https://github.com/rapidsai/cudf/issues/13948"
-    types.foreach { t =>
-      val schema = s"struct<c01: $t>"
+    basicTypes.foreach { t =>
+      val schema = s"struct<c01: array<$t>>"
       val nullProbabilities = Seq(0d, 0.5d)
       nullProbabilities.foreach { nullProbability =>
         try {
@@ -273,24 +269,9 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
 
   test("Statistics tests for Parquet files written by GPU, struct") {
     assume(true, "Move to scale test")
-    val schema =
-      """
-      struct<
-        c1: struct<
-          c01: boolean,
-          c02: byte,
-          c03: short,
-          c04: int,
-          c05: long,
-          c06: decimal,
-          c07: string,
-          c08: date,
-          c09: timestamp
-        >
-      >
-      """
-    // "float",  "Blocked by https://github.com/rapidsai/cudf/issues/13948"
-    // "double", "Blocked by https://github.com/rapidsai/cudf/issues/13948"
+    val schema = basicTypes.zipWithIndex.map { case (t, index) =>
+      s"c0$index: $t"
+    }.mkString("struct<\nc1: struct<", ", \n", ">>")
     val gen = DBGen()
     gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
@@ -360,9 +341,61 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     checkStats(genDf(tab))
   }
 
+  test("Statistics tests for Parquet files written by GPU, map(array)") {
+    assume(true, "Move to scale test")
+    val schema =
+      """
+    struct<
+      c1: map<
+        array<long>,
+        array<string>
+      >
+    >
+    """
+    val gen = DBGen()
+    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
+    val tab = gen.addTable("tab", schema, rowsNum)
+    tab("c1").setNullProbability(0.8)
+    tab("c1").setLength(3)
+    tab("c1")("key").setLength(3)
+    tab("c1")("value").setLength(3)
+
+    def genDf(tab: TableGen): SparkSession => DataFrame = spark => tab.toDF(spark)
+
+    checkStats(genDf(tab))
+  }
+
+  test("Statistics tests for Parquet files written by GPU, map(struct)") {
+    assume(true, "Move to scale test")
+    val schema =
+      """
+      struct<
+        c1: map<
+          struct<
+            c101: long,
+            c102: int
+          >,
+          struct<
+            c101: long,
+            c102: string
+          >
+        >
+      >
+      """
+    val gen = DBGen()
+    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
+    val tab = gen.addTable("tab", schema, rowsNum)
+    tab("c1").setNullProbability(0.8)
+    tab("c1").setLength(3)
+    tab("c1")("key").setLength(3)
+    tab("c1")("value").setLength(3)
+
+    def genDf(tab: TableGen): SparkSession => DataFrame = spark => tab.toDF(spark)
+
+    checkStats(genDf(tab))
+  }
+
   test("Statistics tests for Parquet files written by GPU, array(map)") {
-    // TODO Seems blocked by:
-    assume(false, "https://github.com/rapidsai/cudf/issues/13664")
     assume(true, "Move to scale test")
     val schema =
       """
@@ -377,36 +410,80 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     tab("c1")("child").setLength(3)
 
     def genDf(tab: TableGen): SparkSession => DataFrame = spark => tab.toDF(spark)
-
-    checkStats(genDf(tab))
+    /**
+     * Note: There are discrepancies between CPU and GPU file schemas,
+     * but the Spark can read both them correctly, so it's not an issue.
+     *
+     * Details:
+     *
+     * CPU Parquet file schema is:
+     * message spark_schema {
+     *   optional group c1 (LIST) {
+     *     repeated group list {
+     *       optional group element (MAP) {
+     *         repeated group key_value {
+     *           required binary key (STRING);
+     *           optional int64 value;
+     *         }
+     *       }
+     *     }
+     *   }
+     * }
+     *
+     * GPU Parquet file schema is:
+     * message schema {
+     *   optional group c1 (LIST) {
+     *     repeated group list {
+     *       optional group c1 (MAP) {
+     *         repeated group key_value {
+     *           required binary key (STRING);
+     *           optional int64 value;
+     *         }
+     *       }
+     *     }
+     *   }
+     * }
+     *
+     * Spark reads both of them as:
+     *
+     * df.printSchema()
+     * root
+     *  |-- c1: array (nullable = true)
+     *  |    |-- element: map (containsNull = true)
+     *  |    |    |-- key: string
+     *  |    |    |-- value: long (valueContainsNull = true)
+     *
+     */
+    // skip check the schema
+    val (cpuStat, gpuStat) = checkStats(genDf(tab), skipCheckSchema = true)
+    val expectedCpuSchema = Seq(
+      "[c1, list, element, key_value, key] required binary key (STRING)",
+      "[c1, list, element, key_value, value] optional int64 value")
+    val expectedGpuSchema = Seq(
+      "[c1, list, c1, key_value, key] required binary key (STRING)",
+      "[c1, list, c1, key_value, value] optional int64 value")
+    assertResult(expectedCpuSchema)(cpuStat.schema)
+    assertResult(expectedGpuSchema)(gpuStat.schema)
   }
 
-  // TODO map(map) has an issue
-  // TODO map(struct)
-  test("Statistics tests for Parquet files written by GPU, map(array, map, struct)") {
+  test("Statistics tests for Parquet files written by GPU, map(map)") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/9129")
     assume(true, "Move to scale test")
     val schema =
       """
       struct<
         c1: map<
-          array<long>,
-          array<string>
+          map<int, int>,
+          map<int, int>
         >
       >
       """
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.8)
-//    tab("c2").setNullProbability(0.8)
-//    tab("c3").setNullProbability(0.8)
     tab("c1").setLength(3)
     tab("c1")("key").setLength(3)
     tab("c1")("value").setLength(3)
-//    tab("c2").setLength(3)
-//    tab("c2")("key").setLength(3)
-//    tab("c2")("value").setLength(3)
-//    tab("c3").setLength(3)
 
     def genDf(tab: TableGen): SparkSession => DataFrame = spark => tab.toDF(spark)
 
