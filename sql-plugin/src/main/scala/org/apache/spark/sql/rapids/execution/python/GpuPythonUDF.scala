@@ -128,6 +128,6 @@ case class GpuPythonUDAF(
   override val evaluateExpression: Expression = null
 
   override def aggBufferAttributes: Seq[AttributeReference] = {
-    throw new IllegalStateException()
+    throw new UnsupportedOperationException("GpuPythonUDAF isn't a real aggregate function")
   }
 }
