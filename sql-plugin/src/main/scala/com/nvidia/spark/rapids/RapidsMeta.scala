@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -650,8 +651,25 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         !childPlans.exists(_.supportsColumnar) &&
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.supportsColumnar))) {
+      // Some platforms can present a plan where the root of the plan is a shuffle followed by
+      // an AdaptiveSparkPlanExec. If it looks like the AdaptiveSparkPlanExec will end up
+      // columnar than this shuffle should be columnar as well.
+      val shuffle = wrapped.asInstanceOf[ShuffleExchangeExec]
+      val isChildColumnar = shuffle.child match {
+        case adaptiveExec: AdaptiveSparkPlanExec if parent.isEmpty =>
+          val aqePlan = adaptiveExec.executedPlan
+          if (aqePlan.supportsColumnar) {
+            true
+          } else {
+            val aqePlanMeta = GpuOverrides.wrapAndTagPlan(aqePlan, conf)
+            aqePlanMeta.canThisBeReplaced
+          }
+        case _ => false
+      }
 
-      willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+      if (!isChildColumnar) {
+        willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+      }
 
       childPlans.head.wrapped
           .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
@@ -683,11 +701,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
     InputFileBlockRule.apply(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
 
-    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
-    // feeding them are either all on the GPU or all on the CPU, because the hashing is not
-    // consistent between the two implementations. This is okay because it is only impacting
-    // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
-    // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
+    // 2) For shuffles, avoid replacing the shuffle if the child is not going to be replaced.
     fixUpExchangeOverhead()
 
     // 3) Some child nodes can't run on GPU if parent nodes can't run on GPU.

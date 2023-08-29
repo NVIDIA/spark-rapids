@@ -31,10 +31,10 @@ class GpuShuffleMeta(
     rule: DataFromReplacementRule)
   extends GpuShuffleMetaBase(shuffle, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExec =
+  override protected def convertShuffleToGpu(newChild: SparkPlan): GpuExec =
     GpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
-      childPlans.head.convertIfNeeded(),
+      newChild,
       shuffle.shuffleOrigin,
       shuffle.advisoryPartitionSize
     )(shuffle.outputPartitioning)
