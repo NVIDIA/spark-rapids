@@ -24,8 +24,9 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PythonMapInArrowExec
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StringType, StructType}
+import org.apache.spark.sql.types.{BinaryType, StringType}
 
 object PythonMapInArrowExecShims {
 
@@ -41,21 +42,14 @@ object PythonMapInArrowExecShims {
             super.tagPlanForGpu()
             if (SQLConf.get.getConf(SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES)) {
 
-              def containsStringOrBinary(dataType: DataType): Boolean = dataType match {
-                case StringType | BinaryType => true
-                case ArrayType(elementType, _) => containsStringOrBinary(elementType)
-                case StructType(fields) => fields.exists(field =>
-                  containsStringOrBinary(field.dataType))
-                case MapType(keyType, valueType, _) =>
-                  containsStringOrBinary(keyType) || containsStringOrBinary(valueType)
-                case _ => false
-              }
+              val inputTypes = mapPy.child.schema.fields.map(_.dataType)
+              val outputTypes = mapPy.output.map(_.dataType)
 
-              val inputHasStringOrBinary = mapPy.child.schema.fields.exists(
-                f => containsStringOrBinary(f.dataType))
-              val outputHasStringOrBinary = mapPy.output.exists(
-                f => containsStringOrBinary(f.dataType))
-              if (inputHasStringOrBinary || outputHasStringOrBinary) {
+              val hasStringOrBinaryTypes = (inputTypes ++ outputTypes).exists(dataType =>
+                TrampolineUtil.dataTypeExistsRecursively(dataType,
+                  dt => dt == StringType || dt == BinaryType))
+
+              if (hasStringOrBinaryTypes) {
                 willNotWorkOnGpu(s"${SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES.key} is " +
                   s"enabled and the schema contains string or binary types. This is not " +
                   s"supported on the GPU.")
