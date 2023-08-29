@@ -43,6 +43,7 @@ Usage: ScaleTest [options] <scale factor> <complexity> <format> <input directory
   --overwrite              Flag argument. Whether to overwrite the existing data in the path.
   --iterations <value>     iterations to run for each query. default: 1
   --queries <value>        Specify queries to run specifically. the format must be query names with comma separated. e.g. --tables q1,q2,q3. If not specified, all queries will be run for `--iterations` rounds
+  --timeout <value>        timeout for each query in milliseconds, default is 10 minutes(600000)
 ```
 
 An example command to launch the Scale Test:

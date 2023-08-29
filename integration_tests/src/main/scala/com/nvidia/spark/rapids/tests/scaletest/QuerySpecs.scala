@@ -72,7 +72,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           " FROM b_data JOIN a_facts WHERE " +
           "primary_a = b_foreign_a",
         config.iterations,
-        100000L,
+        config.timeout,
         "Inner join with lots of ride along columns"),
 
       "q2" -> TestQuery("q2",
@@ -80,7 +80,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           expandDataColumnWithRange("b_data", 1, 10) +
           " FROM b_data FULL OUTER JOIN a_facts WHERE primary_a = b_foreign_a",
         config.iterations,
-        100000L,
+        config.timeout,
         "Full outer join with lots of ride along columns"),
 
       "q3" -> TestQuery("q3",
@@ -88,7 +88,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           expandDataColumnWithRange("b_data", 1, 10) +
           " FROM b_data LEFT OUTER JOIN a_facts WHERE primary_a = b_foreign_a",
         config.iterations,
-        100000L,
+        config.timeout,
         "Left outer join with lots of ride along columns")
     )
     if (config.queries.isEmpty) {
