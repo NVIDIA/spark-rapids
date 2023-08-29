@@ -193,13 +193,12 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val conf = ContextUtil.getConfiguration(job)
 
     val outputTimestampType = sqlConf.parquetOutputTimestampType
-    val dateTimeRebaseException = "EXCEPTION".equals(
-      sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
-    val timestampRebaseException =
-      outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
-          "EXCEPTION".equals(sparkSession.sqlContext
-              .getConf(SparkShimImpl.int96ParquetRebaseWriteKey)) ||
-          !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
+    val dateTimeRebaseMode = sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey)
+    val timestampRebaseMode = if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
+      sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey)
+    } else {
+      dateTimeRebaseMode
+    }
 
     val committerClass =
       conf.getClass(
@@ -283,8 +282,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException,
-          timestampRebaseException, context, parquetFieldIdWriteEnabled)
+        new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
+          dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -302,23 +301,23 @@ class GpuParquetWriter(
     override val path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
-    dateRebaseException: Boolean,
-    timestampRebaseException: Boolean,
+    outputTimestampType: String,
+    dateRebaseMode: String,
+    timestampRebaseMode: String,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
-
-  val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
       // if col is a day
-      if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
+      if (dateRebaseMode.equals("EXCEPTION") && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
       // if col is a time
-      else if (timestampRebaseException && RebaseHelper.isTimeRebaseNeededInWrite(col)) {
+      else if (timestampRebaseMode.equals("EXCEPTION") &&
+               RebaseHelper.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
