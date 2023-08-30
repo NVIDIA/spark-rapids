@@ -462,7 +462,6 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
     data_path = spark_tmp_path + '/CSV_DATA'
     updated_conf = copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.rapids.sql.explain': 'ALL',
         disable_conf: 'false'})
     assert_gpu_fallback_collect(
             lambda spark : spark.read.schema(gen.data_type)\
@@ -472,7 +471,7 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
                         'input_file_name()',
                         'input_file_block_start()',
                         'input_file_block_length()'),
-            'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
+            cpu_fallback_class_name = 'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
             conf=updated_conf)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
@@ -540,8 +539,8 @@ def test_csv_read_case_insensitivity(spark_tmp_path):
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option('header', True).csv(data_path).select('one', 'two', 'three'),
-        'GpuFileSourceScanExec',
-        'FileSourceScanExec',
+        exist_classes = 'GpuFileSourceScanExec',
+        non_exist_classes = 'FileSourceScanExec',
         conf = {'spark.sql.caseSensitive': 'false'}
     )
 
@@ -569,12 +568,12 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
-        'GpuFileSourceScanExec',
-        'FileSourceScanExec')
+        exist_classes = 'GpuFileSourceScanExec',
+        non_exist_classes = 'FileSourceScanExec',)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path),
-        'GpuFileSourceScanExec',
-        'FileSourceScanExec')
+        exist_classes = 'GpuFileSourceScanExec',
+        non_exist_classes = 'FileSourceScanExec',)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
