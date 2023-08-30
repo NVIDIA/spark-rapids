@@ -552,7 +552,8 @@ def test_csv_read_count(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
-    # TODO this does not confirm that this scan actually runs on GPU
+    # TODO this does not confirm that this scan actually runs on GPU, but I am not
+    #  sure if we can capture the plan with a COUNT, since it normally requires a COLLECT
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
