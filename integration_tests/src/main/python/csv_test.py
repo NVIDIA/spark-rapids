@@ -462,8 +462,9 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
     data_path = spark_tmp_path + '/CSV_DATA'
     updated_conf = copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.explain': 'ALL',
         disable_conf: 'false'})
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
             lambda spark : spark.read.schema(gen.data_type)\
                     .csv(data_path)\
                     .filter(f.col('a') > 0)\
@@ -471,6 +472,7 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
                         'input_file_name()',
                         'input_file_block_start()',
                         'input_file_block_length()'),
+            'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
             conf=updated_conf)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
@@ -529,16 +531,18 @@ def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
         lambda spark: spark.read.schema(schema).csv(data_path),
         conf=updated_conf)
 
-@allow_non_gpu(any = True)
+@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 def test_csv_read_case_insensitivity(spark_tmp_path):
     gen_list = [('one', int_gen), ('tWo', byte_gen), ('THREE', boolean_gen)]
     data_path = spark_tmp_path + '/CSV_DATA'
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.option('header', True).csv(data_path))
 
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option('header', True).csv(data_path).select('one', 'two', 'three'),
-        {'spark.sql.caseSensitive': 'false'}
+        'GpuFileSourceScanExec',
+        'FileSourceScanExec',
+        conf = {'spark.sql.caseSensitive': 'false'}
     )
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
@@ -549,11 +553,14 @@ def test_csv_read_count(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
-    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path))
+    # TODO this does not actually confirm that this scan actually ran on GPU
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
+        conf = {'spark.rapids.sql.explain': 'ALL'})
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
-def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
+@pytest.mark.parametrize('timestamp_type', ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+def test_csv_prefer_date_with_infer_schema(spark_tmp_path, timestamp_type):
     # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
     data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
@@ -561,8 +568,30 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.option("inferSchema", "true").csv(data_path))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path))
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
+        'GpuFileSourceScanExec',
+        'FileSourceScanExec')
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path),
+        'GpuFileSourceScanExec',
+        'FileSourceScanExec')
+
+@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+def test_csv_infer_schema_ntz_fallback(spark_tmp_path):
+    data_gens = [TimestampNTZGen()]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
+
+    # should fallback due to "unsupported data types TimestampNTZType [_c6] in read for CSV"
+    assert_gpu_fallback_collect(
+        lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
+        'FileSourceScanExec',
+        conf = {'spark.sql.timestampType': 'TIMESTAMP_NTZ',
+                'spark.rapids.sql.explain': 'ALL'})
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
