@@ -97,6 +97,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
    * @param parquetDir parquet file directory
    * @return Parquet statistics
    */
+  @scala.annotation.nowarn("msg=method readFooter in class ParquetFileReader is deprecated")
   private def getStatsFromFile(parquetDir: File): ParquetStat = {
     val parquetFile = parquetDir.listFiles(f => f.getName.endsWith(".parquet"))(0)
     val p = new Path(parquetFile.getCanonicalPath)
