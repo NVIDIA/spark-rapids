@@ -77,6 +77,7 @@
         <module>integration_tests</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
+        <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
     </modules>

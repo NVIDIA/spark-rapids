@@ -62,6 +62,7 @@
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix" value="${project.build.directory}/deps/${aggregatorArtifact}-${project.version}"/>
         <property name="aggregatorBuildDir" value="${project.basedir}/../aggregator/target"/>
+        <property name="sqlPluginApiBuildDir" value="${project.basedir}/../sql-plugin-api/target"/>
 
         <condition property="should.build.conventional.jar">
             <and>
@@ -74,49 +75,40 @@
 
     <target name="copy-dependencies"
             depends="init-properties">
-        <ac:for list="${included_buildvers}" param="bv" trim="true">
-            <sequential>
-                <!-- precedence order tolerating mvn clean
-                     1. locally packaged artifacts
-                     2. local repo
-                     3. remote repo
-                -->
-                <available file="${aggregatorBuildDir}/spark@{bv}/${aggregatorArtifact}-${project.version}.jar"
-                           property="local.aggregator-spark@{bv}.jar.exists"/>
-                <ac:if>
-                    <isset property="local.aggregator-spark@{bv}.jar.exists"/>
-                    <ac:then>
-                        <echo level="info">copy spark@{bv} aggregator from ${aggregatorBuildDir}</echo>
-                        <copy file="${aggregatorBuildDir}/spark@{bv}/${aggregatorArtifact}-${project.version}.jar"
-                              tofile="${aggregatorPrefix}-spark@{bv}.jar"/>
-                    </ac:then>
-                    <ac:else>
-                        <!--
-                            WORKAROUND: in-JVM invocation of resolver ant tasks http://maven.apache.org/resolver-ant-tasks/
-                            fails due to side-stepping Maven classloading isolation, hence, using child Maven processes.
+        <scriptdef name="doCopyDependencies" language="jython">
+            <attribute name="artifact_csv"/>
+<![CDATA[
+import os
+import shutil
 
-                            Using intransitive dependency:get instead of dependency:copy for structured artifact input
-                            instead of concatenated string
-                        -->
-                        <echo level="info">dependency:get spark@{bv} aggregator</echo>
-                        <exec executable="${maven.home}/bin/mvn" failonerror="true">
-                            <arg value="dependency:get"/>
-                            <arg value="-s" if:set="env.URM_URL"/>
-                            <arg value="${project.basedir}/../jenkins/settings.xml" if:set="env.URM_URL"/>
-                            <arg value="-B"/>
-                            <arg value="-Dmaven.repo.local=${maven.repo.local}" if:set="maven.repo.local"/>
-                            <arg value="-Ddest=${project.build.directory}/deps"/>
-                            <arg value="-DgroupId=com.nvidia"/>
-                            <arg value="-DartifactId=${aggregatorArtifact}"/>
-                            <arg value="-Dversion=${project.version}"/>
-                            <arg value="-Dpackaging=jar"/>
-                            <arg value="-Dclassifier=spark@{bv}"/>
-                            <arg value="-Dtransitive=false"/>
-                        </exec>
-                    </ac:else>
-                </ac:if>
-            </sequential>
-        </ac:for>
+artifacts = attributes.get('artifact_csv').split(',')
+buildver_list = project.getProperty('included_buildvers').split(',')
+project_basedir = project.getProperty('spark.rapids.source.basedir')
+project_version = project.getProperty('project.version')
+scala_version = project.getProperty('scala.binary.version')
+deps_dir = os.sep.join([project.getProperty('project.build.directory'), 'deps'])
+for bv in buildver_list:
+    classifier = 'spark' + bv
+    for art in artifacts:
+        build_dir = os.sep.join([project_basedir, art, 'target', classifier])
+        art_id = '-'.join(['rapids-4-spark', art + '_' + scala_version, project_version, classifier])
+        art_jar = art_id + '.jar'
+        art_jar_path = os.sep.join([build_dir, art_jar])
+        if os.path.isfile(art_jar_path):
+            print("copy " + art_jar_path + " to " + deps_dir)
+            shutil.copy(art_jar_path, deps_dir)
+        else:
+            mvn_home = project.getProperty('maven.home')
+            mvn_cmd = [
+                os.sep.join([mvn_home, 'bin', 'mvn']),
+                'dependency:get',
+                '-B',
+                '='.join('-Ddest', deps_dir),
+            ]
+
+]]>
+        </scriptdef>
+        <doCopyDependencies artifact_csv="sql-plugin-api,aggregator"/>
     </target>
     <target name="build-conventional-jar"
             depends="copy-dependencies"
