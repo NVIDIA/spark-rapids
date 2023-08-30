@@ -349,8 +349,15 @@ class RapidsBufferCatalog(
       batch: ColumnarBatch,
       initialSpillPriority: Long,
       needsSync: Boolean = true): RapidsBufferHandle = {
-    closeOnExcept(GpuColumnVector.from(batch)) { table =>
-      addTable(table, initialSpillPriority, needsSync)
+    require(batch.numCols() > 0,
+      "Cannot call addBatch with a batch that doesn't have columns")
+    batch.column(0) match {
+      case _: RapidsHostColumnVector =>
+        addHostBatch(batch, initialSpillPriority, needsSync)
+      case _ =>
+        closeOnExcept(GpuColumnVector.from(batch)) { table =>
+          addTable(table, initialSpillPriority, needsSync)
+        }
     }
   }
 
@@ -375,6 +382,25 @@ class RapidsBufferCatalog(
     val rapidsBuffer = deviceStorage.addTable(
       id,
       table,
+      initialSpillPriority,
+      needsSync)
+    registerNewBuffer(rapidsBuffer)
+    makeNewHandle(id, initialSpillPriority)
+  }
+
+
+  /**
+   * Add a host-backed ColumnarBatch to the catalog. This is only called from addBatch
+   * after we detect that this is a host-backed batch.
+   */
+  private def addHostBatch(
+      hostCb: ColumnarBatch,
+      initialSpillPriority: Long,
+      needsSync: Boolean): RapidsBufferHandle = {
+    val id = TempSpillBufferId()
+    val rapidsBuffer = hostStorage.addBatch(
+      id,
+      hostCb,
       initialSpillPriority,
       needsSync)
     registerNewBuffer(rapidsBuffer)
@@ -428,6 +454,23 @@ class RapidsBufferCatalog(
       }
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
+  }
+
+  /**
+   * Acquires a RapidsBuffer that the caller expects to be host-backed and not
+   * device bound. This ensures that the buffer acquired implements the correct
+   * trait, otherwise it throws and removes its buffer acquisition.
+   *
+   * @param handle handle associated with this `RapidsBuffer`
+   * @return host-backed RapidsBuffer that has been acquired
+   */
+  def acquireHostBatchBuffer(handle: RapidsBufferHandle): RapidsHostBatchBuffer = {
+    closeOnExcept(acquireBuffer(handle)) {
+      case hrb: RapidsHostBatchBuffer => hrb
+      case other =>
+        throw new IllegalStateException(
+          s"Attempted to acquire a RapidsHostBatchBuffer, but got $other instead")
+    }
   }
 
   /**
@@ -911,6 +954,17 @@ object RapidsBufferCatalog extends Logging {
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer =
     singleton.acquireBuffer(handle)
+
+  /**
+   * Acquires a RapidsBuffer that the caller expects to be host-backed and not
+   * device bound. This ensures that the buffer acquired implements the correct
+   * trait, otherwise it throws and removes its buffer acquisition.
+   *
+   * @param handle handle associated with this `RapidsBuffer`
+   * @return host-backed RapidsBuffer that has been acquired
+   */
+  def acquireHostBatchBuffer(handle: RapidsBufferHandle): RapidsHostBatchBuffer =
+    singleton.acquireHostBatchBuffer(handle)
 
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
 

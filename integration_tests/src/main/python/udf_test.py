@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -97,6 +97,7 @@ def test_pandas_scalar_udf_nested_type(data_gen):
 # ======= Test aggregate in Pandas =======
 @approximate_float
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9041')
 def test_single_aggregate_udf(data_gen):
     @f.pandas_udf('double')
     def pandas_sum(to_process: pd.Series) -> float:
@@ -110,6 +111,7 @@ def test_single_aggregate_udf(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9041')
 def test_single_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('double')
     def group_size_udf(to_process: pd.Series) -> float:
@@ -123,6 +125,7 @@ def test_single_aggregate_udf_more_types(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9041')
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
@@ -140,6 +143,7 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9041')
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -181,6 +185,7 @@ window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Pre
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9041')
 def test_window_aggregate_udf(data_gen, window):
 
     @f.pandas_udf('long')
@@ -199,6 +204,7 @@ def test_window_aggregate_udf(data_gen, window):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9041')
 def test_window_aggregate_udf_array_from_python(data_gen, window):
 
     @f.pandas_udf(returnType=ArrayType(LongType()))
@@ -362,7 +368,41 @@ def test_map_arrow_apply_udf(data_gen):
             pdf = batch.to_pandas()
             yield pyarrow.RecordBatch.from_pandas(pdf[pdf.b <= pdf.a])
 
+
+    # this test does not involve string or binary types, so there is no need
+    # to fallback if useLargeVarTypes is enabled
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.sql.execution.arrow.useLargeVarTypes': True
+    })
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
             .mapInArrow(filter_func, schema="a long, b long"),
-        conf=arrow_udf_conf)
+        conf=conf)
+
+
+@pytest.mark.parametrize('data_type', ['string', 'binary'], ids=idfn)
+@allow_non_gpu('PythonMapInArrowExec')
+@pytest.mark.skipif(is_before_spark_350(), reason='spark.sql.execution.arrow.useLargeVarTypes is introduced in Pyspark 3.5.0')
+def test_map_arrow_large_var_types_fallback(data_type):
+    def filter_func(iterator):
+        for batch in iterator:
+            pdf = batch.to_pandas()
+            yield pyarrow.RecordBatch.from_pandas(pdf[pdf.b <= pdf.a])
+
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.sql.execution.arrow.useLargeVarTypes': True
+    })
+
+    if data_type == "string":
+        data_gen = StringGen()
+    elif data_type == "binary":
+        data_gen = BinaryGen()
+
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
+            .mapInArrow(filter_func, schema=f"a {data_type}, b {data_type}"),
+        "PythonMapInArrowExec",
+        conf=conf)

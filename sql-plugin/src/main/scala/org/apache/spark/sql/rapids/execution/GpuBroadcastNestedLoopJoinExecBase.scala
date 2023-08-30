@@ -21,7 +21,7 @@ import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Tab
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -533,9 +533,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   private def doUnconditionalJoin(relation: Any): RDD[ColumnarBatch] = {
-    // Existence join should have a condition
-    assert(!joinType.isInstanceOf[ExistenceJoin])
-
     if (output.isEmpty) {
       doUnconditionalJoinRowCount(relation)
     } else {
@@ -553,6 +550,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         makeBuiltBatch(relation, buildTime, buildDataSize)
       }
       val joinIterator: RDD[ColumnarBatch] = joinType match {
+        case ExistenceJoin(_) =>
+          doUnconditionalExistenceJoin(relation, buildTime, buildDataSize)
         case LeftSemi =>
           if (gpuBuildSide == GpuBuildRight) {
             leftExistenceJoin(relation, exists=true, buildTime, buildDataSize)
@@ -598,6 +597,52 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
+  /**
+   * Special-case handling of an unconditional existence join that just needs to output the left
+   * table along with an existence column that is all true if the right table has any rows or
+   * all false otherwise.
+   */
+  private def doUnconditionalExistenceJoin(
+      relation: Any,
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): RDD[ColumnarBatch] = {
+    def addExistsColumn(iter: Iterator[ColumnarBatch], exists: Boolean): Iterator[ColumnarBatch] = {
+      iter.flatMap { batch =>
+        val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        withRetry(spillable, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { spillBatch =>
+          withResource(spillBatch.getColumnarBatch()) { batch =>
+            GpuColumnVector.incRefCounts(batch)
+            val newCols = new Array[ColumnVector](batch.numCols + 1)
+            (0 until newCols.length - 1).foreach { i =>
+              newCols(i) = batch.column(i)
+            }
+            val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
+              GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
+                BooleanType)
+            }
+            newCols(batch.numCols) = existsCol
+            new ColumnarBatch(newCols, batch.numRows)
+          }
+        }
+      }
+    }
+
+    if (gpuBuildSide == GpuBuildRight) {
+      left.executeColumnar.mapPartitions { iter =>
+        val buildHasRows = computeBuildRowCount(relation, buildTime, buildDataSize) > 0
+        addExistsColumn(iter, buildHasRows)
+      }
+    } else {
+      // try to check cheaply whether there are any rows in the streamed table at all
+      val streamTakePlan = GpuColumnarToRowExec(GpuLocalLimitExec(1, streamed))
+      val streamExists = !streamTakePlan.executeTake(1).isEmpty
+      val leftRDD = GpuBroadcastHelper.asRDD(sparkContext,relation.asInstanceOf[Broadcast[Any]])
+      leftRDD.mapPartitions { iter =>
+        addExistsColumn(iter, streamExists)
+      }
+    }
+  }
+
   /** Special-case handling of an unconditional join that just needs to output a row count. */
   private def doUnconditionalJoinRowCount(relation: Any): RDD[ColumnarBatch] = {
     if (joinType == LeftAnti) {
@@ -606,7 +651,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         Iterator.single(new ColumnarBatch(Array(), 0))
       }
     } else {
-      lazy val buildCount = if (joinType == LeftSemi) {
+      lazy val buildCount = if (joinType == LeftSemi || joinType.isInstanceOf[ExistenceJoin]) {
         // one-to-one mapping from input rows to output rows
         1
       } else {

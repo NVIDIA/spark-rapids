@@ -5731,6 +5731,53 @@ are limited.
 <th>UDT</th>
 </tr>
 <tr>
+<td rowSpan="2">DynamicPruningExpression</td>
+<td rowSpan="2"> </td>
+<td rowSpan="2">Dynamic pruning expression marker</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td>S</td>
+</tr>
+<tr>
 <td rowSpan="3">ElementAt</td>
 <td rowSpan="3">`element_at`</td>
 <td rowSpan="3">Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.</td>
