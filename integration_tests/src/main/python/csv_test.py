@@ -553,14 +553,13 @@ def test_csv_read_count(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
-    # TODO this does not actually confirm that this scan actually ran on GPU
+    # TODO this does not confirm that this scan actually runs on GPU
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
-@pytest.mark.parametrize('timestamp_type', ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-def test_csv_prefer_date_with_infer_schema(spark_tmp_path, timestamp_type):
+def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
     # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
     data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
