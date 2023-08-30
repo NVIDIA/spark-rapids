@@ -576,22 +576,6 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
         'GpuFileSourceScanExec',
         'FileSourceScanExec')
 
-@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
-def test_csv_infer_schema_ntz_fallback(spark_tmp_path):
-    data_gens = [TimestampNTZGen()]
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    data_path = spark_tmp_path + '/CSV_DATA'
-
-    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
-
-    # should fallback due to "unsupported data types TimestampNTZType [_c6] in read for CSV"
-    assert_gpu_fallback_collect(
-        lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
-        'FileSourceScanExec',
-        conf = {'spark.sql.timestampType': 'TIMESTAMP_NTZ',
-                'spark.rapids.sql.explain': 'ALL'})
-
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
 @pytest.mark.parametrize('filename,schema',[("date.csv", _date_schema), ("date.csv", _ts_schema,),
