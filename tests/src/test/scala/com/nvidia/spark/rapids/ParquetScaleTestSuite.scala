@@ -35,12 +35,17 @@ import org.apache.spark.sql.types._
 
 class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   private val sparkConf = new SparkConf()
-      .set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
-      .set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
-      .set("spark.sql.legacy.parquet.int96RebaseModeInRead", "CORRECTED") // for Spark 31x
-      .set("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED") // for Spark 32x, 33x and ...
+      // for date time
+      .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "CORRECTED") // for Spark 31x
+      .set("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") // for Spark 32x, 33x and ...
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInRead", "CORRECTED") // for Spark 31x
       .set("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") // for Spark 32x, 33x and ...
+
+      // for int96
+      .set("spark.sql.legacy.parquet.int96RebaseModeInWrite", "CORRECTED") // for Spark 31x
+      .set("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED") // for Spark 32x, 33x and ...
+      .set("spark.sql.legacy.parquet.int96RebaseModeInRead", "CORRECTED") // for Spark 31x
+      .set("spark.sql.parquet.int96RebaseModeInRead", "CORRECTED") // for Spark 32x, 33x and ...
       .set("spark.rapids.sql.explain", "ALL")
 
   /**
