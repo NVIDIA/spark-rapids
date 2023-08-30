@@ -75,89 +75,17 @@
 
     <target name="copy-dependencies"
             depends="init-properties">
-        <scriptdef name="doCopyDependencies" language="jython">
+        <scriptdef
+            name="doCopyDependencies"
+            language="jython"
+            src="${project.basedir}/build/package-parallel-worlds.py">
             <attribute name="artifact_csv"/>
-<![CDATA[
-import os
-import shutil
-import subprocess
-import zipfile
-
-def shell_exec(shell_cmd):
-    ret_code = subprocess.call(shell_cmd)
-    if ret_code != 0:
-        self.fail("failed to execute %s" % shell_cmd)
-
-artifacts = attributes.get('artifact_csv').split(',')
-buildver_list = project.getProperty('included_buildvers').split(',')
-project_basedir = project.getProperty('spark.rapids.source.basedir')
-project_version = project.getProperty('project.version')
-scala_version = project.getProperty('scala.binary.version')
-project_build_dir = project.getProperty('project.build.directory')
-deps_dir = os.sep.join([project_build_dir, 'deps'])
-top_dist_jar_dir = os.sep.join([project_build_dir, 'parallel-world'])
-urm_url = project.getProperty('env.URM_URL')
-jenkins_settings = os.sep.join([project_basedir, 'jenkins', 'settings.xml'])
-repo_local = project.getProperty('maven.repo.local')
-for bv in buildver_list:
-    classifier = 'spark' + bv
-    for art in artifacts:
-        build_dir = os.sep.join([project_basedir, art, 'target', classifier])
-        art_id = '-'.join(['rapids-4-spark', art + '_' + scala_version])
-        art_jar = '-'.join([art_id, project_version, classifier]) + '.jar'
-        art_jar_path = os.sep.join([build_dir, art_jar])
-        if os.path.isfile(art_jar_path):
-            print("copy " + art_jar_path + " to " + deps_dir)
-            shutil.copy(art_jar_path, deps_dir)
-        else:
-            mvn_home = project.getProperty('maven.home')
-            mvn_cmd = [
-                os.sep.join([mvn_home, 'bin', 'mvn']),
-                # TODO dest property is removed in 3.x, switch to the 'copy' goal
-                # however it does not support overriding local repo via property
-                # need an issue to sort this out better.
-                'org.apache.maven.plugins:maven-dependency-plugin:2.10:get',
-                '-B',
-                '='.join(['-Ddest', deps_dir]),
-                '='.join(['-DgroupId','com.nvidia']),
-                '='.join(['-DartifactId', art_id]),
-                '='.join(['-Dversion', project_version]),
-                '='.join(['-Dpackaging', 'jar']),
-                '='.join(['-Dclassifier', classifier]),
-                '='.join(['-Dtransitive', 'false'])
-            ]
-            if urm_url:
-                shell_cmd.append(' '.join(['-s', jenkins_settings]))
-            if repo_local:
-                shell_cmd.append('='.join(['-Dmaven.repo.local', repo_local]))
-
-            shell_exec(mvn_cmd)
-
-        with zipfile.ZipFile(os.sep.join([deps_dir, art_jar]), 'r') as zip_handle:
-            zip_handle.extractall(path=top_dist_jar_dir)
-]]>
         </scriptdef>
         <doCopyDependencies artifact_csv="sql-plugin-api,aggregator"/>
     </target>
     <target name="build-parallel-worlds"
             depends="copy-dependencies"
             unless="should.build.conventional.jar">
-        <ac:for list="${included_buildvers}" param="bv" trim="true">
-            <sequential>
-                <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
-                    dest="${project.build.directory}/parallel-world">
-                    <patternset id="shared-world-includes">
-                        <includesfile name="${project.basedir}/unshimmed-common-from-spark311.txt"/>
-                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                    </patternset>
-                </unzip>
-                <unzip src="${aggregatorPrefix}-spark@{bv}.jar"
-                    dest="${project.build.directory}/parallel-world/spark@{bv}"
-                >
-                </unzip>
-            </sequential>
-        </ac:for>
-
         <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <concat destfile="${shimServiceFile}">
             <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
