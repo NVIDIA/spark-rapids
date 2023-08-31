@@ -289,6 +289,24 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-ast_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-core_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-jackson_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.commons</groupId>
                     <artifactId>commons-io</artifactId>
                     <version>${spark.version}</version>
