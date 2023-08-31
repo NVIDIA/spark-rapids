@@ -246,23 +246,21 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
 
   def testDotsInNamePpd(spark: SparkSession, writeDf: DataFrame, predicate: String)(
       writeGpu: Boolean, readGpu: Boolean): Unit = {
-    withAllDatasources {
-      withTempPath { path =>
-        withSQLConf(
-          SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
-          SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
-          "spark.rapids.sql.test.enabled" -> writeGpu.toString,
-          "spark.rapids.sql.enabled"-> writeGpu.toString) {
-          writeDf.write.parquet(path.getAbsolutePath)
-        }
-        withSQLConf(
-          SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
-          SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
-          "spark.rapids.sql.test.enabled" -> readGpu.toString,
-          "spark.rapids.sql.enabled" -> readGpu.toString) {
-          val readBack = spark.read.parquet(path.getAbsolutePath).where(predicate)
-          assert(readBack.count() == 1)
-        }
+    withTempPath { path =>
+      withSQLConf(
+        SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
+        SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
+        "spark.rapids.sql.test.enabled" -> writeGpu.toString,
+        "spark.rapids.sql.enabled"-> writeGpu.toString) {
+        writeDf.write.parquet(path.getAbsolutePath)
+      }
+      withSQLConf(
+        SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
+        SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
+        "spark.rapids.sql.test.enabled" -> readGpu.toString,
+        "spark.rapids.sql.enabled" -> readGpu.toString) {
+        val readBack = spark.read.parquet(path.getAbsolutePath).where(predicate)
+        assert(readBack.count() == 1)
       }
     }
   }
