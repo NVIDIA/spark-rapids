@@ -122,6 +122,73 @@ class SpillableColumnarBatchImpl (
   }
 }
 
+class JustRowsHostColumnarBatch(numRows: Int)
+  extends SpillableColumnarBatch {
+  override def numRows(): Int = numRows
+  override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
+
+  def getColumnarBatch(): ColumnarBatch = {
+    new ColumnarBatch(Array.empty, numRows)
+  }
+
+  override def close(): Unit = () // NOOP nothing to close
+  override val sizeInBytes: Long = 0L
+
+  override def dataTypes: Array[DataType] = Array.empty
+}
+
+/**
+ * The implementation of [[SpillableHostColumnarBatch]] that points to buffers that can be spilled.
+ * @note the buffer should be in the cache by the time this is created and this is taking over
+ *       ownership of the life cycle of the batch.  So don't call this constructor directly please
+ *       use `SpillableHostColumnarBatch.apply` instead.
+ */
+class SpillableHostColumnarBatchImpl (
+    handle: RapidsBufferHandle,
+    rowCount: Int,
+    sparkTypes: Array[DataType],
+    catalog: RapidsBufferCatalog)
+  extends SpillableColumnarBatch {
+
+  override def dataTypes: Array[DataType] = sparkTypes
+
+  /**
+   * The number of rows stored in this batch.
+   */
+  override def numRows(): Int = rowCount
+
+  private def withRapidsHostBatchBuffer[T](fn: RapidsHostBatchBuffer => T): T = {
+    withResource(catalog.acquireHostBatchBuffer(handle)) { rapidsBuffer =>
+      fn(rapidsBuffer)
+    }
+  }
+
+  override lazy val sizeInBytes: Long = {
+    withRapidsHostBatchBuffer(_.getMemoryUsedBytes)
+  }
+
+  /**
+   * Set a new spill priority.
+   */
+  override def setSpillPriority(priority: Long): Unit = {
+    handle.setSpillPriority(priority)
+  }
+
+  override def getColumnarBatch(): ColumnarBatch = {
+    withRapidsHostBatchBuffer { hostBatchBuffer =>
+      hostBatchBuffer.getHostColumnarBatch(sparkTypes)
+    }
+  }
+
+  /**
+   * Remove the `ColumnarBatch` from the cache.
+   */
+  override def close(): Unit = {
+    // closing my reference
+    handle.close()
+  }
+}
+
 object SpillableColumnarBatch {
   /**
    * Create a new SpillableColumnarBatch.
@@ -207,9 +274,46 @@ object SpillableColumnarBatch {
       }
     }
   }
-
 }
 
+object SpillableHostColumnarBatch {
+  /**
+   * Create a new SpillableColumnarBatch backed by host columns.
+   *
+   * @note This takes over ownership of batch, and batch should not be used after this.
+   * @param batch         the batch to make spillable
+   * @param priority      the initial spill priority of this batch
+   */
+  def apply(
+      batch: ColumnarBatch,
+      priority: Long,
+      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton): SpillableColumnarBatch = {
+    val numRows = batch.numRows()
+    if (batch.numCols() <= 0) {
+      // We consumed it
+      batch.close()
+      new JustRowsHostColumnarBatch(numRows)
+    } else {
+      val types = RapidsHostColumnVector.extractColumns(batch).map(_.dataType())
+      val handle = addHostBatch(batch, priority, catalog)
+      new SpillableHostColumnarBatchImpl(
+        handle,
+        numRows,
+        types,
+        catalog)
+    }
+  }
+
+  private[this] def addHostBatch(
+      batch: ColumnarBatch,
+      initialSpillPriority: Long,
+      catalog: RapidsBufferCatalog): RapidsBufferHandle = {
+    withResource(batch) { batch =>
+      catalog.addBatch(batch, initialSpillPriority)
+    }
+  }
+
+}
 /**
  * Just like a SpillableColumnarBatch but for buffers.
  */
