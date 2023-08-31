@@ -34,7 +34,7 @@ def main():
   worker_type = 'g4dn.xlarge'
   driver_type = 'g4dn.xlarge'
   cloud_provider = 'aws'
-  # comma separated init scripts, e.g. dbfs:/foo,dbfs:/bar,...
+  # comma separated init scripts in Databricks workspace, e.g. /foo,/bar,...
   init_scripts = ''
   aws_zone='us-west-2c'
 

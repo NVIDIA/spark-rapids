@@ -16,11 +16,21 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, PinnedMemoryPool}
+import java.io.DataOutputStream
+import java.nio.channels.{Channels, WritableByteChannel}
+import java.util.concurrent.ConcurrentHashMap
+
+import scala.collection.mutable
+
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, MemoryBuffer, NvtxColor, NvtxRange, PinnedMemoryPool}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, freeOnExcept, withResource}
 import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_SPILL_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
+
+import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * A buffer store using host memory.
@@ -76,6 +86,21 @@ class RapidsHostMemoryStore(
     }
   }
 
+  def addBatch(id: RapidsBufferId,
+               hostCb: ColumnarBatch,
+               initialSpillPriority: Long,
+               needsSync: Boolean): RapidsBuffer = {
+    RapidsHostColumnVector.incRefCounts(hostCb)
+    val rapidsBuffer = new RapidsHostColumnarBatch(
+      id,
+      hostCb,
+      initialSpillPriority)
+    freeOnExcept(rapidsBuffer) { _ =>
+      addBuffer(rapidsBuffer, needsSync)
+      rapidsBuffer
+    }
+  }
+
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
@@ -125,6 +150,7 @@ class RapidsHostMemoryStore(
       spillPriority: Long,
       buffer: HostMemoryBuffer)
       extends RapidsBufferBase(id, meta, spillPriority)
+        with RapidsBufferChannelWritable
         with MemoryBuffer.EventHandler {
     override val storageTier: StorageTier = StorageTier.HOST
 
@@ -134,6 +160,21 @@ class RapidsHostMemoryStore(
         buffer.incRefCount()
         buffer
       }
+    }
+
+    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+      var written: Long = 0L
+      val iter = new HostByteBufferIterator(buffer)
+      iter.foreach { bb =>
+        try {
+          while (bb.hasRemaining) {
+            written += outputChannel.write(bb)
+          }
+        } finally {
+          RapidsStorageUtils.dispose(bb)
+        }
+      }
+      written
     }
 
     override def updateSpillability(): Unit = {
@@ -189,6 +230,221 @@ class RapidsHostMemoryStore(
         buffer.setEventHandler(null)
       }
       super.free()
+    }
+  }
+
+  /**
+   * A per cuDF host column event handler that handles calls to .close()
+   * inside of the `HostColumnVector` lock.
+   */
+  class RapidsHostColumnEventHandler
+    extends HostColumnVector.EventHandler {
+
+    // Every RapidsHostColumnarBatch that references this column has an entry in this map.
+    // The value represents the number of times (normally 1) that a ColumnVector
+    // appears in the RapidsHostColumnarBatch. This is also the HosColumnVector refCount at which
+    // the column is considered spillable.
+    // The map is protected via the ColumnVector lock.
+    private val registration = new mutable.HashMap[RapidsHostColumnarBatch, Int]()
+
+    /**
+     * Every RapidsHostColumnarBatch iterates through its columns and either creates
+     * a `RapidsHostColumnEventHandler` object and associates it with the column's
+     * `eventHandler` or calls into the existing one, and registers itself.
+     *
+     * The registration has two goals: it accounts for repetition of a column
+     * in a `RapidsHostColumnarBatch`. If a batch has the same column repeated it must adjust
+     * the refCount at which this column is considered spillable.
+     *
+     * The second goal is to account for aliasing. If two host batches alias this column
+     * we are going to mark it as non spillable.
+     *
+     * @param rapidsHostCb - the host batch that is registering itself with this tracker
+     */
+    def register(rapidsHostCb: RapidsHostColumnarBatch, repetition: Int): Unit = {
+      registration.put(rapidsHostCb, repetition)
+    }
+
+    /**
+     * This is invoked during `RapidsHostColumnarBatch.free` in order to remove the entry
+     * in `registration`.
+     *
+     * @param rapidsHostCb - the batch that is de-registering itself
+     */
+    def deregister(rapidsHostCb: RapidsHostColumnarBatch): Unit = {
+      registration.remove(rapidsHostCb)
+    }
+
+    // called with the cudf HostColumnVector lock held from cuDF's side
+    override def onClosed(cudfCv: HostColumnVector, refCount: Int): Unit = {
+      // we only handle spillability if there is a single batch registered
+      // (no aliasing)
+      if (registration.size == 1) {
+        val (rapidsHostCb, spillableRefCount) = registration.head
+        if (spillableRefCount == refCount) {
+          rapidsHostCb.onColumnSpillable(cudfCv)
+        }
+      }
+    }
+  }
+
+  /**
+   * A `RapidsHostColumnarBatch` is the spill store holder of ColumnarBatch backed by
+   * HostColumnVector.
+   *
+   * This class owns the host batch and will close it when `close` is called.
+   *
+   * @param id the `RapidsBufferId` this batch is associated with
+   * @param batch the host ColumnarBatch we are managing
+   * @param spillPriority a starting spill priority
+   */
+  class RapidsHostColumnarBatch(
+      id: RapidsBufferId,
+      hostCb: ColumnarBatch,
+      spillPriority: Long)
+      extends RapidsBufferBase(
+        id,
+        null,
+        spillPriority)
+          with RapidsBufferChannelWritable
+          with RapidsHostBatchBuffer {
+
+    override val storageTier: StorageTier = StorageTier.HOST
+
+    // This is the current size in batch form. It is to be used while this
+    // batch hasn't migrated to another store.
+    private val hostSizeInByes: Long = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
+
+    // By default all columns are NOT spillable since we are not the only owners of
+    // the columns (the caller is holding onto a ColumnarBatch that will be closed
+    // after instantiation, triggering onClosed callbacks)
+    // This hash set contains the columns that are currently spillable.
+    private val columnSpillability = new ConcurrentHashMap[HostColumnVector, Boolean]()
+
+    private val numDistinctColumns = RapidsHostColumnVector.extractBases(hostCb).distinct.size
+
+    // we register our event callbacks as the very first action to deal with
+    // spillability
+    registerOnCloseEventHandler()
+
+    /** Release the underlying resources for this buffer. */
+    override protected def releaseResources(): Unit = {
+      hostCb.close()
+    }
+
+    override def meta: TableMeta = {
+      null
+    }
+
+    override def getMemoryUsedBytes: Long = hostSizeInByes
+
+    /**
+     * Mark a column as spillable
+     *
+     * @param column the ColumnVector to mark as spillable
+     */
+    def onColumnSpillable(column: HostColumnVector): Unit = {
+      columnSpillability.put(column, true)
+      updateSpillability()
+    }
+
+    /**
+     * Update the spillability state of this RapidsHostColumnarBatch. This is invoked from
+     * two places:
+     *
+     * - from the onColumnSpillable callback, which is invoked from a
+     * HostColumnVector.EventHandler.onClosed callback.
+     *
+     * - after adding a batch to the store to mark the batch as spillable if
+     * all columns are spillable.
+     */
+    override def updateSpillability(): Unit = {
+      doSetSpillable(this, columnSpillability.size == numDistinctColumns)
+    }
+
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+      throw new UnsupportedOperationException(
+        "RapidsHostColumnarBatch does not support getColumnarBatch")
+    }
+
+    override def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+      columnSpillability.clear()
+      doSetSpillable(this, false)
+      RapidsHostColumnVector.incRefCounts(hostCb)
+    }
+
+    override def getMemoryBuffer: MemoryBuffer = {
+      throw new UnsupportedOperationException(
+        "RapidsHostColumnarBatch does not support getMemoryBuffer")
+    }
+
+    override def getCopyIterator: RapidsBufferCopyIterator = {
+      throw new UnsupportedOperationException(
+        "RapidsHostColumnarBatch does not support getCopyIterator")
+    }
+
+    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+      withResource(Channels.newOutputStream(outputChannel)) { outputStream =>
+        withResource(new DataOutputStream(outputStream)) { dos =>
+          val columns = RapidsHostColumnVector.extractBases(hostCb)
+          JCudfSerialization.writeToStream(columns, dos, 0, hostCb.numRows())
+          dos.size()
+        }
+      }
+    }
+
+    override def free(): Unit = {
+      // lets remove our handler from the chain of handlers for each column
+      removeOnCloseEventHandler()
+      super.free()
+    }
+
+    private def registerOnCloseEventHandler(): Unit = {
+      val columns = RapidsHostColumnVector.extractBases(hostCb)
+      // cudfColumns could contain duplicates. We need to take this into account when we are
+      // deciding the floor refCount for a duplicated column
+      val repetitionPerColumn = new mutable.HashMap[HostColumnVector, Int]()
+      columns.foreach { col =>
+        val repetitionCount = repetitionPerColumn.getOrElse(col, 0)
+        repetitionPerColumn(col) = repetitionCount + 1
+      }
+      repetitionPerColumn.foreach { case (distinctCv, repetition) =>
+        // lock the column because we are setting its event handler, and we are inspecting
+        // its refCount.
+        distinctCv.synchronized {
+          val eventHandler = distinctCv.getEventHandler match {
+            case null =>
+              val eventHandler = new RapidsHostColumnEventHandler
+              distinctCv.setEventHandler(eventHandler)
+              eventHandler
+            case existing: RapidsHostColumnEventHandler =>
+              existing
+            case other =>
+              throw new IllegalStateException(
+                s"Invalid column event handler $other")
+          }
+          eventHandler.register(this, repetition)
+          if (repetition == distinctCv.getRefCount) {
+            onColumnSpillable(distinctCv)
+          }
+        }
+      }
+    }
+
+    // this method is called from free()
+    private def removeOnCloseEventHandler(): Unit = {
+      val distinctColumns = RapidsHostColumnVector.extractBases(hostCb).distinct
+      distinctColumns.foreach { distinctCv =>
+        distinctCv.synchronized {
+          distinctCv.getEventHandler match {
+            case eventHandler: RapidsHostColumnEventHandler =>
+              eventHandler.deregister(this)
+            case t =>
+              throw new IllegalStateException(
+                s"Invalid column event handler $t")
+          }
+        }
+      }
     }
   }
 }

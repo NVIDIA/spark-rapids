@@ -20,9 +20,11 @@ import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.splitSpillableInHalfByRows
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.RowConversion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -73,7 +75,12 @@ class AcceleratedColumnarToRowIterator(
   private var at: Int = 0
   private var total: Int = 0
 
-  onTaskCompletion(closeAllPendingBatches())
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeAllPendingBatches()
+    }
+  }
 
   private def setCurrentBatch(wip: HostColumnVector): Unit = {
     currentCv = Some(wip)
@@ -100,34 +107,42 @@ class AcceleratedColumnarToRowIterator(
     new Table(rearrangedColumns : _*)
   }
 
-  private[this] def setupBatch(cb: ColumnarBatch): Boolean = {
+  private[this] def setupBatchAndClose(scb: SpillableColumnarBatch): Boolean = {
     numInputBatches += 1
     // In order to match the numOutputRows metric in the generated code we update
     // numOutputRows for each batch. This is less accurate than doing it at output
     // because it will over count the number of rows output in the case of a limit,
     // but it is more efficient.
-    numOutputRows += cb.numRows()
-    if (cb.numRows() > 0) {
+    numOutputRows += scb.numRows()
+    if (scb.numRows() > 0) {
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
-        withResource(rearrangeRows(cb)) { table =>
-          // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means at
-          // most 184 double/long values. Spark by default limits codegen to 100 fields
-          // "spark.sql.codegen.maxFields". So, we are going to be cautious and start with that
-          // until we have tested it more. We branching over the size of the output to know which
-          // kernel to call. If schema.length < 100 we call the fixed-width optimized version,
-          // otherwise the generic one
-          withResource(if (schema.length < 100) {
-            table.convertToRowsFixedWidthOptimized()
-          } else {
-            table.convertToRows()
-          }) { rowsCvList =>
+        val it = RmmRapidsRetryIterator.withRetry(scb, splitSpillableInHalfByRows) { attempt =>
+          withResource(attempt.getColumnarBatch()) { attemptCb =>
+            withResource(rearrangeRows(attemptCb)) { table =>
+              // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which
+              // means at most 184 double/long values. Spark by default limits codegen to 100
+              // fields "spark.sql.codegen.maxFields". So, we are going to be cautious and
+              // start with that until we have tested it more. We branching over the size of
+              // the output to know which kernel to call. If schema.length < 100 we call the
+              // fixed-width optimized version, otherwise the generic one
+              if (schema.length < 100) {
+                RowConversion.convertToRowsFixedWidthOptimized(table)
+              } else {
+                RowConversion.convertToRows(table)
+              }
+            }
+          }
+        }
+        assert(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
+        it.foreach { rowsCvList =>
+          withResource(rowsCvList) { _ =>
             rowsCvList.foreach { rowsCv =>
               pendingCvs += rowsCv.copyToHost()
             }
-            setCurrentBatch(pendingCvs.dequeue())
-            return true
           }
         }
+        setCurrentBatch(pendingCvs.dequeue())
+        return true
       }
     }
     false
@@ -148,16 +163,20 @@ class AcceleratedColumnarToRowIterator(
     // keep fetching input batches until we have a non-empty batch ready
     val nextBatch = fetchNextBatch()
     if (nextBatch.isDefined) {
-      if (!withResource(nextBatch.get)(setupBatch)) {
+      if (!setupBatchAndClose(nextBatch.get)) {
         populateBatch()
       }
     }
   }
 
-  private def fetchNextBatch(): Option[ColumnarBatch] = {
+  private def fetchNextBatch(): Option[SpillableColumnarBatch] = {
     withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, streamTime)) { _ =>
       if (batches.hasNext) {
-        Some(batches.next())
+        // Make it spillable once getting a columnar batch.
+        val spillBatch = closeOnExcept(batches.next()) { cb =>
+          SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        }
+        Some(spillBatch)
       } else {
         None
       }

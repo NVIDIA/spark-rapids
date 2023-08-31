@@ -16,7 +16,7 @@
 #
 
 # The initscript to set up environment for the cudf_udf tests on Databricks
-# Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
+# Will be automatically pushed into the Databricks Workspace: /databricks/init_scripts/ once it is updated.
 
 set -ex
 

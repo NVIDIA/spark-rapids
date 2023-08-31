@@ -36,11 +36,24 @@ package org.apache.spark.sql.hive.rapids.shims
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OptimizedCreateHiveTableAsSelectCommandMeta
+import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
+import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.{CreateHiveTableAsSelectCommand, InsertIntoHiveTable, OptimizedCreateHiveTableAsSelectCommand}
 
 trait HiveProviderCmdShims extends HiveProvider {
+
+  // UDF class is deprecated in Cloudera
+  @scala.annotation.nowarn("msg=class UDF in package exec is deprecated")
+  def createFunction(a: HiveSimpleUDF): UDF = {
+    a.function
+  }
+
+  def createFunction(a: HiveGenericUDF): GenericUDF = {
+    a.function
+  }
 
   /**
    * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.

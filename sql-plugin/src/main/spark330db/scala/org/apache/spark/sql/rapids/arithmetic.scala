@@ -19,6 +19,7 @@
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -480,10 +481,8 @@ case class GpuIntegralDecimalDivide(
     super.columnarEval(batch)
   }
 
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    // This follows division rule
-    val intDig = p1 - s1 + s2
-    // No precision loss can happen as the result scale is 0.
-    DecimalType.bounded(intDig, 0)
-  }
+  /**
+   * We are not overriding resultDecimalType as the method `dataType` is overridden in this class
+   * and so the superclass method that calls resultDecimalType will never be called.
+  */
 }

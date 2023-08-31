@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 #
 
 # The init script to install cuda11.0 toolkit
-# Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
+# Will be automatically pushed into the Databricks workspace: /databricks/init_scripts once it is updated.
 
 wget http://developer.download.nvidia.com/compute/cuda/11.0.2/local_installers/cuda_11.0.2_450.51.05_linux.run
 
