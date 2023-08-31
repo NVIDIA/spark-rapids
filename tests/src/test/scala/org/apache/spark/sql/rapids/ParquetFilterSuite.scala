@@ -211,7 +211,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
         import spark.implicits._
         val df = (1 to 1024).map(_.toString).toDF("a")
         withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === "500"}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a").startsWith("10")}, 1024))
+        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", 
+            {col("a").startsWith("10")}, 1024))
         withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       }
     })
