@@ -145,6 +145,7 @@ object GpuMetric extends Logging {
 sealed abstract class GpuMetric extends Serializable {
   def value: Long
   def set(v: Long): Unit
+  def set(v: Double): Unit
   def +=(v: Long): Unit
   def add(v: Long): Unit
 
@@ -162,6 +163,7 @@ object NoopMetric extends GpuMetric {
   override def +=(v: Long): Unit = ()
   override def add(v: Long): Unit = ()
   override def set(v: Long): Unit = ()
+  override def set(v: Double): Unit = ()
   override def value: Long = 0
 }
 
@@ -169,6 +171,7 @@ final case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
   def +=(v: Long): Unit = sqlMetric.add(v)
   def add(v: Long): Unit = sqlMetric.add(v)
   override def set(v: Long): Unit = sqlMetric.set(v)
+  override def set(v: Double): Unit = sqlMetric.set(v)
   override def value: Long = sqlMetric.value
 }
 

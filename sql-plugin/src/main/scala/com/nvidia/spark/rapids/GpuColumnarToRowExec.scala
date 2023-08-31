@@ -115,6 +115,7 @@ class AcceleratedColumnarToRowIterator(
     // because it will over count the number of rows output in the case of a limit,
     // but it is more efficient.
     numOutputRows += scb.numRows()
+    var totalSize = 0L
     if (scb.numRows() > 0) {
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
         val it = RmmRapidsRetryIterator.withRetry(scb, splitSpillableInHalfByRows) { attempt =>
@@ -127,6 +128,7 @@ class AcceleratedColumnarToRowIterator(
               // the output to know which kernel to call. If schema.length < 100 we call the
               // fixed-width optimized version, otherwise the generic one
               inputSize += GpuColumnVector.getTotalDeviceMemoryUsed(attemptCb)
+              totalSize += inputSize.value
               if (schema.length < 100) {
                 table.convertToRowsFixedWidthOptimized()
               } else {
@@ -146,6 +148,8 @@ class AcceleratedColumnarToRowIterator(
         setCurrentBatch(pendingCvs.dequeue())
         return true
       }
+      execBandwidth.set(totalSize.toDouble / (opTime.value.toDouble / (1000*1000*1000).toDouble))
+      //execBandwidth += (totalSize / opTime.value) * (1000 * 1000 * 1000)
     }
     false
   }
@@ -256,6 +260,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     // devCb will be None if the parent iterator is empty
     val devCb = fetchNextBatch()
     // perform conversion
+    var totalSize = 0L
     try {
       devCb.foreach { devCb =>
         withResource(devCb) { _ =>
@@ -269,7 +274,11 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
             // but it is more efficient.
             numOutputRows += cb.numRows()
             inputSize += GpuColumnVector.getTotalDeviceMemoryUsed(devCb)
+            totalSize += inputSize.value
           }
+          // execBandwidth += (totalSize / opTime.value) * (1000 * 1000 * 1000)
+          execBandwidth.set(totalSize.toDouble / (
+            opTime.value.toDouble / (1000*1000*1000).toDouble))
         }
       }
     } finally {
@@ -350,7 +359,7 @@ case class GpuColumnarToRowExec(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     INPUT_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_INPUT_SIZE),
-    EXEC_BANDWIDTH -> createMetric(MODERATE_LEVEL, DESCRIPTION_EXEC_BANDWIDTH),
+    EXEC_BANDWIDTH -> createAverageMetric(MODERATE_LEVEL, DESCRIPTION_EXEC_BANDWIDTH),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
