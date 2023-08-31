@@ -211,7 +211,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
 
   private def WindowMixedSumMinMaxColumnsByComplexity(table: String, complexity: Int): String = {
     val withoutWindow = MixedSumMinMaxColumnsByComplexity(table, complexity)
-    withoutWindow.strip().split(",").filter(_.nonEmpty)
+    withoutWindow.split(",").filter(_.nonEmpty)
       .map(i => s"$i over w").mkString(", ")
   }
 
