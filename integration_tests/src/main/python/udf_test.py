@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -362,7 +362,41 @@ def test_map_arrow_apply_udf(data_gen):
             pdf = batch.to_pandas()
             yield pyarrow.RecordBatch.from_pandas(pdf[pdf.b <= pdf.a])
 
+
+    # this test does not involve string or binary types, so there is no need
+    # to fallback if useLargeVarTypes is enabled
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.sql.execution.arrow.useLargeVarTypes': True
+    })
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
             .mapInArrow(filter_func, schema="a long, b long"),
-        conf=arrow_udf_conf)
+        conf=conf)
+
+
+@pytest.mark.parametrize('data_type', ['string', 'binary'], ids=idfn)
+@allow_non_gpu('PythonMapInArrowExec')
+@pytest.mark.skipif(is_before_spark_350(), reason='spark.sql.execution.arrow.useLargeVarTypes is introduced in Pyspark 3.5.0')
+def test_map_arrow_large_var_types_fallback(data_type):
+    def filter_func(iterator):
+        for batch in iterator:
+            pdf = batch.to_pandas()
+            yield pyarrow.RecordBatch.from_pandas(pdf[pdf.b <= pdf.a])
+
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.sql.execution.arrow.useLargeVarTypes': True
+    })
+
+    if data_type == "string":
+        data_gen = StringGen()
+    elif data_type == "binary":
+        data_gen = BinaryGen()
+
+    assert_gpu_fallback_collect(
+        lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
+            .mapInArrow(filter_func, schema=f"a {data_type}, b {data_type}"),
+        "PythonMapInArrowExec",
+        conf=conf)

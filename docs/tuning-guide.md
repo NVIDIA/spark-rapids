@@ -130,7 +130,7 @@ will be faster to not wait when you can get the data across the network fast eno
 ## Number of Concurrent Tasks per GPU
 Configuration key: [`spark.rapids.sql.concurrentGpuTasks`](configs.md#sql.concurrentGpuTasks)
 
-Default value: `1`
+Default value: `2`
 
 The RAPIDS Accelerator can further limit the number of tasks that are actively sharing the GPU.
 It does this using a semaphore. When metrics or documentation refers to the GPU semaphore it

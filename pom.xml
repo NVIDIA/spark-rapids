@@ -499,6 +499,26 @@
             </modules>
         </profile>
         <profile>
+            <id>release350</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>350</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>350</buildver>
+                <spark.version>${spark350.version}</spark.version>
+                <spark.test.version>${spark350.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+                <spark.shim.sources>${spark350.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>source-javadoc</id>
             <build>
                 <plugins>
@@ -605,12 +625,13 @@
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
-        <spark333.version>3.3.3-SNAPSHOT</spark333.version>
+        <spark333.version>3.3.3</spark333.version>
         <spark340.version>3.4.0</spark340.version>
         <spark341.version>3.4.1</spark341.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
+        <spark350.version>3.5.0</spark350.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
@@ -651,12 +672,14 @@
             330,
             331,
             332,
+            333,
             330cdh,
             340,
             341
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            333
+            <!--TODO: re-enable https://github.com/NVIDIA/spark-rapids/issues/9116-->
+            <!--350-->
         </snapshot.buildvers>
         <databricks.buildvers>
             321db,
@@ -921,7 +944,7 @@
                     <dependency>
                         <groupId>org.python</groupId>
                         <artifactId>jython-standalone</artifactId>
-                        <version>2.7.2</version>
+                        <version>2.7.3</version>
                     </dependency>
                     <dependency>
                         <groupId>net.sourceforge.pmd</groupId>
