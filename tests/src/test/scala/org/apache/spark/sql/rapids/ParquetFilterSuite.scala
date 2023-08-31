@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.sql.Timestamp
+import java.sql.{Date, Timestamp}
 
 import com.nvidia.spark.rapids.{GpuFilterExec, SparkQueryCompareTestSuite}
 
@@ -66,168 +66,172 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
   def testRangePartitioningPpd(spark: SparkSession, writeDf: DataFrame,
       partCol: String, predicate: Column, length: Int)(
       writeGpu: Boolean, readGpu: Boolean): Unit = {
-    withTempPath { path =>
-      withSQLConf(
-        SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
-        "spark.rapids.sql.test.enabled" -> writeGpu.toString,
-        "spark.rapids.sql.enabled"-> writeGpu.toString) {
-        writeDf.repartitionByRange(math.max(1, length / 128), col(partCol))
-            .write
-            .parquet(path.getAbsolutePath)
-      }
-      withSQLConf(
-        SQLConf.PARQUET_RECORD_FILTER_ENABLED.key -> "false",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> "true",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_DATE_ENABLED.key -> "true",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_TIMESTAMP_ENABLED.key -> "true",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_DECIMAL_ENABLED.key -> "true",
-        "spark.rapids.sql.test.enabled" -> readGpu.toString,
-        "spark.rapids.sql.enabled" -> readGpu.toString) {
-        val df = spark.read.parquet(path.getAbsolutePath).filter(predicate)
-        // Here, we strip the Spark side filter and check the actual results from Parquet.
-        val actual = stripSparkFilter(spark, df).collect().length
-        assert(actual > 1 && actual < length)
+    withAllDatasources {
+      withTempPath { path =>
+        withSQLConf(
+          SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
+          "spark.rapids.sql.test.enabled" -> writeGpu.toString,
+          "spark.rapids.sql.enabled"-> writeGpu.toString) {
+          writeDf.repartitionByRange(math.max(1, length / 128), col(partCol))
+              .write
+              .parquet(path.getAbsolutePath)
+        }
+        withSQLConf(
+          SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
+          SQLConf.PARQUET_RECORD_FILTER_ENABLED.key -> "false",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> "true",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_DATE_ENABLED.key -> "true",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_TIMESTAMP_ENABLED.key -> "true",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_DECIMAL_ENABLED.key -> "true",
+          "spark.rapids.sql.test.enabled" -> readGpu.toString,
+          "spark.rapids.sql.enabled" -> readGpu.toString) {
+          val df = spark.read.parquet(path.getAbsolutePath).filter(predicate)
+          // Here, we strip the Spark side filter and check the actual results from Parquet.
+          val actual = stripSparkFilter(spark, df).collect().length
+          assert(actual > 1 && actual < length)
+        }
       }
     }
   }
 
   def testOutOfRangePpd(spark: SparkSession, writeDf: DataFrame, predicate: Column)(
       writeGpu: Boolean, readGpu: Boolean): Unit = {
-    withTempPath { path =>
-      withSQLConf(
-        SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
-        "spark.rapids.sql.test.enabled" -> writeGpu.toString,
-        "spark.rapids.sql.enabled"-> writeGpu.toString) {
-        writeDf.coalesce(1).write.parquet(path.getAbsolutePath)
-      }
-      withSQLConf(
-        SQLConf.PARQUET_RECORD_FILTER_ENABLED.key -> "false",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> "true",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_DATE_ENABLED.key -> "true",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_TIMESTAMP_ENABLED.key -> "true",
-        SQLConf.PARQUET_FILTER_PUSHDOWN_DECIMAL_ENABLED.key -> "true",
-        "spark.rapids.sql.test.enabled" -> readGpu.toString,
-        "spark.rapids.sql.enabled" -> readGpu.toString) {
-        val df = spark.read.parquet(path.getAbsolutePath).filter(predicate)
-        // Here, we strip the Spark side filter and check the actual results from Parquet.
-        val actual = stripSparkFilter(spark, df).collect().length
-        assert(actual == 0)
+    withAllDatasources {
+      withTempPath { path =>
+        withSQLConf(
+          SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
+          "spark.rapids.sql.test.enabled" -> writeGpu.toString,
+          "spark.rapids.sql.enabled"-> writeGpu.toString) {
+          writeDf.coalesce(1).write.parquet(path.getAbsolutePath)
+        }
+        withSQLConf(
+          SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key -> "TIMESTAMP_MICROS",
+          SQLConf.PARQUET_RECORD_FILTER_ENABLED.key -> "false",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> "true",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_DATE_ENABLED.key -> "true",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_TIMESTAMP_ENABLED.key -> "true",
+          SQLConf.PARQUET_FILTER_PUSHDOWN_DECIMAL_ENABLED.key -> "true",
+          "spark.rapids.sql.test.enabled" -> readGpu.toString,
+          "spark.rapids.sql.enabled" -> readGpu.toString) {
+          val df = spark.read.parquet(path.getAbsolutePath).filter(predicate)
+          // Here, we strip the Spark side filter and check the actual results from Parquet.
+          val actual = stripSparkFilter(spark, df).collect().length
+          assert(actual == 0)
+        }
       }
     }
   }
 
   test("Parquet filter pushdown - boolean") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df1 = (1 to 1024).map(i => i % 500 == 0).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df1, "a", {col("a") === true}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df1, {col("a").isNull}))
-        val df2 = (1 to 1024).map(i => false).toDF("a")
-        withAllDevicePair(testOutOfRangePpd(spark, df2, {col("a") === true}))
-      }
+      import spark.implicits._
+      val df1 = (1 to 1024).map(i => i % 500 == 0).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df1, "a", {col("a") === true}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df1, {col("a").isNull}))
+      val df2 = (1 to 1024).map(i => false).toDF("a")
+      withAllDevicePair(testOutOfRangePpd(spark, df2, {col("a") === true}))
     })
   }
 
   test("Parquet filter pushdown - byte") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 127).map(_.toByte).toDF("a")
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 127).map(_.toByte).toDF("a")
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
   test("Parquet filter pushdown - smallint") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).map(_.toShort).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).map(_.toShort).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
   test("Parquet filter pushdown - int") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
   test("Parquet filter pushdown - long") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).map(_.toLong).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).map(_.toLong).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
   test("Parquet filter pushdown - float") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).map(_.toFloat).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).map(_.toFloat).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
   test("Parquet filter pushdown - double") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).map(_.toDouble).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).map(_.toDouble).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
   test("Parquet filter pushdown - string") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).map(_.toString).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === "500"}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", 
-            {col("a").startsWith("10")}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).map(_.toString).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === "500"}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", 
+          {col("a").startsWith("10")}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
     })
   }
 
   test("Parquet filter pushdown - decimal") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df = (1 to 1024).map(i => BigDecimal.valueOf(i)).toDF("a")
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
-        withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
-        withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
-      }
+      import spark.implicits._
+      val df = (1 to 1024).map(i => BigDecimal.valueOf(i)).toDF("a")
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
+    })
+  }
+
+  test("Parquet filter pushdown - date") {
+    withCpuSparkSession(spark => {
+      import spark.implicits._
+      val df = (1 to 1024).map(i => Date.valueOf("1970-01-01").toLocalDate.plusDays(i))
+          .toDF("a")
+      val equalsPredicate = {col("a") === Date.valueOf("1970-01-01").toLocalDate.plusDays(500)}
+      val greaterThanPredicate = {col("a") > Date.valueOf("1970-01-01").toLocalDate.plusDays(1000)}
+      val outOfRangePredicate = 
+          {col("a") === Date.valueOf("1970-01-01").toLocalDate.plusDays(2000)}
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", equalsPredicate, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", greaterThanPredicate, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, outOfRangePredicate))
     })
   }
 
@@ -247,36 +251,36 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
 
   def testDotsInNamePpd(spark: SparkSession, writeDf: DataFrame, predicate: String)(
       writeGpu: Boolean, readGpu: Boolean): Unit = {
-    withTempPath { path =>
-      withSQLConf(
-        SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
-        SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
-        "spark.rapids.sql.test.enabled" -> writeGpu.toString,
-        "spark.rapids.sql.enabled"-> writeGpu.toString) {
-        writeDf.write.parquet(path.getAbsolutePath)
-      }
-      withSQLConf(
-        SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
-        SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
-        "spark.rapids.sql.test.enabled" -> readGpu.toString,
-        "spark.rapids.sql.enabled" -> readGpu.toString) {
-        val readBack = spark.read.parquet(path.getAbsolutePath).where(predicate)
-        assert(readBack.count() == 1)
+    withAllDatasources {
+      withTempPath { path =>
+        withSQLConf(
+          SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
+          SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
+          "spark.rapids.sql.test.enabled" -> writeGpu.toString,
+          "spark.rapids.sql.enabled"-> writeGpu.toString) {
+          writeDf.write.parquet(path.getAbsolutePath)
+        }
+        withSQLConf(
+          SQLConf.PARQUET_FILTER_PUSHDOWN_ENABLED.key -> true.toString,
+          SQLConf.SUPPORT_QUOTED_REGEX_COLUMN_NAME.key -> "false",
+          "spark.rapids.sql.test.enabled" -> readGpu.toString,
+          "spark.rapids.sql.enabled" -> readGpu.toString) {
+          val readBack = spark.read.parquet(path.getAbsolutePath).where(predicate)
+          assert(readBack.count() == 1)
+        }
       }
     }
   }
 
   test("SPARK-31026: Parquet predicate pushdown for fields having dots in the names") {
     withCpuSparkSession(spark => {
-      withAllDatasources {
-        import spark.implicits._
-        val df1 = Seq(Some(1), None).toDF("col.dots")
-        withAllDevicePair(testDotsInNamePpd(spark, df1, "`col.dots` IS NOT NULL"))
-        val df2 = (1 to 1024).toDF("col.dots")
-        withAllDevicePair(testRangePartitioningPpd(spark, df2, "`col.dots`", 
-            {col("`col.dots`") === 500}, 1024))
-        withAllDevicePair(testOutOfRangePpd(spark, df2, {col("`col.dots`") === 0}))
-      }
+      import spark.implicits._
+      val df1 = Seq(Some(1), None).toDF("col.dots")
+      withAllDevicePair(testDotsInNamePpd(spark, df1, "`col.dots` IS NOT NULL"))
+      val df2 = (1 to 1024).toDF("col.dots")
+      withAllDevicePair(testRangePartitioningPpd(spark, df2, "`col.dots`", 
+          {col("`col.dots`") === 500}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df2, {col("`col.dots`") === 0}))
     })
   }
 }
