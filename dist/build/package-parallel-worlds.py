@@ -14,6 +14,7 @@
 
 import fnmatch
 import os
+import re
 import shutil
 import subprocess
 import zipfile
@@ -26,7 +27,8 @@ def shell_exec(shell_cmd):
 
 
 artifacts = attributes.get('artifact_csv').split(',')
-buildver_list = project.getProperty('included_buildvers').split(',')
+buildver_list = re.sub(r'\s+', '', project.getProperty('included_buildvers'),
+                       flags=re.UNICODE).split(',')
 project_basedir = project.getProperty('spark.rapids.source.basedir')
 project_version = project.getProperty('project.version')
 scala_version = project.getProperty('scala.binary.version')

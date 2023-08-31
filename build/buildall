@@ -265,7 +265,7 @@ time (
     # avoid repeating this work in parallel
     # Initialize sql-plugin only to avoid dealing with missing submodule dependencies
     #
-    $MVN initialize -pl sql-plugin -am
+    $MVN initialize -pl sql-plugin-api -am
 
     printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
       xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
