@@ -15,8 +15,10 @@
 import pyspark.sql.functions as f
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, \
+    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
+from datetime import timezone
 from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
@@ -198,6 +200,49 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .schema(schema)\
                     .option('timestampFormat', full_format)\
                     .json(data_path),
+            conf=updated_conf)
+
+@allow_non_gpu('BatchScanExec', 'FileSourceScanExec', 'ProjectExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.parametrize('ts_part', json_supported_ts_parts)
+@pytest.mark.parametrize('date_format', json_supported_date_formats)
+@pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list):
+    full_format = date_format + ts_part
+    data_gen = TimestampGen(tzinfo=None if timestamp_type == "TIMESTAMP_NTZ" else timezone.utc)
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    schema = gen.data_type
+    with_cpu_session(
+        lambda spark : gen_df(spark, gen).write \
+            .option('timestampFormat', full_format) \
+            .json(data_path))
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {
+            'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.sql.timestampType': timestamp_type
+        })
+
+    def do_read(spark):
+        return spark.read \
+            .schema(schema) \
+            .option('timestampFormat', full_format) \
+            .json(data_path)
+
+    cpu_scan_class = 'BatchScanExec' if v1_enabled_list == '' else 'FileSourceScanExec'
+
+    if timestamp_type == "TIMESTAMP_LTZ":
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark : do_read(spark),
+            exist_classes = 'Gpu' + cpu_scan_class,
+            non_exist_classes = cpu_scan_class,
+            conf=updated_conf)
+    else:
+        # we fall back to CPU due to "unsupported data types in output: TimestampNTZType"
+        assert_gpu_fallback_collect(
+            lambda spark : do_read(spark),
+            cpu_fallback_class_name = cpu_scan_class,
             conf=updated_conf)
 
 @approximate_float
