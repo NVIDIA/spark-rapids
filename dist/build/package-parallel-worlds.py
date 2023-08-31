@@ -89,8 +89,5 @@ for bv in buildver_list:
                 glob_list = from_spark311 + from_each if bv == buildver_list[0] else from_each
                 for pat in glob_list:
                     new_matches = fnmatch.filter(namelist, pat)
-                    print("GERA_DEBUG pat=%s new_matches=%s" % (pat, new_matches))
                     matching_members += new_matches
-                print("GERA_DEBUG all_matches=%s" % matching_members)
                 zip_handle.extractall(path=top_dist_jar_dir, members=matching_members)
-
