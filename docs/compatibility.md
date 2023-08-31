@@ -124,7 +124,7 @@ Only a limited set of formats are supported when parsing dates.
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
 despite the format asking for a `XXX` or `[XXX]`. The CSV parser does not support the `TimestampNTZ`
-type and wil fall back to CPU if `spark.sql.timeStamp` is set to `TIMESTAMP_NTZ` or if an 
+type and will fall back to CPU if `spark.sql.timestampType` is set to `TIMESTAMP_NTZ` or if an 
 explicit schema is provided that contains the `TimestampNTZ` type.
 
 The formats supported for timestamps are limited similar to dates.  The first part of the format
