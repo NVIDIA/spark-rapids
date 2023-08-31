@@ -522,13 +522,21 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  /** Returns true if the plan is a host columnar plan */
+  private def isHostColumnar(plan: SparkPlan): Boolean = {
+    def isGpuAdaptivePlan(plan: SparkPlan): Boolean = plan match {
+      case ap: AdaptiveSparkPlanExec => PlanUtils.probablyGpuPlan(ap, rapidsConf)
+      case _ => false
+    }
+    plan.supportsColumnar && !plan.isInstanceOf[GpuExec] && !isGpuAdaptivePlan(plan)
+  }
+
   /**
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
     val nonQueryStagePlan = GpuTransitionOverrides.getNonQueryStagePlan(plan)
-    if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec] &&
-      !nonQueryStagePlan.isInstanceOf[AdaptiveSparkPlanExec]) {
+    if (isHostColumnar(nonQueryStagePlan)) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))

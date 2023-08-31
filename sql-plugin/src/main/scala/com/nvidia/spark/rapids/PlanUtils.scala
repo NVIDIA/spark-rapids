@@ -20,8 +20,9 @@ import scala.collection.mutable.ListBuffer
 import scala.util.Try
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.{ReusedSubqueryExec, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 object PlanUtils {
   def getBaseNameFromClass(planClassStr: String): String = {
@@ -89,5 +90,27 @@ object PlanUtils {
       accum
     }
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
+  /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
+  def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
+    def findRootProcessingNode(plan: SparkPlan): SparkPlan = plan match {
+      case p: AdaptiveSparkPlanExec => findRootProcessingNode(p.executedPlan)
+      case p: QueryStageExec => findRootProcessingNode(p.plan)
+      case p: ReusedSubqueryExec => findRootProcessingNode(p.child)
+      case p: ReusedExchangeExec => findRootProcessingNode(p.child)
+      case p => p
+    }
+
+    val aqeSubPlan = findRootProcessingNode(adaptivePlan.executedPlan)
+    aqeSubPlan match {
+      case _: GpuExec =>
+        // plan is already on the GPU
+        true
+      case p =>
+        // see if the root processing node of the current subplan will translate to the GPU
+        val meta = GpuOverrides.wrapAndTagPlan(p, conf)
+        meta.canThisBeReplaced
+    }
   }
 }

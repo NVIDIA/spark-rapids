@@ -653,22 +653,15 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.supportsColumnar))) {
       // Some platforms can present a plan where the root of the plan is a shuffle followed by
-      // an AdaptiveSparkPlanExec. If it looks like the AdaptiveSparkPlanExec will end up
-      // columnar than this shuffle should be columnar as well.
+      // an AdaptiveSparkPlanExec. If it looks like the child AdaptiveSparkPlanExec will end up
+      // on the GPU than this shuffle should be GPU as well.
       val shuffle = wrapped.asInstanceOf[ShuffleExchangeExec]
-      val isChildColumnar = shuffle.child match {
-        case adaptiveExec: AdaptiveSparkPlanExec if parent.isEmpty =>
-          val aqePlan = adaptiveExec.executedPlan
-          if (aqePlan.supportsColumnar) {
-            true
-          } else {
-            val aqePlanMeta = GpuOverrides.wrapAndTagPlan(aqePlan, conf)
-            aqePlanMeta.canThisBeReplaced
-          }
+      val isChildOnGpu = shuffle.child match {
+        case ap: AdaptiveSparkPlanExec if parent.isEmpty => PlanUtils.probablyGpuPlan(ap, conf)
         case _ => false
       }
 
-      if (!isChildColumnar) {
+      if (!isChildOnGpu) {
         willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
       }
 
