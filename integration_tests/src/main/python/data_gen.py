@@ -573,7 +573,7 @@ class DateGen(DataGen):
 class TimestampGen(DataGen):
     """Generate Timestamps in a given range. All timezones are UTC by default."""
     def __init__(self, start=None, end=None, nullable=True, tzinfo=timezone.utc):
-        super().__init__(TimestampType(), nullable=nullable)
+        super().__init__(TimestampNTZType() if tzinfo==None else TimestampType(), nullable=nullable)
         if start is None:
             # Spark supports times starting at
             # "0001-01-01 00:00:00.000000"
