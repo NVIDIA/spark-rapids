@@ -47,7 +47,6 @@ for bv in buildver_list:
         art_jar = '-'.join([art_id, project_version, classifier]) + '.jar'
         art_jar_path = os.sep.join([build_dir, art_jar])
         if os.path.isfile(art_jar_path):
-            print("copy " + art_jar_path + " to " + deps_dir)
             shutil.copy(art_jar_path, deps_dir)
         else:
             mvn_home = project.getProperty('maven.home')
