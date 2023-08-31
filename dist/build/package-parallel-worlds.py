@@ -80,13 +80,17 @@ for bv in buildver_list:
                 zip_handle.extractall(path=top_dist_jar_dir)
             else:
                 zip_handle.extractall(path=os.sep.join([top_dist_jar_dir, classifier]))
-                # IMPORTANT unconditional extract from API-spark311 to the top
-                if bv == '311' and art == 'sql-plugin-api':
+                # IMPORTANT unconditional extract from first to the top
+                if bv == buildver_list[0] and art == 'sql-plugin-api':
                     zip_handle.extractall(path=top_dist_jar_dir)
                 # TODO deprecate
                 namelist = zip_handle.namelist()
                 matching_members = []
-                glob_list = from_spark311 + from_each if bv == '311' else from_each
+                glob_list = from_spark311 + from_each if bv == buildver_list[0] else from_each
                 for pat in glob_list:
-                    matching_members += fnmatch.filter(namelist, pat)
+                    new_matches = fnmatch.filter(namelist, pat)
+                    print("GERA_DEBUG pat=%s new_matches=%s" % (pat, new_matches))
+                    matching_members += new_matches
+                print("GERA_DEBUG all_matches=%s" % matching_members)
                 zip_handle.extractall(path=top_dist_jar_dir, members=matching_members)
+
