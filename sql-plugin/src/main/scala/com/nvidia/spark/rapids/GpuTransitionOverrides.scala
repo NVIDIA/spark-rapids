@@ -525,7 +525,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   /** Returns true if the plan is a host columnar plan */
   private def isHostColumnar(plan: SparkPlan): Boolean = {
     def isGpuAdaptivePlan(plan: SparkPlan): Boolean = plan match {
-      case ap: AdaptiveSparkPlanExec => PlanUtils.probablyGpuPlan(ap, rapidsConf)
+      case ap: AdaptiveSparkPlanExec => GpuOverrides.probablyGpuPlan(ap, rapidsConf)
       case _ => false
     }
     plan.supportsColumnar && !plan.isInstanceOf[GpuExec] && !isGpuAdaptivePlan(plan)

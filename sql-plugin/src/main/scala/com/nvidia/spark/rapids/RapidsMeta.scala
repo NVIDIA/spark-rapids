@@ -657,7 +657,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       // on the GPU than this shuffle should be GPU as well.
       val shuffle = wrapped.asInstanceOf[ShuffleExchangeExec]
       val isChildOnGpu = shuffle.child match {
-        case ap: AdaptiveSparkPlanExec if parent.isEmpty => PlanUtils.probablyGpuPlan(ap, conf)
+        case ap: AdaptiveSparkPlanExec if parent.isEmpty => GpuOverrides.probablyGpuPlan(ap, conf)
         case _ => false
       }
 
