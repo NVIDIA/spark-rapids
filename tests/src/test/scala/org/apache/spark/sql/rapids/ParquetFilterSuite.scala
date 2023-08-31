@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.nio.charset.StandardCharsets
-
 import com.nvidia.spark.rapids.{GpuFilterExec, SparkQueryCompareTestSuite}
 
 import org.apache.spark.sql.{Column, DataFrame, SparkSession}
@@ -127,8 +125,18 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df1 = (1 to 1024).map(i => i % 500 == 0).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df1, "a", {col("a") === true}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df1, {col("a").isNull}))
       val df2 = (1 to 1024).map(i => false).toDF("a")
       withAllDevicePair(testOutOfRangePpd(spark, df2, {col("a") === true}))
+    })
+  }
+
+  test("Parquet filter pushdown - byte") {
+    withCpuSparkSession(spark => {
+      import spark.implicits._
+      val df = (1 to 127).map(_.toByte).toDF("a")
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
 
@@ -137,6 +145,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(_.toShort).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
@@ -146,6 +156,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
@@ -155,6 +167,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(_.toLong).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
@@ -164,6 +178,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(_.toFloat).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
@@ -173,6 +189,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(_.toDouble).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
@@ -182,7 +200,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(_.toString).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === "500"}, 1024))
-      // string is not supported for out of range predicate both on CPU and GPU
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a").startsWith("10")}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
     })
   }
 
@@ -191,6 +210,8 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(i => BigDecimal.valueOf(i)).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === 500}, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") > 1000}, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a") === 0}))
     })
   }
@@ -199,9 +220,12 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
     withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(i => new java.sql.Timestamp(i)).toDF("a")
-      val predicate = {col("a") === "1970-01-01 00:00:00.500"}
+      val equalsPredicate = {col("a") === "1970-01-01 00:00:00.500"}
+      val greaterThanPredicate = {col("a") > "1970-01-01 00:00:01.000"}
       val outOfRangePredicate = {col("a") === "1970-01-01 00:00:02.000"}
-      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", predicate, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", equalsPredicate, 1024))
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", greaterThanPredicate, 1024))
+      withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
       withAllDevicePair(testOutOfRangePpd(spark, df, outOfRangePredicate))
     })
   }
