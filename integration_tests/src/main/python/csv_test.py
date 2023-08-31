@@ -567,19 +567,30 @@ def test_csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, ti
             .option('timestampFormat', full_format)
             .csv(data_path))
 
-    conf = { 'spark.sql.timestampType': timestamp_type,
-             'spark.rapids.sql.explain': 'ALL'}
-
     def do_read(spark):
         return spark.read.option("inferSchema", "true") \
             .option('timestampFormat', full_format) \
             .csv(data_path)
 
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: do_read(spark),
-        exist_classes = 'GpuFileSourceScanExec',
-        non_exist_classes = 'FileSourceScanExec',
-        conf = conf)
+    conf = { 'spark.sql.timestampType': timestamp_type,
+             'spark.rapids.sql.explain': 'ALL'}
+
+    # determine whether Spark CPU infers TimestampType or TimestampNtzType
+    inferred_type = with_cpu_session(
+        lambda spark : do_read(spark).schema["_c0"].dataType.typeName(), conf=conf)
+
+    if inferred_type == "timestamp_ntz":
+        # we fall back to CPU due to "unsupported data types in output: TimestampNTZType"
+        assert_gpu_fallback_collect(
+            lambda spark: do_read(spark),
+            cpu_fallback_class_name = 'FileSourceScanExec',
+            conf = conf)
+    else:
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: do_read(spark),
+            exist_classes = 'GpuFileSourceScanExec',
+            non_exist_classes = 'FileSourceScanExec',
+            conf = conf)
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
