@@ -462,7 +462,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
  * of a `RapidsBuffer`. This is only used right now for disk and GDS.
  * @param tier storage tier of this store
  */
-abstract class RapidsBufferStoreWithoutSpillabilitySupport(override val tier: StorageTier)
+abstract class RapidsBufferStoreWithoutSpill(override val tier: StorageTier)
     extends RapidsBufferStore(tier) {
 
   override def setSpillable(rapidsBuffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
