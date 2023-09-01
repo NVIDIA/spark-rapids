@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.jni.DateTimeRebase
 import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
@@ -118,11 +119,6 @@ object GpuParquetFileFormat {
       }
     }
 
-    val schemaHasDates = schema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
-    }
-
-
     SparkShimImpl.int96ParquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" =>
       case "CORRECTED" =>
@@ -135,12 +131,7 @@ object GpuParquetFileFormat {
     }
 
     SparkShimImpl.parquetRebaseWrite(sqlConf) match {
-      case "EXCEPTION" => //Good
-      case "CORRECTED" => //Good
-      case "LEGACY" =>
-        if (schemaHasDates || schemaHasTimestamps) {
-          meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
-        }
+      case "EXCEPTION" | "CORRECTED"| "LEGACY" => // Good
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported rebase mode")
     }
@@ -334,17 +325,38 @@ class GpuParquetWriter(
 
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
-      // Timestamp types are checked and transformed for all nested columns.
-      // Note that cudf's `isTimestampType` returns `true` for `TIMESTAMP_DAYS`, which is not
-      // included in Spark's `TimestampType`.
-      case (cv, _) if cv.getType.isTimestampType && cv.getType != DType.TIMESTAMP_DAYS =>
-        val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-        outputTimestampType match {
-          case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
-            cv.castTo(DType.TIMESTAMP_MILLISECONDS)
+      case (cv, _) if cv.getType.isTimestampType =>
+        if(cv.getType == DType.TIMESTAMP_DAYS) {
+          if (dateRebaseMode.equals("LEGACY")) {
+            DateTimeRebase.rebaseGregorianToJulian(cv)
+          } else {
+            cv.copyToColumnVector()
+          }
+        } else { /* timestamp */
+          val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
+          if (timestampRebaseMode.equals("LEGACY")) {
+            val rebasedTimestampAsMicros = if(cv.getType == DType.TIMESTAMP_MICROSECONDS) {
+              DateTimeRebase.rebaseGregorianToJulian(cv)
+            } else {
+              withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
+                DateTimeRebase.rebaseGregorianToJulian(cvAsMicros)
+              }
+            }
+            if(outputTimestampType.equals(typeMillis)) {
+              withResource(rebasedTimestampAsMicros) { rebasedTs =>
+                rebasedTs.castTo(DType.TIMESTAMP_MILLISECONDS) }
+            } else { /* outputTimestampType is either micros, or int96 */
+              rebasedTimestampAsMicros
+            }
+          } else {  /* timestampRebaseMode is not LEGACY */
+            outputTimestampType match {
+              case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
+                cv.castTo(DType.TIMESTAMP_MILLISECONDS)
 
-          // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`
-          case _ => cv.copyToColumnVector() /* the input is unchanged */
+              // Here outputTimestampType is either micros, or int96.
+              case _ => cv.copyToColumnVector() /* the input is unchanged */
+            }
+          }
         }
 
       // Decimal types are checked and transformed only for the top level column because we don't
