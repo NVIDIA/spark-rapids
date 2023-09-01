@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.{GpuFilterExec, SparkQueryCompareTestSuite}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.FilterExec
 
-class OrcPushDownSuite extends SparkQueryCompareTestSuite {
+class OrcFilterSuite extends SparkQueryCompareTestSuite {
 
   private def checkPredicatePushDown(spark: SparkSession, filepath: String, numRows: Int, 
       predicate: String): Unit = {
@@ -74,32 +74,31 @@ class OrcPushDownSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  // Following tests fail due to https://github.com/rapidsai/cudf/issues/13933
-  // predicate push down will not work for decimal type files written by GPU
+  test("Support for pushing down filters for decimal types gpu write gpu read") {
+    assume(false, "https://github.com/rapidsai/cudf/issues/13933")
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
+        val df = spark.createDataFrame(data).toDF("a")
+        df.repartition(10).write.orc(file.getCanonicalPath)
+        checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
+      })
+    }
+  }
 
-  // test("Support for pushing down filters for decimal types gpu write gpu read") {
-  //   withTempPath { file =>
-  //     withGpuSparkSession(spark => {
-  //       val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
-  //       val df = spark.createDataFrame(data).toDF("a")
-  //       df.repartition(10).write.orc(file.getCanonicalPath)
-  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
-  //     })
-  //   }
-  // }
-
-  // test("Support for pushing down filters for decimal types gpu write cpu read") {
-  //   withTempPath { file =>
-  //     withGpuSparkSession(spark => {
-  //       val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
-  //       val df = spark.createDataFrame(data).toDF("a")
-  //       df.repartition(10).write.orc(file.getCanonicalPath)
-  //     })
-  //     withCpuSparkSession(spark => {
-  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
-  //     })
-  //   }
-  // }
+  test("Support for pushing down filters for decimal types gpu write cpu read") {
+    assume(false, "https://github.com/rapidsai/cudf/issues/13933")
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val data = (0 until 10).map(i => Tuple1(BigDecimal.valueOf(i)))
+        val df = spark.createDataFrame(data).toDF("a")
+        df.repartition(10).write.orc(file.getCanonicalPath)
+      })
+      withCpuSparkSession(spark => {
+        checkPredicatePushDown(spark, file.getCanonicalPath, 10, "a == 2")
+      })
+    }
+  }
 
   test("Support for pushing down filters for decimal types cpu write gpu read") {
     withTempPath { file =>
@@ -132,39 +131,38 @@ class OrcPushDownSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  // Following tests fail due to https://github.com/rapidsai/cudf/issues/13899
-  // predicate push down will not work for timestamp type files written by GPU
+  test("Support for pushing down filters for timestamp types gpu write cpu read") {
+    assume(false, "https://github.com/rapidsai/cudf/issues/13899")
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val timeString = "2015-08-20 14:57:00"
+        val data = (0 until 10).map { i =>
+          val milliseconds = Timestamp.valueOf(timeString).getTime + i * 3600
+          Tuple1(new Timestamp(milliseconds))
+        }
+        val df = spark.createDataFrame(data).toDF("a")
+        df.repartition(10).write.orc(file.getCanonicalPath)
+      })
+      withCpuSparkSession(spark => {
+        val timeString = "2015-08-20 14:57:00"
+        checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
+      })
+    }
+  }
 
-  // test("Support for pushing down filters for timestamp types gpu write cpu read") {
-  //   withTempPath { file =>
-  //     withGpuSparkSession(spark => {
-  //       val timeString = "2015-08-20 14:57:00"
-  //       val data = (0 until 10).map { i =>
-  //         val milliseconds = Timestamp.valueOf(timeString).getTime + i * 3600
-  //         Tuple1(new Timestamp(milliseconds))
-  //       }
-  //       val df = spark.createDataFrame(data).toDF("a")
-  //       df.repartition(10).write.orc(file.getCanonicalPath)
-  //     })
-  //     withCpuSparkSession(spark => {
-  //       val timeString = "2015-08-20 14:57:00"
-  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
-  //     })
-  //   }
-  // }
-
-  // test("Support for pushing down filters for timestamp types gpu write gpu read") {
-  //   withTempPath { file =>
-  //     withGpuSparkSession(spark => {
-  //       val timeString = "2015-08-20 14:57:00"
-  //       val data = (0 until 10).map { i =>
-  //         val milliseconds = Timestamp.valueOf(timeString).getTime + i * 3600
-  //         Tuple1(new Timestamp(milliseconds))
-  //       }
-  //       val df = spark.createDataFrame(data).toDF("a")
-  //       df.repartition(10).write.orc(file.getCanonicalPath)
-  //       checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
-  //     })
-  //   }
-  // }
+  test("Support for pushing down filters for timestamp types gpu write gpu read") {
+    assume(false, "https://github.com/rapidsai/cudf/issues/13899")
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val timeString = "2015-08-20 14:57:00"
+        val data = (0 until 10).map { i =>
+          val milliseconds = Timestamp.valueOf(timeString).getTime + i * 3600
+          Tuple1(new Timestamp(milliseconds))
+        }
+        val df = spark.createDataFrame(data).toDF("a")
+        df.repartition(10).write.orc(file.getCanonicalPath)
+        checkPredicatePushDown(spark, file.getCanonicalPath, 10, s"a == '$timeString'")
+      })
+    }
+  }
 }

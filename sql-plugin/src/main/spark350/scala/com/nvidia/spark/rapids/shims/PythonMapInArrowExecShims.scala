@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "340"}
-{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -31,7 +23,10 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PythonMapInArrowExec
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
+import org.apache.spark.sql.types.{BinaryType, StringType}
 
 object PythonMapInArrowExecShims {
 
@@ -42,7 +37,26 @@ object PythonMapInArrowExecShims {
           " for the Python process when enabled.",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
-        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r))
+        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r) {
+          override def tagPlanForGpu() {
+            super.tagPlanForGpu()
+            if (SQLConf.get.getConf(SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES)) {
+
+              val inputTypes = mapPy.child.schema.fields.map(_.dataType)
+              val outputTypes = mapPy.output.map(_.dataType)
+
+              val hasStringOrBinaryTypes = (inputTypes ++ outputTypes).exists(dataType =>
+                TrampolineUtil.dataTypeExistsRecursively(dataType,
+                  dt => dt == StringType || dt == BinaryType))
+
+              if (hasStringOrBinaryTypes) {
+                willNotWorkOnGpu(s"${SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES.key} is " +
+                  s"enabled and the schema contains string or binary types. This is not " +
+                  s"supported on the GPU.")
+              }
+            }
+          }
+      })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
 }
