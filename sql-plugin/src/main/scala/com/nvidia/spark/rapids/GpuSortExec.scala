@@ -159,16 +159,20 @@ case class GpuSortEachBatchIterator(
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): ColumnarBatch = {
-    withResource(iter.next()) { cb =>
-      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
-        val ret = sorter.fullySortBatch(cb, sortTime)
-        outputBatches += 1
-        outputRows += ret.numRows()
-        if (singleBatch) {
-          GpuColumnVector.tagAsFinalBatch(ret)
-        } else {
-          ret
-        }
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+    val scb = closeOnExcept(iter.next()) { cb =>
+      SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+    withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
+      val ret = sorter.fullySortBatchAndCloseWithRetry(scb, sortTime)
+      outputBatches += 1
+      outputRows += ret.numRows()
+      if (singleBatch) {
+        GpuColumnVector.tagAsFinalBatch(ret)
+      } else {
+        ret
       }
     }
   }

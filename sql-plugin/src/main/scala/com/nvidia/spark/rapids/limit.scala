@@ -22,6 +22,8 @@ import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -183,15 +185,13 @@ class GpuCollectLimitMeta(
 }
 
 object GpuTopN {
-  private[this] def concatAndClose(a: SpillableColumnarBatch,
+  private[this] def concatAndClose(a: ColumnarBatch,
       b: ColumnarBatch,
       concatTime: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("readNConcat", NvtxColor.CYAN, concatTime)) { _ =>
       val dataTypes = GpuColumnVector.extractTypes(b)
       val aTable = withResource(a) { a =>
-        withResource(a.getColumnarBatch()) { aBatch =>
-          GpuColumnVector.from(aBatch)
-        }
+        GpuColumnVector.from(a)
       }
       val ret = withResource(aTable) { aTable =>
         withResource(b) { b =>
@@ -248,54 +248,72 @@ object GpuTopN {
       inputRows: GpuMetric,
       outputBatches: GpuMetric,
       outputRows: GpuMetric,
-      offset: Int): Iterator[ColumnarBatch] =
-    new Iterator[ColumnarBatch]() {
+      offset: Int): Iterator[SpillableColumnarBatch] =
+    new Iterator[SpillableColumnarBatch]() {
       override def hasNext: Boolean = iter.hasNext
 
       private[this] var pending: Option[SpillableColumnarBatch] = None
 
-      override def next(): ColumnarBatch = {
-        while (iter.hasNext) {
-          val input = iter.next()
-          withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, opTime)) { _ =>
-            inputBatches += 1
-            inputRows += input.numRows()
-            lazy val totalSize = GpuColumnVector.getTotalDeviceMemoryUsed(input) +
-                pending.map(_.sizeInBytes).getOrElse(0L)
-
-            val runningResult = if (pending.isEmpty) {
-              withResource(input) { input =>
-                apply(limit, sorter, input, sortTime)
-              }
-            } else if (totalSize > Integer.MAX_VALUE) {
-              // The intermediate size is likely big enough we don't want to risk an overflow,
-              // so sort/slice before we concat and sort/slice again.
-              val tmp = withResource(input) { input =>
-                apply(limit, sorter, input, sortTime)
-              }
-              withResource(concatAndClose(pending.get, tmp, concatTime)) { concat =>
-                apply(limit, sorter, concat, sortTime)
-              }
-            } else {
-              // The intermediate size looks like we could never overflow the indexes so
-              // do it the more efficient way and concat first followed by the sort/slice
-              withResource(concatAndClose(pending.get, input, concatTime)) { concat =>
-                apply(limit, sorter, concat, sortTime)
+      override def next(): SpillableColumnarBatch = {
+        if (!hasNext) {
+          throw new NoSuchElementException()
+        }
+        closeOnExcept(pending) { _ =>
+          while (iter.hasNext) {
+            val inputScb = closeOnExcept(iter.next()) { cb =>
+              inputBatches += 1
+              inputRows += cb.numRows()
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            }
+            withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, opTime)) { _ =>
+              withRetry(inputScb, splitSpillableInHalfByRows) { attempt =>
+                val inputCb = attempt.getColumnarBatch()
+                if (pending.isEmpty) {
+                  withResource(inputCb) { _ =>
+                    apply(limit, sorter, inputCb, sortTime)
+                  }
+                } else { // pending is not empty
+                  val totalSize = attempt.sizeInBytes + pending.get.sizeInBytes
+                  val tmpCb = if (totalSize > Int.MaxValue) {
+                    // The intermediate size is likely big enough we don't want to risk an overflow,
+                    // so sort/slice before we concat and sort/slice again.
+                    withResource(inputCb) { _ =>
+                      apply(limit, sorter, inputCb, sortTime)
+                    }
+                  } else {
+                    // The intermediate size looks like we could never overflow the indexes so
+                    // do it the more efficient way and concat first followed by the sort/slice
+                    inputCb
+                  }
+                  val pendingCb = closeOnExcept(tmpCb) { _ =>
+                    pending.get.getColumnarBatch()
+                  }
+                  withResource(concatAndClose(pendingCb, tmpCb, concatTime)) { concat =>
+                    apply(limit, sorter, concat, sortTime)
+                  }
+                }
+              }.foreach { runningResult =>
+                pending.foreach(_.close())
+                pending = None
+                pending = closeOnExcept(runningResult) { _ =>
+                  Some(SpillableColumnarBatch(runningResult, ACTIVE_ON_DECK_PRIORITY))
+                }
               }
             }
-            pending =
-                Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-          }
-        }
-        val tmp = pending.get.getColumnarBatch()
-        pending.get.close()
+          } // end of while
+        } // end of "closeOnExcept(pending)"
+
+        val tempScb = pending.get
         pending = None
         val ret = if (offset > 0) {
-          withResource(tmp) { _ =>
-            applyOffset(tmp, offset)
+          val retCb = RmmRapidsRetryIterator.withRetryNoSplit(tempScb) { _ =>
+            withResource(tempScb.getColumnarBatch()) { tempCb =>
+              applyOffset(tempCb, offset)
+            }
           }
+          closeOnExcept(retCb)(SpillableColumnarBatch(_, ACTIVE_ON_DECK_PRIORITY))
         } else {
-          tmp
+          tempScb
         }
         outputBatches += 1
         outputRows += ret.numRows()
@@ -353,11 +371,17 @@ case class GpuTopN(
       val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
         inputBatches, inputRows, outputBatches, outputRows, offset)
       if (localProjectList != childOutput) {
-        topN.map { batch =>
-          GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
+        topN.map { scb =>
+          opTime.ns {
+            GpuProjectExec.projectAndCloseWithRetrySingleBatch(scb, boundProjectExprs)
+          }
         }
       } else {
-        topN
+        topN.map { scb =>
+          opTime.ns {
+            RmmRapidsRetryIterator.withRetryNoSplit(scb)(_.getColumnarBatch())
+          }
+        }
       }
     }
   }
