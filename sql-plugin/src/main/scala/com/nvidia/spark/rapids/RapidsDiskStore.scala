@@ -32,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
-    extends RapidsBufferStore(StorageTier.DISK) {
+    extends RapidsBufferStoreWithoutSpillabilitySupport(StorageTier.DISK) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override protected def createBuffer(

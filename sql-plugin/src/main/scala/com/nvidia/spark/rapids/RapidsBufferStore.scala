@@ -208,12 +208,8 @@ abstract class RapidsBufferStore(val tier: StorageTier)
     }
   }
 
-  protected def doSetSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
-    buffers.setSpillable(buffer, isSpillable)
-  }
-
   protected def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
-    throw new NotImplementedError(s"This store ${this} does not implement setSpillable")
+    buffers.setSpillable(buffer, isSpillable)
   }
 
   /**
@@ -458,5 +454,18 @@ abstract class RapidsBufferStore(val tier: StorageTier)
     }
 
     override def toString: String = s"$name buffer size=${getMemoryUsedBytes}"
+  }
+}
+
+/**
+ * Buffers that inherit from this type do not support changing the spillable status
+ * of a `RapidsBuffer`. This is only used right now for disk and GDS.
+ * @param tier storage tier of this store
+ */
+abstract class RapidsBufferStoreWithoutSpillabilitySupport(override val tier: StorageTier)
+    extends RapidsBufferStore(tier) {
+
+  override def setSpillable(rapidsBuffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
+    throw new NotImplementedError(s"This store ${this} does not implement setSpillable")
   }
 }
