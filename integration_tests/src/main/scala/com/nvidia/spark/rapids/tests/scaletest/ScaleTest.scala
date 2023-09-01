@@ -56,7 +56,7 @@ object ScaleTest {
 
   /**
    *
-   * @param query the final query string to run in Spark SQL
+   * @param query the test query
    * @param iterations number of iterations for the query to run in a line
    * @param baseOutputPath base path for the output, the final output will append a postfix for
    *                       iterations
@@ -78,7 +78,7 @@ object ScaleTest {
     val status = ListBuffer[String]()
 
     (1 to query.iterations).foreach(i => {
-      spark.sparkContext.setJobDescription(s"query=${query.name}; iteration=$i")
+      spark.sparkContext.setJobGroup(s"query=${query.name}", s"iteration=$i")
       println(s"Iteration: $i")
       while (idleSessionListener.isBusy()){
         // Scala Test aims for stability not performance. And the sleep time will not be calculated
@@ -120,6 +120,8 @@ object ScaleTest {
           executionTimes += -1
           status.append(STATUS_FAILED)
           exceptions.add(stackTraceAsString(e))
+      } finally {
+        spark.sparkContext.removeSparkListener(taskFailureListener)
       }
     })
     QueryMeta(query.name, status, exceptions.asScala.toSeq, executionTimes)

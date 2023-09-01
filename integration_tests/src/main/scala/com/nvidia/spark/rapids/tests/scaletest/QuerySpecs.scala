@@ -313,7 +313,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"SELECT " +
           s"${expandKeyColumnByComplexity("c_key2", config.complexity)}, " +
           s"COUNT(1), " +
-          s"${expandAggColumnByComplexity("MIN", "c_data", config.complexity)} " +
+          s"${expandAggColumnByComplexity("c_data", "MIN", config.complexity)} " +
           s"FROM c_data LEFT SEMI JOIN d_data WHERE " +
           s"${
             expandWhereClauseWithAndByComplexity(
@@ -343,7 +343,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"SELECT " +
           s"${expandKeyGroup3("b_key3")}, " +
           s"${expandColumnWithRange("e_data", 1, 10)}, " +
-          s"${expandBDataColumns()}" +
+          s"${expandBDataColumns()} " +
           s"FROM b_data JOIN e_data WHERE " +
           s"${expandWhereClauseWithAndKeyGroup3("b_key3", "e_key3")}",
         config.iterations,
@@ -690,7 +690,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"select " +
           s"array_sort(collect_set(f_data_low_unique_1)) " +
           s"OVER (PARTITION BY f_key4_1 order by f_data_row_num_1 ROWS BETWEEN UNBOUNDED " +
-          s"PRECEDING AND CURRENT ROW)",
+          s"PRECEDING AND CURRENT ROW) " +
+          s"from f_facts",
         config.iterations,
         config.timeout,
         "COLLECT SET WINDOW (We may never really be able to do this well)"),
@@ -698,7 +699,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"select " +
           s"collect_list(f_data_low_unique_1) " +
           s"OVER (PARTITION BY f_key4_1 order by f_data_row_num_1 " +
-          s"ROWS BETWEEN ${config.complexity} PRECEDING and CURRENT ROW )",
+          s"ROWS BETWEEN ${config.complexity} PRECEDING and CURRENT ROW ) " +
+          s"from f_facts",
         config.iterations,
         config.timeout,
         "COLLECT LIST WINDOW (We may never really be able to do this well)")
