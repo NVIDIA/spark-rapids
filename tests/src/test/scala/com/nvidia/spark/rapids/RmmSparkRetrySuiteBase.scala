@@ -37,8 +37,12 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
     deviceStorage = spy(new RapidsDeviceMemoryStore())
-    val catalog = new RapidsBufferCatalog(deviceStorage)
+    val hostStore = new RapidsHostMemoryStore(1L * 1024 * 1024)
+    deviceStorage.setSpillStore(hostStore)
+    val catalog = new RapidsBufferCatalog(deviceStorage, hostStore)
+    // set these against the singleton so we close them later
     RapidsBufferCatalog.setDeviceStorage(deviceStorage)
+    RapidsBufferCatalog.setHostStorage(hostStore)
     RapidsBufferCatalog.setCatalog(catalog)
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
