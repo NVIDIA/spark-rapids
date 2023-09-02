@@ -57,12 +57,8 @@
             URM_URL=${env.URM_URL}
             maven.repo.local=${maven.repo.local}
         </echo>
-        <property name="aggregatorArtifact" value="rapids-4-spark-aggregator_${scala.binary.version}"/>
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
-        <property name="aggregatorPrefix" value="${project.build.directory}/deps/${aggregatorArtifact}-${project.version}"/>
-        <property name="aggregatorBuildDir" value="${project.basedir}/../aggregator/target"/>
-        <property name="sqlPluginApiBuildDir" value="${project.basedir}/../sql-plugin-api/target"/>
 
         <condition property="should.build.conventional.jar">
             <and>
