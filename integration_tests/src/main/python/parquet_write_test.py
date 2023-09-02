@@ -499,7 +499,8 @@ def test_timestamp_roundtrip_no_legacy_rebase(spark_tmp_path, ts_write_data_gen,
 def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, ts_write, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'}
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY',
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'}
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
