@@ -77,7 +77,6 @@
                             <exclude>org.slf4j:*</exclude>
                             <!-- excludes spark-rapids-jni and jucx, will package them in the dist submodule -->
                             <exclude>com.nvidia:spark-rapids-jni:*</exclude>
-                            <exclude>com.nvidia:rapids-4-spark-sql-plugin-api_${scala.binary.version}:*</exclude>
                             <exclude>org.openucx:jucx:*</exclude>
                         </excludes>
                     </artifactSet>
