@@ -66,7 +66,7 @@ for bv in buildver_list:
                 '='.join(['-Dtransitive', 'false'])
             ]
             if urm_url:
-                mvn_cmd.append(' '.join(['-s', jenkins_settings]))
+                mvn_cmd.extend(['-s', jenkins_settings])
             if repo_local:
                 mvn_cmd.append('='.join(['-Dmaven.repo.local', repo_local]))
             shell_exec(mvn_cmd)
