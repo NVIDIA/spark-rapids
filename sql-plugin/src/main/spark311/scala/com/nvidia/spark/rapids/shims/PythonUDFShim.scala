@@ -15,31 +15,37 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
 {"spark": "330"}
 {"spark": "330cdh"}
+{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
-{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuWindowExpression
 
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.InSubqueryExec
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 
-
-object InSubqueryShims {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(
-      GpuOverrides.expr[InSubqueryExec](
-        "Evaluates to true if values are in a subquery's result set",
-        ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128, TypeSig.comparable),
-        (a, conf, p, r) => new InSubqueryExecMeta(a, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+object PythonUDFShim {
+  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDF] = {
+    exp.map {
+      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuPythonUDF]
+    }
   }
 }

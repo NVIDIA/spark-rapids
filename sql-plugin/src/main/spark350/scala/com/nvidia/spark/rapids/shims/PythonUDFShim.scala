@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,21 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark340PlusShims
+import com.nvidia.spark.rapids.GpuWindowExpression
+
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
+
+object PythonUDFShim {
+  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDAF] = {
+    exp.map {
+      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuAggregateExpression]
+        .aggregateFunction.asInstanceOf[GpuPythonUDAF]
+    }
+  }
+}
