@@ -193,9 +193,22 @@
                 <repository>
                     <id>cloudera-repo</id>
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
                 </repository>
             </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
             <modules>
+                <module>boms/cdh</module>
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
@@ -431,7 +444,14 @@
                     </snapshots>
                 </repository>
             </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
             <modules>
+                <module>boms/cdh</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
             </modules>
