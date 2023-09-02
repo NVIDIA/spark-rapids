@@ -208,7 +208,7 @@
                 </pluginRepository>
             </pluginRepositories>
             <modules>
-                <module>boms/cdh</module>
+                <module>boms/cloudera</module>
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
@@ -451,7 +451,7 @@
                 </pluginRepository>
             </pluginRepositories>
             <modules>
-                <module>boms/cdh</module>
+                <module>boms/cloudera</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
             </modules>
