@@ -182,7 +182,11 @@
             </activation>
             <dependencies>
                 <dependency>
-
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-db-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
