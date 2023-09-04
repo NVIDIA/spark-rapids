@@ -636,7 +636,7 @@ If your environment has specific encryption requirements for network or IO, plea
 that the RAPIDS Accelerator suits your needs, and file and issue or discussion if you have doubts
 or would like expanded encryption support.
 
-### What is the special requirement if I run Spark on Ray?
+### What is the special requirement for running Rapids Accelerator with Spark on Ray?
 RayDP provides simple APIs for running Spark on [Ray](https://github.com/ray-project/ray) and 
 integrating Spark with AI libraries, we need to make the following configuration changes to fix
 the compatibility issues with the RAPIDS Accelerator and Ray:
