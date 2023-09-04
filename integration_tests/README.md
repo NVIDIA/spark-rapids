@@ -599,3 +599,8 @@ acceptable.
 It is advised that `DateGen` and `TimestampGen` classes from `data_gen.py` be used to generate valid
 (proleptic Gregorian calendar) dates when testing operators that work on dates. This data generator respects
 the valid boundaries for dates and timestamps.
+
+## Scale Test
+
+Scale Test is a test suite to do stress test and estimate the stablity of the spark-rapids plugin when running in large
+scale data. For more information please refer to [Scale Test](./ScaleTest.md)

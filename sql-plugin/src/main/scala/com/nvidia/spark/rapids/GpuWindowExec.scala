@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
@@ -1724,6 +1724,11 @@ class GpuCachedDoublePassWindowIterator(
 
   override def isRunningBatched: Boolean = true
 
+  // firstPassIter returns tuples where the first element is the result of calling
+  // computeBasicWindow on a batch, and the second element is a projection of boundPartitionSpec
+  // against the batch
+  private var firstPassIter: Option[Iterator[(Array[cudf.ColumnVector], ColumnarBatch)]] = None
+  private var postProcessedIter: Option[Iterator[ColumnarBatch]] = None
   private var readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
   private var firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
   // This should only ever be cached in between calls to `hasNext` and `next`.
@@ -1759,6 +1764,9 @@ class GpuCachedDoublePassWindowIterator(
 
       waitingForFirstPass.foreach(_.close())
       waitingForFirstPass = None
+
+      firstPassIter = None
+      postProcessedIter = None
     }
   }
 
@@ -1853,12 +1861,18 @@ class GpuCachedDoublePassWindowIterator(
     val numRows = cb.numRows()
 
     val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    val (basic, parts) = withRetryNoSplit(sp) { _ =>
-      withResource(sp.getColumnarBatch()) { batch =>
-        closeOnExcept(computeBasicWindow(batch)) { basic =>
-          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
-        }
-      }
+
+    val (basic, parts) = firstPassIter match {
+      case Some(it) if it.hasNext => it.next()
+      case _ =>
+        firstPassIter = Some(withRetry(sp, splitSpillableInHalfByRows) { sp =>
+          withResource(sp.getColumnarBatch()) { batch =>
+            closeOnExcept(computeBasicWindow(batch)) { basic =>
+              (basic, GpuProjectExec.project(batch, boundPartitionSpec))
+            }
+          }
+        })
+        firstPassIter.get.next()
     }
 
     withResource(basic) { _ =>
@@ -1932,6 +1946,30 @@ class GpuCachedDoublePassWindowIterator(
     if (!hasNext) {
       throw new NoSuchElementException()
     }
+    postProcessedIter match {
+      case Some(it) if it.hasNext =>
+        it.next()
+      case _ =>
+        postProcessedIter = Some(withRetry(getReadyForPostProcessing(),
+            splitSpillableInHalfByRows) { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            val ret = withResource(
+                new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+              postProcess(cb)
+            }
+            numOutputBatches += 1
+            numOutputRows += ret.numRows()
+            ret
+          }
+        })
+        postProcessedIter.get.next()
+    }
+  }
+
+  /**
+   * Get the next batch that is ready for post-processing.
+   */
+  private def getReadyForPostProcessing(): SpillableColumnarBatch = {
     while (readyForPostProcessing.isEmpty) {
       // Keep reading and processing data until we have something to output
       cacheBatchIfNeeded()
@@ -1947,17 +1985,7 @@ class GpuCachedDoublePassWindowIterator(
         }
       }
     }
-    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
-      withResource(sb.getColumnarBatch()) { cb =>
-        val ret = withResource(
-          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-          postProcess(cb)
-        }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
-      }
-    }
+    readyForPostProcessing.dequeue()
   }
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
+import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
 import org.apache.spark.sql.types._
 
 /**
@@ -55,16 +56,16 @@ object GpuPythonUDF {
  * A serialized version of a Python lambda function. This is a special expression, which needs a
  * dedicated physical operator to execute it, and thus can't be pushed down to data sources.
  */
-case class GpuPythonUDF(
+abstract class GpuPythonFunction(
     name: String,
-    func: PythonFunction,
+    val func: PythonFunction,
     dataType: DataType,
     children: Seq[Expression],
     evalType: Int,
     udfDeterministic: Boolean,
     resultId: ExprId = NamedExpression.newExprId)
-    extends Expression with GpuUnevaluable with NonSQLExpression with UserDefinedExpression
-    with GpuAggregateWindowFunction {
+  extends Expression with GpuUnevaluable with NonSQLExpression
+    with UserDefinedExpression with GpuAggregateWindowFunction with Serializable {
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
@@ -75,16 +76,58 @@ case class GpuPythonUDF(
 
   override def nullable: Boolean = true
 
+  // Support window things
+  override val windowInputProjection: Seq[Expression] = Seq.empty
+
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
+    throw new UnsupportedOperationException(s"GpuPythonUDF should run in a Python process.")
+  }
+}
+
+case class GpuPythonUDF(
+    name: String,
+    override val func: PythonFunction,
+    dataType: DataType,
+    children: Seq[Expression],
+    evalType: Int,
+    udfDeterministic: Boolean,
+    resultId: ExprId = NamedExpression.newExprId)
+  extends GpuPythonFunction(name, func, dataType, children, evalType, udfDeterministic, resultId) {
+  override lazy val canonicalized: Expression = {
+    val canonicalizedChildren = children.map(_.canonicalized)
+    // `resultId` can be seen as cosmetic variation in PythonUDF, as it doesn't affect the result.
+    this.copy(resultId = ExprId(-1)).withNewChildren(canonicalizedChildren)
+  }
+}
+
+case class GpuPythonUDAF(
+    name: String,
+    override val func: PythonFunction,
+    dataType: DataType,
+    children: Seq[Expression],
+    evalType: Int,
+    udfDeterministic: Boolean,
+    resultId: ExprId = NamedExpression.newExprId)
+  extends GpuPythonFunction(name, func, dataType, children, evalType, udfDeterministic, resultId)
+    with GpuAggregateFunction {
   override lazy val canonicalized: Expression = {
     val canonicalizedChildren = children.map(_.canonicalized)
     // `resultId` can be seen as cosmetic variation in PythonUDF, as it doesn't affect the result.
     this.copy(resultId = ExprId(-1)).withNewChildren(canonicalizedChildren)
   }
 
-  // Support window things
-  override val windowInputProjection: Seq[Expression] = Seq.empty
-  override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
-    throw new UnsupportedOperationException(s"GpuPythonUDF should run in a Python process.")
+  override val initialValues: Seq[Expression] = Seq.empty[Expression]
+
+  override val inputProjection: Seq[Expression] = Seq.empty[Expression]
+
+  override val updateAggregates: Seq[CudfAggregate] = Seq.empty[CudfAggregate]
+
+  override val mergeAggregates: Seq[CudfAggregate] = Seq.empty[CudfAggregate]
+
+  override val evaluateExpression: Expression = null
+
+  override def aggBufferAttributes: Seq[AttributeReference] = {
+    throw new UnsupportedOperationException("GpuPythonUDAF isn't a real aggregate function")
   }
 }

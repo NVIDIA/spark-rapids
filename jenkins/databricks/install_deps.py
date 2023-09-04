@@ -118,6 +118,8 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.json4s--json4s-ast_{scala_version}--org.json4s__json4s-ast_{scala_version}__*.jar'),
         Artifact('org.json4s', f'json4s-core_{scala_version}',
                  f'{prefix_ws_sp_mvn_hadoop}--org.json4s--json4s-core_{scala_version}--org.json4s__json4s-core_{scala_version}__*.jar'),
+        Artifact('org.json4s', f'json4s-jackson_{scala_version}',
+                 f'{prefix_ws_sp_mvn_hadoop}--org.json4s--json4s-jackson_{scala_version}--org.json4s__json4s-jackson_{scala_version}__*.jar'),
         Artifact('org.javaassist', 'javaassist',
                  f'{prefix_ws_sp_mvn_hadoop}--org.javassist--javassist--org.javassist__javassist__*.jar'),
         Artifact('com.fasterxml.jackson.core', 'jackson-core',
