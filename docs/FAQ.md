@@ -636,6 +636,17 @@ If your environment has specific encryption requirements for network or IO, plea
 that the RAPIDS Accelerator suits your needs, and file and issue or discussion if you have doubts
 or would like expanded encryption support.
 
+### What is the special requirement if I run Spark on Ray?
+RayDP provides simple APIs for running Spark on [Ray](https://github.com/ray-project/ray) and 
+integrating Spark with AI libraries, we need to make the following configuration changes to fix
+the compatibility issues with the RAPIDS Accelerator and Ray:
+
+* Changed the `gpuGpusResources.sh` script to use `GPU` instead of `gpu`
+  
+* Changed the `spark.executor.resource.gpu.*` configs to corresponding `spark.executor.resource.GPU.*` configs
+  
+* Changed `spark.task.resource.gpu.amount` to `spark.task.resource.GPU.amount`
+
 ### I have more questions, where do I go?
 We use github to track bugs, feature requests, and answer questions. File an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
