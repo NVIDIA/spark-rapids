@@ -236,8 +236,7 @@ object SchemaUtils {
       nullable: Boolean,
       writeInt96: Boolean,
       fieldMeta: Metadata,
-      parquetFieldIdWriteEnabled: Boolean,
-      isMapKey: Boolean): T = {
+      parquetFieldIdWriteEnabled: Boolean): T = {
 
     // Parquet specific field id
     val parquetFieldId: Option[Int] = if (fieldMeta.contains(FIELD_ID_METADATA_KEY)) {
@@ -276,12 +275,8 @@ object SchemaUtils {
             a.elementType,
             name,
             a.containsNull,
-            writeInt96, fieldMeta, parquetFieldIdWriteEnabled, isMapKey = false).build())
+            writeInt96, fieldMeta, parquetFieldIdWriteEnabled).build())
       case m: MapType =>
-        // if this is a key of another map. e.g.: map1(map2(int,int), int), the map2 is the map
-        // key of map1, map2 should be non-nullable
-        val isMapNullable = if (isMapKey) false else nullable
-
         // It is ok to use `StructBuilder` here for key and value, since either
         // `OrcWriterOptions.Builder` or `ParquetWriterOptions.Builder` is actually an
         // `AbstractStructBuilder`, and here only handles the common column metadata things.
@@ -293,8 +288,7 @@ object SchemaUtils {
               m.keyType,
               "key",
               nullable = false,
-              writeInt96, fieldMeta, parquetFieldIdWriteEnabled, isMapKey = true).build()
-                .getChildColumnOptions()(0),
+              writeInt96, fieldMeta, parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
             writerOptionsFromField(
               structBuilder(name, nullable),
               m.valueType,
@@ -302,9 +296,12 @@ object SchemaUtils {
               m.valueContainsNull,
               writeInt96,
               fieldMeta,
-              parquetFieldIdWriteEnabled, isMapKey = false).build().getChildColumnOptions()(0),
+              parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
             // set the nullable for this map
-            isMapNullable))
+            // if `m` is a key of another map, this `nullable` should be false
+            // e.g.: map1(map2(int,int), int), the map2 is the map
+            // key of map1, map2 should be non-nullable
+            nullable))
       case BinaryType =>
         if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withBinaryColumn(name, nullable, parquetFieldId.get)
@@ -335,7 +332,7 @@ object SchemaUtils {
       parquetFieldIdEnabled: Boolean = false): T = {
     schema.foreach(field =>
       writerOptionsFromField(builder, field.dataType, field.name, field.nullable, writeInt96,
-        field.metadata, parquetFieldIdEnabled, isMapKey = false)
+        field.metadata, parquetFieldIdEnabled)
     )
     builder.asInstanceOf[T]
   }
