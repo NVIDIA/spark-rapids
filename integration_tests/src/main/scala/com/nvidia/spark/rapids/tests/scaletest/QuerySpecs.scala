@@ -74,6 +74,17 @@ class QuerySpecs(config: Config, spark: SparkSession) {
   }
 
   /**
+   * To get numeric columns in a dataframe and also in candidate columns
+   * @param table table name
+   * @param columnCandidates candidate columns
+   * @return numeric columns
+   */
+  private def getNumericColumns(table: String, columnCandidates: Seq[String]): Seq[String] = {
+    val allNumeric = getNumericColumns(table)
+    allNumeric.filter(i => columnCandidates.contains(i))
+  }
+
+  /**
    *
    * @param prefix     column name prefix e.g. "b_data"
    * @param startIndex start column index e.g. 1
@@ -115,14 +126,20 @@ class QuerySpecs(config: Config, spark: SparkSession) {
    * complexity is 3:
    * "MIN(b_data_1), MIN(b_data_2), MIN(b_data_3), MIN(b_data_4), MIN(b_data_5)"
    *
+   * @param table      table name
    * @param prefix     column name prefix
    * @param aggFunc    aggregate function name
    * @param complexity indicates the number of columns
    * @return
    */
-  private def expandAggColumnByComplexity(prefix: String, aggFunc: String, complexity: Int): String
+  private def expandAggColumnByComplexity(table: String, prefix: String, aggFunc: String,
+  complexity: Int)
+  : String
   = {
-    (1 to complexity).map(i => s"${aggFunc}(${prefix}_$i)").mkString(",")
+    // Current Agg functions are MIN MAX which doesn't apply to MapType, so filter first.
+    getNumericColumns(table, (1 to complexity).map(i => s"${prefix}_$i")).map(
+      i => s"${aggFunc}($i)"
+    ).mkString(",")
   }
 
   /**
@@ -257,20 +274,26 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         "Left outer join with lots of ride along columns"),
 
       "q4" -> TestQuery("q4",
-        "SELECT c_data.* FROM c_data LEFT ANTI JOIN a_facts WHERE primary_a = c_foreign_a",
+        "SELECT c_data.* FROM c_data LEFT ANTI JOIN a_facts on primary_a = c_foreign_a",
         config.iterations,
         config.timeout,
         "Left anti-join lots of ride along columns."),
       "q5" -> TestQuery("q5",
-        "SELECT c_data.* FROM c_data LEFT SEMI JOIN a_facts WHERE primary_a = c_foreign_a",
+        "SELECT c_data.* FROM c_data LEFT SEMI JOIN a_facts on primary_a = c_foreign_a",
         config.iterations,
         config.timeout,
         "Left semi-join lots of ride along columns."),
+
       "q6" -> TestQuery("q6",
         s"SELECT " +
           s"${expandKeyColumnByComplexity("c_key2", config.complexity)}, COUNT(1), " +
-          s"${expandAggColumnByComplexity("c_data", "MIN", config.complexity)}," +
-          s"${expandAggColumnByComplexity("d_data", "MAX", config.complexity)} " +
+          s"${expandAggColumnByComplexity(
+            "c_data", "c_data", "MIN", 5)}," +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data_numeric", "MIN", 5)
+          }," +
+          s"${expandAggColumnByComplexity("d_data", "d_data", "MAX", 10)} " +
           s"FROM c_data JOIN d_data WHERE " +
           s"${
             expandWhereClauseWithAndByComplexity(
@@ -283,8 +306,16 @@ class QuerySpecs(config: Config, spark: SparkSession) {
       "q7" -> TestQuery("q7",
         s"SELECT " +
           s"${expandKeyColumnByComplexity("c_key2", config.complexity)}, COUNT(1), " +
-          s"${expandAggColumnByComplexity("c_data", "MIN", config.complexity)}," +
-          s"${expandAggColumnByComplexity("d_data", "MAX", config.complexity)} " +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data", "MIN", 5)
+          }," +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data_numeric", "MIN", 5)
+          }," +
+          s"${expandAggColumnByComplexity(
+            "d_data", "d_data", "MAX", 10)} " +
           s"FROM c_data FULL OUTER JOIN d_data WHERE " +
           s"${
             expandWhereClauseWithAndByComplexity(
@@ -297,8 +328,15 @@ class QuerySpecs(config: Config, spark: SparkSession) {
       "q8" -> TestQuery("q8",
         s"SELECT " +
           s"${expandKeyColumnByComplexity("c_key2", config.complexity)}, COUNT(1), " +
-          s"${expandAggColumnByComplexity("c_data", "MIN", config.complexity)}," +
-          s"${expandAggColumnByComplexity("d_data", "MAX", config.complexity)} " +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data", "MIN", 5)
+          }," +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data_numeric", "MIN", 5)
+          }," +
+          s"${expandAggColumnByComplexity("d_data", "d_data", "MAX", 10)} " +
           s"FROM c_data LEFT OUTER JOIN d_data WHERE " +
           s"${
             expandWhereClauseWithAndByComplexity(
@@ -313,8 +351,15 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"SELECT " +
           s"${expandKeyColumnByComplexity("c_key2", config.complexity)}, " +
           s"COUNT(1), " +
-          s"${expandAggColumnByComplexity("c_data", "MIN", config.complexity)} " +
-          s"FROM c_data LEFT SEMI JOIN d_data WHERE " +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data", "MIN", 5)
+          }," +
+          s"${
+            expandAggColumnByComplexity(
+              "c_data", "c_data_numeric", "MIN", 5)
+          } " +
+          s"FROM c_data LEFT SEMI JOIN d_data on " +
           s"${
             expandWhereClauseWithAndByComplexity(
               "c_key2", "d_key2", config.complexity)
@@ -328,8 +373,9 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"SELECT " +
           s"${expandKeyColumnByComplexity("c_key2", config.complexity)}," +
           s" COUNT(1)," +
-          s" ${expandAggColumnByComplexity("c_data", "MIN", config.complexity)}" +
-          s" FROM c_data LEFT ANTI JOIN d_data WHERE " +
+          s" ${expandAggColumnByComplexity(
+            "c_data", "c_data", "MIN", config.complexity)}" +
+          s" FROM c_data LEFT ANTI JOIN d_data on " +
           s"${
             expandWhereClauseWithAndByComplexity(
               "c_key2", "d_key2", config.complexity)
@@ -344,7 +390,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"${expandKeyGroup3("b_key3")}, " +
           s"${expandColumnWithRange("e_data", 1, 10)}, " +
           s"${expandBDataColumns()} " +
-          s"FROM b_data JOIN e_data WHERE " +
+          s"FROM b_data JOIN e_data on " +
           s"${expandWhereClauseWithAndKeyGroup3("b_key3", "e_key3")}",
         config.iterations,
         config.timeout,
@@ -355,7 +401,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"${expandKeyGroup3("b_key3")}, " +
           s"${expandColumnWithRange("e_data", 1, 10)}, " +
           s"${expandBDataColumns()} " +
-          s"FROM b_data FULL OUTER JOIN e_data WHERE " +
+          s"FROM b_data FULL OUTER JOIN e_data on " +
           s"${expandWhereClauseWithAndKeyGroup3("b_key3", "e_key3")}",
         config.iterations,
         config.timeout,
@@ -377,7 +423,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"${expandKeyGroup3("b_key3")}, " +
           s"${expandBDataColumns()} " +
           s"FROM " +
-          s"b_data LEFT SEMI JOIN e_data WHERE " +
+          s"b_data LEFT SEMI JOIN e_data on " +
           s"${expandWhereClauseWithAndKeyGroup3("b_key3", "e_key3")}",
         config.iterations,
         config.timeout,
@@ -388,7 +434,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"${expandKeyGroup3("b_key3")}, " +
           s"${expandBDataColumns()} " +
           s"FROM " +
-          s"b_data LEFT ANTI JOIN e_data WHERE " +
+          s"b_data LEFT ANTI JOIN e_data on " +
           s"${expandWhereClauseWithAndKeyGroup3("b_key3", "e_key3")}",
         config.iterations,
         config.timeout,
@@ -407,7 +453,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
               Math.round(config.complexity / 2.0).toInt)
           } " +
           s"FROM a_facts JOIN f_facts " +
-          s"WHERE a_key4_1 = f_key4_1 && (a_data_low_unique_1 + f_data_low_unique_1) = 2",
+          s"on a_key4_1 = f_key4_1 AND (a_data_low_unique_1 + f_data_low_unique_1) = 2",
         config.iterations,
         config.timeout,
         "Extreme skew conditional AST inner join."),
@@ -424,7 +470,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
               Math.round(config.complexity / 2.0).toInt)
           } " +
           s"FROM a_facts FULL OUTER JOIN f_facts " +
-          s"WHERE a_key4_1 = f_key4_1 && (a_data_low_unique_1 + f_data_low_unique_1) = 2",
+          s"on a_key4_1 = f_key4_1 AND (a_data_low_unique_1 + f_data_low_unique_1) = 2",
         config.iterations,
         config.timeout,
         "Extreme skew conditional AST full outer join."),
@@ -441,17 +487,17 @@ class QuerySpecs(config: Config, spark: SparkSession) {
               Math.round(config.complexity / 2.0).toInt)
           } " +
           s"FROM a_facts LEFT OUTER JOIN f_facts " +
-          s"WHERE a_key4_1 = f_key4_1 && (a_data_low_unique_1 + f_data_low_unique_1) = 2",
+          s"on a_key4_1 = f_key4_1 AND (a_data_low_unique_1 + f_data_low_unique_1) = 2",
         config.iterations,
         config.timeout,
         "Extreme skew conditional AST left anti join."),
       "q19" -> TestQuery("q19",
         s"SELECT " +
           s"a_key4_1, " +
-          s"${expandADataColumns()}, " +
-          s"FROM a_fact " +
-          s"LEFT ANTI JOIN f_fact WHERE " +
-          s"a_key4_1 = f_key4_1 && (a_data_low_unique_1 + f_data_low_unique_1) != 2",
+          s"${expandADataColumns()} " +
+          s"FROM a_facts " +
+          s"LEFT ANTI JOIN f_facts on " +
+          s"a_key4_1 = f_key4_1 AND (a_data_low_unique_1 + f_data_low_unique_1) != 2",
         config.iterations,
         config.timeout,
         "Extreme skew conditional AST left anti join."),
@@ -459,8 +505,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         s"SELECT " +
           s"a_key4_1, " +
           s"${expandADataColumns()} " +
-          s"FROM a_fact LEFT SEMI JOIN f_fact WHERE " +
-          s"a_key4_1 = f_key4_1 && (a_data_low_unique_1 + f_data_low_unique_1) = 2",
+          s"FROM a_facts LEFT SEMI JOIN f_facts on " +
+          s"a_key4_1 = f_key4_1 AND (a_data_low_unique_1 + f_data_low_unique_1) = 2",
         config.iterations,
         config.timeout,
         "Extreme skew conditional AST left semi join."),
@@ -477,8 +523,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
               1,
               Math.round(config.complexity / 2.0).toInt)
           } " +
-          s"FROM a_fact JOIN f_fact " +
-          s"WHERE a_key4_1 = f_key4_1 && " +
+          s"FROM a_facts JOIN f_facts " +
+          s"on a_key4_1 = f_key4_1 AND " +
           s"(length(concat(a_data_low_unique_len_1, f_data_low_unique_len_1))) = 2",
         config.iterations,
         config.timeout,
@@ -494,13 +540,13 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           "and CUDF does sort agg internally."),
       "q23" -> TestQuery("q23",
         s"SELECT ${MixedSumMinMaxColumnsByComplexity("b_data", config.complexity)} " +
-          s"FROM b_data.",
+          s"FROM b_data",
         config.iterations,
         config.timeout,
         "Reduction with with lots of aggregations"),
       "q24" -> TestQuery("q24",
         s"SELECT ${expandKeyGroup3("g_key3")}, " +
-          s"${MixedSumMinMaxColumnsByComplexity("b_data", config.complexity)} " +
+          s"${MixedSumMinMaxColumnsByComplexity("g_data", config.complexity)} " +
           s"FROM g_data " +
           s"GROUP BY ${expandKeyGroup3("g_key3")}",
         config.iterations,
@@ -557,7 +603,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"count(g_data_byte_3) over w, " +
           s"avg(g_data_byte_4) over w " +
           s"from g_data " +
-          s"WINDOW w AS (PARTITION BY g_key3_* ORDER BY g_data_row_num_1 ROWS BETWEEN " +
+          s"WINDOW w AS (PARTITION BY ${expandKeyGroup3("g_key3")} ORDER BY " +
+          s"g_data_row_num_1 ROWS BETWEEN " +
           s"UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
         config.iterations,
         config.timeout,
@@ -598,8 +645,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"count(g_data_byte_3) over w, " +
           s"avg(g_data_byte_4) over w " +
           s"from g_data " +
-          s"WINDOW w AS (ORDER BY g_row_num_1 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED " +
-          s"FOLLOWING)",
+          s"WINDOW w AS (ORDER BY g_data_row_num_1 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED" +
+          s" FOLLOWING)",
         config.iterations,
         config.timeout,
         "unbounded preceding and following window with no partition by columns and single order" +
@@ -614,8 +661,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         config.timeout,
         "Lead/Lag window with skewed partition by columns and single order by column"),
       "q34" -> TestQuery("q34",
-        s"select lag(g_data_1, 10 * ${config.scaleFactor}) over w, " +
-          s"lead(g_data_2, 10 * ${config.scaleFactor}) over w " +
+        s"select lag(g_data_byte_1, 10 * ${config.scaleFactor}) over w, " +
+          s"lead(g_data_byte_2, 10 * ${config.scaleFactor}) over w " +
           s"from g_data " +
           s"WINDOW w as (ORDER BY g_data_row_num_1)",
         config.iterations,
@@ -626,7 +673,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"max(c_data_numeric_2) over w " +
           s"from c_data " +
           s"WINDOW w AS " +
-          s"(ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW " +
+          s"( " +
           s"PARTITION BY ${
             expandColumnWithRange("c_key2",
               1, Math.round(config.complexity / 2.0).toInt)
@@ -634,7 +681,8 @@ class QuerySpecs(config: Config, spark: SparkSession) {
           s"ORDER BY ${
             expandColumnWithRange("c_key2",
               1, Math.round(config.complexity / 2.0).toInt)
-          }",
+          } " +
+          s"ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
         config.iterations,
         config.timeout,
         "Running window with complexity/2 in partition by columns and complexity/2 in order" +
@@ -661,7 +709,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
                 config.complexity)} " +
                 s" from c_data " +
                 s"WINDOW w AS (PARTITION BY c_foreign_a ORDER BY c_data_row_num_1 ROWS BETWEEN " +
-                s"UNBOUNDED PRECEDING AND CURRENT ROW",
+                s"UNBOUNDED PRECEDING AND CURRENT ROW)",
               config.iterations,
               config.timeout,
               "Running window with simple partition by and order by columns, but complexity " +
@@ -671,7 +719,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
                 WindowMixedSumMinMaxColumnsByComplexity("c_data", config.complexity)} " +
                 s"from c_data " +
                 s"WINDOW w AS (PARTITION BY c_foreign_a ORDER BY c_data_row_num_1 RANGE BETWEEN " +
-                s"10 PRECEDING AND 10 FOLLOWING",
+                s"10 PRECEDING AND 10 FOLLOWING)",
               config.iterations,
               config.timeout,
               "Ranged window with simple partition by and order by columns, but complexity " +
@@ -688,9 +736,9 @@ class QuerySpecs(config: Config, spark: SparkSession) {
                 "window operations as combinations of a few input columns"),
       "q40" -> TestQuery("q40",
         s"select " +
-          s"array_sort(collect_set(f_data_low_unique_1)) " +
+          s"array_sort(collect_set(f_data_low_unique_1) " +
           s"OVER (PARTITION BY f_key4_1 order by f_data_row_num_1 ROWS BETWEEN UNBOUNDED " +
-          s"PRECEDING AND CURRENT ROW) " +
+          s"PRECEDING AND CURRENT ROW)) " +
           s"from f_facts",
         config.iterations,
         config.timeout,

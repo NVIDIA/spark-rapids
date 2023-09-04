@@ -124,14 +124,22 @@ object ScaleTest {
         spark.sparkContext.removeSparkListener(taskFailureListener)
       }
     })
-    QueryMeta(query.name, status, exceptions.asScala.toSeq, executionTimes)
+    QueryMeta(query.name, query.content, status, exceptions.asScala.toSeq, executionTimes)
   }
 
-  private def printQueries(queryMap: mutable.LinkedHashMap[String, TestQuery]): Unit = {
+  /**
+   * print generated queries and its physical plan, most for debug purpose
+   * @param spark spark session
+   * @param queryMap query map
+   */
+  private def printQueries(spark: SparkSession, queryMap: mutable.LinkedHashMap[String,
+    TestQuery]): Unit
+  = {
     for ((queryName, query) <- queryMap) {
-      println("*"*20)
+      println("*"*80)
       println(queryName)
       println(query.content)
+      spark.sql(query.content).explain()
     }
   }
 
@@ -146,7 +154,7 @@ object ScaleTest {
     querySpecs.initViews()
     val queryMap = querySpecs.getCandidateQueries()
     if (config.dry) {
-      printQueries(queryMap)
+      printQueries(spark, queryMap)
       sys.exit(1)
     }
     var results = Seq[QueryMeta]()

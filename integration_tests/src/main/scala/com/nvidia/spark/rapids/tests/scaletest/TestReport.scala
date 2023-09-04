@@ -23,6 +23,7 @@ import org.json4s._
 import org.json4s.jackson.Serialization.writePretty
 
 case class QueryMeta(name: String,
+    content: String,
     status: Seq[String],
     exceptions: Seq[String],
     executionTime: Seq[Long])
