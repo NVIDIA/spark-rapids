@@ -18,11 +18,11 @@ package com.nvidia.spark.rapids.tests.scaletest
 
 import java.util.concurrent._
 
-import scala.collection.mutable.ListBuffer
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import scala.collection.mutable
-import scala.concurrent.duration.NANOSECONDS
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration.NANOSECONDS
 
 import com.nvidia.spark.rapids.tests.scaletest.Utils.stackTraceAsString
 import scopt.OptionParser

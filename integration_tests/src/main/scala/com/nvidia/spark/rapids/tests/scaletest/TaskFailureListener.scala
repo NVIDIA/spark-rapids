@@ -17,8 +17,8 @@ package com.nvidia.spark.rapids.tests.scaletest
 
 import scala.collection.mutable.ListBuffer
 
-import org.apache.spark.scheduler.{SparkListener, SparkListenerTaskEnd}
 import org.apache.spark.{Success, TaskEndReason}
+import org.apache.spark.scheduler.{SparkListener, SparkListenerTaskEnd}
 
 /**
  * This Listener Class is used to track the "retry tasks" in Spark jobs.
