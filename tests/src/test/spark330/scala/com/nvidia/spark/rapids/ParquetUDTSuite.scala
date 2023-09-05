@@ -64,23 +64,18 @@ class ParquetUDTSuite extends SparkQueryCompareTestSuite {
       spark.read.schema(userDefinedSchema).parquet(path)
   }
 
-  testGpuFallback("reading UDT fallback in vectorized reader nested enabled",
-    "FileSourceScanExec",
-    readUdtVec,
-    execsAllowedNonGpu = Seq("ColumnarToRowExec", "FileSourceScanExec", "ShuffleExchangeExec"),
-    conf = new SparkConf().set(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key, "true")
-        .set(SQLConf.PARQUET_VECTORIZED_READER_NESTED_COLUMN_ENABLED.key, "true")
-  ) {
-    frame => frame
+  def testUdtFallbackVec(nested: Boolean): Unit = {
+    testGpuFallback("reading UDT fallback in vectorized reader nested column " + 
+        (if (nested) "en" else "dis") + "abled",
+      "FileSourceScanExec",
+      readUdtVec,
+      execsAllowedNonGpu = Seq("ColumnarToRowExec", "FileSourceScanExec", "ShuffleExchangeExec"),
+      conf = new SparkConf().set(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key, "true")
+          .set(SQLConf.PARQUET_VECTORIZED_READER_NESTED_COLUMN_ENABLED.key, nested.toString)
+    ) {
+      frame => frame
+    }
   }
 
-  testGpuFallback("reading UDT fallback in vectorized reader nested disabled",
-    "FileSourceScanExec",
-    readUdtVec,
-    execsAllowedNonGpu = Seq("FileSourceScanExec", "ShuffleExchangeExec"),
-    conf = new SparkConf().set(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key, "true")
-        .set(SQLConf.PARQUET_VECTORIZED_READER_NESTED_COLUMN_ENABLED.key, "false")
-  ) {
-    frame => frame
-  }
+  Seq(true, false).foreach(testUdtFallbackVec)
 }
