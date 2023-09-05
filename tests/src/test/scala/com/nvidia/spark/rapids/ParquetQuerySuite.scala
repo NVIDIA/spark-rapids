@@ -79,7 +79,6 @@ class ParquetQuerySuite extends SparkQueryCompareTestSuite {
     "FileSourceScanExec",
     spark => {
       val path = TestResourceFinder.getResourcePath("udt.parquet")
-      // specify schema
       spark.read.parquet(path)
     },
     execsAllowedNonGpu = Seq("FileSourceScanExec", "ShuffleExchangeExec")
