@@ -854,7 +854,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def negateCharacterClass(components: ListBuffer[RegexCharacterClassComponent]): RegexAST = {
+  private def negateCharacterClass(
+      components: ListBuffer[RegexCharacterClassComponent]): RegexAST = {
     // There are differences between cuDF and Java handling of `\r`
     // in negated character classes. The expression `[^a]` will match
     // `\r` in Java but not in cuDF, so we replace `[^a]` with
