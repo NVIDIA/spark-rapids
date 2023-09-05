@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
@@ -47,7 +48,7 @@ class AcceleratedColumnarToRowIterator(
     opTime: GpuMetric,
     streamTime: GpuMetric,
     inputSize: GpuMetric,
-    execBandwidth: GpuMetric) extends Iterator[InternalRow] with Serializable {
+    execBandwidth: GpuMetric) extends Iterator[InternalRow] with Serializable with Logging {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -75,6 +76,8 @@ class AcceleratedColumnarToRowIterator(
   private var baseDataAddress: Long = -1
   private var at: Int = 0
   private var total: Int = 0
+  private var totalCBSize = 0L
+  private var totalOpTime = 0L
 
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
@@ -127,8 +130,10 @@ class AcceleratedColumnarToRowIterator(
               // start with that until we have tested it more. We branching over the size of
               // the output to know which kernel to call. If schema.length < 100 we call the
               // fixed-width optimized version, otherwise the generic one
-              inputSize += GpuColumnVector.getTotalDeviceMemoryUsed(attemptCb)
+              val totalInputSize = GpuColumnVector.getTotalDeviceMemoryUsed(attemptCb)
+              inputSize += totalInputSize
               totalSize += inputSize.value
+              totalCBSize += totalInputSize
               if (schema.length < 100) {
                 table.convertToRowsFixedWidthOptimized()
               } else {
@@ -148,8 +153,10 @@ class AcceleratedColumnarToRowIterator(
         setCurrentBatch(pendingCvs.dequeue())
         return true
       }
-      execBandwidth.set(totalSize.toDouble / (opTime.value.toDouble / (1000*1000*1000).toDouble))
-      //execBandwidth += (totalSize / opTime.value) * (1000 * 1000 * 1000)
+      totalOpTime += opTime.value
+      logWarning(s"AcceleratedColumnarToRowIterator: batch took ${opTime.value} ns to " +
+        s"complete and total size of ${totalSize} bytes was processed, " +
+        s"CB size = $totalCBSize and totalOpTime = $totalOpTime")
     }
     false
   }
@@ -193,7 +200,15 @@ class AcceleratedColumnarToRowIterator(
     val itHasNext = at < total
     if (!itHasNext) {
       loadNextBatch()
-      at < total
+      if (at < total) {
+        true
+      } else {
+        logWarning(s"AcceleratedColumnarToRowIterator hasNext(): " +
+          s"totalCBSize is ${totalCBSize} and totalOpTime is ${totalOpTime}")
+        execBandwidth.set(totalCBSize.toDouble / (
+          totalOpTime.toDouble / (1000 * 1000 * 1000).toDouble))
+        false
+      }
     } else {
       itHasNext
     }
@@ -229,10 +244,13 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     inputSize: GpuMetric,
     execBandwidth: GpuMetric,
     nullSafe: Boolean = false,
-    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] {
+    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] with Logging {
   // GPU batches read in must be closed by the receiver (us)
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null
+
+  private var totalCBSize = 0L
+  private var totalOpTime = 0L
 
   private[this] lazy val toHost = if (nullSafe) {
     (gpuCV: GpuColumnVector) => gpuCV.copyToNullSafeHost()
@@ -273,12 +291,15 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
             // because it will over count the number of rows output in the case of a limit,
             // but it is more efficient.
             numOutputRows += cb.numRows()
-            inputSize += GpuColumnVector.getTotalDeviceMemoryUsed(devCb)
+            val totalDevCbSize = GpuColumnVector.getTotalDeviceMemoryUsed(devCb)
+            inputSize += totalDevCbSize
+            totalCBSize += inputSize.value
             totalSize += inputSize.value
           }
-          // execBandwidth += (totalSize / opTime.value) * (1000 * 1000 * 1000)
-          execBandwidth.set(totalSize.toDouble / (
-            opTime.value.toDouble / (1000*1000*1000).toDouble))
+          totalOpTime += opTime.value
+          logWarning(s"ColumnarToRowIterator: batch took ${opTime.value} ns to " +
+            s"complete and total size of ${totalSize} bytes was processed, " +
+            s"CB size = $totalCBSize and totalOpTime = $totalOpTime")
         }
       }
     } finally {
@@ -309,7 +330,15 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     val itHasNext = it != null && it.hasNext
     if (!itHasNext) {
       loadNextBatch()
-      it != null && it.hasNext
+      if (it != null && it.hasNext) {
+        true
+      } else {
+        logWarning(s"ColumnarToRowIterator hasNext(): " +
+          s"totalCBSize is ${totalCBSize} and totalOpTime is ${totalOpTime}")
+        execBandwidth.set(totalCBSize.toDouble / (
+          totalOpTime.toDouble / (1000 * 1000 * 1000).toDouble))
+        false
+      }
     } else {
       itHasNext
     }
