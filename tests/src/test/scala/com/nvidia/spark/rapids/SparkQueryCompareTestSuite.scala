@@ -32,6 +32,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -2179,6 +2180,17 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     Files.createDirectories(dirFile.toPath)
     if (!dirFile.delete()) throw new IOException(s"Delete $dirFile failed!")
     try func(dirFile) finally FileUtil.fullyDelete(dirFile)
+  }
+
+  def withSQLConf(pairs: (String, String)*)(f: => Unit): Unit = {
+    pairs.foreach { case (k, v) =>
+      SQLConf.get.setConfString(k, v)
+    }
+    try f finally {
+      pairs.foreach { case (k, _) =>
+        SQLConf.get.unsetConf(k)
+      }
+    }
   }
 
   def isCdh321: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 2, 1) == 0
