@@ -84,7 +84,6 @@ private class HostAlloc(nonPinnedLimit: Long) {
 
   /**
    * A callback so we know when a pinned host buffer was released.
-   * @param amount
    */
   private class OnPinnedCloseCallback(amount: Long) extends MemoryBuffer.EventHandler {
     override def onClosed(refCount: Int): Unit = {
