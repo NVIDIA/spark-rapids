@@ -39,23 +39,41 @@ private class HostAlloc(nonPinnedLimit: Long) {
     }
   }
 
+  /**
+   * Host memory allocations that are still pending.
+   */
   private val pendingAllowedQueue = new HashedPriorityQueue[BlockedAllocation](100, compareBlocks)
 
-  private class BlockedAllocation(val amount: Long, val taskId: Long, val parent: AnyRef) {
+  /**
+   * An allocation that has not been completed yet. It is blocked waiting for more resources.
+   */
+  private class BlockedAllocation(val amount: Long, val taskId: Long) {
     var shouldWake = false
+
+    /**
+     * Wait until we should retry the allocation because it might succeed. It is not
+     * guaranteed though.
+     * It is required that the parent lock is held before this is called.
+     */
     def waitUntilPossiblyReady(): Unit = {
       shouldWake = false
       while (!shouldWake) {
-        parent.wait(1000)
+        HostAlloc.this.wait(1000)
       }
     }
 
+    /**
+     * Wake up all threads that are blocked waiting for an allocation.
+     */
     def wakeUpItMightBeWorthIt(): Unit = {
       shouldWake = true
-      parent.notifyAll()
+      HostAlloc.this.notifyAll()
     }
   }
 
+  /**
+   * A callback class so we know when a non-pinned host buffer was released
+   */
   private class OnCloseCallback(amount: Long) extends MemoryBuffer.EventHandler {
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
@@ -64,6 +82,10 @@ private class HostAlloc(nonPinnedLimit: Long) {
     }
   }
 
+  /**
+   * A callback so we know when a pinned host buffer was released.
+   * @param amount
+   */
   private class OnPinnedCloseCallback(amount: Long) extends MemoryBuffer.EventHandler {
     override def onClosed(refCount: Int): Unit = {
       if (refCount == 0) {
@@ -72,6 +94,76 @@ private class HostAlloc(nonPinnedLimit: Long) {
     }
   }
 
+  /**
+   * A wrapper around a pinned memory reservation so we can add in callbacks as needed.
+   */
+  private class WrappedPinnedReservation(val wrap: HostMemoryReservation)
+    extends HostMemoryReservation {
+
+    private def addEventHandlerAndUpdateMetrics(b: HostMemoryBuffer): HostMemoryBuffer =
+      synchronized {
+        val amount = b.getLength
+        currentPinnedAllocated += amount
+        // I need callbacks for the pinned
+        HostAlloc.addEventHandler(b, new OnPinnedCloseCallback(amount))
+        b
+      }
+
+    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
+      addEventHandlerAndUpdateMetrics(wrap.allocate(amount, preferPinned))
+
+    override def allocate(amount: Long): HostMemoryBuffer =
+      addEventHandlerAndUpdateMetrics(wrap.allocate(amount))
+
+    override def close(): Unit = wrap.close()
+  }
+
+  /**
+   * A non-pinned host memory reservation.
+   */
+  private class NonPinnedReservation(var reservedAmount: Long) extends HostMemoryReservation {
+    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer = {
+      allocate(amount)
+    }
+
+    override def allocate(amount: Long): HostMemoryBuffer = synchronized {
+      if (amount > reservedAmount) {
+        throw new OutOfMemoryError("Could not allocate. Remaining memory reservation is " +
+          s"too small $amount out of $reservedAmount")
+      }
+      val buff = allocNonPinnedFromReserved(amount)
+      reservedAmount -= align(buff.getLength)
+      buff
+    }
+
+    override def close(): Unit = synchronized {
+      releaseNonPinnedReservation(reservedAmount)
+      reservedAmount = 0
+    }
+  }
+
+  /**
+   * A reservation for the special mode when there are no host memory limits.
+   */
+  private object UnlimitedReservation extends HostMemoryReservation {
+    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
+      HostAlloc.alloc(amount, preferPinned)
+
+    override def allocate(amount: Long): HostMemoryBuffer =
+      HostAlloc.alloc(amount)
+
+    override def close(): Unit = {
+      // NOOP
+    }
+  }
+
+  /**
+   * Wake up any blocked allocation that are still pending up to the amount that has been freed.
+   * Note that this assume that there is no fragmentation that might prevent an allocation from
+   * succeeding.
+   * @param amountLeftToWakeInput the amount of memory that is available in bytes.
+   * @return true if anything was woken up, else false.
+   */
   private def wakeUpAsNeeded(amountLeftToWakeInput: Long): Boolean = synchronized {
     var amountLeftToWake = amountLeftToWakeInput
     var ret = false
@@ -99,13 +191,6 @@ private class HostAlloc(nonPinnedLimit: Long) {
     wakeUpAsNeeded(amountLeftToWake)
   }
 
-  private def releaseNonPinned(amount: Long): Unit = synchronized {
-    currentNonPinnedAllocated -= amount
-    if (wakeUpNonPinned()) {
-      wakeUpPinned()
-    }
-  }
-
   private def releasePinned(amount: Long): Unit = synchronized {
     currentPinnedAllocated -= amount
     if (wakeUpPinned()) {
@@ -113,75 +198,24 @@ private class HostAlloc(nonPinnedLimit: Long) {
     }
   }
 
+  private def releaseNonPinned(amount: Long): Unit = synchronized {
+    currentNonPinnedAllocated -= amount
+    if (wakeUpNonPinned()) {
+      wakeUpPinned()
+    }
+  }
 
   private def releaseNonPinnedReservation(reservedAmount: Long): Unit = synchronized {
-    currentNonPinnedReserved + reservedAmount
+    currentNonPinnedReserved -= reservedAmount
     if (wakeUpPinned()) {
       wakeUpNonPinned()
     }
   }
 
-  private class WrappedPinnedReservation(val wrap: HostMemoryReservation)
-      extends HostMemoryReservation {
-
-    private def addEventHandlerAndUpdateMetrics(b: HostMemoryBuffer): HostMemoryBuffer =
-      synchronized {
-        val amount = b.getLength
-        currentPinnedAllocated += amount
-        // I need callbacks for the pinned
-        HostAlloc.addEventHandler(b, new OnPinnedCloseCallback(amount))
-        b
-      }
-
-    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
-      addEventHandlerAndUpdateMetrics(wrap.allocate(amount, preferPinned))
-
-    override def allocate(amount: Long): HostMemoryBuffer =
-      addEventHandlerAndUpdateMetrics(wrap.allocate(amount))
-
-    override def close(): Unit = wrap.close()
-  }
-
-
   private def tryReservePinned(amount: Long): Option[HostMemoryReservation] = {
     val ret = Option(PinnedMemoryPool.tryReserve(amount))
     ret.map { reservation =>
       new WrappedPinnedReservation(reservation)
-    }
-  }
-
-  private object UnlimitedReservation extends HostMemoryReservation {
-    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
-      HostAlloc.alloc(amount, preferPinned)
-
-    override def allocate(amount: Long): HostMemoryBuffer =
-      HostAlloc.alloc(amount)
-
-    override def close(): Unit = {
-      // NOOP
-    }
-  }
-
-  private class NonPinnedReservation(var reservedAmount: Long) extends HostMemoryReservation {
-    override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer = {
-      allocate(amount)
-    }
-
-    override def allocate(amount: Long): HostMemoryBuffer = synchronized {
-      if (amount > reservedAmount) {
-        throw new OutOfMemoryError("Could not allocate. Remaining memory reservation is " +
-            s"too small $amount out of $reservedAmount")
-      }
-      val buf = tryAllocNonPinned(amount, fromReservation = true)
-      buf.foreach { b =>
-        reservedAmount -= align(b.getLength)
-      }
-      buf.get
-    }
-
-    override def close(): Unit = synchronized {
-      releaseNonPinnedReservation(reservedAmount)
-      reservedAmount = 0
     }
   }
 
@@ -211,17 +245,29 @@ private class HostAlloc(nonPinnedLimit: Long) {
     ret
   }
 
-  private def tryAllocNonPinned(amount: Long,
-      fromReservation: Boolean): Option[HostMemoryBuffer] = {
+  private def allocNonPinnedFromReserved(amount: Long): HostMemoryBuffer = {
+    val ret = if (isUnlimited) {
+      HostMemoryBuffer.allocate(amount, false)
+    } else {
+      synchronized {
+        currentNonPinnedReserved -= amount
+        currentNonPinnedAllocated += amount
+        HostMemoryBuffer.allocate(amount, false)
+      }
+    }
+    if (ret == null) {
+      throw new OutOfMemoryError(s"Internal Error: could not allocate non-pinned memory $amount")
+    }
+
+    HostAlloc.addEventHandler(ret, new OnCloseCallback(amount))
+  }
+
+  private def tryAllocNonPinned(amount: Long): Option[HostMemoryBuffer] = {
     val ret = if (isUnlimited) {
       Some(HostMemoryBuffer.allocate(amount, false))
     } else {
       synchronized {
-        if (fromReservation ||
-            ((currentNonPinnedAllocated + currentNonPinnedReserved + amount) <= nonPinnedLimit)) {
-          if (fromReservation) {
-            currentNonPinnedReserved -= amount
-          }
+        if ((currentNonPinnedAllocated + currentNonPinnedReserved + amount) <= nonPinnedLimit) {
           currentNonPinnedAllocated += amount
           Some(HostMemoryBuffer.allocate(amount, false))
         } else {
@@ -249,11 +295,11 @@ private class HostAlloc(nonPinnedLimit: Long) {
     val firstPass = if (preferPinned) {
       tryAllocPinned(amount)
     } else {
-      tryAllocNonPinned(amount, false)
+      tryAllocNonPinned(amount)
     }
     firstPass.orElse {
       if (preferPinned) {
-        tryAllocNonPinned(amount, false)
+        tryAllocNonPinned(amount)
       } else {
         tryAllocPinned(amount)
       }
@@ -267,7 +313,7 @@ private class HostAlloc(nonPinnedLimit: Long) {
       ret = tryAlloc(amount, preferPinned)
       if (ret.isEmpty) {
         if (blocked == null) {
-          blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId(), this)
+          blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId())
         }
         pendingAllowedQueue.offer(blocked)
         blocked.waitUntilPossiblyReady()
@@ -295,7 +341,7 @@ private class HostAlloc(nonPinnedLimit: Long) {
       }
       if (ret.isEmpty) {
         if (blocked == null) {
-          blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId(), this)
+          blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId())
         }
         pendingAllowedQueue.offer(blocked)
         blocked.waitUntilPossiblyReady()
