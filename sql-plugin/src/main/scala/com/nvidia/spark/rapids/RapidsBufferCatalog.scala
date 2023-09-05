@@ -807,6 +807,26 @@ object RapidsBufferCatalog extends Logging {
   }
 
   /**
+   * Set a `RapidsDiskStore` instance to use when instantiating our
+   * catalog.
+   *
+   * @note This should only be called from tests!
+   */
+  def setDiskStorage(rdms: RapidsDiskStore): Unit = {
+    diskStorage = rdms
+  }
+
+  /**
+   * Set a `RapidsHostMemoryStore` instance to use when instantiating our
+   * catalog.
+   *
+   * @note This should only be called from tests!
+   */
+  def setHostStorage(rhms: RapidsHostMemoryStore): Unit = {
+    hostStorage = rhms
+  }
+
+  /**
    * Set a `RapidsBufferCatalog` instance to use our singleton.
    * @note This should only be called from tests!
    */

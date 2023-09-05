@@ -193,6 +193,65 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
     }
   }
 
+  test("get memory buffer after host spill") {
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
+    val spillPriority = -10
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    try {
+      val bm = new RapidsDiskBlockManager(new SparkConf())
+      val (catalog, devStore, hostStore, diskStore) =
+        closeOnExcept(new RapidsDiskStore(bm)) { diskStore =>
+        closeOnExcept(new RapidsDeviceMemoryStore()) { devStore =>
+          closeOnExcept(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+            devStore.setSpillStore(hostStore)
+            hostStore.setSpillStore(diskStore)
+            val catalog = closeOnExcept(
+                new RapidsBufferCatalog(devStore, hostStore)) { catalog => catalog }
+            (catalog, devStore, hostStore, diskStore)
+          }
+        }
+      }
+
+      RapidsBufferCatalog.setDeviceStorage(devStore)
+      RapidsBufferCatalog.setHostStorage(hostStore)
+      RapidsBufferCatalog.setDiskStorage(diskStore)
+      RapidsBufferCatalog.setCatalog(catalog)
+
+      var expectedBatch: ColumnarBatch = null
+      val handle = withResource(buildContiguousTable()) { ct =>
+        // make a copy of the table so we can compare it later to the
+        // one reconstituted after the spill
+        withResource(ct.getTable.contiguousSplit()) { copied =>
+          expectedBatch = GpuColumnVector.from(copied(0).getTable, sparkTypes)
+        }
+        RapidsBufferCatalog.addContiguousTable(
+          ct,
+          spillPriority)
+      }
+      withResource(expectedBatch) { _ =>
+        val spilledToHost =
+          RapidsBufferCatalog.synchronousSpill(
+            RapidsBufferCatalog.getDeviceStorage, 0)
+        assert(spilledToHost.isDefined && spilledToHost.get > 0)
+
+        val spilledToDisk =
+          RapidsBufferCatalog.synchronousSpill(
+            RapidsBufferCatalog.getHostStorage, 0)
+        assert(spilledToDisk.isDefined && spilledToDisk.get > 0)
+
+        withResource(RapidsBufferCatalog.acquireBuffer(handle)) { buffer =>
+          assertResult(StorageTier.DISK)(buffer.storageTier)
+          withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+            TestUtils.compareBatches(expectedBatch, actualBatch)
+          }
+        }
+      }
+    } finally {
+      RapidsBufferCatalog.close()
+    }
+  }
+
   test("host buffer originated: get host memory buffer") {
     val spillPriority = -10
     val hostStoreMaxSize = 1L * 1024 * 1024
