@@ -16,12 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
 import java.util.TimeZone
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.TypeChecks
 import com.nvidia.spark.rapids.jni.DateTimeRebase
 import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
@@ -135,10 +137,11 @@ object GpuParquetFileFormat {
     SparkShimImpl.parquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" | "CORRECTED" => // Good
       case "LEGACY" =>
-        val tz = TimeZone.getDefault.getID
-        if (tz != "UTC") {
-          meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode, " +
-            s"current system timezone is '$tz'")
+        if (!TypeChecks.areTimestampsSupported()) {
+          meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
+            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+            s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
+            " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported rebase mode")
