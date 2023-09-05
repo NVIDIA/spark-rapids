@@ -104,6 +104,11 @@ else
     then
         TEST_TAGS="-m $TEST_TAGS"
     fi
+
+    # Set per-executor cores, if unspecified.
+    # This prevents per-thread allocations (like Parquet read buffers) from overwhelming the heap.
+    export PYSP_TEST_spark_executor_cores=${PYSP_TEST_spark_executor_cores:-'10'}
+
     if [[ "${TEST_PARALLEL}" == "" ]];
     then
         # For integration tests we want to have at least
@@ -334,6 +339,7 @@ EOF
 
         driverJavaOpts="$PYSP_TEST_spark_driver_extraJavaOptions"
         gpuAllocSize="$PYSP_TEST_spark_rapids_memory_gpu_allocSize"
+        executorCores="$PYSP_TEST_spark_executor_cores"
 
         # avoid double processing of variables passed to spark in
         # spark_conf_init
@@ -343,12 +349,13 @@ EOF
         unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+        unset PYSP_TEST_spark_rapids_executor_cores
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$driverJavaOpts" \
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
-            --conf 'spark.executor.cores='"10" \
+            --conf 'spark.executor.cores='"$executorCores" \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
