@@ -24,6 +24,7 @@ import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -161,7 +162,7 @@ class GpuCartesianRDD(
     // Add a taskCompletionListener to ensure the release of GPU memory. This listener will work
     // if the CompletionIterator does not fully iterate before the task completes, which may
     // happen if there exists specific plans like `LimitExec`.
-    context.addTaskCompletionListener[Unit](_ => close())
+    onTaskCompletion(context)(close())
 
     rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
       val batch = withResource(lhs.getBatch) { lhsBatch =>

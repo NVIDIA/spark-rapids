@@ -15,19 +15,23 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{File, IOException}
 import java.nio.file.Files
 import java.sql.{Date, Timestamp}
-import java.util.{Locale, TimeZone}
+import java.util.{Locale, TimeZone, UUID}
 
-import org.scalatest.{Assertion, FunSuite}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
+
+import org.apache.hadoop.fs.FileUtil
+import org.scalatest.{Assertion, BeforeAndAfterAll}
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.command.{CreateViewCommand, ExecutedCommandExec}
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -145,10 +149,15 @@ object SparkSessionHolder extends Logging {
 /**
  * Set of tests that compare the output using the CPU version of spark vs our GPU version.
  */
-trait SparkQueryCompareTestSuite extends FunSuite {
+trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
 
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
+
+  override def afterAll(): Unit = {
+    super.afterAll()
+    TrampolineUtil.cleanupAnyExistingSession()
+  }
 
   def enableCsvConf(conf: SparkConf): SparkConf = {
     conf
@@ -275,6 +284,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       } finally {
         cpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    cpuPlans = filterCapturedPlans(cpuPlans)
     assert(cpuPlans.nonEmpty, "Did not capture CPU plan")
     assert(cpuPlans.length == 1, s"Captured more than one CPU plan: ${cpuPlans.mkString("\n")}")
 
@@ -293,10 +303,19 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       } finally {
         gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    gpuPlans = filterCapturedPlans(gpuPlans)
     assert(gpuPlans.nonEmpty, "Did not capture GPU plan")
     assert(gpuPlans.length == 1, s"Captured more than one GPU plan: ${gpuPlans.mkString("\n")}")
 
     (cpuPlans.head, gpuPlans.head)
+  }
+
+  // filter out "uninteresting" plans like view creation, etc.
+  protected def filterCapturedPlans(plans: Array[SparkPlan]): Array[SparkPlan] = {
+    plans.filter {
+      case ExecutedCommandExec(_: CreateViewCommand) => false
+      case _ => true
+    }
   }
 
   def runOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
@@ -324,6 +343,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       } finally {
         cpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    cpuPlans = filterCapturedPlans(cpuPlans)
     assert(cpuPlans.nonEmpty, "Did not capture CPU plan")
     assert(cpuPlans.length == 1, s"Captured more than one CPU plan: ${cpuPlans.mkString("\n")}")
 
@@ -343,6 +363,7 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       } finally {
         gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    gpuPlans = filterCapturedPlans(gpuPlans)
     assert(gpuPlans.nonEmpty, "Did not capture GPU plan")
     assert(gpuPlans.length == 1, s"Captured more than one GPU plan: ${gpuPlans.mkString("\n")}")
 
@@ -905,9 +926,9 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
   }
 
-  def testExpectedGpuException[T <: Throwable](
+  def testExpectedGpuException(
     testName: String,
-    exceptionClass: Class[T],
+    exceptionClass: Class[_],
     df: SparkSession => DataFrame,
     conf: SparkConf = new SparkConf(),
     repart: Integer = 1,
@@ -933,10 +954,21 @@ trait SparkQueryCompareTestSuite extends FunSuite {
         }, testConf)
       })
       t match {
-        case Failure(e) if e.getClass == exceptionClass => // Good
-        case Failure(e) => throw e
+        case Failure(e) => assertResult(exceptionClass)(getRootCause(e).getClass)
         case _ => fail("Expected an exception")
       }
+    }
+  }
+
+  private def getRootCause(t: Throwable): Throwable = {
+    if (t == null) {
+      t
+    } else {
+      var current = t
+      while (current.getCause != null) {
+        current = current.getCause
+      }
+      current
     }
   }
 
@@ -1293,6 +1325,66 @@ trait SparkQueryCompareTestSuite extends FunSuite {
     ).toDF("dates")
   }
 
+  def doubleTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    // some cases out of the range (-62135510400, 253402214400), which are not covered by IT
+    Seq[Double](
+      253402214400.000001d,
+      269999999999.999999d,
+      -62135510400.000001d,
+      -79999999999.999999d
+    ).toDF("doubles")
+  }
+
+  def decimalTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[BigDecimal](
+      BigDecimal("253402214400.000001"),
+      BigDecimal("269999999999.999999"),
+      BigDecimal("-62135510400.000001"),
+      BigDecimal("-79999999999.999999")
+    ).toDF("decimals")
+  }
+
+  def longTimestampSecondsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401L,
+      269999999999L,
+      -62135510401L,
+      -79999999999L
+    ).toDF("longs")
+  }
+
+  def longTimestampMillisDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401000L,
+      269999999999999L,
+      -62135510401000L,
+      -79999999999999L
+    ).toDF("longs")
+  }
+
+  def longTimestampMicrosDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      253402214401000000L,
+      269999999999999999L,
+      -62135510401000000L,
+      -79999999999999999L,
+      Long.MaxValue
+    ).toDF("longs")
+  }
+
+   def longTimestampMicrosLongOverflowDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Long](
+      Long.MinValue,
+      -9223183700000000000L
+    ).toDF("longs")
+  }
+  
   def datesPostEpochDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(
@@ -2080,4 +2172,16 @@ trait SparkQueryCompareTestSuite extends FunSuite {
       false
     }
   }
+
+  def withTempPath[B](func: File => B): B = {
+    val rootTmpDir = System.getProperty("java.io.tmpdir")
+    val dirFile = new File(rootTmpDir, "spark-test-" + UUID.randomUUID)
+    Files.createDirectories(dirFile.toPath)
+    if (!dirFile.delete()) throw new IOException(s"Delete $dirFile failed!")
+    try func(dirFile) finally FileUtil.fullyDelete(dirFile)
+  }
+
+  def isCdh321: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 2, 1) == 0
+
+  def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
 }

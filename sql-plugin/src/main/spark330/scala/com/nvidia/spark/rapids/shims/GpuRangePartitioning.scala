@@ -23,6 +23,8 @@
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -86,6 +88,6 @@ case class GpuRangePartitioning(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any =
+  override def columnarEvalAny(batch: ColumnarBatch): Any =
     throw new IllegalStateException("This cannot be executed")
 }

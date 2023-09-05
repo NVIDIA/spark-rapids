@@ -17,6 +17,8 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "332db"}
 {"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -412,7 +414,7 @@ object GpuFileFormatWriter extends Logging {
         concurrentOutputWriterSpec match {
           case Some(spec) =>
             new GpuDynamicPartitionDataConcurrentWriter(
-              description, taskAttemptContext, committer, spec)
+              description, taskAttemptContext, committer, spec, TaskContext.get())
           case _ =>
             new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
         }

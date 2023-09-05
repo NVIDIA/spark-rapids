@@ -21,7 +21,7 @@ import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
@@ -29,7 +29,8 @@ import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.RecordWriter
@@ -53,7 +54,6 @@ import org.apache.spark.sql.columnar.CachedBatch
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, ShimCurrentBatchIterator}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.PCBSSchemaHelper
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -240,9 +240,12 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
     }
   }
 
-  TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
-    closeCurrentBatch()
-  })
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      closeCurrentBatch()
+    }
+  }
 
   override def hasNext: Boolean = iter.hasNext
 
@@ -615,6 +618,184 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     }
   }
 
+  /**
+   * Read the data from an input file and convert the result to rows. The data will not be
+   * transformed in any way. It will just be read.
+   */
+  private class PcbFileToRowsIterator(inputFile: ByteArrayInputFile,
+      cacheAttributes: Seq[Attribute],
+      hadoopConf: Configuration,
+      options: ParquetReadOptions) extends Iterator[InternalRow] with AutoCloseable {
+    import org.apache.parquet.io.ColumnIOFactory
+
+    private[this] val parquetFileReader = ParquetFileReader.open(inputFile, options)
+    private[this] val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+    private[this] val columnIO = new ColumnIOFactory().getColumnIO(parquetSchema)
+
+    private[this] var pages: org.apache.parquet.column.page.PageReadStore = _
+    private[this] var rowsLeftInRowGroup: Long = _
+    private[this] var recordReader: org.apache.parquet.io.RecordReader[InternalRow] = _
+    // Prime the data with the first row group
+    goToNextRowGroup
+
+    private[this] def goToNextRowGroup: Unit = {
+      pages = parquetFileReader.readNextRowGroup()
+      if (pages == null) {
+        rowsLeftInRowGroup = 0
+        recordReader = null
+      } else {
+        rowsLeftInRowGroup = pages.getRowCount
+        recordReader = columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
+          cacheAttributes.toStructType,
+          new ParquetToSparkSchemaConverter(hadoopConf), None /*convertTz*/ ,
+          LegacyBehaviorPolicyShim.CORRECTED_STR))
+      }
+    }
+
+    override def hasNext: Boolean = pages != null
+
+    override def next(): InternalRow = {
+      if (!hasNext) {
+        throw new NoSuchElementException()
+      }
+      val ret = recordReader.read()
+      rowsLeftInRowGroup -= 1
+      if (rowsLeftInRowGroup <= 0) {
+        goToNextRowGroup
+        if (pages == null) {
+          close()
+        }
+      }
+      ret
+    }
+
+    override def close(): Unit = {
+      parquetFileReader.close()
+    }
+  }
+
+  object PcbToRowsIterator {
+    def apply(cbIter: Iterator[CachedBatch],
+        cacheAttributes: Seq[Attribute],
+        hadoopConf: Configuration,
+        options: ParquetReadOptions): Iterator[InternalRow] = {
+      new PcbToRowsIterator(cbIter, cacheAttributes, hadoopConf, options).flatten
+    }
+  }
+
+  /**
+   * Read the data from the CachedBatch iterator and return a row iterator for each batch.
+   */
+  private class PcbToRowsIterator private(
+      cbIter: Iterator[CachedBatch],
+      cacheAttributes: Seq[Attribute],
+      hadoopConf: Configuration,
+      options: ParquetReadOptions) extends Iterator[Iterator[InternalRow]] {
+    val pcbIter = cbIter.map(_.asInstanceOf[ParquetCachedBatch])
+    override def hasNext: Boolean = pcbIter.hasNext
+
+    override def next(): Iterator[InternalRow] = {
+      val parquetCachedBatch = pcbIter.next()
+      if (parquetCachedBatch.sizeInBytes == 0) {
+        // Edge case where we have stored an empty parquet file possibly a dataframe with no
+        // columns
+        new ColumnarBatch(null, parquetCachedBatch.numRows).rowIterator().asScala
+      } else {
+        val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
+        new PcbFileToRowsIterator(inputFile, cacheAttributes, hadoopConf, options)
+      }
+    }
+  }
+
+  /**
+   * This iterator wraps an `Iterator[InternalRow]` and will transform the rows so that
+   * unsupported types are converted back to the original type that was cached.
+   */
+  private class UnsupportedRowTransformIterator(
+      rowIter: Iterator[InternalRow],
+      cacheAttributes: Seq[Attribute],
+      origCacheSchema: Seq[Attribute],
+      origRequestedSchema: Seq[Attribute]) extends UnsupportedDataHandlerIterator {
+
+    val newRow = new GenericInternalRow(cacheAttributes.length)
+
+    lazy val unsafeProjection =
+      GenerateUnsafeProjection.generate(origRequestedSchema, origCacheSchema)
+
+    override def hasNext: Boolean = rowIter.hasNext
+
+    override def next(): InternalRow = {
+      //read a row and convert it to what the caller is expecting
+      val row = rowIter.next()
+      handleInternalRow(origCacheSchema, row, newRow)
+      unsafeProjection.apply(newRow)
+    }
+
+    override def handleInterval(
+        data: SpecializedGetters,
+        index: Int): CalendarInterval = {
+      if (data.isNullAt(index)) {
+        null
+      } else {
+        val structData = data.getStruct(index, 3)
+        new CalendarInterval(structData.getInt(0),
+          structData.getInt(1), structData.getLong(2))
+      }
+    }
+
+    override def handleInternalRow(
+        schema: Seq[Attribute],
+        row: InternalRow,
+        newRow: InternalRow): Unit = {
+      schema.indices.foreach { index =>
+        val dataType = schema(index).dataType
+        if (row.isNullAt(index)) {
+          newRow.setNullAt(index)
+        } else {
+          dataType match {
+            case s@StructType(_) =>
+              val supportedSchema =
+                PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
+              val structRow =
+                handleStruct(row.getStruct(index, supportedSchema.size), s, s)
+              newRow.update(index, structRow)
+
+            case a@ArrayType(_, _) =>
+              val arrayData = row.getArray(index)
+              newRow.update(index, handleArray(a.elementType, arrayData))
+
+            case MapType(keyType, valueType, _) =>
+              val mapData = row.getMap(index)
+              newRow.update(index, handleMap(keyType, valueType, mapData))
+
+            case CalendarIntervalType =>
+              val interval = handleInterval(row, index)
+              if (interval == null) {
+                newRow.setNullAt(index)
+              } else {
+                newRow.setInterval(index, interval)
+              }
+            case d: DecimalType =>
+              if (row.isNullAt(index)) {
+                newRow.setDecimal(index, null, d.precision)
+              } else {
+                val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
+                  Decimal(row.getInt(index).toLong, d.precision, d.scale)
+                } else {
+                  Decimal(row.getLong(index), d.precision, d.scale)
+                }
+                newRow.update(index, dec)
+              }
+            case NullType =>
+              newRow.setNullAt(index)
+            case _ =>
+              newRow.update(index, row.get(index, dataType))
+          }
+        }
+      }
+    }
+  }
+
   private abstract class UnsupportedDataHandlerIterator extends Iterator[InternalRow] {
 
     def handleInternalRow(schema: Seq[Attribute], row: InternalRow, newRow: InternalRow): Unit
@@ -700,169 +881,25 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       origRequestedSchema: Seq[Attribute],
       sharedConf: Broadcast[Map[String, String]]) {
 
-    val conf: SQLConf = getConfFromMap(sharedConf)
-    val hadoopConf: Configuration = getHadoopConf(origRequestedSchema.toStructType, conf)
-    val options: ParquetReadOptions = HadoopReadOptions.builder(hadoopConf).build()
+    private val conf: SQLConf = getConfFromMap(sharedConf)
+    private val hadoopConf: Configuration = getHadoopConf(origRequestedSchema.toStructType, conf)
+    private val options: ParquetReadOptions = HadoopReadOptions.builder(hadoopConf).build()
+    private lazy val hasUnsupportedType = origCacheSchema.exists { field =>
+      !PCBSSchemaHelper.isTypeSupportedByParquet(field.dataType)
+    }
+
+    private lazy val allSupportedUnsafeProjection =
+      GenerateUnsafeProjection.generate(selectedAttributes, cacheAttributes)
 
     def getInternalRowIterator: Iterator[InternalRow] = {
-
-      /**
-       * This iterator converts an iterator[CachedBatch] to an iterator[InternalRow].
-       *
-       * This makes it unlike a regular iterator because CachedBatch => InternalRow* is a 1-n
-       * relation. The way we have implemented this is to first go through the
-       * iterator[CachedBatch] (cbIter) to look for a valid iterator (iter) i.e. hasNext() => true.
-       * Then every time next() is called we return a single InternalRow from iter. When
-       * iter.hasNext() => false, we find the next valid iterator in cbIter and the process
-       * continues as above.
-       */
-      new Iterator[InternalRow]() {
-
-        var iter: Iterator[InternalRow] = _
-
-        override def hasNext: Boolean = {
-          // go over the batch and get the next non-degenerate iterator
-          // and return if it hasNext
-          while ((iter == null || !iter.hasNext) && cbIter.hasNext) {
-            val cachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
-            if (cachedBatch.sizeInBytes == 0) {
-              // Edge case where we have stored an empty parquet file possibly a dataframe with no
-              // columns
-              iter = new ColumnarBatch(null, cachedBatch.numRows).rowIterator().asScala
-            } else {
-              iter = convertCachedBatchToInternalRowIter(cachedBatch)
-            }
-          }
-          iter != null && iter.hasNext
-        }
-
-        override def next(): InternalRow = {
-          // will return the next InternalRow if hasNext() is true, otherwise throw
-          if (hasNext) {
-            iter.next()
-          } else {
-            throw new NoSuchElementException("no elements found")
-          }
-        }
-
-        /**
-         * This method converts a CachedBatch to an iterator of InternalRows.
-         */
-        private def convertCachedBatchToInternalRowIter(
-            parquetCachedBatch: ParquetCachedBatch): Iterator[InternalRow] = {
-          val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
-          withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
-            val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
-            val hasUnsupportedType = origCacheSchema.exists { field =>
-              !PCBSSchemaHelper.isTypeSupportedByParquet(field.dataType)
-            }
-
-            val unsafeRows = new ArrayBuffer[InternalRow]
-            import org.apache.parquet.io.ColumnIOFactory
-            var pages = parquetFileReader.readNextRowGroup()
-            while (pages != null) {
-              val rows = pages.getRowCount
-              val columnIO = new ColumnIOFactory().getColumnIO(parquetSchema)
-              val recordReader =
-                columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
-                  cacheAttributes.toStructType,
-                  new ParquetToSparkSchemaConverter(hadoopConf), None /*convertTz*/ ,
-                  LegacyBehaviorPolicy.CORRECTED))
-              for (_ <- 0 until rows.toInt) {
-                val row = recordReader.read
-                unsafeRows += row.copy()
-              }
-              pages = parquetFileReader.readNextRowGroup()
-            }
-
-            val iter = unsafeRows.iterator
-            val unsafeProjection =
-              GenerateUnsafeProjection.generate(selectedAttributes, cacheAttributes)
-            if (hasUnsupportedType) {
-              new UnsupportedDataHandlerIterator() {
-                val wrappedIter: Iterator[InternalRow] = iter
-                val newRow = new GenericInternalRow(cacheAttributes.length)
-
-                override def hasNext: Boolean = wrappedIter.hasNext
-
-                override def next(): InternalRow = {
-                  //read a row and convert it to what the caller is expecting
-                  val row = wrappedIter.next()
-                  handleInternalRow(origCacheSchema, row, newRow)
-                  val unsafeProjection =
-                    GenerateUnsafeProjection.generate(origRequestedSchema, origCacheSchema)
-                  unsafeProjection.apply(newRow)
-                }
-
-                override def handleInterval(
-                    data: SpecializedGetters,
-                    index: Int): CalendarInterval = {
-                  if (data.isNullAt(index)) {
-                    null
-                  } else {
-                    val structData = data.getStruct(index, 3)
-                    new CalendarInterval(structData.getInt(0),
-                      structData.getInt(1), structData.getLong(2))
-                  }
-                }
-
-                override def handleInternalRow(
-                    schema: Seq[Attribute],
-                    row: InternalRow,
-                    newRow: InternalRow): Unit = {
-                  schema.indices.foreach { index =>
-                    val dataType = schema(index).dataType
-                    if (row.isNullAt(index)) {
-                      newRow.setNullAt(index)
-                    } else {
-                      dataType match {
-                        case s@StructType(_) =>
-                          val supportedSchema =
-                            PCBSSchemaHelper.getSupportedDataType(dataType).asInstanceOf[StructType]
-                          val structRow =
-                            handleStruct(row.getStruct(index, supportedSchema.size), s, s)
-                          newRow.update(index, structRow)
-
-                        case a@ArrayType(_, _) =>
-                          val arrayData = row.getArray(index)
-                          newRow.update(index, handleArray(a.elementType, arrayData))
-
-                        case MapType(keyType, valueType, _) =>
-                          val mapData = row.getMap(index)
-                          newRow.update(index, handleMap(keyType, valueType, mapData))
-
-                        case CalendarIntervalType =>
-                          val interval = handleInterval(row, index)
-                          if (interval == null) {
-                            newRow.setNullAt(index)
-                          } else {
-                            newRow.setInterval(index, interval)
-                          }
-                        case d: DecimalType =>
-                          if (row.isNullAt(index)) {
-                            newRow.setDecimal(index, null, d.precision)
-                          } else {
-                            val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-                              Decimal(row.getInt(index).toLong, d.precision, d.scale)
-                            } else {
-                              Decimal(row.getLong(index), d.precision, d.scale)
-                            }
-                            newRow.update(index, dec)
-                          }
-                        case NullType =>
-                          newRow.setNullAt(index)
-                        case _ =>
-                          newRow.update(index, row.get(index, dataType))
-                      }
-                    }
-                  }
-                }
-              }
-            } else {
-              iter.map(unsafeProjection)
-            }
-          }
-        }
+      val rawRows = PcbToRowsIterator(cbIter, cacheAttributes, hadoopConf,
+        options)
+      if (hasUnsupportedType) {
+        new UnsupportedRowTransformIterator(rawRows, cacheAttributes, origCacheSchema,
+          origRequestedSchema)
+      } else {
+        // Convert the result into unsafe rows, and drop columns we don't want to read
+        rawRows.map(allSupportedUnsafeProjection)
       }
     }
 
@@ -1102,7 +1139,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
           val outputFile: OutputFile = new ByteArrayOutputFile(stream)
           conf.setConfString(SparkShimImpl.parquetRebaseWriteKey,
-            LegacyBehaviorPolicy.CORRECTED.toString)
+            LegacyBehaviorPolicyShim.CORRECTED_STR)
           if (cachedAttributes.isEmpty) {
             // The schema is empty, most probably it is because of the edge case where there
             // are no columns in the Dataframe but has rows so let's create an empty CachedBatch
@@ -1164,10 +1201,14 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         with AutoCloseable {
       val hostBatches = new ListBuffer[ColumnarBatch]()
 
-      Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit] { _ =>
-        hostBatches.foreach(_.close())
-        hostBatches.clear()
-      })
+      // Don't install the callback if in a unit test
+      Option(TaskContext.get()).foreach { tc =>
+        onTaskCompletion(tc) {
+          hostBatches.foreach(_.close())
+          hostBatches.clear()
+          close()
+        }
+      }
 
       override def next(): CachedBatch = myIter.next()
 
@@ -1236,8 +1277,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     hadoopConf.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
     hadoopConf.setBoolean(SQLConf.CASE_SENSITIVE.key, false)
 
-    hadoopConf.set(SparkShimImpl.parquetRebaseWriteKey,
-      LegacyBehaviorPolicy.CORRECTED.toString)
+    hadoopConf.set(SparkShimImpl.parquetRebaseWriteKey, LegacyBehaviorPolicyShim.CORRECTED_STR)
 
     hadoopConf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,
       SQLConf.ParquetOutputTimestampType.TIMESTAMP_MICROS.toString)

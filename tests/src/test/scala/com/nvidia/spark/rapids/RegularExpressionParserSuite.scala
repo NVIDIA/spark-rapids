@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class RegularExpressionParserSuite extends FunSuite {
+class RegularExpressionParserSuite extends AnyFunSuite {
 
   test("detect regexp strings") {
     // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html

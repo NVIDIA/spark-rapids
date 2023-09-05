@@ -17,6 +17,8 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "332db"}
 {"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -32,5 +34,11 @@ object SparkUpgradeExceptionShims {
       "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
       Map(version -> message),
       cause)
+  }
+
+  // Used in tests to compare the class seen in an exception to
+  // `SparkUpgradeException` which is private in Spark
+  def getSparkUpgradeExceptionClass: Class[_] = {
+    classOf[SparkUpgradeException]
   }
 }

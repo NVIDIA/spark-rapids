@@ -14,7 +14,7 @@
 # limitations under the License.
 
 
-# Sample Dockerfile to install UCX in a Unbuntu 18.04 image with RDMA support.
+# Sample Dockerfile to install UCX in a Unbuntu 20.04 image with RDMA support.
 #
 # The parameters are: 
 #   - RDMA_CORE_VERSION: Set to 32.1 to match the rdma-core line in the latest 

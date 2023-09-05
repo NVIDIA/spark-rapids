@@ -18,13 +18,13 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
@@ -46,7 +46,7 @@ class GpuGenerateExecSparkPlanMeta(
   }
 
   override def tagPlanForGpu(): Unit = {
-    if (gen.outer &&
+    if (gen.outer && childExprs.head.isInstanceOf[GeneratorExprMeta[_]] &&
       !childExprs.head.asInstanceOf[GeneratorExprMeta[Generator]].supportOuter) {
       willNotWorkOnGpu(s"outer is not currently supported with ${gen.generator.nodeName}")
     }
@@ -593,7 +593,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         spillableCurrentBatch = null
       }
 
-      TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrent())
+      onTaskCompletion(closeCurrent())
 
       def fetchNextBatch(): Unit = {
         indexIntoData = 0
@@ -752,12 +752,11 @@ case class GpuGenerateExec(
       val splitInput = withResource(GpuColumnVector.from(input)) { table =>
         table.contiguousSplit(splitIndices: _*)
       }
-      splitInput.zipWithIndex.safeMap { case (ct, i) =>
-        closeOnExcept(splitInput.slice(i + 1, splitInput.length)) { _ =>
-          withResource(ct) { ct: ContiguousTable =>
-            SpillableColumnarBatch(ct, schema,
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          }
+      closeOnExcept(splitInput) { _ =>
+        splitInput.zipWithIndex.safeMap { case (ct, i) =>
+          splitInput(i) = null
+          SpillableColumnarBatch(ct, schema,
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
         }
       }
     }

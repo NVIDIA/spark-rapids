@@ -22,13 +22,13 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, SpillableColumnarBatchImpl, StorageTier}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.TempLocalBlockId
 
-class SpillableColumnarBatchSuite extends FunSuite {
+class SpillableColumnarBatchSuite extends AnyFunSuite {
 
   test("close updates catalog") {
     val id = TempSpillBufferId(0, TempLocalBlockId(new UUID(1, 2)))
@@ -61,5 +61,7 @@ class SpillableColumnarBatchSuite extends FunSuite {
     override def close(): Unit = {}
     override def getColumnarBatch(
       sparkTypes: Array[DataType]): ColumnarBatch = null
+    override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = { body(null) }
+    override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = { body(null) }
   }
 }

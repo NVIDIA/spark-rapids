@@ -20,6 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -286,7 +287,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
   override def sql: String = aggregateFunction.sql(isDistinct)
 }
 
-trait CudfAggregate {
+trait CudfAggregate extends Serializable {
   // we use this to get the ordinal of the bound reference, s.t. we can ask cudf to perform
   // the aggregate on that column
   val reductionAggregate: cudf.ColumnVector => cudf.Scalar
@@ -325,7 +326,7 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate {
   // sum(shorts): bigint
   // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
   //
-  @transient val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+  @transient lazy val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
   override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum(rapidsSumType)
@@ -386,26 +387,54 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMergeLists"
 }
 
+/**
+ * Spark handles NaN's equality by different way for non-nested float/double and float/double 
+ * in nested types. When we use non-nested versions of floats and doubles, NaN values are 
+ * considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+ * on the CPU. So we set NaNEquality dynamically in CudfCollectSet and CudfMergeSets.
+ * Note that dataType is ArrayType(child.dataType) here.
+ */
 class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      val collectSet = ReductionAggregation.collectSet(
-        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      val collectSet = dataType match {
+        case ArrayType(FloatType | DoubleType, _) =>
+          ReductionAggregation.collectSet(
+            NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+        case _: DataType => 
+          ReductionAggregation.collectSet(
+            NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+      }
       col.reduce(collectSet, DType.LIST)
     }
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+  override lazy val groupByAggregate: GroupByAggregation = dataType match {
+    case ArrayType(FloatType | DoubleType, _) =>
+      GroupByAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
+    case _: DataType =>
+      GroupByAggregation.collectSet(
+        NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+  }
   override val name: String = "CudfCollectSet"
 }
 
 class CudfMergeSets(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      val mergeSets = ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+      val mergeSets = dataType match {
+        case ArrayType(FloatType | DoubleType, _) =>
+          ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+        case _: DataType =>
+          ReductionAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+      }
       col.reduce(mergeSets, DType.LIST)
     }
-  override lazy val groupByAggregate: GroupByAggregation =
-    GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+  override lazy val groupByAggregate: GroupByAggregation = dataType match {
+    case ArrayType(FloatType | DoubleType, _) =>
+      GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.UNEQUAL)
+    case _: DataType =>
+      GroupByAggregation.mergeSets(NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
+  }
   override val name: String = "CudfMergeSets"
 }
 
@@ -857,8 +886,8 @@ case class GpuExtractChunk32(
 
   override def sql: String = data.sql
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(data.columnarEval(batch)) { dataCol =>
       val dtype = if (chunkIdx < 3) DType.UINT32 else DType.INT32
       val chunkCol = Aggregation128Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
       val replacedCol = if (replaceNullsWithZero) {
@@ -895,7 +924,7 @@ case class GpuAssembleSumChunks(
 
   override def nullable: Boolean = true
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val cudfType = DecimalUtil.createCudfDecimal(dataType)
     val assembledTable = withResource(GpuProjectExec.project(batch, chunkAttrs)) { dataCol =>
       withResource(GpuColumnVector.from(dataCol)) { chunkTable =>
@@ -1001,10 +1030,10 @@ case class GpuCheckOverflowAfterSum(
 
   override def sql: String = data.sql
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(data.columnarEval(batch)) { dataCol =>
       val dataBase = dataCol.getBase
-      withResource(GpuProjectExec.projectSingle(batch, isEmpty)) { isEmptyCol =>
+      withResource(isEmpty.columnarEval(batch)) { isEmptyCol =>
         val isEmptyBase = isEmptyCol.getBase
         if (!nullOnOverflow) {
           // ANSI mode
@@ -1057,8 +1086,8 @@ case class GpuDecimalSumHighDigits(
     Decimal(math.pow(10, GpuDecimalSumOverflow.updateCutoffPrecision))
   private val divisionType = DecimalType(38, 0)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, input)) { inputCol =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(input.columnarEval(batch)) { inputCol =>
       val inputBase = inputCol.getBase
       // We don't have direct access to 128 bit ints so we use a decimal with a scale of 0
       // as a stand in.
@@ -1952,11 +1981,20 @@ case class GpuCollectSet(
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_set"
-
+  
+  // Spark handles NaN's equality by different way for non-nested float/double and float/double 
+  // in nested types. When we use non-nested versions of floats and doubles, NaN values are 
+  // considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+  // on the CPU. So we set NaNEquality dynamically here.
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
-    RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = child.dataType match {
+    case FloatType | DoubleType => 
+      RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
         NaNEquality.UNEQUAL).onColumn(inputs.head._2)
+    case _ => 
+      RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+        NaNEquality.ALL_EQUAL).onColumn(inputs.head._2)
+  }
 }
 
 trait CpuToGpuAggregateBufferConverter {

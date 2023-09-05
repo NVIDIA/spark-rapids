@@ -33,6 +33,7 @@ jobs:
   get-shim-versions-from-dist:
     runs-on: ubuntu-latest
     outputs:
+      defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
       sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
     steps:
@@ -51,8 +52,11 @@ jobs:
           . jenkins/version-def.sh
           svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
-          # do not add empty snapshot versions
-          if [ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 ]; then
+
+          # get private artifact version
+          privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
+          # do not add empty snapshot versions or when private version is released one (does not include snapshot shims)
+          if [[ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 && $privateVer == *"-SNAPSHOT" ]]; then
             svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
             svArrBodySnapshot=${svArrBodySnapshot:1}
             svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
@@ -62,6 +66,7 @@ jobs:
 
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
           # default version
+          echo "defaultSparkVersion=${SPARK_BASE_SHIM_VERSION}" >> $GITHUB_OUTPUT
           jdkHeadVersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":8}" "${SPARK_BASE_SHIM_VERSION}")
           # jdk11
           jdk11VersionArrBody=$(printf ",{\"spark-version\":\"%s\",\"java-version\":11}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
@@ -89,15 +94,26 @@ jobs:
           distribution: adopt
           java-version: 8
 
+      - name: check runtime before tests
+        run: |
+          env | grep JAVA
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+
       - name: package tests check
-        run: >
-          mvn -Dmaven.wagon.http.retryHandler.count=3 -B package
-          -pl integration_tests,tests -am
-          -P 'individual,pre-merge'
-          -Dbuildver=${{ matrix.spark-version }}
-          -Dmaven.scalastyle.skip=true
-          -Drat.skip=true
-          $COMMON_MVN_FLAGS
+        run: |
+          # https://github.com/NVIDIA/spark-rapids/issues/8847
+          # specify expected versions
+          export JAVA_HOME=${JAVA_HOME_8_X64}
+          export PATH=${JAVA_HOME}/bin:${PATH}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+          # test command
+          mvn -Dmaven.wagon.http.retryHandler.count=3 -B package \
+            -pl integration_tests,tests -am \
+            -P 'individual,pre-merge' \
+            -Dbuildver=${{ matrix.spark-version }} \
+            -Dmaven.scalastyle.skip=true \
+            -Drat.skip=true \
+            ${{ env.COMMON_MVN_FLAGS }}
 
   verify-all-modules:
     needs: get-shim-versions-from-dist
@@ -112,10 +128,57 @@ jobs:
         with:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
-      
+
+      - name: check runtime before tests
+        run: |
+          env | grep JAVA
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+
       - name: Build JDK
-        run: >
-          mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
-          -P "individual,pre-merge,jdk${{ matrix.java-version }}"
-          -Dbuildver=${{ matrix.spark-version }}
-          $COMMON_MVN_FLAGS
+        run: |
+          # https://github.com/NVIDIA/spark-rapids/issues/8847
+          # specify expected versions
+          export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
+          export PATH=${JAVA_HOME}/bin:${PATH}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+          # test command
+          mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify \
+            -P "individual,pre-merge,jdk${{ matrix.java-version }}" \
+            -Dbuildver=${{ matrix.spark-version }} \
+            ${{ env.COMMON_MVN_FLAGS }}
+
+  install-modules:
+    needs: get-shim-versions-from-dist
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        maven-version: [3.6.3, 3.8.8, 3.9.3]
+    steps:
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 11
+
+      - name: Setup Maven Wrapper
+        run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
+
+      - name: check runtime before tests
+        run: |
+          env | grep JAVA
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+
+      - name: Install with Maven ${{ matrix.maven-version }}
+        run: |
+          # https://github.com/NVIDIA/spark-rapids/issues/8847
+          # specify expected versions
+          export JAVA_HOME=export JAVA_HOME=${JAVA_HOME_11_X64}
+          export PATH=${JAVA_HOME}/bin:${PATH}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+          # test command
+          ./mvnw -Dmaven.wagon.http.retryHandler.count=3 -B install \
+            -P "individual,pre-merge,jdk11" \
+            -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
+            ${{ env.COMMON_MVN_FLAGS }}

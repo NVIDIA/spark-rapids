@@ -15,11 +15,11 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_spark_cdh, is_spark_321cdh
+from spark_session import is_before_spark_320, is_spark_321cdh, is_spark_cdh, with_cpu_session, with_gpu_session
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
-from pyspark.sql.functions import lit
+from pyspark.sql.functions import col, lit
 from pyspark.sql.types import *
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
@@ -28,6 +28,28 @@ orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, doubl
         string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
         decimal_gens
+
+all_nulls_string_gen = SetValuesGen(StringType(), [None])
+empty_or_null_string_gen = SetValuesGen(StringType(), [None, ""])
+all_empty_string_gen = SetValuesGen(StringType(), [""])
+all_nulls_array_gen = SetValuesGen(ArrayType(StringType()), [None])
+all_empty_array_gen = SetValuesGen(ArrayType(StringType()), [[]])
+all_array_empty_string_gen = SetValuesGen(ArrayType(StringType()), [["", ""]])
+mixed_empty_nulls_array_gen = SetValuesGen(ArrayType(StringType()), [None, [], [None], [""], [None, ""]])
+mixed_empty_nulls_map_gen = SetValuesGen(MapType(StringType(), StringType()), [{}, None, {"A": ""}, {"B": None}])
+all_nulls_map_gen = SetValuesGen(MapType(StringType(), StringType()), [None])
+all_empty_map_gen = SetValuesGen(MapType(StringType(), StringType()), [{}])
+
+orc_write_odd_empty_strings_gens_sample = [all_nulls_string_gen, 
+        empty_or_null_string_gen, 
+        all_empty_string_gen,
+        all_nulls_array_gen,
+        all_empty_array_gen,
+        all_array_empty_string_gen,
+        mixed_empty_nulls_array_gen, 
+        mixed_empty_nulls_map_gen,
+        all_nulls_map_gen,
+        all_empty_map_gen]
 
 orc_write_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_write_basic_gens)])
 
@@ -63,6 +85,17 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
+
+@pytest.mark.parametrize('orc_gen', orc_write_odd_empty_strings_gens_sample, ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_write_round_trip_corner(spark_tmp_path, orc_gen, orc_impl):
+    gen_list = [('_c0', orc_gen)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: gen_df(spark, gen_list, 128000, num_slices=1).write.orc(path),
             lambda spark, path: spark.read.orc(path),
             data_path,
             conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
@@ -266,3 +299,42 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
             {"spark.sql.maxConcurrentOutputFileWriters": 10},
             {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
         ))
+
+@ignore_order
+def test_orc_write_column_name_with_dots(spark_tmp_path):
+    data_path = spark_tmp_path + "/ORC_DATA"
+    gens = [
+        ("a.b", StructGen([
+            ("c.d.e", StructGen([
+                ("f.g", int_gen),
+                ("h", string_gen)])),
+            ("i.j", long_gen)])),
+        ("k", boolean_gen)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path:  gen_df(spark, gens).coalesce(1).write.orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path)
+
+
+# test case from:
+# https://github.com/apache/spark/blob/v3.4.0/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/orc/OrcQuerySuite.scala#L371
+@ignore_order
+def test_orc_do_not_lowercase_columns(spark_tmp_path):
+    data_path = spark_tmp_path + "/ORC_DATA"
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        # column is uppercase
+        lambda spark, path: spark.range(0, 1000).select(col("id").alias("Acol")).write.orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path)
+    try:
+        # reading lowercase causes exception
+        with_cpu_session(lambda spark: spark.read.orc(data_path + "/CPU").schema["acol"])
+        assert False
+    except KeyError as e:
+        assert "No StructField named acol" in str(e)
+    try:
+        # reading lowercase causes exception
+        with_gpu_session(lambda spark: spark.read.orc(data_path + "/GPU").schema["acol"])
+        assert False
+    except KeyError as e:
+        assert "No StructField named acol" in str(e)

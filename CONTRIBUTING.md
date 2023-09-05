@@ -28,9 +28,19 @@ There are two types of branches in this repository:
   is held here. `main` will change with new releases, but otherwise it should not change with
   every pull request merged, making it a more stable branch.
 
+## Git Submodules
+
+This repository uses git submodules. The submodules may need to be updated after the repository
+is cloned or after moving to a new commit via `git submodule update --init`. See the
+[Git documentation on submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) for more
+information.
+
 ## Building From Source
 
-We use [Maven](https://maven.apache.org) for most aspects of the build. Some important parts
+We use [Maven](https://maven.apache.org) for most aspects of the build. We test the build with latest
+patch versions for Maven 3.6.x, 3.8.x and 3.9.x. Maven version 3.6.0 or more recent is enforced.
+
+Some important parts
 of the build execute in the `verify` phase of the Maven build lifecycle.  We recommend when
 building at least running to the `verify` phase, e.g.:
 
@@ -103,15 +113,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -153,7 +163,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.06.0-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -218,12 +228,12 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|db     |Databricks  |312db  |Databricks Spark based on Spark 3.1.2         |
+|db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
 |cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
 
 The version-specific directory names have one of the following forms / use cases:
 
-* `src/main/spark${buildver}`, example: `src/main/spark330db`
+* `src/main/spark${buildver}`, example: `src/main/spark332db`
 * `src/test/spark${buildver}`, example: `src/test/spark340`
 
 with a special shim descriptor as a Scala/Java comment. See [shimplify.md][1]

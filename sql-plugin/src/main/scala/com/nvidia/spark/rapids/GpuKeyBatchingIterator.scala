@@ -22,8 +22,8 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -49,7 +49,7 @@ class GpuKeyBatchingIterator(
   private val pending = mutable.Queue[SpillableColumnarBatch]()
   private var pendingSize: Long = 0
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  onTaskCompletion(close())
 
   def close(): Unit = {
     pending.foreach(_.close())
@@ -174,9 +174,10 @@ class GpuKeyBatchingIterator(
       val tables = withResource(table) { table =>
         table.contiguousSplit(cutoff)
       }
-      val (firstSpill, secondSpill) = withResource(tables) { tables =>
+      val (firstSpill, secondSpill) = closeOnExcept(tables) { tables =>
         assert(tables.length == 2)
-        val tmp = tables.safeMap { t =>
+        val tmp = tables.zipWithIndex.safeMap { case (t, ix) =>
+          tables(ix) = null
           SpillableColumnarBatch(t, types, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         }
         (tmp(0), tmp(1))

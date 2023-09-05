@@ -22,12 +22,14 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.08.0-SNAPSHOT</version>
+        <version>23.10.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>23.08.0-SNAPSHOT</version>
+    <version>23.10.0-SNAPSHOT</version>
     <properties>
         <target.classifier/>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -64,6 +66,12 @@
             <!-- for hive udf test cases -->
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-hive_${scala.binary.version}</artifactId>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/com.github.scopt/scopt -->
+        <dependency>
+            <groupId>com.github.scopt</groupId>
+            <artifactId>scopt_2.12</artifactId>
+            <version>4.1.0</version>
         </dependency>
     </dependencies>
 
@@ -227,9 +235,21 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.scala-lang</groupId>
                     <artifactId>scala-reflect</artifactId>
                     <version>${scala.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.esotericsoftware.kryo</groupId>
+                    <artifactId>kryo-shaded-db</artifactId>
+                    <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
@@ -269,6 +289,24 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-ast_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-core_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-jackson_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.commons</groupId>
                     <artifactId>commons-io</artifactId>
                     <version>${spark.version}</version>
@@ -286,13 +324,6 @@
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <classifier>${spark.version.classifier}</classifier>
-                </configuration>
-            </plugin>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>

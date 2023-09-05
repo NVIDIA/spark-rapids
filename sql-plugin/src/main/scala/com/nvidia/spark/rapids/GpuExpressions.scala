@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
-import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
@@ -81,20 +80,6 @@ object GpuExpressionsUtils {
   }
 
   /**
-   * Tries to resolve a `GpuColumnVector` by evaluating an expression over a batch.
-   *
-   * This is a common handling of a GpuExpression for the nodes asking for a single
-   * `GpuColumnVector`.
-   *
-   * @param expr the input expression to be evaluated.
-   * @param batch the input batch.
-   * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
-   *         memory leak.
-   */
-  def columnarEvalToColumn(expr: Expression, batch: ColumnarBatch): GpuColumnVector =
-    resolveColumnVector(expr.columnarEval(batch), batch.numRows)
-
-  /**
    * Extract the GpuLiteral
    * @param exp the input expression to be extracted
    * @return an optional GpuLiteral
@@ -139,12 +124,21 @@ trait GpuExpression extends Expression {
    * value. Scalar values typically happen if they are a part of the expression i.e. col("a") + 100.
    * In this case the 100 is a literal that Add would have to be able to handle.
    *
+   * By convention any `AutoCloseable` returned by [[columnarEvalAny]] is owned by the caller and
+   * will need to be closed by them.
+   */
+  def columnarEvalAny(batch: ColumnarBatch): Any = columnarEval(batch)
+
+  /**
+   * Returns the result of evaluating this expression on the entire
+   * `ColumnarBatch`. The result of calling this is a `GpuColumnVector`.
+   *
    * By convention any `GpuColumnVector` returned by [[columnarEval]]
    * is owned by the caller and will need to be closed by them. This can happen by putting it into
    * a `ColumnarBatch` and closing the batch or by closing the vector directly if it is a
    * temporary value.
    */
-  def columnarEval(batch: ColumnarBatch): Any
+  def columnarEval(batch: ColumnarBatch): GpuColumnVector
 
   override lazy val canonicalized: Expression = {
     val canonicalizedChildren = children.map(_.canonicalized)
@@ -169,6 +163,12 @@ trait GpuExpression extends Expression {
       case c: GpuExpression => c.hasSideEffects
       case _ => false // This path should never really happen
     }
+
+  /**
+   * If this returns true then tiered project will stop looking to combine expressions when
+   * this is seen.
+   */
+  def disableTieredProjectCombine: Boolean = hasSideEffects
 }
 
 abstract class GpuLeafExpression extends GpuExpression with ShimExpression {
@@ -176,7 +176,10 @@ abstract class GpuLeafExpression extends GpuExpression with ShimExpression {
 }
 
 trait GpuUnevaluable extends GpuExpression {
-  final override def columnarEval(batch: ColumnarBatch): Any =
+  final override def columnarEvalAny(batch: ColumnarBatch): Any =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  final override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
@@ -200,8 +203,8 @@ abstract class GpuUnaryExpression extends ShimUnaryExpression with GpuExpression
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(child, batch)) { col =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(child.columnarEval(batch)) { col =>
       doItColumnar(col)
     }
   }
@@ -250,9 +253,9 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
   def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector
   def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
-      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(left.columnarEvalAny(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEvalAny(batch)) { rhs =>
         (lhs, rhs) match {
           case (l: GpuColumnVector, r: GpuColumnVector) =>
             GpuColumnVector.from(doColumnar(l, r), dataType)
@@ -268,6 +271,30 @@ trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
         }
       }
     }
+  }
+}
+
+/**
+ * Expressions subclassing this trait guarantee that they implement:
+ *   doColumnar(GpuScalar, GpuScalar)
+ *   doColumnar(GpuColumnVector, GpuScalar)
+ *
+ * The default implementation throws for all other permutations.
+ *
+ * The binary expression must fallback to the CPU for the doColumnar cases
+ * that would throw. The default implementation here should never execute.
+ */
+trait GpuBinaryExpressionArgsAnyScalar extends GpuBinaryExpression {
+  protected val anyScalarExceptionMessage: String =
+    s"$prettyName: LHS can be a column or scalar and " +
+        s"RHS has to be a scalar (got left: $left, right: $right)"
+
+  override final def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException(anyScalarExceptionMessage)
+  }
+
+  override final def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException(anyScalarExceptionMessage)
   }
 }
 
@@ -353,9 +380,9 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression
     super.sql
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val trim = GpuExpressionsUtils.getTrimString(trimStr)
-    withResourceIfAllowed(columnarEvalToColumn(srcStr, batch)) { column =>
+    withResourceIfAllowed(srcStr.columnarEval(batch)) { column =>
       if (trim == null) {
         GpuColumnVector.fromNull(column.getRowCount.toInt, StringType)
       } else if (trim.isEmpty) {
@@ -394,11 +421,11 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
   def doColumnar(val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuScalar): ColumnVector
   def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar, val2: GpuScalar): ColumnVector
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val Seq(child0, child1, child2) = children
-    withResourceIfAllowed(child0.columnarEval(batch)) { val0 =>
-      withResourceIfAllowed(child1.columnarEval(batch)) { val1 =>
-        withResourceIfAllowed(child2.columnarEval(batch)) { val2 =>
+    withResourceIfAllowed(child0.columnarEvalAny(batch)) { val0 =>
+      withResourceIfAllowed(child1.columnarEvalAny(batch)) { val1 =>
+        withResourceIfAllowed(child2.columnarEvalAny(batch)) { val2 =>
           (val0, val1, val2) match {
             case (v0: GpuColumnVector, v1: GpuColumnVector, v2: GpuColumnVector) =>
               GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
@@ -426,7 +453,113 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
   }
 }
 
+/**
+ * Expressions subclassing this trait guarantee that they implement:
+ *   doColumnar(GpuScalar, GpuScalar, GpuScalar)
+ *   doColumnar(GpuColumnVector, GpuScalar, GpuScalar)
+ *
+ * The default implementation throws for all other permutations.
+ *
+ * The ternary expression must fallback to the CPU for the doColumnar cases
+ * that would throw. The default implementation here should never execute.
+ */
+trait GpuTernaryExpressionArgsAnyScalarScalar extends GpuTernaryExpression {
+  protected val anyScalarScalarErrorMessage: String =
+    s"$prettyName: first argument can be a column or a scalar, second and third arguments " +
+        s"have to be scalars (got first: $first, second: $second, third: $third)"
+
+  final override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+
+  final override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(anyScalarScalarErrorMessage)
+}
+
+/**
+ * Expressions subclassing this trait guarantee that they implement:
+ *   doColumnar(GpuScalar, GpuScalar, GpuScalar)
+ *   doColumnar(GpuScalar, GpuColumnVector, GpuScalar)
+ *
+ * The default implementation throws for all other permutations.
+ *
+ * The ternary expression must fallback to the CPU for the doColumnar cases
+ * that would throw. The default implementation here should never execute.
+ */
+trait GpuTernaryExpressionArgsScalarAnyScalar extends GpuTernaryExpression {
+  protected val scalarAnyScalarExceptionMessage: String =
+    s"$prettyName: first argument has to be a scalar, second argument can be a column " +
+        s"or a scalar, and third argument has to be a scalar " +
+        s"(got first: $first, second: $second, third: $third)"
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuScalar,
+      val1: GpuColumnVector,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuScalar,
+      val1: GpuScalar,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuScalar,
+      val2: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuScalar,
+      val2: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+
+  final override def doColumnar(
+      val0: GpuColumnVector,
+      val1: GpuColumnVector,
+      val2: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(scalarAnyScalarExceptionMessage)
+}
+
+
 trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression
     with GpuExpression with ShimExpression {
-  def columnarEval(batch: ColumnarBatch): Any
+  def columnarEval(batch: ColumnarBatch): GpuColumnVector
 }

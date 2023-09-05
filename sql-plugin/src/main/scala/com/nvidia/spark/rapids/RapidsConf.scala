@@ -337,12 +337,31 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
-  val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
-    .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
-      "Use 0 to disable the pool.")
-    .startupOnly()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.GiB.toBytes(1))
+  val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
+      .doc("Should the off heap limit be enforced or not.")
+      .startupOnly()
+      // This might change as a part of https://github.com/NVIDIA/spark-rapids/issues/8878
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
+  val OFF_HEAP_LIMIT_SIZE = conf("spark.rapids.memory.host.offHeapLimit.size")
+      .doc("The maximum amount of off heap memory that the plugin will use. " +
+          "This includes pinned memory and some overhead memory. If pinned is larger " +
+          "than this - overhead pinned will be truncated.")
+      .startupOnly()
+      .internal() // https://github.com/NVIDIA/spark-rapids/issues/8878 should be replaced with
+      // .commonlyUsed()
+      .bytesConf(ByteUnit.BYTE)
+      .createOptional // The default
+
+  val TASK_OVERHEAD_SIZE = conf("spark.rapids.memory.host.taskOverhead.size")
+      .doc("The amount of off heap memory reserved per task for overhead activities " +
+          "like C++ heap/stack and a few other small things that are hard to control for.")
+      .startupOnly()
+      .internal() // https://github.com/NVIDIA/spark-rapids/issues/8878
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(15L * 1024 * 1024) // 15 MiB
 
   val RMM_DEBUG = conf("spark.rapids.memory.gpu.debug")
     .doc("Provides a log of GPU memory allocations and frees. If set to " +
@@ -668,7 +687,7 @@ object RapidsConf {
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
          "at [parsing strings as dates or timestamps]" +
-         "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
+         "(../compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
 
@@ -1266,12 +1285,43 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_RANGE_WINDOW_FLOAT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.float.enabled")
+      .doc("When set to false, this disables the range window acceleration for the " +
+        "FLOAT type order-by column")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_RANGE_WINDOW_DOUBLE: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.double.enabled")
+      .doc("When set to false, this disables the range window acceleration for the " +
+        "double type order-by column")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_RANGE_WINDOW_DECIMAL: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.window.range.decimal.enabled")
     .doc("When set to false, this disables the range window acceleration for the " +
       "DECIMAL type order-by column")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
+    .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
+        "indicates it would be good we pre-sort the data before a partial agg and then " +
+        "do the agg in a single pass with no merge, so there is no spilling")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val FORCE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.agg.forceSinglePassPartialSort")
+    .doc("Force a single pass partial sort agg to happen in all cases that it could, " +
+        "no matter what the heuristic says. This is really just for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
@@ -1344,19 +1394,40 @@ object RapidsConf {
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val PARQUET_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.parquet.debug.dumpAlways")
+    .doc(s"This only has an effect if $PARQUET_DEBUG_DUMP_PREFIX is set. If true then " +
+      "Parquet data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val ORC_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.orc.debug.dumpPrefix")
     .doc("A path prefix where ORC split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val ORC_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.orc.debug.dumpAlways")
+    .doc(s"This only has an effect if $ORC_DEBUG_DUMP_PREFIX is set. If true then " +
+      "ORC data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val AVRO_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.avro.debug.dumpPrefix")
     .doc("A path prefix where AVRO split file data is dumped for debugging.")
     .internal()
     .stringConf
-    .createWithDefault(null)
+    .createOptional
+
+  val AVRO_DEBUG_DUMP_ALWAYS = conf("spark.rapids.sql.avro.debug.dumpAlways")
+    .doc(s"This only has an effect if $AVRO_DEBUG_DUMP_PREFIX is set. If true then " +
+      "Avro data is dumped for every read operation otherwise only on a read error.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val HASH_AGG_REPLACE_MODE = conf("spark.rapids.sql.hashAgg.replaceMode")
     .doc("Only when hash aggregate exec has these modes (\"all\" by default): " +
@@ -1377,7 +1448,7 @@ object RapidsConf {
 
   val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
     .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
-      "The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must " +
+      "The [RAPIDS Shuffle Manager](rapids-shuffle.md) must " +
       "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
     .booleanConf
     .createWithDefault(true)
@@ -1924,6 +1995,12 @@ object RapidsConf {
         "The chunked pack bounce buffer must be at least 1MB in size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
+      .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
+      .internal()
+      .longConf
+      .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1959,7 +2036,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2007,12 +2084,12 @@ object RapidsConf {
       println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
       // scalastyle:off line.size.limit
       println("""# RAPIDS Accelerator for Apache Spark Advanced Configuration
-        |Most users will not need to modify the configuration options listed below. 
+        |Most users will not need to modify the configuration options listed below.
         |They are documented here for completeness and advanced usage.
         |
         |The following configuration options are supported by the RAPIDS Accelerator for Apache Spark.
         |
-        |For commonly used configurations and examples of setting options, please refer to the 
+        |For commonly used configurations and examples of setting options, please refer to the
         |[RAPIDS Accelerator for Configuration](../configs.md) page.
         |""".stripMargin)
       // scalastyle:on line.size.limit
@@ -2136,7 +2213,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
 
-  lazy val pageablePoolSize: Long = get(PAGEABLE_POOL_SIZE)
+  lazy val offHeapLimitEnabled: Boolean = get(OFF_HEAP_LIMIT_ENABLED)
+
+  lazy val offHeapLimit: Option[Long] = get(OFF_HEAP_LIMIT_SIZE)
+
+  lazy val perTaskOverhead: Long = get(TASK_OVERHEAD_SIZE)
 
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
@@ -2222,11 +2303,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
 
-  lazy val parquetDebugDumpPrefix: String = get(PARQUET_DEBUG_DUMP_PREFIX)
+  lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 
-  lazy val orcDebugDumpPrefix: String = get(ORC_DEBUG_DUMP_PREFIX)
+  lazy val parquetDebugDumpAlways: Boolean = get(PARQUET_DEBUG_DUMP_ALWAYS)
 
-  lazy val avroDebugDumpPrefix: String = get(AVRO_DEBUG_DUMP_PREFIX)
+  lazy val orcDebugDumpPrefix: Option[String] = get(ORC_DEBUG_DUMP_PREFIX)
+
+  lazy val orcDebugDumpAlways: Boolean = get(ORC_DEBUG_DUMP_ALWAYS)
+
+  lazy val avroDebugDumpPrefix: Option[String] = get(AVRO_DEBUG_DUMP_PREFIX)
+
+  lazy val avroDebugDumpAlways: Boolean = get(AVRO_DEBUG_DUMP_ALWAYS)
 
   lazy val hashAggReplaceMode: String = get(HASH_AGG_REPLACE_MODE)
 
@@ -2552,7 +2639,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
+  lazy val isRangeWindowFloatEnabled: Boolean = get(ENABLE_RANGE_WINDOW_FLOAT)
+
+  lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
+
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
+
+  lazy val forceSinglePassPartialSortAgg: Boolean = get(FORCE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
@@ -2583,6 +2678,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

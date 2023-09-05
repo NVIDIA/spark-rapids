@@ -28,12 +28,22 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+object GpuPartitioning {
+  // The maximum size of an Array minus a bit for overhead for metadata
+  val MaxCpuBatchSize = 2147483639L - 2048L
+}
+
 trait GpuPartitioning extends Partitioning {
   private[this] val (maxCompressionBatchSize, _useGPUShuffle, _useMultiThreadedShuffle) = {
     val rapidsConf = new RapidsConf(SQLConf.get)
     (rapidsConf.shuffleCompressionMaxBatchMemory,
       GpuShuffleEnv.useGPUShuffle(rapidsConf),
       GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf))
+  }
+
+  final def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    throw new IllegalStateException(
+      "Partitioners do not support columnarEval, only columnarEvalAny")
   }
 
   def usesGPUShuffle: Boolean = _useGPUShuffle
@@ -84,11 +94,36 @@ trait GpuPartitioning extends Partitioning {
     batches
   }
 
+  private def reslice(batch: ColumnarBatch, numSlices: Int): Seq[ColumnarBatch] = {
+    if (batch.numCols() > 0) {
+      withResource(batch) { _ =>
+        val totalRows = batch.numRows()
+        val rowsPerBatch = math.ceil(totalRows.toDouble / numSlices).toInt
+        val first = batch.column(0).asInstanceOf[SlicedGpuColumnVector]
+        val startOffset = first.getStart
+        val endOffset = first.getEnd
+        val hostColumns = (0 until batch.numCols()).map { index =>
+          batch.column(index).asInstanceOf[SlicedGpuColumnVector].getWrap
+        }.toArray
+
+        startOffset.until(endOffset, rowsPerBatch).map { startIndex =>
+          val end = math.min(startIndex + rowsPerBatch, endOffset)
+          sliceBatch(hostColumns, startIndex, end)
+        }.toList
+      }
+    } else {
+      // This should never happen, but...
+      Seq(batch)
+    }
+  }
+
   def sliceInternalOnCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
-      partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+      partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     // We need to make sure that we have a null count calculated ahead of time.
     // This should be a temp work around.
     partitionColumns.foreach(_.getBase.getNullCount)
+    val totalInputSize = GpuColumnVector.getTotalDeviceMemoryUsed(partitionColumns)
+    val mightNeedToSplit = totalInputSize > GpuPartitioning.MaxCpuBatchSize
 
     val hostPartColumns = withResource(partitionColumns) { _ =>
       partitionColumns.map(_.copyToHost())
@@ -97,22 +132,46 @@ trait GpuPartitioning extends Partitioning {
       // Leaving the GPU for a while
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
 
-      val ret = new Array[ColumnarBatch](numPartitions)
+      val origParts = new Array[ColumnarBatch](numPartitions)
       var start = 0
       for (i <- 1 until Math.min(numPartitions, partitionIndexes.length)) {
         val idx = partitionIndexes(i)
-        ret(i - 1) = sliceBatch(hostPartColumns, start, idx)
+        origParts(i - 1) = sliceBatch(hostPartColumns, start, idx)
         start = idx
       }
-      ret(numPartitions - 1) = sliceBatch(hostPartColumns, start, numRows)
-      ret
+      origParts(numPartitions - 1) = sliceBatch(hostPartColumns, start, numRows)
+      val tmp = origParts.zipWithIndex.filter(_._1 != null)
+      // Spark CPU shuffle in some cases has limits on the size of the data a single
+      //  row can have. It is a little complicated because the limit is on the compressed
+      //  and encrypted buffer, but for now we are just going to assume it is about the same
+      // size.
+      if (mightNeedToSplit) {
+        tmp.flatMap {
+          case (batch, part) =>
+            val totalSize = SlicedGpuColumnVector.getTotalHostMemoryUsed(batch)
+            val numOutputBatches =
+              math.ceil(totalSize.toDouble / GpuPartitioning.MaxCpuBatchSize).toInt
+            if (numOutputBatches > 1) {
+              // For now we are going to slice it on number of rows instead of looking
+              // at each row to try and decide. If we get in trouble we can probably
+              // make this recursive and keep splitting more until it is small enough.
+              reslice(batch, numOutputBatches).map { subBatch =>
+                (subBatch, part)
+              }
+            } else {
+              Seq((batch, part))
+            }
+        }
+      } else {
+        tmp
+      }
     } finally {
       hostPartColumns.safeClose()
     }
   }
 
   def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
-      partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
+      partitionColumns: Array[GpuColumnVector]): Array[(ColumnarBatch, Int)] = {
     val sliceOnGpu = usesGPUShuffle
     val nvtxRangeKey = if (sliceOnGpu) {
       "sliceInternalOnGpu"
@@ -123,7 +182,8 @@ trait GpuPartitioning extends Partitioning {
     // for large number of small splits.
     withResource(new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)) { _ =>
       if (sliceOnGpu) {
-        sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
+        val tmp = sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
+        tmp.zipWithIndex.filter(_._1 != null)
       } else {
         sliceInternalOnCpuAndClose(numRows, partitionIndexes, partitionColumns)
       }

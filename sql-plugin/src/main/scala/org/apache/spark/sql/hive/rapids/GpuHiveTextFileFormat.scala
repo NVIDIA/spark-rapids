@@ -137,40 +137,42 @@ class GpuHiveTextWriter(override val path: String,
    * This writer currently reformats timestamp and floating point
    * columns.
    */
-  override def transform(cb: ColumnarBatch): Option[ColumnarBatch] = {
-    withResource(GpuColumnVector.from(cb)) { table =>
-      val columns = for (i <- 0 until table.getNumberOfColumns) yield {
-        table.getColumn(i) match {
-          case c if c.getType.hasTimeResolution =>
-            // By default, the CUDF CSV writer writes timestamps in the following format:
-            //   "2020-09-16T22:32:01.123456Z"
-            // Hive's LazySimpleSerDe format expects timestamps to be formatted thus:
-            //   "uuuu-MM-dd HH:mm:ss[.SSS...]"
-            // (Specifically, no `T` between `dd` and `HH`, and no `Z` at the end.)
-            val col = withResource(c.asStrings("%Y-%m-%d %H:%M:%S.%f")) { asStrings =>
-              withResource(Scalar.fromString("\\N")) { nullString =>
-                asStrings.replaceNulls(nullString)
-              }
-            }
-            GpuColumnVector.from(col, StringType)
-          case c if c.getType == DType.FLOAT32 || c.getType == DType.FLOAT64 =>
-            // By default, the CUDF CSV writer writes floats with value `Infinity`
-            // as `"Inf"`.
-            // Hive's LazySimplSerDe expects such values to be written as `"Infinity"`.
-            // All occurrences of `Inf` need to be replaced with `Infinity`.
-            val col = withResource(c.castTo(DType.STRING)) { asStrings =>
-              withResource(Scalar.fromString("Inf")) { infString =>
-                withResource(Scalar.fromString("Infinity")) { infinityString =>
-                  asStrings.stringReplace(infString, infinityString)
+  override def transformAndClose(cb: ColumnarBatch): ColumnarBatch = {
+    withResource(cb) { _ =>
+      withResource(GpuColumnVector.from(cb)) { table =>
+        val columns = for (i <- 0 until table.getNumberOfColumns) yield {
+          table.getColumn(i) match {
+            case c if c.getType.hasTimeResolution =>
+              // By default, the CUDF CSV writer writes timestamps in the following format:
+              //   "2020-09-16T22:32:01.123456Z"
+              // Hive's LazySimpleSerDe format expects timestamps to be formatted thus:
+              //   "uuuu-MM-dd HH:mm:ss[.SSS...]"
+              // (Specifically, no `T` between `dd` and `HH`, and no `Z` at the end.)
+              val col = withResource(c.asStrings("%Y-%m-%d %H:%M:%S.%f")) { asStrings =>
+                withResource(Scalar.fromString("\\N")) { nullString =>
+                  asStrings.replaceNulls(nullString)
                 }
               }
-            }
-            GpuColumnVector.from(col, StringType)
-          case c =>
-            GpuColumnVector.from(c.incRefCount(), cb.column(i).dataType())
+              GpuColumnVector.from(col, StringType)
+            case c if c.getType == DType.FLOAT32 || c.getType == DType.FLOAT64 =>
+              // By default, the CUDF CSV writer writes floats with value `Infinity`
+              // as `"Inf"`.
+              // Hive's LazySimplSerDe expects such values to be written as `"Infinity"`.
+              // All occurrences of `Inf` need to be replaced with `Infinity`.
+              val col = withResource(c.castTo(DType.STRING)) { asStrings =>
+                withResource(Scalar.fromString("Inf")) { infString =>
+                  withResource(Scalar.fromString("Infinity")) { infinityString =>
+                    asStrings.stringReplace(infString, infinityString)
+                  }
+                }
+              }
+              GpuColumnVector.from(col, StringType)
+            case c =>
+              GpuColumnVector.from(c.incRefCount(), cb.column(i).dataType())
+          }
         }
+        new ColumnarBatch(columns.toArray, cb.numRows())
       }
-      Some(new ColumnarBatch(columns.toArray, cb.numRows()))
     }
   }
 

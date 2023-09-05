@@ -29,6 +29,7 @@ import com.databricks.sql.transaction.tahoe.files.TahoeBatchFileIndex
 import com.databricks.sql.transaction.tahoe.rapids.GpuDeleteCommand.{rewritingFilesMsg, FINDING_TOUCHED_FILES_MSG}
 import com.nvidia.spark.rapids.delta.GpuDeltaMetricUpdateUDF
 
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.{Column, DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, EqualNullSafe, Expression, If, Literal, Not}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
@@ -61,7 +62,15 @@ case class GpuDeleteCommand(
 
   override val output: Seq[Attribute] = Seq(AttributeReference("num_affected_rows", LongType)())
 
-  override lazy val metrics = createMetrics
+  @transient private lazy val sc: SparkContext = SparkContext.getOrCreate()
+
+  // DeleteCommandMetrics does not include deletion vector metrics, so add them here because
+  // the commit command needs to collect these metrics for inclusion in the delta log event
+  override lazy val metrics = createMetrics ++ Map(
+    "numDeletionVectorsAdded" -> SQLMetrics.createMetric(sc, "number of deletion vectors added."),
+    "numDeletionVectorsRemoved" ->
+      SQLMetrics.createMetric(sc, "number of deletion vectors removed.")
+  )
 
   final override def run(sparkSession: SparkSession): Seq[Row] = {
     val deltaLog = gpuDeltaLog.deltaLog
@@ -256,8 +265,8 @@ case class GpuDeleteCommand(
     metrics("rewriteTimeMs").set(rewriteTimeMs)
     metrics("numAddedChangeFiles").set(numAddedChangeFiles)
     metrics("changeFileBytes").set(changeFileBytes)
-    metrics("numBytesAdded").set(numBytesAdded)
-    metrics("numBytesRemoved").set(numBytesRemoved)
+    metrics("numAddedBytes").set(numBytesAdded)
+    metrics("numRemovedBytes").set(numBytesRemoved)
     metrics("numFilesBeforeSkipping").set(numFilesBeforeSkipping)
     metrics("numBytesBeforeSkipping").set(numBytesBeforeSkipping)
     metrics("numFilesAfterSkipping").set(numFilesAfterSkipping)
@@ -266,6 +275,8 @@ case class GpuDeleteCommand(
     numPartitionsAddedTo.foreach(metrics("numPartitionsAddedTo").set)
     numPartitionsRemovedFrom.foreach(metrics("numPartitionsRemovedFrom").set)
     numCopiedRows.foreach(metrics("numCopiedRows").set)
+    metrics("numDeletionVectorsAdded").set(0)
+    metrics("numDeletionVectorsRemoved").set(0)
     txn.registerSQLMetrics(sparkSession, metrics)
     // This is needed to make the SQL metrics visible in the Spark UI
     val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)

@@ -19,10 +19,12 @@
 {"spark": "332"}
 {"spark": "333"}
 {"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuCast, GpuExpression}
+import com.nvidia.spark.rapids.{GpuCast, GpuColumnVector, GpuExpression}
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.SparkArithmeticException
@@ -46,7 +48,7 @@ case class GpuCheckOverflowInTableInsert(child: GpuCast, columnName: String)
 
   override def dataType: DataType = child.dataType
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     try {
       child.columnarEval(batch)
     } catch {

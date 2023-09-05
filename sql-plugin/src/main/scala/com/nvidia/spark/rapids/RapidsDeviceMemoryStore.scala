@@ -137,33 +137,8 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
       initialSpillPriority)
     freeOnExcept(rapidsTable) { _ =>
       addBuffer(rapidsTable, needsSync)
-      rapidsTable.updateSpillability()
       rapidsTable
     }
-  }
-
-  /**
-   * Adds a device buffer to the spill framework, stream synchronizing with the producer
-   * stream to ensure that the buffer is fully materialized, and can be safely copied
-   * as part of the spill.
-   *
-   * @param needsSync true if we should stream synchronize before adding the buffer
-   */
-  private def addBuffer(
-      buffer: RapidsBufferBase,
-      needsSync: Boolean): Unit = {
-    if (needsSync) {
-      Cuda.DEFAULT_STREAM.sync()
-    }
-    addBuffer(buffer)
-  }
-
-  /**
-   * The RapidsDeviceMemoryStore is the only store that supports setting a buffer spillable
-   * or not.
-   */
-  override protected def setSpillable(buffer: RapidsBufferBase, spillable: Boolean): Unit = {
-    doSetSpillable(buffer, spillable)
   }
 
   /**
@@ -309,8 +284,8 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
      * - after adding a table to the store to mark the table as spillable if
      * all columns are spillable.
      */
-    def updateSpillability(): Unit = {
-      doSetSpillable(this, columnSpillability.size == numDistinctColumns)
+    override def updateSpillability(): Unit = {
+      setSpillable(this, columnSpillability.size == numDistinctColumns)
     }
 
     /**
@@ -321,7 +296,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
      */
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       columnSpillability.clear()
-      doSetSpillable(this, false)
+      setSpillable(this, false)
       GpuColumnVector.from(table, sparkTypes)
     }
 

@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>23.08.0-SNAPSHOT</version>
+    <version>23.10.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -69,9 +69,17 @@
             <timezone>-6</timezone>
         </developer>
     </developers>
-
-
-
+    <!-- modules shared among profiles -->
+    <modules>
+        <module>aggregator</module>
+        <module>datagen</module>
+        <module>dist</module>
+        <module>integration_tests</module>
+        <module>shuffle-plugin</module>
+        <module>sql-plugin</module>
+        <module>tests</module>
+        <module>udf-compiler</module>
+    </modules>
     <profiles>
         <profile>
             <id>release311</id>
@@ -90,14 +98,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
                 <module>api_validation</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -116,13 +117,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -142,13 +136,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -168,13 +155,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -193,13 +173,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -224,13 +197,6 @@
             </repositories>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -249,13 +215,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -274,13 +233,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -299,13 +251,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -336,13 +281,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-spark321db</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -363,13 +301,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -390,13 +321,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -417,13 +341,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -445,13 +362,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -471,14 +381,27 @@
                 <slf4j.version>2.0.6</slf4j.version>
             </properties>
             <modules>
+                <module>delta-lake/delta-24x</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release341</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>341</buildver>
+                <spark.version>${spark341.version}</spark.version>
+                <spark.test.version>${spark341.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <slf4j.version>2.0.6</slf4j.version>
+            </properties>
+            <modules>
                 <module>delta-lake/delta-stub</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -511,13 +434,6 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -549,13 +465,6 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-spark330db</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -587,19 +496,26 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-spark332db</module>
-                <module>dist</module>
-                <module>integration_tests</module>
-                <module>shuffle-plugin</module>
-                <module>sql-plugin</module>
-                <module>tests</module>
-                <module>udf-compiler</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
-            <id>udf-compiler</id>
+            <id>release350</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>350</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>350</buildver>
+                <spark.version>${spark350.version}</spark.version>
+                <spark.test.version>${spark350.version}</spark.test.version>
+                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
+                <spark.shim.sources>${spark350.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
             <modules>
-                <module>udf-compiler</module>
+                <module>delta-lake/delta-stub</module>
             </modules>
         </profile>
         <profile>
@@ -629,7 +545,6 @@
                 <maven.compiler.release>11</maven.compiler.release>
                 <maven.compiler.source>11</maven.compiler.source>
                 <maven.compiler.target>11</maven.compiler.target>
-                <allowConventionalDistJar>true</allowConventionalDistJar>
             </properties>
         </profile>
         <profile>
@@ -639,7 +554,6 @@
                 <maven.compiler.release>17</maven.compiler.release>
                 <maven.compiler.source>17</maven.compiler.source>
                 <maven.compiler.target>17</maven.compiler.target>
-                <allowConventionalDistJar>true</allowConventionalDistJar>
             </properties>
         </profile>
         <profile>
@@ -742,8 +656,8 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <spark-rapids-jni.version>23.08.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>23.08.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>23.10.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>23.10.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -756,11 +670,17 @@
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
         <ucx.version>1.14</ucx.version>
+        <rapids.compressed.artifact>true</rapids.compressed.artifact>
+        <rapids.default.jar.excludePattern/>
+        <rapids.default.jar.phase>package</rapids.default.jar.phase>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.shim.jar.phase>none</rapids.shim.jar.phase>
+        <rapids.shim.jar.test.phase>package</rapids.shim.jar.test.phase>
+
         <!--
             cuda-toolkit 11.5+ will install nvidia GDS package by default
             if no compatible GDS device on test machine, the scala test would fail
@@ -792,14 +712,17 @@
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
-        <spark333.version>3.3.3-SNAPSHOT</spark333.version>
+        <spark333.version>3.3.3</spark333.version>
         <spark340.version>3.4.0</spark340.version>
+        <spark341.version>3.4.1</spark341.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
+        <spark350.version>3.5.0</spark350.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
-        <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
+        <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
+        <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <arrow.cdh.version>2.0.0</arrow.cdh.version>
@@ -836,11 +759,14 @@
             330,
             331,
             332,
+            333,
             330cdh,
-            340
+            340,
+            341
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            333
+            <!--TODO: re-enable https://github.com/NVIDIA/spark-rapids/issues/9116-->
+            <!--350-->
         </snapshot.buildvers>
         <databricks.buildvers>
             321db,
@@ -997,8 +923,14 @@
             <dependency>
               <groupId>org.scalatest</groupId>
               <artifactId>scalatest_${scala.binary.version}</artifactId>
-              <version>3.0.5</version>
+              <version>3.2.16</version>
               <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.scalatestplus</groupId>
+                <artifactId>mockito-4-11_${scala.binary.version}</artifactId>
+                <version>3.2.16.0</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
               <groupId>org.junit.jupiter</groupId>
@@ -1103,7 +1035,7 @@
                     <dependency>
                         <groupId>org.python</groupId>
                         <artifactId>jython-standalone</artifactId>
-                        <version>2.7.2</version>
+                        <version>2.7.3</version>
                     </dependency>
                     <dependency>
                         <groupId>net.sourceforge.pmd</groupId>
@@ -1207,7 +1139,7 @@
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
                         <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m -da:ai.rapids.cudf.AssertEmptyNulls ${extraJavaTestArgs}</argLine>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argLine>
                         <stderr/>
                         <systemProperties>
                             <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
@@ -1255,9 +1187,45 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>${maven.jar.plugin.version}</version>
+                    <!--
+                        Packaging type jar requires an output artifact without a classifier a.k.a.
+                        main artifact. Modules whose real "main" output artifact is a shim jar
+                        should comply by outputing a main jar without the class bytecode. In the pom
+                        of such a module set
+                          exludePattern to **/*
+                          rapids.shim.jar.phase to package to attach the shim artifact
+
+                       Modules feededing into dist need not be compressed.
+                        Set rapids.compressed.artifact to false
+                    -->
                     <executions>
                         <execution>
+                            <id>default-jar</id>
+                            <goals><goal>jar</goal></goals>
+                            <phase>${rapids.default.jar.phase}</phase>
+                            <configuration>
+                                <excludes>
+                                    <exclude>${rapids.default.jar.excludePattern}</exclude>
+                                </excludes>
+                                <archive>
+                                    <compress>${rapids.compressed.artifact}</compress>
+                                </archive>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <id>create-${spark.version.classifier}-jar</id>
+                            <goals><goal>jar</goal></goals>
+                            <phase>${rapids.shim.jar.phase}</phase>
+                            <configuration>
+                                <classifier>${spark.version.classifier}</classifier>
+                                <archive>
+                                    <compress>${rapids.compressed.artifact}</compress>
+                                </archive>
+                            </configuration>
+                        </execution>
+                        <execution>
                             <id>default-test-jar</id>
+                            <phase>${rapids.shim.jar.test.phase}</phase>
                             <goals>
                                 <goal>test-jar</goal>
                             </goals>
@@ -1273,10 +1241,37 @@
                     <artifactId>exec-maven-plugin</artifactId>
                     <version>3.0.0</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${maven.install.plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
 
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                  <execution>
+                    <id>enforce-maven</id>
+                    <goals>
+                      <goal>enforce</goal>
+                    </goals>
+                    <configuration>
+                      <rules>
+                        <requireMavenVersion>
+                          <message>Minimum Maven version 3.6.x required</message>
+                          <version>[3.6,)</version>
+                        </requireMavenVersion>
+                        <!-- TODO add buildver validation -->
+                      </rules>
+                    </configuration>
+                  </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
@@ -1304,6 +1299,7 @@
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
+                        <exclude>thirdparty/parquet-testing/**</exclude>
                     </excludes>
                 </configuration>
             </plugin>

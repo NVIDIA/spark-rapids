@@ -80,6 +80,7 @@ CollectSet,4
 Concat,4
 ConcatWs,4
 Contains,4
+Conv,4
 Cos,4
 Cosh,4
 Cot,4
@@ -98,6 +99,7 @@ DayOfWeek,4
 DayOfYear,4
 DenseRank,4
 Divide,4
+DynamicPruningExpression,4
 ElementAt,4
 EndsWith,4
 EqualNullSafe,4
@@ -106,6 +108,7 @@ Exp,4
 Explode,4
 Expm1,4
 First,4
+Flatten,4
 Floor,4
 FromUTCTimestamp,4
 FromUnixTime,4
@@ -162,6 +165,8 @@ MapKeys,4
 MapValues,4
 Max,4
 Md5,4
+MicrosToTimestamp,4
+MillisToTimestamp,4
 Min,4
 Minute,4
 MonotonicallyIncreasingID,4
@@ -200,6 +205,7 @@ RowNumber,4
 ScalaUDF,4
 ScalarSubquery,4
 Second,4
+SecondsToTimestamp,4
 Sequence,4
 ShiftLeft,4
 ShiftRight,4
@@ -252,4 +258,5 @@ VarianceSamp,4
 WeekDay,4
 WindowExpression,4
 WindowSpecDefinition,4
+XxHash64,4
 Year,4

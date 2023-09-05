@@ -18,13 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
+import scala.annotation.tailrec
+import scala.collection.JavaConverters._
+import scala.util.Try
+
 import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids.delta.DeltaProbe
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.commons.lang3.reflect.MethodUtils
-import scala.annotation.tailrec
-import scala.collection.JavaConverters._
-import scala.util.Try
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
@@ -34,6 +35,7 @@ import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
+import org.apache.spark.sql.rapids.{AdaptiveSparkPlanHelperShim, ExecutionPlanCaptureCallbackBase}
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.util.MutableURLClassLoader
 
@@ -58,13 +60,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-23.08.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.10.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -414,4 +416,14 @@ object ShimLoader extends Logging {
   def loadGpuColumnVector(): Class[_] = {
     ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }
+
+  def newAdaptiveSparkPlanHelperShim(): AdaptiveSparkPlanHelperShim =
+    ShimReflectionUtils.newInstanceOf[AdaptiveSparkPlanHelperShim](
+      "com.nvidia.spark.rapids.AdaptiveSparkPlanHelperImpl"
+    )
+
+  def newExecutionPlanCaptureCallbackBase(): ExecutionPlanCaptureCallbackBase =
+    ShimReflectionUtils.
+        newInstanceOf[ExecutionPlanCaptureCallbackBase](
+          "org.apache.spark.sql.rapids.ShimmedExecutionPlanCaptureCallbackImpl")
 }

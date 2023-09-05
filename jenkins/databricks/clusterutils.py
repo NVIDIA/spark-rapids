@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ class ClusterUtils(object):
             for path in path_list:
                 templ['init_scripts'].append(
                     {
-                        'dbfs' : {
+                        'workspace' : {
                             'destination' : path
                         }
                     }

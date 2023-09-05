@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 object RapidsPluginImplicits {
 
   implicit class ReallyAGpuExpression(exp: Expression) {
-    def columnarEval(batch: ColumnarBatch): Any = {
+    def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
       exp.asInstanceOf[GpuExpression].columnarEval(batch)
+    }
+
+    def columnarEvalAny(batch: ColumnarBatch): Any = {
+      exp.asInstanceOf[GpuExpression].columnarEvalAny(batch)
     }
   }
 

@@ -21,10 +21,11 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -100,15 +101,12 @@ object GpuProjectExec {
     }
   }
 
-  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector =
-    GpuExpressionsUtils.columnarEvalToColumn(boundExpr, cb)
-
   def project(cb: ColumnarBatch, boundExprs: Seq[Expression]): ColumnarBatch = {
     if (isNoopProject(cb, boundExprs)) {
       // This can help avoid contiguous splits in some cases when the input data is also contiguous
       GpuColumnVector.incRefCounts(cb)
     } else {
-      val newColumns = boundExprs.safeMap(expr => projectSingle(cb, expr)).toArray[ColumnVector]
+      val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
       new ColumnarBatch(newColumns, cb.numRows())
     }
   }
@@ -210,6 +208,139 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
   override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
+/**
+ * An iterator that is intended to split the input to or output of a project on rows.
+ * In practice this is only used for splitting the input prior to a project in some
+ * very special cases. If the projected size of the output is so large that it would
+ * risk us not being able to split it later on if we ran into trouble.
+ * @param iter the input iterator of columnar batches.
+ * @param schema the schema of that input so we can make things spillable if needed
+ * @param opTime metric for how long this took
+ * @param numSplitsMetric metric for the number of splits that happened.
+ */
+abstract class AbstractProjectSplitIterator(iter: Iterator[ColumnarBatch],
+    schema: Array[DataType],
+    opTime: GpuMetric,
+    numSplitsMetric: GpuMetric) extends Iterator[ColumnarBatch] {
+  private[this] val pending = new scala.collection.mutable.Queue[SpillableColumnarBatch]()
+
+  override def hasNext: Boolean = pending.nonEmpty || iter.hasNext
+
+  protected def calcNumSplits(cb: ColumnarBatch): Int
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    } else if (pending.nonEmpty) {
+      opTime.ns {
+        withRetryNoSplit(pending.dequeue()) { sb =>
+          sb.getColumnarBatch()
+        }
+      }
+    } else {
+      val cb = iter.next()
+      opTime.ns {
+        val numSplits = closeOnExcept(cb) { cb =>
+          calcNumSplits(cb)
+        }
+        if (numSplits <= 1) {
+          cb
+        } else {
+          // this should never happen but it is here just in case
+          require(cb.numCols() > 0,
+            "About to perform cuDF table operations with a rows-only batch.")
+          numSplitsMetric += numSplits - 1
+          val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          val tables = withRetryNoSplit(sb) { sb =>
+            withResource(sb.getColumnarBatch()) { cb =>
+              withResource(GpuColumnVector.from(cb)) { table =>
+                val rows = table.getRowCount.toInt
+                val rowsPerSplit = math.ceil(rows.toDouble / numSplits).toInt
+                val splitIndexes = rowsPerSplit until rows by rowsPerSplit
+                table.contiguousSplit(splitIndexes: _*)
+              }
+            }
+          }
+          withResource(tables) { tables =>
+            (1 until tables.length).foreach { ix =>
+              val tbl = tables(ix)
+              tables(ix) = null // everything but the head table will be nulled, queued
+                                // as spillable batches in `pending`
+              pending.enqueue(
+                SpillableColumnarBatch(tbl, schema, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+            }
+            GpuColumnVector.from(tables.head.getTable, schema)
+          }
+        }
+      }
+    }
+  }
+}
+
+object PreProjectSplitIterator {
+  def calcMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
+    val numRows = cb.numRows()
+    boundExprs.outputTypes.zipWithIndex.map {
+      case (dataType, index) =>
+        if (GpuBatchUtils.isFixedWidth(dataType)) {
+          GpuBatchUtils.minGpuMemory(dataType, true, numRows)
+        } else {
+          boundExprs.getPassThroughIndex(index).map { inputIndex =>
+            cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize
+          }.getOrElse {
+            GpuBatchUtils.minGpuMemory(dataType, true, numRows)
+          }
+        }
+    }.sum
+  }
+}
+
+/**
+ * An iterator that can be used to split the input of a project before it happens to prevent
+ * situations where the output could not be split later on. In testing we tried to see what
+ * would happen if we split it to the target batch size, but there was a very significant
+ * performance degradation when that happened. For now this is only used in a few specific
+ * places and not everywhere.  In the future this could be extended, but if we do that there
+ * are some places where we don't want a split, like a project before a window operation.
+ * @param iter the input iterator of columnar batches.
+ * @param schema the schema of that input so we can make things spillable if needed
+ * @param boundExprs the bound project so we can get a good idea of the output size.
+ * @param opTime metric for how long this took
+ * @param numSplits the number of splits that happened.
+ */
+class PreProjectSplitIterator(
+    iter: Iterator[ColumnarBatch],
+    schema: Array[DataType],
+    boundExprs: GpuTieredProject,
+    opTime: GpuMetric,
+    numSplits: GpuMetric) extends AbstractProjectSplitIterator(iter, schema, opTime, numSplits) {
+
+  // We memoize this parameter here as the value doesn't change during the execution
+  // of a SQL query. This is the highest level we can cache at without getting it
+  // passed in from the Exec that instantiates this split iterator.
+  // NOTE: this is overwritten by tests to trigger various corner cases
+  private lazy val splitUntilSize: Double = GpuDeviceManager.getSplitUntilSize.toDouble
+
+  /**
+   * calcNumSplit will return the number of splits that we need for the input, in the case
+   * that we can detect that a projection using `boundExprs` would expand the output above
+   * `GpuDeviceManager.getSplitUntilSize`.
+   *
+   * @note In the corner case that `cb` is rows-only (no columns), this function returns 0 and the
+   * caller must be prepared to handle that case.
+   */
+  override def calcNumSplits(cb: ColumnarBatch): Int = {
+    if (cb.numCols() == 0) {
+      0 // rows-only batches should not be split
+    } else {
+      val minOutputSize = PreProjectSplitIterator.calcMinOutputSize(cb, boundExprs)
+      // If the minimum size is too large we will split before doing the project, to help avoid
+      // extreme cases where the output size is so large that we cannot split it afterwards.
+      math.max(1, math.ceil(minOutputSize / splitUntilSize).toInt)
+    }
+  }
+}
+
 case class GpuProjectExec(
    // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
    // into a deep recursion during serde of lazy lists. See
@@ -288,7 +419,12 @@ case class GpuProjectAstExec(
             }
           }
 
-        Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+        // Don't install the callback if in a unit test
+        Option(TaskContext.get()).foreach { tc =>
+          onTaskCompletion(tc) {
+            close()
+          }
+        }
 
         override def hasNext: Boolean = {
           if (cbIter.hasNext) {
@@ -362,6 +498,38 @@ case class GpuProjectAstExec(
     tier.exists { expr =>
       !expr.deterministic
     }
+  }
+
+  lazy val outputTypes = exprTiers.last.map(_.dataType).toArray
+
+  private[this] def getPassThroughIndex(tierIndex: Int,
+      expr: Expression,
+      exprIndex: Int): Option[Int] = expr match {
+    case GpuAlias(child, _) =>
+      getPassThroughIndex(tierIndex, child, exprIndex)
+    case GpuBoundReference(index, _, _) =>
+      if (tierIndex <= 0) {
+        // We are at the input tier so the bound attribute is good!!!
+        Some(index)
+      } else {
+        // Not at the input yet
+        val newTier = tierIndex - 1
+        val newExpr = exprTiers(newTier)(index)
+        getPassThroughIndex(newTier, newExpr, index)
+      }
+    case _ =>
+      None
+  }
+
+  /**
+   * Given an output index check to see if this is just going to be a pass through to a
+   * specific input column index.
+   * @param index the output column index to check
+   * @return the index of the input column that it passes through to or else None
+   */
+  def getPassThroughIndex(index: Int): Option[Int] = {
+    val startTier = exprTiers.length - 1
+    getPassThroughIndex(startTier, exprTiers.last(index), index)
   }
 
   private [this] def projectWithRetrySingleBatchInternal(sb: SpillableColumnarBatch,
@@ -553,8 +721,7 @@ object GpuFilter {
 
   private def computeCheckedFilterMask(boundCondition: Expression,
       cb: ColumnarBatch): Option[cudf.ColumnVector] = {
-    withResource(
-      GpuProjectExec.projectSingle(cb, boundCondition)) { filterMask =>
+    withResource(boundCondition.columnarEval(cb)) { filterMask =>
       // If  filter is a noop then return a None for the mask
       if (allEntriesAreTrue(filterMask)) {
         None
@@ -577,7 +744,7 @@ object GpuFilter {
     }
   }
 
-  def apply(batch: ColumnarBatch,
+  private[rapids] def apply(batch: ColumnarBatch,
       boundCondition: Expression) : ColumnarBatch = {
     val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
     doFilter(checkedFilterMask, batch)

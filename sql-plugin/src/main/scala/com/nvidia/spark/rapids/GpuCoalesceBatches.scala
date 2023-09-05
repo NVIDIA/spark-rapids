@@ -22,6 +22,7 @@ import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -91,7 +92,7 @@ object ConcatAndConsumeAll {
    */
   def getSingleBatchWithVerification(batches: Iterator[ColumnarBatch],
       format: Seq[Attribute]): ColumnarBatch = {
-    import collection.JavaConverters._
+    import scala.collection.JavaConverters._
     if (!batches.hasNext) {
       GpuColumnVector.emptyBatch(format.asJava)
     } else {
@@ -271,7 +272,7 @@ abstract class AbstractGpuCoalesceIterator(
    * This is defined iff `goal` is `RequireSingleBatchWithFilter` and we have
    * reached the cuDF row-count limit.
    */
-  private var inputFilterExpression: Option[Expression] = None
+  private var inputFilterTier: Option[GpuTieredProject] = None
 
   /**
    * Return true if there is something saved on deck for later processing.
@@ -300,10 +301,12 @@ abstract class AbstractGpuCoalesceIterator(
   /** Optional row limit */
   var batchRowLimit: Int = 0
 
-  // note that TaskContext.get() can return null during unit testing so we wrap it in an
-  // option here
-  Option(TaskContext.get())
-      .foreach(_.addTaskCompletionListener[Unit](_ => clearOnDeck()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      clearOnDeck()
+    }
+  }
 
   private def getHasOnDeck: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
@@ -341,6 +344,11 @@ abstract class AbstractGpuCoalesceIterator(
   def addBatchToConcat(batch: ColumnarBatch): Unit
 
   /**
+   * True if there are some batches to be concatenated, otherwise false.
+   */
+  def hasAnyToConcat: Boolean
+
+  /**
    * Called after all of the batches have been added in.
    *
    * @return the concated batches on the GPU.
@@ -368,6 +376,16 @@ abstract class AbstractGpuCoalesceIterator(
    * Called to cleanup any state when a batch is done (even if there was a failure)
    */
   def cleanupConcatIsDone(): Unit
+
+  /**
+   * For tests only.
+   * Int.MaxValue is quite big for unit tests, then override this in tests
+   * to change to a smaller value.
+   */
+  protected val filteringModeRowsThreshold = Int.MaxValue
+
+  /** For tests only */
+  def isInFilteringMode: Boolean = inputFilterTier.isDefined
 
   /**
    * Gets the size in bytes of the data buffer for a given column
@@ -415,83 +433,114 @@ abstract class AbstractGpuCoalesceIterator(
     }
 
     // there is a hard limit of 2^31 rows
-    while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
+    while (numRows < filteringModeRowsThreshold && !hasOnDeck && iter.hasNext) {
       val cbFromIter = iter.next()
+      numInputBatches += 1
 
-      var cb = if (inputFilterExpression.isDefined) {
+      val maybeFilteredIter = if (inputFilterTier.isDefined) {
         // If we have reached the cuDF limit once, proactively filter batches
         // after that first limit is reached.
-        GpuFilter(cbFromIter, inputFilterExpression.get)
+        GpuFilter.filterAndClose(cbFromIter, inputFilterTier.get,
+          NoopMetric, NoopMetric, opTime)
       } else {
-        cbFromIter
+        Iterator(cbFromIter)
       }
 
-      closeOnExcept(cb) { _ =>
-        val nextRows = cb.numRows()
-        numInputBatches += 1
+      while(maybeFilteredIter.hasNext) {
+        var cb = maybeFilteredIter.next()
+        closeOnExcept(cb) { _ =>
+          val nextRows = cb.numRows()
+          // filter out empty batches
+          if (nextRows > 0) {
+            numInputRows += nextRows
+            val nextBytes = getBatchDataSize(cb)
 
-        // filter out empty batches
-        if (nextRows > 0) {
-          numInputRows += nextRows
-          val nextBytes = getBatchDataSize(cb)
+            // calculate the new sizes based on this input batch being added to the current
+            // output batch
+            val wouldBeRows = numRows + nextRows
+            val wouldBeBytes = numBytes + nextBytes
 
-          // calculate the new sizes based on this input batch being added to the current
-          // output batch
-          val wouldBeRows = numRows + nextRows
-          val wouldBeBytes = numBytes + nextBytes
-
-          if (wouldBeRows > Int.MaxValue) {
-            goal match {
-              case RequireSingleBatch =>
-                throw new IllegalStateException("A single batch is required for this operation," +
-                    s" but cuDF only supports ${Int.MaxValue} rows. At least $wouldBeRows" +
-                    s" are in this partition. Please try increasing your partition count.")
-              case RequireSingleBatchWithFilter(filterExpression) =>
-                // filter what we had already stored
-                val filteredDown = GpuFilter(concatAllAndPutOnGPU(), filterExpression)
-                closeOnExcept(filteredDown) { _ =>
-                  // filter the incoming batch as well
-                  closeOnExcept(GpuFilter(cb, filterExpression)) { filteredCb =>
+            if (wouldBeRows > filteringModeRowsThreshold) {
+              goal match {
+                case RequireSingleBatch =>
+                  throw new IllegalStateException("A single batch is required for this " +
+                    s"operation, but cuDF only supports $filteringModeRowsThreshold rows. " +
+                    s"At least $wouldBeRows are in this partition. Please try increasing " +
+                    "your partition count.")
+                case RequireSingleBatchWithFilter(filterExpression) =>
+                  if (inputFilterTier.isEmpty) {
+                    // We are going to enter the null-filtering mode
+                    val filterTier = GpuTieredProject(Seq(Seq(filterExpression)))
+                    // 1) Filter what we had already stored, and the rows number should
+                    //    be within the limit.
+                    // Re-calculate the filtered rows number and size.
+                    var filteredNumRows = 0L
+                    var filteredBytes = 0L
+                    if (hasAnyToConcat) {
+                      val filteredDowIter = GpuFilter.filterAndClose(concatAllAndPutOnGPU(),
+                        filterTier, NoopMetric, NoopMetric, opTime)
+                      while (filteredDowIter.hasNext) {
+                        closeOnExcept(filteredDowIter.next()) { filteredDownCb =>
+                          filteredNumRows += filteredDownCb.numRows()
+                          filteredBytes += getBatchDataSize(filteredDownCb)
+                          addBatch(filteredDownCb)
+                        }
+                      }
+                    }
+                    // 2) Filter the incoming batch.
+                    val filteredCbIter = GpuFilter.filterAndClose(cb, filterTier,
+                      NoopMetric, NoopMetric, opTime)
                     cb = null // null out `cb` to prevent multiple close calls
-                    val filteredWouldBeRows = filteredDown.numRows() + filteredCb.numRows()
-                    if (filteredWouldBeRows > Int.MaxValue) {
-                      throw new IllegalStateException(
-                        "A single batch is required for this operation, but cuDF only supports " +
-                            s"${Int.MaxValue} rows. At least $filteredWouldBeRows are in this " +
-                            "partition, even after filtering nulls. " +
+                    while (filteredCbIter.hasNext) {
+                      closeOnExcept(filteredCbIter.next()) { filteredCb =>
+                        val filteredWouldBeRows = filteredNumRows + filteredCb.numRows()
+                        if (filteredWouldBeRows > filteringModeRowsThreshold) {
+                          throw new IllegalStateException("A single batch is required for " +
+                            "this operation, but cuDF only supports " +
+                            s"$filteringModeRowsThreshold rows. At least $filteredWouldBeRows" +
+                            " are in this partition, even after filtering nulls. " +
                             "Please try increasing your partition count.")
-                    }
-                    if (inputFilterExpression.isEmpty) {
-                      inputFilterExpression = Some(filterExpression)
-                      logWarning("Switched to null-filtering mode. This coalesce iterator " +
-                          "succeeded to fit rows under the cuDF limit only after null filtering. " +
-                          "Please try increasing your partition count.")
-                    }
-                    numRows = filteredWouldBeRows
-                    numBytes = getBatchDataSize(filteredDown) + getBatchDataSize(filteredCb)
-                    addBatch(filteredDown)
-                    addBatch(filteredCb)
+                        }
+                        filteredNumRows = filteredWouldBeRows
+                        filteredBytes += getBatchDataSize(filteredCb)
+                        addBatch(filteredCb)
+                      }
+                    } // end of "while(filteredCbIter.hasNext)"
+                    // 3) Setup the filter
+                    inputFilterTier = Some(filterTier)
+                    logWarning("Switched to null-filtering mode. This coalesce iterator " +
+                      "succeeded to fit rows under the cuDF limit only after null " +
+                      "filtering. Please try increasing your partition count.")
+                    numRows = filteredNumRows
+                    numBytes = filteredBytes
+                  } else {
+                    // More filtered batches after we enter the null-filtering mode but
+                    // the rows number is still too big.
+                    throw new IllegalStateException("A single batch is required for this " +
+                      s"operation, but cuDF only supports $filteringModeRowsThreshold rows. " +
+                      s"At least $wouldBeRows are in this partition, even after filtering " +
+                      s"nulls. Please try increasing your partition count.")
                   }
-                }
-              case _ => saveOnDeck(cb) // not a single batch requirement
+                case _ => saveOnDeck(cb) // not a single batch requirement
+              }
+            } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
+              saveOnDeck(cb)
+            } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
+              // There are no explicit checks for the concatenate result exceeding the cudf 2^31
+              // row count limit for any column. We are relying on cudf's concatenate to throw
+              // an exception if this occurs and limiting performance-oriented goals to under
+              // 2GB data total to avoid hitting that error.
+              saveOnDeck(cb)
+            } else {
+              addBatch(cb)
+              numRows = wouldBeRows
+              numBytes = wouldBeBytes
             }
-          } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
-            saveOnDeck(cb)
-          } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
-            // There are no explicit checks for the concatenate result exceeding the cudf 2^31
-            // row count limit for any column. We are relying on cudf's concatenate to throw
-            // an exception if this occurs and limiting performance-oriented goals to under
-            // 2GB data total to avoid hitting that error.
-            saveOnDeck(cb)
           } else {
-            addBatch(cb)
-            numRows = wouldBeRows
-            numBytes = wouldBeBytes
+            cleanupInputBatch(cb)
           }
-        } else {
-          cleanupInputBatch(cb)
-        }
-      }
+        } // end of closeOnExcept(cb)
+      } // end of while(maybeFilteredIter.hasNext)
     }
 
     val isLastBatch = !(hasOnDeck || iter.hasNext)
@@ -659,6 +708,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     val wip = batches.safeMap(_.getColumnarBatch())
     ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
   }
+
+  override def hasAnyToConcat: Boolean = batches.nonEmpty
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     val candidates = batches.clone()

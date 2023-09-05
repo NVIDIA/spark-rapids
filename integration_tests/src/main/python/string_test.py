@@ -21,8 +21,9 @@ from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+import pyspark.sql.utils
 import pyspark.sql.functions as f
-from spark_session import is_databricks104_or_later, is_before_spark_320
+from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_before_spark_320
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
@@ -73,28 +74,74 @@ def test_split_positive_limit():
             'split(a, "C", 3)',
             'split(a, "_", 999)'))
 
+
 @pytest.mark.parametrize('data_gen,delim', [(mk_str_gen('([ABC]{0,3}_?){0,7}'), '_'),
     (mk_str_gen('([MNP_]{0,3}\\.?){0,5}'), '.'),
     (mk_str_gen('([123]{0,3}\\^?){0,5}'), '^')], ids=idfn)
 def test_substring_index(data_gen,delim):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(
+                f.substring_index(f.lit('123'), delim, 1),
                 f.substring_index(f.col('a'), delim, 1),
                 f.substring_index(f.col('a'), delim, 3),
                 f.substring_index(f.col('a'), delim, 0),
                 f.substring_index(f.col('a'), delim, -1),
                 f.substring_index(f.col('a'), delim, -4)))
 
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
+def test_unsupported_fallback_substring_index(data_gen):
+    delim_gen = StringGen(pattern="_")
+    num_gen = IntegerGen(min_val=0, max_val=10, special_cases=[])
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [("a", data_gen),
+                           ("delim", delim_gen),
+                           ("num", num_gen)], length=10).selectExpr(sql_text),
+            "SubstringIndex")
+
+    assert_gpu_did_fallback("SUBSTRING_INDEX(a, '_', num)")
+    assert_gpu_did_fallback("SUBSTRING_INDEX(a, delim, 0)")
+    assert_gpu_did_fallback("SUBSTRING_INDEX(a, delim, num)")
+    assert_gpu_did_fallback("SUBSTRING_INDEX('a_b', '_', num)")
+    assert_gpu_did_fallback("SUBSTRING_INDEX('a_b', delim, 0)")
+    assert_gpu_did_fallback("SUBSTRING_INDEX('a_b', delim, num)")
+
+
 # ONLY LITERAL WIDTH AND PAD ARE SUPPORTED
 def test_lpad():
     gen = mk_str_gen('.{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
+                'LPAD("literal", 2, " ")',
                 'LPAD(a, 2, " ")',
                 'LPAD(a, NULL, " ")',
                 'LPAD(a, 5, NULL)',
                 'LPAD(a, 5, "G")',
                 'LPAD(a, -1, "G")'))
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_lpad():
+    gen = mk_str_gen('.{0,5}')
+    pad_gen = StringGen(pattern="G")
+    num_gen = IntegerGen(min_val=0, max_val=10, special_cases=[])
+
+    def assert_gpu_did_fallback(sql_string):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [("a", gen),
+                           ("len", num_gen),
+                           ("pad", pad_gen)], length=10).selectExpr(sql_string),
+            "StringLPad")
+
+    assert_gpu_did_fallback('LPAD(a, 2, pad)')
+    assert_gpu_did_fallback('LPAD(a, len, " ")')
+    assert_gpu_did_fallback('LPAD(a, len, pad)')
+    assert_gpu_did_fallback('LPAD("foo", 2, pad)')
+    assert_gpu_did_fallback('LPAD("foo", len, " ")')
+    assert_gpu_did_fallback('LPAD("foo", len, pad)')
+
 
 # ONLY LITERAL WIDTH AND PAD ARE SUPPORTED
 def test_rpad():
@@ -106,6 +153,28 @@ def test_rpad():
                 'RPAD(a, 5, NULL)',
                 'RPAD(a, 5, "G")',
                 'RPAD(a, -1, "G")'))
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_rpad():
+    gen = mk_str_gen('.{0,5}')
+    pad_gen = StringGen(pattern="G")
+    num_gen = IntegerGen(min_val=0, max_val=10, special_cases=[])
+
+    def assert_gpu_did_fallback(sql_string):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [("a", gen),
+                           ("len", num_gen),
+                           ("pad", pad_gen)], length=10).selectExpr(sql_string),
+            "StringRPad")
+
+    assert_gpu_did_fallback('RPAD(a, 2, pad)')
+    assert_gpu_did_fallback('RPAD(a, len, " ")')
+    assert_gpu_did_fallback('RPAD(a, len, pad)')
+    assert_gpu_did_fallback('RPAD("foo", 2, pad)')
+    assert_gpu_did_fallback('RPAD("foo", len, " ")')
+    assert_gpu_did_fallback('RPAD("foo", len, pad)')
+
 
 # ONLY LITERAL SEARCH PARAMS ARE SUPPORTED
 def test_position():
@@ -124,13 +193,34 @@ def test_locate():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'locate("Z", a, -1)',
                 'locate("Z", a, 4)',
+                'locate("abc", "1abcd", 0)',
+                'locate("abc", "1abcd", 10)',
                 'locate("A", a, 500)',
                 'locate("_", a, NULL)'))
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_locate():
+    gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
+    pos_gen = IntegerGen()
+
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            gen_df(spark, [("a", gen), ("pos", pos_gen)], length=10).selectExpr(sql_text),
+            'StringLocate')
+
+    assert_gpu_did_fallback('locate(a, a, -1)')
+    assert_gpu_did_fallback('locate("a", a, pos)')
+    assert_gpu_did_fallback('locate(a, a, pos)')
+    assert_gpu_did_fallback('locate(a, "a", pos)')
+
 
 def test_instr():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
+                'instr("A", "A")',
+                'instr("a", "A")',
                 'instr(a, "Z")',
                 'instr(a, "A")',
                 'instr(a, "_")',
@@ -138,15 +228,42 @@ def test_instr():
                 'instr(NULL, "A")',
                 'instr(NULL, NULL)'))
 
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_instr():
+    gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
+
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).selectExpr(sql_text),
+            'StringInstr')
+
+    assert_gpu_did_fallback('instr(a, a)')
+    assert_gpu_did_fallback('instr("a", a)')
+
+
 def test_contains():
     gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
+                f.lit('Z').contains('Z'),
+                f.lit('foo').contains('Z_'),
                 f.col('a').contains('Z'),
                 f.col('a').contains('Z_'),
                 f.col('a').contains(''),
-                f.col('a').contains(None)
-                ))
+                f.col('a').contains(None)))
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_contains():
+    gen = StringGen(pattern='[a-z]')
+    def assert_gpu_did_fallback(op):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).select(op),
+            'Contains')
+
+    assert_gpu_did_fallback(f.lit('Z').contains(f.col('a')))
+    assert_gpu_did_fallback(f.col('a').contains(f.col('a')))
+
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
 def test_trim(data_gen):
@@ -182,20 +299,50 @@ def test_startswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
+                f.lit('foo').startswith('f'),
+                f.lit('bar').startswith('1'),
                 f.col('a').startswith('A'),
                 f.col('a').startswith(''),
                 f.col('a').startswith(None),
                 f.col('a').startswith('A\ud720')))
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_startswith():
+    gen = StringGen(pattern='[a-z]')
+
+    def assert_gpu_did_fallback(op):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).select(op),
+            'StartsWith')
+
+    assert_gpu_did_fallback(f.lit("TEST").startswith(f.col("a")))
+    assert_gpu_did_fallback(f.col("a").startswith(f.col("a")))
 
 
 def test_endswith():
     gen = mk_str_gen('[Ab\ud720]{3}A.{0,3}Z[Ab\ud720]{3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
+                f.lit('foo').startswith('f'),
+                f.lit('bar').startswith('1'),
                 f.col('a').endswith('A'),
                 f.col('a').endswith(''),
                 f.col('a').endswith(None),
                 f.col('a').endswith('A\ud720')))
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_endswith():
+    gen = StringGen(pattern='[a-z]')
+
+    def assert_gpu_did_fallback(op):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).select(op),
+            'EndsWith')
+
+    assert_gpu_did_fallback(f.lit("TEST").endswith(f.col("a")))
+    assert_gpu_did_fallback(f.col("a").endswith(f.col("a")))
+
 
 def test_concat_ws_basic():
     gen = StringGen(nullable=True)
@@ -423,12 +570,31 @@ def test_replace():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
+                'REPLACE("TEST", "TEST", "PROD")',
+                'REPLACE("NO", "T\ud720", "PROD")',
                 'REPLACE(a, "TEST", "PROD")',
                 'REPLACE(a, "T\ud720", "PROD")',
                 'REPLACE(a, "", "PROD")',
                 'REPLACE(a, "T", NULL)',
                 'REPLACE(a, NULL, "PROD")',
                 'REPLACE(a, "T", "")'))
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_replace():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).selectExpr(sql_text),
+            'StringReplace')
+
+    assert_gpu_did_fallback('REPLACE(a, "TEST", a)')
+    assert_gpu_did_fallback('REPLACE(a, a, "TEST")')
+    assert_gpu_did_fallback('REPLACE(a, a, a)')
+    assert_gpu_did_fallback('REPLACE("TEST", "TEST", a)')
+    assert_gpu_did_fallback('REPLACE("TEST", a, "TEST")')
+    assert_gpu_did_fallback('REPLACE("TEST", a, a)')
+
 
 @incompat
 def test_translate():
@@ -443,6 +609,23 @@ def test_translate():
                 'translate(a, "TEST", NULL)',
                 'translate("AaBbCc", "abc", "123")',
                 'translate("AaBbCc", "abc", "1")'))
+
+@incompat
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_translate():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).selectExpr(sql_text),
+            'StringTranslate')
+
+    assert_gpu_did_fallback('TRANSLATE(a, "TEST", a)')
+    assert_gpu_did_fallback('TRANSLATE(a, a, "TEST")')
+    assert_gpu_did_fallback('TRANSLATE(a, a, a)')
+    assert_gpu_did_fallback('TRANSLATE("TEST", "TEST", a)')
+    assert_gpu_did_fallback('TRANSLATE("TEST", a, "TEST")')
+    assert_gpu_did_fallback('TRANSLATE("TEST", a, a)')
+
 
 @incompat
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2+ does translate() support unicode \
@@ -495,7 +678,7 @@ def test_like_null():
             .with_special_case('%SystemDrive%\\Users\\John')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').like('_'))) 
+                f.col('a').like('_')))
 
 def test_like():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
@@ -509,6 +692,8 @@ def test_like():
             .with_special_case('%SystemDrive%\\Users\\John')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
+                f.lit('_oo_').like('_oo_'),
+                f.lit('_aa_').like('_oo_'),
                 f.col('a').like('%o%'), # turned into contains
                 f.col('a').like('%a%'), # turned into contains
                 f.col('a').like(''), #turned into equals
@@ -525,7 +710,32 @@ def test_like():
                 f.col('a').like('_$%'),
                 f.col('a').like('_._'),
                 f.col('a').like('_?|}{_%'),
-                f.col('a').like('%a{3}%'))) 
+                f.col('a').like('%a{3}%')))
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_like():
+    gen = StringGen('[a-z]')
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).selectExpr(sql_text),
+            'Like')
+
+    assert_gpu_did_fallback("'lit' like a")
+    assert_gpu_did_fallback("a like a")
+
+
+@allow_non_gpu('ProjectExec')
+def test_unsupported_fallback_rlike():
+    gen = StringGen('\/lit\/')
+
+    def assert_gpu_did_fallback(sql_text):
+        assert_gpu_fallback_collect(lambda spark:
+            unary_op_df(spark, gen, length=10).selectExpr(sql_text),
+            'RLike')
+
+    assert_gpu_did_fallback("'lit' rlike a")
+    assert_gpu_did_fallback("a rlike a")
+
 
 def test_like_simple_escape():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
@@ -545,7 +755,7 @@ def test_like_simple_escape():
                 'a like "c_" escape "c"',
                 'a like x "6162632325616263" escape "#"',
                 'a like x "61626325616263" escape "#"'))
- 
+
 def test_like_complex_escape():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
             .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
@@ -569,4 +779,21 @@ def test_like_complex_escape():
                 'a like "\\%SystemDrive\\%\\\\\\\\Users%"',
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
- 
+
+
+@pytest.mark.parametrize('from_base,pattern',
+                         [
+                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
+                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16')
+                         ])
+# to_base can be positive and negative
+@pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
+def test_conv_dec_to_from_hex(from_base, to_base, pattern):
+    # before 3.2 leading space are deem the string non-numeric and the result is 0
+    if not is_before_spark_320:
+        pattern = r' ?' + pattern
+    gen = mk_str_gen(pattern)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),
+        conf={'spark.rapids.sql.expression.Conv': True}
+    )

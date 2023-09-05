@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids
 
 import java.util.concurrent.{Callable, Executors}
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class ThreadFactoryBuilderTest extends FunSuite {
+class ThreadFactoryBuilderTest extends AnyFunSuite {
 
   test("test thread factory builder") {
     val pool1 = Executors.newFixedThreadPool(2,

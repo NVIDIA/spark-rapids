@@ -20,10 +20,10 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark340
 
 import com.nvidia.spark.rapids._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class SparkShimsSuite extends FunSuite with FQSuiteName {
-  ignore("spark shims version - https://github.com/NVIDIA/spark-rapids/issues/7676") {
+class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
+  test("spark shims version") {
     assert(ShimLoader.getShimVersion === SparkShimVersion(3, 4, 0))
   }
 

@@ -47,7 +47,7 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
     withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
       val numRows = batch.numRows
@@ -56,8 +56,7 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
           partitionInternalAndClose(batch)
         }
       }
-      val ret = sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
-      ret.zipWithIndex.filter(_._1 != null)
+      sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
     }
   }
 }
