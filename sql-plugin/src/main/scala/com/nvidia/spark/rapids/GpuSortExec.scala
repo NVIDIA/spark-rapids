@@ -165,8 +165,8 @@ case class GpuSortEachBatchIterator(
     val scb = closeOnExcept(iter.next()) { cb =>
       SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     }
-    withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
-      val ret = sorter.fullySortBatchAndCloseWithRetry(scb, sortTime)
+    val ret = sorter.fullySortBatchAndCloseWithRetry(scb, sortTime, opTime)
+    opTime.ns {
       outputBatches += 1
       outputRows += ret.numRows()
       if (singleBatch) {

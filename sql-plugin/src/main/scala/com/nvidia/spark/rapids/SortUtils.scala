@@ -396,10 +396,13 @@ class GpuSorter(
    */
   final def fullySortBatchAndCloseWithRetry(
       inputSbBatch: SpillableColumnarBatch,
-      sortTime: GpuMetric): ColumnarBatch = {
+      sortTime: GpuMetric,
+      opTime: GpuMetric): ColumnarBatch = {
     RmmRapidsRetryIterator.withRetryNoSplit(inputSbBatch) { _ =>
-      withResource(inputSbBatch.getColumnarBatch()) { inputBatch =>
-        fullySortBatch(inputBatch, sortTime)
+      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
+        withResource(inputSbBatch.getColumnarBatch()) { inputBatch =>
+          fullySortBatch(inputBatch, sortTime)
+        }
       }
     }
   }

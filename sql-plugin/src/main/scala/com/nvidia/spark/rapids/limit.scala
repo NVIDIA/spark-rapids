@@ -230,12 +230,14 @@ object GpuTopN {
     sliceBatch(batch, offset, batch.numRows())
   }
 
-  def apply(limit: Int,
+  def sortAndTakeNClose(limit: Int,
       sorter: GpuSorter,
       batch: ColumnarBatch,
       sortTime: GpuMetric): ColumnarBatch = {
-    withResource(sorter.fullySortBatch(batch, sortTime)) { sorted =>
-      takeN(sorted, limit)
+    withResource(batch) { _ =>
+      withResource(sorter.fullySortBatch(batch, sortTime)) { sorted =>
+        takeN(sorted, limit)
+      }
     }
   }
 
@@ -276,17 +278,13 @@ object GpuTopN {
             withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, opTime)) { _ =>
               val inputCb = attempt.getColumnarBatch()
               if (pending.isEmpty) {
-                withResource(inputCb) { _ =>
-                  apply(limit, sorter, inputCb, sortTime)
-                }
+                sortAndTakeNClose(limit, sorter, inputCb, sortTime)
               } else { // pending is not empty
                 val totalSize = attempt.sizeInBytes + pending.get.sizeInBytes
                 val tmpCb = if (totalSize > Int.MaxValue) {
                   // The intermediate size is likely big enough we don't want to risk an overflow,
                   // so sort/slice before we concat and sort/slice again.
-                  withResource(inputCb) { _ =>
-                    apply(limit, sorter, inputCb, sortTime)
-                  }
+                  sortAndTakeNClose(limit, sorter, inputCb, sortTime)
                 } else {
                   // The intermediate size looks like we could never overflow the indexes so
                   // do it the more efficient way and concat first followed by the sort/slice
@@ -295,9 +293,8 @@ object GpuTopN {
                 val pendingCb = closeOnExcept(tmpCb) { _ =>
                   pending.get.getColumnarBatch()
                 }
-                withResource(concatAndClose(pendingCb, tmpCb, concatTime)) { concat =>
-                  apply(limit, sorter, concat, sortTime)
-                }
+                sortAndTakeNClose(limit, sorter, concatAndClose(pendingCb, tmpCb, concatTime),
+                  sortTime)
               }
             }
           }.foreach { runningResult =>
