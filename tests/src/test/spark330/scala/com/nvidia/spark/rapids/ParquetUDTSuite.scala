@@ -24,6 +24,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{TestArrayUDT, TestNestedStructUDT, TestPrimitiveUDT}
 import org.apache.spark.sql.rapids.TestingUDT._
@@ -45,8 +47,7 @@ class ParquetUDTSuite extends SparkQueryCompareTestSuite {
   //     """.stripMargin
   //   ).coalesce(1)
   // df.write.parquet("udt_vec")
-  testGpuFallback("reading UDT fallback in vectorized reader",
-    "FileSourceScanExec",
+  def readUdtVec: SparkSession => DataFrame = 
     spark => {
       val path = TestResourceFinder.getResourcePath("udt_vec.parquet")
       // specify schema
@@ -60,18 +61,26 @@ class ParquetUDTSuite extends SparkQueryCompareTestSuite {
               .add("f2", new TestPrimitiveUDT())
               .add("f3", new TestArrayUDT())
           )
-      Seq(true, false).foreach { enabled =>
-        withSQLConf(
-          SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key -> "true",
-          SQLConf.PARQUET_VECTORIZED_READER_NESTED_COLUMN_ENABLED.key -> s"$enabled") {
-          spark.read.schema(userDefinedSchema).parquet(path)
-        }
-      }
       spark.read.schema(userDefinedSchema).parquet(path)
-    },
-    execsAllowedNonGpu = Seq("ColumnarToRowExec", "FileSourceScanExec", "ShuffleExchangeExec")
+  }
+
+  testGpuFallback("reading UDT fallback in vectorized reader nested enabled",
+    "FileSourceScanExec",
+    readUdtVec,
+    execsAllowedNonGpu = Seq("ColumnarToRowExec", "FileSourceScanExec", "ShuffleExchangeExec"),
+    conf = new SparkConf().set(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key, "true")
+        .set(SQLConf.PARQUET_VECTORIZED_READER_NESTED_COLUMN_ENABLED.key, "true")
   ) {
-    assumeSpark330orLater
+    frame => frame
+  }
+
+  testGpuFallback("reading UDT fallback in vectorized reader nested disabled",
+    "FileSourceScanExec",
+    readUdtVec,
+    execsAllowedNonGpu = Seq("FileSourceScanExec", "ShuffleExchangeExec"),
+    conf = new SparkConf().set(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key, "true")
+        .set(SQLConf.PARQUET_VECTORIZED_READER_NESTED_COLUMN_ENABLED.key, "false")
+  ) {
     frame => frame
   }
 }
