@@ -263,9 +263,9 @@ time (
   if [[ "$SKIP_DIST_DEPS" != "1" ]]; then
     # Execute initialize to download a massive jar for spark-rapids-jni in a single thread to
     # avoid repeating this work in parallel
-    # Initialize sql-plugin only to avoid dealing with missing submodule dependencies
+    # Initialize sql-plugin-api only to avoid dealing with missing submodule dependencies
     #
-    $MVN initialize -pl sql-plugin -am
+    $MVN initialize -pl sql-plugin-api -am
 
     printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
       xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
