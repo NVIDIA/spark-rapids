@@ -544,8 +544,8 @@ class RapidsBufferCatalog(
    * Free memory in `store` by spilling buffers to the spill store synchronously.
    * @param store store to spill from
    * @param targetTotalSize maximum total size of this store after spilling completes
-   * @param stream CUDA stream to use or null for default stream
-   * @return optionally number of bytes that were spilled, or None if this called
+   * @param stream CUDA stream to use or omit for default stream
+   * @return optionally number of bytes that were spilled, or None if this call
    *         made no attempt to spill due to a detected spill race
    */
   def synchronousSpill(
@@ -908,6 +908,8 @@ object RapidsBufferCatalog extends Logging {
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
 
+  def getHostStorage: RapidsHostMemoryStore = hostStorage
+
   def shouldUnspill: Boolean = _shouldUnspill
 
   /**
@@ -967,6 +969,21 @@ object RapidsBufferCatalog extends Logging {
     singleton.acquireHostBatchBuffer(handle)
 
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
+
+  /**
+   * Free memory in `store` by spilling buffers to its spill store synchronously.
+   * @param store           store to spill from
+   * @param targetTotalSize maximum total size of this store after spilling completes
+   * @param stream          CUDA stream to use or omit for default stream
+   * @return optionally number of bytes that were spilled, or None if this call
+   *         made no attempt to spill due to a detected spill race
+   */
+  def synchronousSpill(
+      store: RapidsBufferStore,
+      targetTotalSize: Long,
+      stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Option[Long] = {
+    singleton.synchronousSpill(store, targetTotalSize, stream)
+  }
 
   /**
    * Given a `MemoryBuffer` find out if a `MemoryBuffer.EventHandler` is associated
