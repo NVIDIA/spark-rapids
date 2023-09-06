@@ -394,6 +394,38 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     }
   }
 
+  // use a write function to write test file with cpu then check gpu fallback
+  // useful when only want to test reading or writing is not supported on gpu
+  def testGpuReadFallback(testName: String,
+      fallbackCpuClass: String,
+      readFunc: File => (SparkSession => DataFrame),
+      writeFun: (SparkSession, File) => Unit,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false)
+      (fun: DataFrame => DataFrame): Unit = {
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+    test(qualifiedTestName) {
+      withTempPath { file =>
+        withCpuSparkSession { spark =>
+          writeFun(spark, file)
+        }
+        val (fromCpu, _, fromGpu, gpuPlan) = runOnCpuAndGpuWithCapture(readFunc(file), fun,
+          conf = testConf,
+          repart = repart)
+        // Now check the GPU Conditions
+        ExecutionPlanCaptureCallback.assertDidFallBack(gpuPlan, fallbackCpuClass)
+        compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+      }
+    }
+  }
+
   def testGpuFallback(testName: String,
       fallbackCpuClass: String,
       df: SparkSession => DataFrame,
@@ -880,6 +912,49 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
         existClasses = existClasses,
         nonExistClasses = nonExistClasses)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+    }
+  }
+
+  // use a write function to write test file with cpu then check cpu gpu read equality
+  // useful when only want to test reading or writing is not supported on gpu
+  def testSparkReadResultsAreEqual(
+      testName: String,
+      readFunc: File => (SparkSession => DataFrame),
+      writeFun: (SparkSession, File) => Unit,
+      conf: SparkConf = new SparkConf(),
+      repart: Integer = 1,
+      sort: Boolean = false,
+      maxFloatDiff: Double = 0.0,
+      incompat: Boolean = false,
+      execsAllowedNonGpu: Seq[String] = Seq.empty,
+      sortBeforeRepart: Boolean = false,
+      assumeCondition: SparkSession => (Boolean, String) = null,
+      skipCanonicalizationCheck: Boolean = false,
+      existClasses: String = null,  // Gpu plan should contain the `existClasses`
+      nonExistClasses: String = null) // Gpu plan should not contain the `nonExistClasses`
+      (fun: DataFrame => DataFrame): Unit = {
+
+    val (testConf, qualifiedTestName) =
+      setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
+        maxFloatDiff, sortBeforeRepart)
+
+    test(qualifiedTestName) {
+      if (assumeCondition != null) {
+        val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = testConf)
+        assume(isAllowed, reason)
+      }
+      withTempPath { file =>
+        withCpuSparkSession { spark =>
+          writeFun(spark, file)
+        }
+        val (fromCpu, fromGpu) = runOnCpuAndGpu(readFunc(file), fun,
+        conf = testConf,
+        repart = repart,
+        skipCanonicalizationCheck = skipCanonicalizationCheck,
+        existClasses = existClasses,
+        nonExistClasses = nonExistClasses)
+        compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
+      }
     }
   }
 
@@ -2179,7 +2254,9 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     val dirFile = new File(rootTmpDir, "spark-test-" + UUID.randomUUID)
     Files.createDirectories(dirFile.toPath)
     if (!dirFile.delete()) throw new IOException(s"Delete $dirFile failed!")
-    try func(dirFile) finally FileUtil.fullyDelete(dirFile)
+    try func(dirFile) finally {
+      FileUtil.fullyDelete(dirFile)
+    }
   }
 
   def withSQLConf(pairs: (String, String)*)(f: => Unit): Unit = {
