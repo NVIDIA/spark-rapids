@@ -498,7 +498,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
       val queue: BatchQueue = new BatchQueue()
       onTaskCompletion(context)(queue.close())
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs.toSeq, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,

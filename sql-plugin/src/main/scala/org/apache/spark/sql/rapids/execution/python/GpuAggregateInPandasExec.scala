@@ -136,7 +136,7 @@ case class GpuAggregateInPandasExec(
     // Schema of input rows to the python runner
     val aggInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
       StructField(s"_$i", dt)
-    })
+    }.toArray)
 
     // Start processing
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -153,7 +153,7 @@ case class GpuAggregateInPandasExec(
       // necessary for the following processes.
       // Doing this can reduce the data size to be split, probably getting a better performance.
       val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions, childOutput)
-      val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs, childOutput)
+      val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs.toSeq, childOutput)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
         mNumInputRows += batch.numRows()
