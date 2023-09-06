@@ -194,6 +194,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
   }
 
   test("get memory buffer after host spill") {
+    RapidsBufferCatalog.close()
     val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
       DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val spillPriority = -10
