@@ -873,7 +873,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       isCaseSensitive: Boolean,
       splits: Array[PartitionedFile]): Table = {
     val tableSchema = buildReaderSchema(memFileSchema, requestedMapping)
-    val includedColumns = tableSchema.getFieldNames.asScala
+    val includedColumns = tableSchema.getFieldNames.asScala.toSeq
     val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
     val parseOpts = ORCOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
@@ -1053,7 +1053,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
     logDebug(s"Loaded $numRows rows from Orc. Orc bytes read: $numOrcBytes. " +
       s"Estimated GPU bytes: $numBytes")
 
-    currentChunk
+    currentChunk.toSeq
   }
 
   /**
@@ -1413,7 +1413,7 @@ private case class GpuOrcFileFilterHandler(
 
       val splitStripes = orcReader.getStripes.asScala.filter( s =>
         s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
-      val stripes = buildOutputStripes(splitStripes, evolution,
+      val stripes = buildOutputStripes(splitStripes.toSeq, evolution,
         sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
         orcReader.getWriterVersion, updatedReadSchema,
         resolveMemFileIncluded(fileIncluded, requestedMapping))
@@ -1499,7 +1499,7 @@ private case class GpuOrcFileFilterHandler(
       OrcShims.filterStripes(stripes, conf, orcReader, dataReader,
         buildOutputStripe, evolution,
         sargApp, sargColumns, ignoreNonUtf8BloomFilter,
-        writerVersion, fileIncluded, columnMapping)
+        writerVersion, fileIncluded, columnMapping).toSeq
     }
 
     /**
@@ -2265,7 +2265,8 @@ class MultiFileCloudOrcPartitionReader(
         }
 
         // c: check if there is enough buffer for file tail, and reallocate the buf if needed
-        val actualTailSize = calculateFileTailSize(blockMetas.head.ctx, offset, allOutputStripes)
+        val actualTailSize = calculateFileTailSize(blockMetas.head.ctx, offset,
+            allOutputStripes.toSeq)
         val maybeNewBuf = if ((combinedBufSize - offset) < actualTailSize) {
           val newBufferSize = offset + actualTailSize
           logWarning(s"The original estimated size $combinedBufSize is too small, " +
@@ -2291,7 +2292,7 @@ class MultiFileCloudOrcPartitionReader(
           // Use the context of the first meta for codec type and schema, it's OK
           // because we have checked the compatibility for them.
           outStream.seek(offset)
-          writeOrcFileTail(outStream, blockMetas.head.ctx, offset, allOutputStripes)
+          writeOrcFileTail(outStream, blockMetas.head.ctx, offset, allOutputStripes.toSeq)
 
           // e: Create the new meta for the combined buffer
           val numRows = combinedMeta.allPartValues.map(_._1).sum
@@ -2560,7 +2561,7 @@ class MultiFileOrcPartitionReader(
       }
       val bytesRead = fileSystemBytesRead() - startBytesRead
       // the stripes returned has been updated, eg, stripe offset, stripe footer length
-      (stripes, bytesRead)
+      (stripes.toSeq, bytesRead)
     }
   }
 
@@ -2712,7 +2713,7 @@ class MultiFileOrcPartitionReader(
       buffer: HostMemoryBuffer,
       bufferSize: Long,
       footerOffset: Long,
-      stripes: collection.Seq[DataBlockBase],
+      stripes: Seq[DataBlockBase],
       batchContext: BatchContext): (HostMemoryBuffer, Long) = {
     closeOnExcept(buffer) { _ =>
       withResource(new HostMemoryOutputStream(buffer)) { rawOut =>
