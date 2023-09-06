@@ -120,7 +120,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       case Some(shouldKeep) => partitions.filter { part =>
         val dataTypes = hiveTableRelation.partitionCols.map(_.dataType)
         val castedValues = part.getValues.asScala.zip(dataTypes)
-          .map { case (value, dataType) => castFromString(value, dataType) }
+          .map { case (value, dataType) => castFromString(value, dataType) }.toSeq
 
         // Only partitioned values are needed here, since the predicate has already been bound to
         // partition key attribute references.
@@ -308,7 +308,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       val partValues: Seq[Any] = {
         p.getValues.asScala.zip(partitionColTypes).map {
           case (value, dataType) => castFromString(value, dataType)
-        }
+        }.toSeq
       }
       val partValuesAsInternalRow = InternalRow.fromSeq(partValues)
 

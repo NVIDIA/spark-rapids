@@ -290,7 +290,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     metrics.get("scanTime").foreach {
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
-    new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
+    new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks.toSeq, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
       debugDumpPrefix, debugDumpAlways, metrics, mapPathHeader.toMap)
   }
@@ -418,7 +418,7 @@ trait GpuAvroReaderBase extends Logging { self: FilePartitionReaderBase =>
     readNextBatch()
     logDebug(s"Loaded $numRows rows from Avro. bytes read: $numAvroBytes. " +
       s"Estimated GPU bytes: $numBytes")
-    currentChunk
+    currentChunk.toSeq
   }
 
   /** Read a split into a host buffer, preparing for sending to GPU */
@@ -992,7 +992,7 @@ class GpuMultiFileAvroPartitionReader(
         val res = withResource(outhmb) { _ =>
           withResource(file.getFileSystem(conf).open(file)) { in =>
             withResource(new HostMemoryOutputStream(outhmb)) { out =>
-              copyBlocksData(blocks, in, out, headerSync)
+              copyBlocksData(blocks.toSeq, in, out, headerSync)
             }
           }
         }
