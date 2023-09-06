@@ -311,11 +311,12 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           // The input batch from CPU must NOT be closed, because the columns inside it
           // will be reused, and Spark expects the producer to close its batches.
           val numRows = batch.numRows()
-          val gcbBuilder = new GpuColumnarBatchBuilder(structSchema, numRows)
-          for (i <- 0 until batch.numCols()) {
-            gcbBuilder.copyColumnar(batch.column(i), i, numRows)
+          withResource(new GpuColumnarBatchBuilder(structSchema, numRows)) { gcbBuilder =>
+            for (i <- 0 until batch.numCols()) {
+              gcbBuilder.copyColumnar(batch.column(i), i, numRows)
+            }
+            gcbBuilder.build(numRows)
           }
-          gcbBuilder.build(numRows)
         } else {
           batch
         }
