@@ -890,13 +890,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     if (componentsWithoutLinefeed.length != components.length) {
       // no modification needed in this case
-      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+      RegexCharacterClass(negated = true, ListBuffer(components.toSeq: _*))
     } else {
       RegexGroup(capture = false,
         RegexChoice(
           RegexCharacterClass(negated = false,
             characters = ListBuffer(RegexChar('\r'))),
-          RegexCharacterClass(negated = true, ListBuffer(components: _*))), None)
+          RegexCharacterClass(negated = true, ListBuffer(components.toSeq: _*))), None)
     }
   }
 
@@ -1275,7 +1275,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               "Nested character classes are not supported", r.position)
           case _ =>
         }
-        val components = ListBuffer(characters
+        val components = ListBuffer(characters.toSeq
           .map {
             case r @ RegexChar(ch) if "^$.".contains(ch) => r
             case ch => rewrite(ch, replacement, None, flags) match {
@@ -1729,7 +1729,7 @@ sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
     this(parts)
     this.position = Some(position)
   }
-  override def children(): Seq[RegexAST] = parts
+  override def children(): Seq[RegexAST] = parts.toSeq
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 }
 
@@ -1893,7 +1893,8 @@ sealed case class RegexCharacterClass(
     this.position = Some(position)
   }
 
-  override def children(): Seq[RegexAST] = characters
+  override def children(): Seq[RegexAST] = characters.toSeq
+
   def append(ch: Char): Unit = {
     characters += RegexChar(ch)
   }
@@ -1959,7 +1960,7 @@ sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
     this(parts, numCaptureGroups)
     this.position = Some(position)
   }
-  override def children(): Seq[RegexAST] = parts
+  override def children(): Seq[RegexAST] = parts.toSeq
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
   def appendBackref(num: Int): Unit = {
