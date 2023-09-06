@@ -21,6 +21,7 @@ import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
+import scala.collection
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -527,7 +528,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   extends ShuffleReader[K, C] with Logging {
 
   case class GetMapSizesResult(
-      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+      blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
       canEnableBatchFetch: Boolean)
 
   protected def getMapSizes: GetMapSizesResult
