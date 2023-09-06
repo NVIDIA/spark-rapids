@@ -287,4 +287,27 @@ object RapidsPluginImplicits {
       super.safeMap(colIds, (i: Int) => fn(in.column(i).asInstanceOf[GpuColumnVector]))
     }
   }
+
+  // Allows an scala.collection.mutable.ArrayBuffer to be used as stack to handle the removal
+  // of scala.collection.mutable.ArrayStack in Scala 2.13
+  implicit class ArrayBufferAsStack[A](in: mutable.ArrayBuffer[A]) {
+
+    /**
+     * pop: Pop the top element off of the stack
+     *
+     * @return the element on top of the stack
+     */
+    def pop(): A = {
+      in.remove(in.size-1)
+    }
+
+    /**
+     * push: Push an element onto the stack.
+     *
+     * @param elem The element to push
+     */
+    def push(elem: A): Unit = {
+      in.append(elem)
+    }
+  }
 }
