@@ -240,7 +240,7 @@ final class TypeSig private(
     val nt = childTypes & other.childTypes
     val lt = litOnlyTypes & other.initialTypes
     val nts = notes.filterKeys(other.initialTypes)
-    new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts)
+    new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts.toMap)
   }
 
   /**
@@ -2235,7 +2235,7 @@ object SupportedOpsForTools {
     }
   }
 
-  private def outputSupportIO() {
+  private def outputSupportIO(): Unit = {
     // Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
     val conf = new RapidsConf(Map.empty[String, String])
