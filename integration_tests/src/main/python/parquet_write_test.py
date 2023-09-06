@@ -70,9 +70,8 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
                                                     MapGen(StringGen(pattern='key_[0-9]', nullable=False),
                                                            simple_string_to_string_map_gen)]
 
-parquet_datetime_gen_simple = [DateGen(start=date(1, 1, 1), end=date(3000, 1, 1)),
-                               TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
-                                            end=datetime(3000, 1, 1, tzinfo=timezone.utc))]
+parquet_datetime_gen_simple = [DateGen(end=date(3000, 1, 1)),
+                               TimestampGen(end=datetime(3000, 1, 1, tzinfo=timezone.utc))]
 parquet_datetime_in_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)]),
     StructGen([['child0', StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]])]
 parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_datetime_gen_simple + parquet_datetime_in_struct_gen] + [
@@ -472,8 +471,8 @@ def test_write_map_nullable(spark_tmp_path):
             data_path)
 
 @pytest.mark.parametrize('ts_write_data_gen', [('INT96', TimestampGen()),
-                                               ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))),
-                                               ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
+                                               ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(3000, 1, 1, tzinfo=timezone.utc))),
+                                               ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(3000, 1, 1, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('date_time_rebase_write', ["CORRECTED"])
 @pytest.mark.parametrize('date_time_rebase_read', ["EXCEPTION", "CORRECTED"])
 @pytest.mark.parametrize('int96_rebase_write', ["CORRECTED"])
