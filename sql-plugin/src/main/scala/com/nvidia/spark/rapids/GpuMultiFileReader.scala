@@ -1222,7 +1222,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks.toSeq,
             batchContext)
 
-          (hmb, finalBufferSize, offset, allOutputBlocks)
+          (hmb, finalBufferSize, offset, allOutputBlocks.toSeq)
         }
 
       // The footer size can change vs the initial estimated because we are combining more
