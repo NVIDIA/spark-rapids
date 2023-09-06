@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
@@ -695,6 +695,28 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
+  def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
+    def findRootProcessingNode(plan: SparkPlan): SparkPlan = plan match {
+      case p: AdaptiveSparkPlanExec => findRootProcessingNode(p.executedPlan)
+      case p: QueryStageExec => findRootProcessingNode(p.plan)
+      case p: ReusedSubqueryExec => findRootProcessingNode(p.child)
+      case p: ReusedExchangeExec => findRootProcessingNode(p.child)
+      case p => p
+    }
+
+    val aqeSubPlan = findRootProcessingNode(adaptivePlan.executedPlan)
+    aqeSubPlan match {
+      case _: GpuExec =>
+        // plan is already on the GPU
+        true
+      case p =>
+        // see if the root processing node of the current subplan will translate to the GPU
+        val meta = GpuOverrides.wrapAndTagPlan(p, conf)
+        meta.canThisBeReplaced
+    }
+  }
 
   def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_,_]): Unit = {
     if (!conf.isFloatAggEnabled && isOrContainsFloatingPoint(dataType)) {
@@ -3029,6 +3051,41 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
       }),
+    expr[Conv](
+      desc = "Convert string representing a number from one base to another",
+      pluginChecks = ExprChecks.projectOnly(
+        outputCheck = TypeSig.STRING,
+        paramCheck = Seq(
+          ParamCheck(
+            name = "num",
+            cudf = TypeSig.STRING,
+            spark = TypeSig.STRING),
+          ParamCheck(
+            name = "from_base",
+            cudf = TypeSig.integral
+              .withAllLit()
+              .withInitialTypesPsNote("only values 10 and 16 are supported"),
+            spark = TypeSig.integral),
+          ParamCheck(
+            name = "to_base",
+            cudf = TypeSig.integral
+              .withAllLit()
+              .withInitialTypesPsNote("only values 10 and 16 are supported"),
+            spark = TypeSig.integral)),
+        sparkOutputSig = TypeSig.STRING),
+        (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
+          new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)
+    ).disabledByDefault(
+      """GPU implementation is incomplete. We currently only support from/to_base values
+         |of 10 and 16. We fall back on CPU if the signed conversion is signalled via
+         |a negative to_base.
+         |GPU implementation does not check for an 64-bit signed/unsigned int overflow when
+         |performing the conversion to return `FFFFFFFFFFFFFFFF` or `18446744073709551615` or
+         |to throw an error in the ANSI mode.
+         |It is safe to enable if the overflow is not possible or detected externally.
+         |For instance decimal strings not longer than 18 characters / hexadecimal strings
+         |not longer than 15 characters disregarding the sign cannot cause an overflow.
+         """.stripMargin.replaceAll("\n", " ")),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3531,6 +3588,14 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
       }),
+    expr[DynamicPruningExpression](
+      "Dynamic pruning expression marker",
+      ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+      (a, conf, p, r) => new UnaryExprMeta[DynamicPruningExpression](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = {
+          GpuDynamicPruningExpression(child)
+        }
+      }),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
@@ -3538,7 +3603,7 @@ object GpuOverrides extends Logging {
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
-        BloomFilterShims.exprs ++ SparkShimImpl.getExprs
+        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,

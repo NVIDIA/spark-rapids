@@ -65,7 +65,7 @@ pipeline {
         DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
         DATABRICKS_DRIVER = DbUtils.getDriver("$DB_TYPE")
         DATABRICKS_WORKER = DbUtils.getWorker("$DB_TYPE")
-        INIT_SCRIPTS_DIR = "dbfs:/databricks/init_scripts/${BUILD_TAG}"
+        INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}"
     }
 
     stages {
@@ -129,7 +129,7 @@ String getDbType() {
 void databricksBuild() {
     def CLUSTER_ID = ''
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
-    def dbfs_path = "$INIT_SCRIPTS_DIR-$DB_TYPE"
+    def ws_path = "$INIT_SCRIPTS_DIR-$DB_TYPE"
     try {
         stage("Create $SPARK_MAJOR DB") {
             script {
@@ -142,12 +142,8 @@ void databricksBuild() {
 
                     // handle init scripts if exist
                     if (env.INIT_SCRIPTS) {
-                        sh "bash -c 'dbfs mkdirs $dbfs_path'"
-                        env.INIT_SCRIPTS.split(',').each {
-                            sh "bash -c 'dbfs cp --overwrite jenkins/databricks/${it} $dbfs_path'"
-                        }
-                        // foo.sh,bar.sh --> dbfs:/path/foo.sh,dbfs:/path/bar.sh
-                        CREATE_PARAMS += " -f $dbfs_path/" + env.INIT_SCRIPTS.replace(',', ",$dbfs_path/")
+                        // foo.sh,bar.sh --> /path/foo.sh,/path/bar.sh
+                        CREATE_PARAMS += " -f " + DbUtils.uploadFiles(this, env.INIT_SCRIPTS, ws_path)
                     }
 
                     CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS",
@@ -194,7 +190,7 @@ void databricksBuild() {
             container('cpu') {
                 retry(3) {
                     if (env.INIT_SCRIPTS) {
-                        sh "bash -c 'dbfs rm -r $dbfs_path'"
+                        DbUtils.cleanUp(this, ws_path)
                     }
                     sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
                 }

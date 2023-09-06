@@ -20,7 +20,7 @@ from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_pre
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
-from spark_session import is_before_spark_330
+from spark_session import is_before_spark_330, is_spark_350_or_later
 import warnings
 
 _rebase_confs = {
@@ -41,8 +41,6 @@ _java_reader_confs = copy_and_update(
 _error_files = {
     "fixed_length_byte_array.parquet": "Exception",
     "large_string_map.brotli.parquet": "Exception",
-    "lz4_raw_compressed.parquet": "Exception",
-    "lz4_raw_compressed_larger.parquet": "Exception",
     "nation.dict-malformed.parquet": ("Exception", "https://github.com/NVIDIA/spark-rapids/issues/8644"),
     "non_hadoop_lz4_compressed.parquet": "Exception",
     "PARQUET-1481.parquet": "Exception",
@@ -65,6 +63,14 @@ _xfail_files = {
 }
 if is_before_spark_330():
     _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"
+
+# Spark 3.5.0 adds support for lz4_raw compression codec, but we do not support that on GPU yet
+if is_spark_350_or_later():
+    _xfail_files["lz4_raw_compressed.parquet"] = "https://github.com/NVIDIA/spark-rapids/issues/9156"
+    _xfail_files["lz4_raw_compressed_larger.parquet"] = "https://github.com/NVIDIA/spark-rapids/issues/9156"
+else:
+    _error_files["lz4_raw_compressed.parquet"] = "Exception"
+    _error_files["lz4_raw_compressed_larger.parquet"] = "Exception"
 
 def locate_parquet_testing_files():
     """

@@ -142,14 +142,6 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
   }
 
   /**
-   * The RapidsDeviceMemoryStore is the only store that supports setting a buffer spillable
-   * or not.
-   */
-  override protected def setSpillable(buffer: RapidsBufferBase, spillable: Boolean): Unit = {
-    doSetSpillable(buffer, spillable)
-  }
-
-  /**
    * A per cuDF column event handler that handles calls to .close()
    * inside of the `ColumnVector` lock.
    */
@@ -293,7 +285,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
      * all columns are spillable.
      */
     override def updateSpillability(): Unit = {
-      doSetSpillable(this, columnSpillability.size == numDistinctColumns)
+      setSpillable(this, columnSpillability.size == numDistinctColumns)
     }
 
     /**
@@ -304,7 +296,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
      */
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       columnSpillability.clear()
-      doSetSpillable(this, false)
+      setSpillable(this, false)
       GpuColumnVector.from(table, sparkTypes)
     }
 
