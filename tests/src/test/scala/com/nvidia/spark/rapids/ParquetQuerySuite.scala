@@ -80,7 +80,7 @@ class ParquetQuerySuite extends SparkQueryCompareTestSuite {
       val df = getDf(spark)
       df.write.mode("overwrite").parquet(file.getCanonicalPath)
     },
-    execsAllowedNonGpu = Seq("FileSourceScanExec", "ShuffleExchangeExec")
+    execsAllowedNonGpu = Seq("ColumnarToRowExec", "FileSourceScanExec", "ShuffleExchangeExec")
   ) {
     frame => frame
   }
