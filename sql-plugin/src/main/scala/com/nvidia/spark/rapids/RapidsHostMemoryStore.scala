@@ -190,10 +190,7 @@ class RapidsHostMemoryStore(
     // the catalog lock, which should not possible. The event handler is set to null
     // when we free the `RapidsHostMemoryBuffer` and if the buffer is not free, we
     // take out another handle (in the catalog).
-    // TODO: This is not robust (to rely on outside locking and addReference/free)
-    //  and should be revisited.
-    require(buffer.setEventHandler(this) == null,
-      "HostMemoryBuffer with non-null event handler failed to add!!")
+    HostAlloc.addEventHandler(buffer, this)
 
     /**
      * Override from the MemoryBuffer.EventHandler interface.
@@ -223,7 +220,7 @@ class RapidsHostMemoryStore(
     override def free(): Unit = synchronized {
       if (isValid) {
         // it is going to be invalid when calling super.free()
-        buffer.setEventHandler(null)
+        HostAlloc.removeEventHandler(buffer, this)
       }
       super.free()
     }

@@ -36,25 +36,6 @@ import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExcha
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
-sealed abstract class ShimVersion
-
-case class SparkShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch"
-}
-
-case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersion: String)
-  extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-cloudera-$clouderaVersion"
-}
-
-case class DatabricksShimVersion(
-    major: Int,
-    minor: Int,
-    patch: Int,
-    dbver: String = "") extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
-}
-
 trait SparkShims {
   def parquetRebaseReadKey: String
   def parquetRebaseWriteKey: String
