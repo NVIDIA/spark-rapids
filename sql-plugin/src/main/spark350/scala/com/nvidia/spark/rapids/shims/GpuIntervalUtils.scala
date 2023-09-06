@@ -24,6 +24,10 @@ object GpuIntervalUtils extends GpuIntervalUtilsBase {
 
   val MAX_SECONDS_IN_MIN = 59L
 
+  /**
+   * This method overrides the base class method to add overflow check to the seconds conversion
+   * The valid range for seconds in Spark 3.5.0+ is [0,59]
+   */
   override protected def addFromDayToSecond(
       sign: ColumnVector,
       daysInTable: ColumnVector,
