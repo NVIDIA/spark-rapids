@@ -80,7 +80,7 @@ import org.apache.spark.sql.types.{DataType, DayTimeIntervalType => DT, YearMont
  * should update correspondingly if Spark fixes this issue
  *
  */
-trait GpuIntervalUtilsTrait {
+trait GpuIntervalUtilsBase {
   val MAX_DAY: Long = Long.MaxValue / DAYS.toMicros(1)
   val MAX_HOUR: Long = Long.MaxValue / HOURS.toMicros(1)
   val MAX_MINUTE: Long = Long.MaxValue / MINUTES.toMicros(1)

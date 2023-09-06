@@ -20,7 +20,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.ColumnVector
 
-object GpuIntervalUtils extends GpuIntervalUtilsTrait {
+object GpuIntervalUtils extends GpuIntervalUtilsBase {
 
   val MAX_SECONDS_IN_MIN = 59L
 
