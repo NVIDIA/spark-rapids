@@ -138,7 +138,7 @@ class GpuBatchSubPartitioner(
    */
   def getBatchesByPartition(partId: Int): Seq[SpillableColumnarBatch] = {
     initPartitions()
-    pendingParts(partId)
+    pendingParts(partId).toSeq
   }
 
   /**
@@ -156,7 +156,7 @@ class GpuBatchSubPartitioner(
       numCurBatches -= ret.length
       pendingParts(partId) = null
     }
-    ret
+    ret.toSeq
   }
 
   override def close(): Unit = {
@@ -247,7 +247,7 @@ class GpuBatchSubPartitionIterator(
       }
       // Update the remaining partitions
       remainingPartIds --= partIds
-      (partIds, buf)
+      (partIds, buf.toSeq)
     }
   }
 
@@ -282,7 +282,7 @@ class GpuBatchSubPartitionIterator(
         }
       }
     }
-    ret
+    ret.toSeq
   }
 
   private[this] def computePartitionSize(partId: Int): Long = {
@@ -438,7 +438,7 @@ class GpuSubPartitionPairIterator(
             // Got a normal pair, return it
             continue = false
             val buildBatch = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(buildBatches)
-            pair = Some(new PartitionPair(buildBatch, streamBatches))
+            pair = Some(new PartitionPair(buildBatch, streamBatches.toSeq))
           }
         }
       } else if (bigBuildBatches.nonEmpty) {
@@ -457,7 +457,7 @@ class GpuSubPartitionPairIterator(
     hashSeed += 10
     val realNumPartitions = computeNumPartitions(bigBuildBatches)
     // build partitioner
-    val buildIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigBuildBatches)
+    val buildIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigBuildBatches.toSeq)
       .map(_.getColumnarBatch())
     bigBuildBatches.clear()
     buildSubPartitioner.safeClose(new Exception())
@@ -466,7 +466,7 @@ class GpuSubPartitionPairIterator(
     buildSubIterator = new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
 
     // stream partitioner
-    val streamIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigStreamBatches)
+    val streamIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigStreamBatches.toSeq)
       .map(_.getColumnarBatch())
     bigStreamBatches.clear()
     streamSubPartitioner.safeClose(new Exception())
@@ -474,7 +474,7 @@ class GpuSubPartitionPairIterator(
       realNumPartitions, hashSeed, "repartedStream")
   }
 
-  private[this] def computeNumPartitions(parts: Seq[SpillableColumnarBatch]): Int = {
+  private[this] def computeNumPartitions(parts: ArrayBuffer[SpillableColumnarBatch]): Int = {
     val totalSize = parts.map(_.sizeInBytes).sum
     val realTargetSize = math.max(targetBatchSize, 1)
     val requiredNum = Math.floorDiv(totalSize, realTargetSize).toInt + 1
