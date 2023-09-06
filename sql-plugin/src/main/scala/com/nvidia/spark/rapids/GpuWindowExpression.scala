@@ -1356,7 +1356,7 @@ class SumUnboundedToUnboundedFixer(resultType: DataType, failOnError: Boolean)
               val dt = resultType.asInstanceOf[DecimalType]
               previousValue = Option(TrampolineUtil.checkDecimalOverflow(
                   decimal, dt.precision, dt.scale, failOnError))
-                .map(n => Scalar.fromDecimal(n.toJavaBigDecimal))
+                .map(n => GpuScalar.from(n, dt))
               if (previousValue.isEmpty) {
                 hasOverflowed = true
               }
