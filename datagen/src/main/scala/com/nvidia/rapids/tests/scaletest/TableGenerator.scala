@@ -78,6 +78,30 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     candidates(random.nextInt(candidates.length))
   }
 
+  private val keyGroup2ColumnTypeCandidate: Seq[String] = Seq(
+    "string",
+    "decimal(7, 2)",
+    "decimal(15, 2)",
+    "int",
+    "long",
+    "timestamp",
+    "date",
+    "struct<num: long, desc: string>"
+  )
+
+  // To get a constant column type list so it can be used for both c_data and d_data when comparing
+  // key columns. Otherwise we will see column type mismatch error.
+  private val randomColumnTypesKeyGroup2: Seq[String] = {
+    (1 to complexity).map(_ => keyGroup2ColumnTypeCandidate(random.nextInt
+    (keyGroup2ColumnTypeCandidate.length)))
+  }
+
+  private def expandColumnsForKeyGroup2(prefix: String): String = {
+    (1 to complexity).map(i => s"${prefix}_$i").zip(randomColumnTypesKeyGroup2).map {
+      case (colName, colType) => s"$colName $colType"
+    }.mkString(", ")
+  }
+
   /**
   a_facts: Each scale factor corresponds to 10,000 rows
     - primary_a the primary key from key group 1
@@ -142,7 +166,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
    */
   private def genCData(): DataFrame = {
     val schema = "c_foreign_a long," +
-      (1 to complexity).map(i => s"c_key2_$i ${randomColumnType()}").mkString(",") + "," +
+      expandColumnsForKeyGroup2("c_key2") + "," +
       "c_data_row_num_1 long," +
       (1 to 5).map(i => s"c_data_$i ${randomColumnType()}").mkString(",") + "," +
       (1 to 5).map(i => s"c_data_numeric_$i ${randomNumericColumnType()}").mkString(",")
@@ -166,7 +190,7 @@ class TableGenerator(scaleFactor: Int, complexity: Int, seed: Int, spark: SparkS
     - 10 data columns
    */
   private def genDData(): DataFrame = {
-    val schema = (1 to complexity).map(i => s"d_key2_$i ${randomColumnType()}").mkString(",") +
+    val schema = expandColumnsForKeyGroup2("d_key2") +
       "," +
       (1 to 10).map(i => s"d_data_$i ${randomColumnType()}").mkString(",")
     val dData = dbgen.addTable("d_data", schema, dNumRows)
