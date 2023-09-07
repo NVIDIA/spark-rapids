@@ -21,7 +21,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
@@ -31,6 +31,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+case class BufferSpill(spilledBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
 
 /**
  * Base class for all buffer store types.
@@ -201,10 +203,12 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    */
   def copyBuffer(
       buffer: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
-    freeOnExcept(createBuffer(buffer, stream)) { newBuffer =>
-      addBuffer(newBuffer)
-      newBuffer
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+    createBuffer(buffer, stream).map { newBuffer =>
+      freeOnExcept(newBuffer) { newBuffer =>
+        addBuffer(newBuffer)
+        newBuffer
+      }
     }
   }
 
@@ -225,7 +229,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    */
   protected def createBuffer(
      buffer: RapidsBuffer,
-     stream: Cuda.Stream): RapidsBufferBase
+     stream: Cuda.Stream): Option[RapidsBufferBase]
 
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = {
@@ -254,6 +258,115 @@ abstract class RapidsBufferStore(val tier: StorageTier)
   def nextSpillable(): RapidsBuffer = {
     buffers.nextSpillableBuffer()
   }
+
+  def synchronousSpill(
+      targetTotalSize: Long,
+      stream: Cuda.Stream = Cuda.DEFAULT_STREAM,
+      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton): Seq[BufferSpill] = {
+    logWarning(s"Targeting a ${name} size of $targetTotalSize. " +
+      s"Current total ${currentSize}. " +
+      s"Current spillable ${currentSpillableSize}")
+
+    if (currentSpillableSize > targetTotalSize) {
+      val bufferSpills = new mutable.ArrayBuffer[BufferSpill]()
+      withResource(new NvtxRange(s"${name} sync spill", NvtxColor.ORANGE)) { _ =>
+        logWarning(s"${name} store spilling to reduce usage from " +
+          s"${currentSize} total (${currentSpillableSize} spillable) " +
+          s"to $targetTotalSize bytes")
+
+        // If the store has 0 spillable bytes left, it has exhausted.
+        try {
+          var exhausted = false
+          var totalSpilled = 0L
+          while (!exhausted &&
+            currentSpillableSize > targetTotalSize) {
+            val nextSpillableBuffer = nextSpillable()
+            if (nextSpillableBuffer != null) {
+              if (nextSpillableBuffer.addReference()) {
+                withResource(nextSpillableBuffer) { _ =>
+                  val bufferHasSpilled =
+                    catalog.isBufferSpilled(
+                      nextSpillableBuffer.id,
+                      nextSpillableBuffer.storageTier)
+                  if (!bufferHasSpilled) {
+                    val bufferSpill = spillBuffer(
+                      nextSpillableBuffer,
+                      this,
+                      stream)
+                    bufferSpills.append(bufferSpill)
+                    totalSpilled += bufferSpill.spilledBuffer.getMemoryUsedBytes
+                  }
+                }
+              }
+            }
+          }
+          if (totalSpilled <= 0) {
+            // we didn't spill in this iteration, exit loop
+            exhausted = true
+            logWarning("Unable to spill enough to meet request. " +
+              s"Total=${currentSize} " +
+              s"Spillable=${currentSpillableSize} " +
+              s"Target=$targetTotalSize")
+          }
+        } finally {
+          if (bufferSpills.nonEmpty) {
+            // This is a hack in order to completely synchronize with the GPU before we free
+            // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
+            // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
+            // all launched GPU work, otherwise crashes or data corruption could occur.
+            // A more performant implementation would be to synchronize on the thread that read
+            // the buffer via events.
+            // https://github.com/NVIDIA/spark-rapids/issues/8610
+            Cuda.deviceSynchronize()
+            bufferSpills.foreach(_.spilledBuffer.safeFree())
+          }
+        }
+      }
+      bufferSpills
+    } else {
+      Seq.empty
+    }
+  }
+
+  /**
+   * Given a specific `RapidsBuffer` spill it to `spillStore`
+   *
+   * @return the buffer, if successfully spilled, in order for the caller to free it
+   * @note called with catalog lock held
+   */
+  private def spillBuffer(
+      buffer: RapidsBuffer,
+      store: RapidsBufferStore,
+      stream: Cuda.Stream): BufferSpill = {
+    // copy the buffer to spillStore
+    var maybeNewBuffer: Option[RapidsBuffer] = None
+    var lastTier: Option[StorageTier] = None
+    var nextSpillStore = store.spillStore
+    while (maybeNewBuffer.isEmpty && nextSpillStore != null) {
+      lastTier = Some(nextSpillStore.tier)
+      maybeNewBuffer = nextSpillStore.copyBuffer(buffer, stream)
+      if (maybeNewBuffer.isEmpty) {
+        nextSpillStore = nextSpillStore.spillStore
+      }
+    }
+    if (maybeNewBuffer.isEmpty) {
+      throw new IllegalStateException(
+        s"Unable to spill buffer ${buffer.id} of size ${buffer.getMemoryUsedBytes} " +
+            s"to tier ${lastTier}")
+    }
+    // return the buffer to free and the new buffer to register
+    BufferSpill(buffer, maybeNewBuffer)
+  }
+
+  /**
+   * If `spillStore` defines a maximum size, spill to make room for `buffer`.
+   */
+  protected def trySpillToMaximumSize(
+      buffer: RapidsBuffer,
+      stream: Cuda.Stream): Boolean = {
+    true // default to success
+  }
+
 
   /** Base class for all buffers in this store. */
   abstract class RapidsBufferBase(

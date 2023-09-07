@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -97,42 +98,74 @@ class RapidsHostMemoryStore(
     }
   }
 
+  override protected def trySpillToMaximumSize(
+      buffer: RapidsBuffer,
+      stream: Cuda.Stream): Boolean = {
+    // this spillStore has a maximum size requirement (host only). We need to spill from it
+    // in order to make room for `buffer`.
+    val targetTotalSize = maxSize - buffer.getMemoryUsedBytes
+    if (targetTotalSize <= 0) {
+      false // lets not spill to host
+    } else {
+      val amountSpilled =
+        synchronousSpill(targetTotalSize, stream).map {
+          case BufferSpill(spilledBuffer, _) =>
+            spilledBuffer.getMemoryUsedBytes
+        }.sum
+
+      if (amountSpilled != 0) {
+        logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
+        TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
+      }
+      // would fit now
+      buffer.getMemoryUsedBytes <= currentSize
+    }
+  }
+
   override protected def createBuffer(
       other: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(other.getCopyIterator) { otherBufferIterator =>
-      val isChunked = otherBufferIterator.isChunked
-      val totalCopySize = otherBufferIterator.getTotalCopySize
-      closeOnExcept(allocateHostBuffer(totalCopySize)) { hostBuffer =>
-        withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
-          var hostOffset = 0L
-          val start = System.nanoTime()
-          while (otherBufferIterator.hasNext) {
-            val otherBuffer = otherBufferIterator.next()
-            withResource(otherBuffer) { _ =>
-              otherBuffer match {
-                case devBuffer: DeviceMemoryBuffer =>
-                  hostBuffer.copyFromMemoryBufferAsync(
-                    hostOffset, devBuffer, 0, otherBuffer.getLength, stream)
-                  hostOffset += otherBuffer.getLength
-                case _ =>
-                  throw new IllegalStateException("copying from buffer without device memory")
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+    val wouldFit = trySpillToMaximumSize(other, stream)
+    // TODO: this is disabled for now since subsequent work will tie this into
+    //   our host allocator apis.
+    if (false && !wouldFit) {
+      // skip host
+      None
+    } else {
+      withResource(other.getCopyIterator) { otherBufferIterator =>
+        val isChunked = otherBufferIterator.isChunked
+        val totalCopySize = otherBufferIterator.getTotalCopySize
+        closeOnExcept(allocateHostBuffer(totalCopySize)) { hostBuffer =>
+          withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
+            var hostOffset = 0L
+            val start = System.nanoTime()
+            while (otherBufferIterator.hasNext) {
+              val otherBuffer = otherBufferIterator.next()
+              withResource(otherBuffer) { _ =>
+                otherBuffer match {
+                  case devBuffer: DeviceMemoryBuffer =>
+                    hostBuffer.copyFromMemoryBufferAsync(
+                      hostOffset, devBuffer, 0, otherBuffer.getLength, stream)
+                    hostOffset += otherBuffer.getLength
+                  case _ =>
+                    throw new IllegalStateException("copying from buffer without device memory")
+                }
               }
             }
+            stream.sync()
+            val end = System.nanoTime()
+            val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
+            val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
+            logDebug(s"Spill to host (chunked=$isChunked) " +
+                s"size=$szMB MiB bandwidth=$bw MiB/sec")
           }
-          stream.sync()
-          val end = System.nanoTime()
-          val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
-          val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
-          logDebug(s"Spill to host (chunked=$isChunked) " +
-              s"size=$szMB MiB bandwidth=$bw MiB/sec")
+          Some(new RapidsHostMemoryBuffer(
+            other.id,
+            totalCopySize,
+            other.meta,
+            applyPriorityOffset(other.getSpillPriority, HOST_MEMORY_BUFFER_SPILL_OFFSET),
+            hostBuffer))
         }
-        new RapidsHostMemoryBuffer(
-          other.id,
-          totalCopySize,
-          other.meta,
-          applyPriorityOffset(other.getSpillPriority, HOST_MEMORY_BUFFER_SPILL_OFFSET),
-          hostBuffer)
       }
     }
   }

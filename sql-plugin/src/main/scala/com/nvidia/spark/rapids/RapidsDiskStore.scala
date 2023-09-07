@@ -37,7 +37,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
 
   override protected def createBuffer(
       incoming: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
     // assuming that the disk store gets contiguous buffers
     val id = incoming.id
     val path = if (id.canShareDiskPaths) {
@@ -56,7 +56,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     }
 
     logDebug(s"Spilled to $path $fileOffset:$diskLength")
-    incoming match {
+    val buff = incoming match {
       case _: RapidsHostBatchBuffer =>
         new RapidsDiskColumnarBatch(
           id,
@@ -73,6 +73,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           incoming.meta,
           incoming.getSpillPriority)
     }
+    Some(buff)
   }
 
   /** Copy a host buffer to a file, returning the file offset at which the data was written. */

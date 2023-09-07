@@ -47,7 +47,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
 
   override protected def createBuffer(
       other: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
     val memoryBuffer = withResource(other.getCopyIterator) { copyIterator =>
       copyIterator.next()
     }
@@ -64,12 +64,12 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
           case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
         }
       }
-      new RapidsDeviceMemoryBuffer(
+      Some(new RapidsDeviceMemoryBuffer(
         other.id,
         deviceBuffer.getLength,
         other.meta,
         deviceBuffer,
-        other.getSpillPriority)
+        other.getSpillPriority))
     }
   }
 

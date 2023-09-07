@@ -19,9 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -32,7 +30,6 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -552,14 +549,9 @@ class RapidsBufferCatalog(
       store: RapidsBufferStore,
       targetTotalSize: Long,
       stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Option[Long] = {
-    val spillStore = store.spillStore
-    if (spillStore == null) {
+    if (store.spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
     }
-
-    // total amount spilled in this invocation
-    var totalSpilled: Long = 0
-
     require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
     val mySpillCount = spillCount
@@ -573,122 +565,15 @@ class RapidsBufferCatalog(
         // None which lets the calling code know that rmm should retry allocation
         None
       } else {
-        // this thread win the race and should spill
+        // this thread wins the race and should spill
         spillCount += 1
-
-        logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
-          s"Current total ${store.currentSize}. " +
-          s"Current spillable ${store.currentSpillableSize}")
-
-        if (store.currentSpillableSize > targetTotalSize) {
-          withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
-            logWarning(s"${store.name} store spilling to reduce usage from " +
-              s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
-              s"to $targetTotalSize bytes")
-
-            // If the store has 0 spillable bytes left, it has exhausted.
-            var exhausted = false
-
-            val buffersToFree = new ArrayBuffer[RapidsBuffer]()
-
-            try {
-              while (!exhausted &&
-                store.currentSpillableSize > targetTotalSize) {
-                val nextSpillable = store.nextSpillable()
-                if (nextSpillable != null) {
-                  // we have a buffer (nextSpillable) to spill
-                  spillBuffer(nextSpillable, spillStore, stream)
-                    .foreach(buffersToFree.append(_))
-                  totalSpilled += nextSpillable.getMemoryUsedBytes
-                }
-              }
-              if (totalSpilled <= 0) {
-                // we didn't spill in this iteration, exit loop
-                exhausted = true
-                logWarning("Unable to spill enough to meet request. " +
-                  s"Total=${store.currentSize} " +
-                  s"Spillable=${store.currentSpillableSize} " +
-                  s"Target=$targetTotalSize")
-              }
-            } finally {
-              if (buffersToFree.nonEmpty) {
-                // This is a hack in order to completely synchronize with the GPU before we free
-                // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
-                // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
-                // all launched GPU work, otherwise crashes or data corruption could occur.
-                // A more performant implementation would be to synchronize on the thread that read
-                // the buffer via events.
-                // https://github.com/NVIDIA/spark-rapids/issues/8610
-                Cuda.deviceSynchronize()
-                buffersToFree.safeFree()
-              }
-            }
-          }
-        }
-      }
-      Some(totalSpilled)
-    }
-  }
-
-  /**
-   * Given a specific `RapidsBuffer` spill it to `spillStore`
-   * @return the buffer, if successfully spilled, in order for the caller to free it
-   * @note called with catalog lock held
-   */
-  private def spillBuffer(
-      buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Option[RapidsBuffer] = {
-    if (buffer.addReference()) {
-      withResource(buffer) { _ =>
-        logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
-        val bufferHasSpilled = isBufferSpilled(buffer.id, buffer.storageTier)
-        if (!bufferHasSpilled) {
-          // if the spillStore specifies a maximum size spill taking this ceiling
-          // into account before trying to create a buffer there
-          // TODO: we may need to handle what happens if we can't spill anymore
-          //   because all host buffers are being referenced.
-          trySpillToMaximumSize(buffer, spillStore, stream)
-
-          // copy the buffer to spillStore
-          val newBuffer = spillStore.copyBuffer(buffer, stream)
-
-          // once spilled, we get back a new RapidsBuffer instance in this new tier
-          registerNewBuffer(newBuffer)
-        } else {
-          logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
-            s"already stored in multiple tiers")
-        }
-      }
-      // we can now remove the old tier linkage
-      removeBufferTier(buffer.id, buffer.storageTier)
-
-      // return the buffer
-      Some(buffer)
-    } else {
-      None
-    }
-  }
-
-  /**
-   * If `spillStore` defines a maximum size, spill to make room for `buffer`.
-   */
-  private def trySpillToMaximumSize(
-      buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Unit = {
-    val spillStoreMaxSize = spillStore.getMaxSize
-    if (spillStoreMaxSize.isDefined) {
-      // this spillStore has a maximum size requirement (host only). We need to spill from it
-      // in order to make room for `buffer`.
-      val targetTotalSize =
-        math.max(spillStoreMaxSize.get - buffer.getMemoryUsedBytes, 0)
-      val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize, stream)
-      maybeAmountSpilled.foreach { amountSpilled =>
-        if (amountSpilled != 0) {
-          logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
-          TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
-        }
+        val bufferSpills = store.synchronousSpill(targetTotalSize, stream)
+        val totalSpilled = bufferSpills.map { case BufferSpill(spilledBuffer, maybeNewBuffer) =>
+          maybeNewBuffer.foreach(registerNewBuffer)
+          removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
+          spilledBuffer.getMemoryUsedBytes
+        }.sum
+        Some(totalSpilled)
       }
     }
   }
@@ -707,10 +592,12 @@ class RapidsBufferCatalog(
     // do not create a new one, else add a reference
     acquireBuffer(buffer.id, StorageTier.DEVICE) match {
       case None =>
-        val newBuffer = deviceStorage.copyBuffer(buffer, stream)
-        newBuffer.addReference() // add a reference since we are about to use it
-        registerNewBuffer(newBuffer)
-        newBuffer
+        val maybeNewBuffer = deviceStorage.copyBuffer(buffer, stream)
+        maybeNewBuffer.map { newBuffer =>
+          newBuffer.addReference() // add a reference since we are about to use it
+          registerNewBuffer(newBuffer)
+          newBuffer
+        }.get // the GPU store has to return a buffer here for now, or throw OOM
       case Some(existingBuffer) => existingBuffer
     }
   }
@@ -764,7 +651,6 @@ class RapidsBufferCatalog(
 }
 
 object RapidsBufferCatalog extends Logging {
-
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 
   private var deviceStorage: RapidsDeviceMemoryStore = _

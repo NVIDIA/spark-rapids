@@ -39,13 +39,13 @@ class RapidsGdsStore(
 
   override protected def createBuffer(
       other: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
     // assume that we get 1 buffer
     val otherBuffer = withResource(other.getCopyIterator) { it =>
       it.next()
     }
 
-    withResource(otherBuffer) { _ =>
+    val buff = withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
         case d: BaseDeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
@@ -56,6 +56,7 @@ class RapidsGdsStore(
         singleShotSpill(other, deviceBuffer)
       }
     }
+    Some(buff)
   }
 
   override def close(): Unit = {
