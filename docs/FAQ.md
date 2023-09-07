@@ -641,11 +641,9 @@ RayDP provides simple APIs for running Spark on [Ray](https://github.com/ray-pro
 integrating Spark with AI libraries, we need to make the following configuration changes to fix
 the compatibility issues with the RAPIDS Accelerator and Ray:
 
-* Changed the `gpuGpusResources.sh` script to use `GPU` instead of `gpu`
-  
-* Changed the `spark.executor.resource.gpu.*` configs to corresponding `spark.executor.resource.GPU.*` configs
-  
-* Changed `spark.task.resource.gpu.amount` to `spark.task.resource.GPU.amount`
+* Change the contents of the `getGpusResources.sh` script to use `GPU` instead of `gpu`  
+* Change all of the configs that start with `spark.executor.resource.gpu.` to corresponding configs that start with `spark.executor.resource.GPU.`  
+* Change `spark.task.resource.gpu.amount` to `spark.task.resource.GPU.amount`
 
 Note that the RAPIDS Accelerator is not regularly tested against Spark on Ray.
 ### I have more questions, where do I go?
