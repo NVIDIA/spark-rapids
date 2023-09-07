@@ -75,7 +75,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
   test("GPU limit with retry OOM") {
     val totalRows = 24
     Seq((20, 5), (50, 5)).foreach { case (limit, offset) =>
-      val limitIter = GpuBaseLimitExec(
+      val limitIter = new GpuBaseLimitIterator(
         // 3 batches as input, and each has 8 rows
         (0 until totalRows).grouped(8).map(buildBatch(_)).toList.toIterator,
         limit, offset, NoopMetric, NoopMetric, NoopMetric)
