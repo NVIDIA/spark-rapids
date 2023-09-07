@@ -18,7 +18,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -50,6 +50,13 @@ def test_timeadd_daytime_column():
         ('d', DayTimeIntervalGen(min_value=timedelta(days=0), max_value=timedelta(days=8000 * 365)))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
+
+@pytest.mark.skipif(is_before_spark_350(), reason='DayTimeInterval overflow check for seconds is not supported before Spark 3.5.0')
+def test_interval_seconds_overflow_exception():
+    assert_gpu_and_cpu_error(
+        lambda spark : spark.sql(""" select cast("interval '10 01:02:69' day to second" as interval day to second) """).collect(),
+        conf={},
+        error_message="IllegalArgumentException")
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timeadd_from_subquery(data_gen):
