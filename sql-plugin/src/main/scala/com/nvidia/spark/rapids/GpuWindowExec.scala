@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCount}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -689,12 +689,13 @@ object GroupedAggregations {
   private def getWindowOptions(
       orderSpec: Seq[SortOrder],
       orderPositions: Seq[Int],
-      frame: GpuSpecifiedWindowFrame): WindowOptions = {
+      frame: GpuSpecifiedWindowFrame,
+      minPeriods: Int): WindowOptions = {
     frame.frameType match {
       case RowFrame =>
         withResource(getRowBasedLower(frame)) { lower =>
           withResource(getRowBasedUpper(frame)) { upper =>
-            val builder = WindowOptions.builder().minPeriods(1)
+            val builder = WindowOptions.builder().minPeriods(minPeriods)
             if (isUnbounded(frame.lower)) builder.unboundedPreceding() else builder.preceding(lower)
             if (isUnbounded(frame.upper)) builder.unboundedFollowing() else builder.following(upper)
             builder.build
@@ -718,7 +719,7 @@ object GroupedAggregations {
         withResource(asScalarRangeBoundary(orderType, lower)) { preceding =>
           withResource(asScalarRangeBoundary(orderType, upper)) { following =>
             val windowOptionBuilder = WindowOptions.builder()
-                .minPeriods(1)
+                .minPeriods(1) // Does not currently support custom minPeriods.
                 .orderByColumnIndex(orderByIndex)
 
             if (preceding.isEmpty) {
@@ -752,6 +753,12 @@ object GroupedAggregations {
         }
     }
   }
+
+  private def getMinPeriodsFor(boundGpuWindowFunction: BoundGpuWindowFunction): Int =
+    boundGpuWindowFunction.windowFunc match {
+      case GpuCount(_, _) => 1
+      case _ => 1
+    }
 
   private def isUnbounded(boundary: Expression): Boolean = boundary match {
     case special: GpuSpecialFrameBoundary => special.isUnbounded
@@ -929,6 +936,7 @@ class GroupedAggregations {
         if (frameSpec.frameType == frameType) {
           // For now I am going to assume that we don't need to combine calls across frame specs
           // because it would just not help that much
+          /*
           val result = withResource(
             getWindowOptions(boundOrderSpec, orderByPositions, frameSpec)) { windowOpts =>
             val allAggs = functions.map {
@@ -938,7 +946,22 @@ class GroupedAggregations {
               aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
             }
           }
-          withResource(result) { result =>
+           */
+          val result2 = {
+            val allWindowOpts = functions.map{ case (winFunc, _) =>
+                getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
+                  getMinPeriodsFor(winFunc))
+            }.toSeq
+            withResource(allWindowOpts) { allWindowOpts =>
+              val allAggs = (functions zip allWindowOpts).map {
+                case (winFunc, windowOpts) => winFunc._1.aggOverWindow(inputCb, windowOpts)
+              }.toSeq
+              withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
+                aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+              }
+            }
+          }
+          withResource(result2) { result =>
             functions.zipWithIndex.foreach {
               case ((func, outputIndexes), resultIndex) =>
                 val aggColumn = result.getColumn(resultIndex)
