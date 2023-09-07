@@ -35,7 +35,11 @@ echo "Databricks jar is: $DBJARFPATH"
 MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3"
 $MVN -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
     -Dfile=$DBJARFPATH -DpomFile=aggregator/pom.xml -Dclassifier=$DB_SHIM_NAME
-# install the integration test jar
+# Deploy the sql-plugin-api jar
+DB_PLUGIN_API_JAR_PATH=./sql-plugin-api/target/${DB_SHIM_NAME}/rapids-4-spark-sql-plugin-api_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${DB_SHIM_NAME}.jar
+$MVN -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+    -Dfile=$DB_PLUGIN_API_JAR_PATH -DpomFile=./sql-plugin-api/pom.xml -Dclassifier=$DB_SHIM_NAME
+# Deploy the integration test jar
 DBINTTESTJARFPATH=./integration_tests/target/rapids-4-spark-integration-tests_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${DB_SHIM_NAME}.jar
 $MVN -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
     -Dfile=$DBINTTESTJARFPATH -DpomFile=integration_tests/pom.xml -Dclassifier=$DB_SHIM_NAME
