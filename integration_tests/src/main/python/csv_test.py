@@ -552,8 +552,11 @@ def test_csv_read_count(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
-    # TODO this does not confirm that this scan actually runs on GPU, but I am not
-    #  sure if we can capture the plan with a COUNT, since it normally requires a COLLECT
+    # TODO This does not really test that the GPU count actually runs on the GPU
+    # because this test has @allow_non_gpu for operators that fall back to CPU
+    # when Spark performs an initial scan to infer the schema. To resolve this
+    # we would need a new `assert_gpu_and_cpu_row_counts_equal_with_capture` function.
+    # Tracking issue: https://github.com/NVIDIA/spark-rapids/issues/9199
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
