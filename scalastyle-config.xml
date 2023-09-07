@@ -129,6 +129,10 @@ You can also disable only one rule, by specifying its rule id, as specified in:
         <customMessage>procedure syntax is deprecated for constructors in Scala 2.13: add `=`, as in method definition</customMessage>
     </check>
 
+    <check level="error" class="org.scalastyle.scalariform.ProcedureDeclarationChecker" enabled="true">
+        <customMessage>procedure syntax is deprecated in Scala 2.13: add return type `: Unit` and `=`</customMessage>
+    </check>
+
     <check level="error" class="org.scalastyle.file.RegexChecker" enabled="true">
         <parameters>
             <parameter name="regex">ArrayBuilder.make\[(.+)\]\(\)</parameter>
