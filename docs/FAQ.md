@@ -647,6 +647,7 @@ the compatibility issues with the RAPIDS Accelerator and Ray:
   
 * Changed `spark.task.resource.gpu.amount` to `spark.task.resource.GPU.amount`
 
+Note that the RAPIDS Accelerator is not regularly tested against Spark on Ray.
 ### I have more questions, where do I go?
 We use github to track bugs, feature requests, and answer questions. File an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
