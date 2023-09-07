@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tests.scaletest
 
-import scala.collection.mutable
+import scala.collection.immutable.ListMap
 import scala.util.Random
 
 import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
@@ -243,11 +243,11 @@ class QuerySpecs(config: Config, spark: SparkSession) {
     }
   }
 
-  def getCandidateQueries(): mutable.LinkedHashMap[String, TestQuery] = {
+  def getCandidateQueries(): ListMap[String, TestQuery] = {
     /*
     All queries are defined here
      */
-    val allQueries = mutable.LinkedHashMap[String, TestQuery](
+    val allQueries = ListMap[String, TestQuery](
       "q1" -> TestQuery("q1",
         "SELECT a_facts.*, " +
           expandColumnWithRange("b_data", 1, 10) +
@@ -395,7 +395,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         config.iterations,
         config.timeout,
         "No obvious build side inner equi-join. (Shuffle partitions should be set to 10)",
-        shufflePartitions = 10),
+        shufflePartitions = Math.ceil(config.scaleFactor/50.0).toInt),
       "q12" -> TestQuery("q12",
         s"SELECT " +
           s"${expandKeyGroup3("b_key3")}, " +
@@ -406,7 +406,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         config.iterations,
         config.timeout,
         " No obvious build side full outer equi-join. (Shuffle partitions should be set to 10)",
-        shufflePartitions = 10),
+        shufflePartitions = Math.ceil(config.scaleFactor/50.0).toInt),
       "q13" -> TestQuery("q13",
         s"SELECT " +
           s"${expandKeyGroup3("b_key3")}, " +
@@ -417,7 +417,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         config.iterations,
         config.timeout,
         "No obvious build side left outer equi-join. (Shuffle partitions should be set to 10)",
-        shufflePartitions = 10),
+        shufflePartitions = Math.ceil(config.scaleFactor/50.0).toInt),
       "q14" -> TestQuery("q14",
         s"SELECT " +
           s"${expandKeyGroup3("b_key3")}, " +
@@ -428,7 +428,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         config.iterations,
         config.timeout,
         "both sides large left semi equi-join. (Shuffle partitions should be set to 10)",
-        shufflePartitions = 10),
+        shufflePartitions = Math.ceil(config.scaleFactor/50.0).toInt),
       "q15" -> TestQuery("q15",
         s"SELECT " +
           s"${expandKeyGroup3("b_key3")}, " +
@@ -439,7 +439,7 @@ class QuerySpecs(config: Config, spark: SparkSession) {
         config.iterations,
         config.timeout,
         "Both sides large left anti equi-join. (Shuffle partitions should be set to 10)",
-        shufflePartitions = 10),
+        shufflePartitions = Math.ceil(config.scaleFactor/50.0).toInt),
       "q16" -> TestQuery("q16",
         s"SELECT a_key4_1, " +
           s"${

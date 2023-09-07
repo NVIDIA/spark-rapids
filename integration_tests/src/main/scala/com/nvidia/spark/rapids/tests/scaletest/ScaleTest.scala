@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tests.scaletest
 import java.util.concurrent._
 
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
-import scala.collection.mutable
+import scala.collection.immutable.ListMap
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.NANOSECONDS
@@ -132,8 +132,7 @@ object ScaleTest {
    * @param spark spark session
    * @param queryMap query map
    */
-  private def printQueries(spark: SparkSession, queryMap: mutable.LinkedHashMap[String,
-    TestQuery]): Unit
+  private def printQueries(spark: SparkSession, queryMap: ListMap[String, TestQuery]): Unit
   = {
     for ((queryName, query) <- queryMap) {
       println("*"*80)
