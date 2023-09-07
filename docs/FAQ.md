@@ -637,9 +637,10 @@ that the RAPIDS Accelerator suits your needs, and file and issue or discussion i
 or would like expanded encryption support.
 
 ### Can the Rapids Accelerator work with Spark on Ray (RayDP)?
-RayDP provides simple APIs for running Spark on [Ray](https://github.com/ray-project/ray) and 
-integrating Spark with AI libraries, we need to make the following configuration changes to fix
-the compatibility issues with the RAPIDS Accelerator and Ray:
+[RayDP](https://github.com/oap-project/raydp) provides simple APIs for running Spark on
+[Ray](https://github.com/ray-project/ray). In order to run the RAPIDS Accelerator with RayDP,
+GPUs must be requested as `GPU` resources rather than `gpu` resources. This can be done
+with the following changes to the typical GPU resource scheduling setup with Spark:
 
 * Change the contents of the `getGpusResources.sh` script to use `GPU` instead of `gpu`  
 * Change all of the configs that start with `spark.executor.resource.gpu.` to corresponding configs that start with `spark.executor.resource.GPU.`  
