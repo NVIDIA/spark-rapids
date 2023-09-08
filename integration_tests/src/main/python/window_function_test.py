@@ -292,6 +292,35 @@ def test_numeric_sum_window_unbounded(data_gen, partition_by):
         conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                 'spark.rapids.sql.batchSizeBytes': '100'})
 
+@ignore_order
+@pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
+def test_numeric_sum_window_unbounded_decimal_overflow(batch_size):
+    assert_gpu_and_cpu_are_equal_sql(
+        # the 38 9s are the maximum value that a Decimal(38,0) can hold and Spark will infer that type automatically
+        # so the first batch will overflow, if it has at least two rows in it. This verifies that subsequent batches
+        # can detect the overflow in the first batch and also include that in later batches.
+        lambda spark: spark.range(1024).selectExpr("id as a", "if (id = 0, 99999999999999999999999999999999999999, 1) as b"),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as sum_b_asc '
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.batchSizeBytes': batch_size})
+
+@ignore_order
+@pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
+def test_numeric_sum_window_unbounded_long_overflow(batch_size):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.range(1024).selectExpr("id as a", "if (id = 0, 9223372036854775807, 1) as b"),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as sum_b_asc '
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.batchSizeBytes': batch_size})
+
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
 @ignore_order
