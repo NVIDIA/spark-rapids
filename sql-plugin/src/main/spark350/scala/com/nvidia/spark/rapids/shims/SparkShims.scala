@@ -21,13 +21,21 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF}
+import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 
 object SparkShimImpl extends Spark340PlusShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[ToPrettyString]("An internal expressions which is used to " +
+        "generate pretty string for all kinds of values",
+        ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING, TypeSig.all, TypeSig.all),
+        (a, conf, p, r) => new UnaryExprMeta[ToPrettyString](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = {
+            GpuToPrettyString(child)
+          }
+        }),
       GpuOverrides.expr[PythonUDAF](
         "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated",
