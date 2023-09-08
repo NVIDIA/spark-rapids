@@ -973,12 +973,15 @@ class GroupedAggregations {
               val allWindowOpts = {for (i <- 0 until functionsSeq.size) yield
                 getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
                   getMinPeriodsFor(functionsSeq(i)._1))
-              }.toIndexedSeq
-              val allAggs = {for (i <- 0 until functionsSeq.size) yield
-                functionsSeq(i)._1.aggOverWindow(inputCb, allWindowOpts(i))
-              }.toIndexedSeq
-              withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
-                aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+              }
+              withResource(allWindowOpts.toIndexedSeq) { allWindowOpts =>
+                val allAggs = {
+                  for (i <- 0 until functionsSeq.size) yield
+                    functionsSeq(i)._1.aggOverWindow(inputCb, allWindowOpts(i))
+                }.toIndexedSeq
+                withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
+                  aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+                }
               }
           }
 
