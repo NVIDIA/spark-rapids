@@ -375,7 +375,28 @@ class RapidsBufferCatalog(
       table: Table,
       initialSpillPriority: Long,
       needsSync: Boolean = true): RapidsBufferHandle = {
-    val id = TempSpillBufferId()
+    addTable(TempSpillBufferId(), table, initialSpillPriority, needsSync)
+  }
+
+  /**
+   * Adds a table to the device storage.
+   *
+   * This takes ownership of the table. The reason for this is that tables
+   * don't have a reference count, so we cannot cleanly capture ownership by increasing
+   * ref count and decreasing from the caller.
+   *
+   * @param id                   specific RapidsBufferId to use for this table
+   * @param table                table that will be owned by the store
+   * @param initialSpillPriority starting spill priority value
+   * @param needsSync            whether the spill framework should stream synchronize while adding
+   *                             this table (defaults to true)
+   * @return RapidsBufferHandle handle for this RapidsBuffer
+   */
+  def addTable(
+      id: RapidsBufferId,
+      table: Table,
+      initialSpillPriority: Long,
+      needsSync: Boolean): RapidsBufferHandle = {
     val rapidsBuffer = deviceStorage.addTable(
       id,
       table,

@@ -23,11 +23,10 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm._
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 
-import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -133,7 +132,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
    * @return the RapidsBuffer instance that was added.
    */
   def addTable(
-      id: TempSpillBufferId,
+      id: RapidsBufferId,
       table: Table,
       initialSpillPriority: Long,
       needsSync: Boolean): RapidsBuffer = {
@@ -215,7 +214,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
    * @param spillPriority a starting spill priority
    */
   class RapidsTable(
-      id: TempSpillBufferId,
+      id: RapidsBufferId,
       table: Table,
       spillPriority: Long)
       extends RapidsBufferBase(
