@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,17 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "340"}
-{"spark": "341"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
 
-object GpuIntervalUtils extends GpuIntervalUtilsBase
+package com.nvidia.spark.rapids.tests.scaletest
+
+import java.io.{PrintWriter, StringWriter}
+
+object Utils {
+  def stackTraceAsString(e: Throwable): String = {
+    val sw = new StringWriter()
+    val w = new PrintWriter(sw)
+    e.printStackTrace(w)
+    w.close()
+    sw.toString
+  }
+}

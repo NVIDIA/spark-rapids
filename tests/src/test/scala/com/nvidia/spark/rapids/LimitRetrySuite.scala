@@ -31,16 +31,17 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
   private val gpuSorter = new GpuSorter(Seq(SortOrder(ref, Ascending)), Array(attrs))
   private val NUM_ROWS = 100
 
-  private def buildBatch1: ColumnarBatch = {
-    val ints = 0 until NUM_ROWS by 2
+  private def buildBatch(ints: Seq[Int]): ColumnarBatch = {
     new ColumnarBatch(
       Array(GpuColumnVector.from(ColumnVector.fromInts(ints: _*), IntegerType)), ints.length)
   }
 
+  private def buildBatch1: ColumnarBatch = {
+    buildBatch(0 until NUM_ROWS by 2)
+  }
+
   private def buildBatch2: ColumnarBatch = {
-    val ints = 1 until NUM_ROWS by 2
-    new ColumnarBatch(
-      Array(GpuColumnVector.from(ColumnVector.fromInts(ints: _*), IntegerType)), ints.length)
+    buildBatch(1 until NUM_ROWS by 2)
   }
 
   test("GPU topn with split and retry OOM") {
@@ -70,4 +71,33 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       assert(!topNIter.hasNext)
     }
   }
+
+  test("GPU limit with retry OOM") {
+    val totalRows = 24
+    Seq((20, 5), (50, 5)).foreach { case (limit, offset) =>
+      val limitIter = new GpuBaseLimitIterator(
+        // 3 batches as input, and each has 8 rows
+        (0 until totalRows).grouped(8).map(buildBatch(_)).toList.toIterator,
+        limit, offset, NoopMetric, NoopMetric, NoopMetric)
+      var leftRows = if (limit > totalRows) totalRows - offset else limit - offset
+      var curValue = offset
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      while(limitIter.hasNext) {
+        var pos = 0
+        withResource(limitIter.next()) { cb =>
+          withResource(cb.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hCol =>
+            while (pos < hCol.getRowCount.toInt) {
+              assertResult(curValue)(hCol.getInt(pos))
+              pos += 1
+              curValue += 1
+            }
+          }
+          leftRows -= cb.numRows()
+        }
+      }
+      // all the rows are consumed
+      assertResult(0)(leftRows)
+    }
+  }
+
 }
