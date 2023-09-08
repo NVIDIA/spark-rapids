@@ -17,12 +17,13 @@
 package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
-
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.internal.config.EXECUTOR_ID
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -173,4 +174,14 @@ object TrampolineUtil {
   def getSparkConf(spark: SparkSession): SQLConf = {
     spark.sqlContext.conf
   }
+
+  def setExecutorEnv(sc: SparkContext, key: String, value: String): Unit = {
+    sc.executorEnvs(key) = value
+  }
+
+  def createCodec(conf: SparkConf, codecName: String): CompressionCodec = {
+    CompressionCodec.createCodec(conf, codecName)
+  }
+
+  def getCodecShortName(codecName: String): String = CompressionCodec.getShortName(codecName)
 }
