@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
@@ -695,6 +695,28 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
+  def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
+    def findRootProcessingNode(plan: SparkPlan): SparkPlan = plan match {
+      case p: AdaptiveSparkPlanExec => findRootProcessingNode(p.executedPlan)
+      case p: QueryStageExec => findRootProcessingNode(p.plan)
+      case p: ReusedSubqueryExec => findRootProcessingNode(p.child)
+      case p: ReusedExchangeExec => findRootProcessingNode(p.child)
+      case p => p
+    }
+
+    val aqeSubPlan = findRootProcessingNode(adaptivePlan.executedPlan)
+    aqeSubPlan match {
+      case _: GpuExec =>
+        // plan is already on the GPU
+        true
+      case p =>
+        // see if the root processing node of the current subplan will translate to the GPU
+        val meta = GpuOverrides.wrapAndTagPlan(p, conf)
+        meta.canThisBeReplaced
+    }
+  }
 
   def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_,_]): Unit = {
     if (!conf.isFloatAggEnabled && isOrContainsFloatingPoint(dataType)) {

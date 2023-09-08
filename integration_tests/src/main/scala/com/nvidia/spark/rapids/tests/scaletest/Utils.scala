@@ -14,19 +14,16 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution
+package com.nvidia.spark.rapids.tests.scaletest
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import java.io.{PrintWriter, StringWriter}
 
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-
-class GpuShuffleMeta(
-    shuffle: ShuffleExchangeExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)
+object Utils {
+  def stackTraceAsString(e: Throwable): String = {
+    val sw = new StringWriter()
+    val w = new PrintWriter(sw)
+    e.printStackTrace(w)
+    w.close()
+    sw.toString
+  }
+}

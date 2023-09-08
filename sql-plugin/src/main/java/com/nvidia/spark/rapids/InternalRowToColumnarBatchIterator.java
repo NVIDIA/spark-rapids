@@ -16,7 +16,13 @@
 
 package com.nvidia.spark.rapids;
 
-import com.nvidia.spark.rapids.jni.RowConversion;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+
+import scala.Option;
+import scala.collection.Iterator;
 
 import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;
@@ -26,19 +32,16 @@ import ai.rapids.cudf.HostMemoryBuffer;
 import ai.rapids.cudf.NvtxColor;
 import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Table;
+import com.nvidia.spark.rapids.jni.RowConversion;
+
 import org.apache.spark.TaskContext;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
+import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
-import scala.Option;
-import scala.collection.Iterator;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.NoSuchElementException;
-import java.util.Optional;
 
 /**
  * This class converts InternalRow instances to ColumnarBatches on the GPU through the magic of
@@ -109,7 +112,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
 
     long collectStart = System.nanoTime();
 
-    ColumnVector devColumn;
+    SpillableColumnarBatch batchWithColumnToConvert;
     NvtxRange buildRange;
     // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
     // don't do a great job from a performance standpoint with building this type of data structure
@@ -155,25 +158,59 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         streamTime.add(ct);
 
         // Grab the semaphore because we are about to put data onto the GPU.
-        TaskContext tc = TaskContext.get();
-        if (tc != null) {
-          GpuSemaphore$.MODULE$.acquireIfNecessary(tc);
-        }
+        GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
         buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(opTime));
-        devColumn = hostColumn.copyToDevice();
+        ColumnVector devColumn =
+            RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
+        batchWithColumnToConvert = makeSpillableBatch(devColumn);
       }
     }
     try (NvtxRange ignored = buildRange;
-         ColumnVector cv = devColumn;
-         Table tab = rapidsTypes.length < 100 ?
-             // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means
-             // at most 184 double/long values. We are branching over the size of the output to
-             // know which kernel to call. If rapidsTypes.length < 100 we call the fixed-width
-             // optimized version, otherwise the generic one
-             RowConversion.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
-             RowConversion.convertFromRows(cv, rapidsTypes)) {
+         Table tab =
+           RmmRapidsRetryIterator.withRetryNoSplit(batchWithColumnToConvert, (attempt) -> {
+             try (ColumnarBatch cb = attempt.getColumnarBatch()) {
+               return convertFromRowsUnderRetry(cb);
+             }
+           })) {
       return GpuColumnVector.from(tab, outputTypes);
     }
+  }
+
+  /**
+   * Take our device column of encoded rows and turn it into a spillable columnar batch.
+   * This allows us to go into a retry block and be able to roll back our work.
+   */
+  private SpillableColumnarBatch makeSpillableBatch(ColumnVector devColumn) {
+    // this is kind of ugly, but we make up a batch to hold this device column such that
+    // we can make it spillable
+    GpuColumnVector gpuCV = null;
+    try {
+      gpuCV = GpuColumnVector.from(devColumn,
+          ArrayType.apply(DataTypes.ByteType, false));
+    } finally {
+      if (gpuCV == null) {
+        devColumn.close();
+      }
+    }
+    return SpillableColumnarBatch.apply(
+        new ColumnarBatch(
+            new org.apache.spark.sql.vectorized.ColumnVector[]{gpuCV},
+            (int)gpuCV.getRowCount()),
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY());
+  }
+
+  /**
+   * This is exposed so we can verify it is being called N times for OOM retry tests.
+   */
+  protected Table convertFromRowsUnderRetry(ColumnarBatch cb) {
+    ColumnVector devColumn = GpuColumnVector.extractBases(cb)[0];
+    return rapidsTypes.length < 100 ?
+        // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means
+        // at most 184 double/long values. We are branching over the size of the output to
+        // know which kernel to call. If rapidsTypes.length < 100 we call the fixed-width
+        // optimized version, otherwise the generic one
+        RowConversion.convertFromRowsFixedWidthOptimized(devColumn, rapidsTypes) :
+        RowConversion.convertFromRows(devColumn, rapidsTypes);
   }
 
   /**

@@ -22,7 +22,12 @@ import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
 import org.json4s._
 import org.json4s.jackson.Serialization.writePretty
 
-case class QueryMeta(name: String, executionTime: Seq[Long])
+case class QueryMeta(name: String,
+    content: String,
+    status: Seq[String],
+    exceptions: Seq[String],
+    executionTime: Seq[Long])
+
 
 /**
  * A Class for the report of Scale Test.

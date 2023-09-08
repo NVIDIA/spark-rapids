@@ -636,6 +636,18 @@ If your environment has specific encryption requirements for network or IO, plea
 that the RAPIDS Accelerator suits your needs, and file and issue or discussion if you have doubts
 or would like expanded encryption support.
 
+### Can the Rapids Accelerator work with Spark on Ray (RayDP)?
+[RayDP](https://github.com/oap-project/raydp) provides simple APIs for running Spark on
+[Ray](https://github.com/ray-project/ray). In order to run the RAPIDS Accelerator with RayDP,
+GPUs must be requested as `GPU` resources rather than `gpu` resources. This can be done
+with the following changes to the typical GPU resource scheduling setup with Spark:
+
+* Change the contents of the `getGpusResources.sh` script to use `GPU` instead of `gpu`  
+* Change all of the configs that start with `spark.executor.resource.gpu.` to corresponding configs that start with `spark.executor.resource.GPU.`  
+* Change `spark.task.resource.gpu.amount` to `spark.task.resource.GPU.amount`
+
+Note that the RAPIDS Accelerator is not regularly tested against Spark on Ray.
+
 ### I have more questions, where do I go?
 We use github to track bugs, feature requests, and answer questions. File an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
