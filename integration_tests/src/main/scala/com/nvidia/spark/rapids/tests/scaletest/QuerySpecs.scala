@@ -22,6 +22,7 @@ import scala.util.Random
 import com.nvidia.spark.rapids.tests.scaletest.ScaleTest.Config
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types._
 
 case class TestQuery(name: String, content: String, iterations: Int, timeout: Long,
     description: String, shufflePartitions: Int = 200)
@@ -47,56 +48,43 @@ class QuerySpecs(config: Config, spark: SparkSession) {
 
   /**
    * To get numeric columns in a dataframe.
-   * Now numeric columns are limited to [byte, int, long, decimal]
+   * Currently numeric columns are limited to [byte, int, long, decimal]
    *
    * @param table table name
    * @return numeric type column names
    */
   private def getNumericColumns(table: String): Seq[String] = {
-    assert(tables.contains(table), s"Invalid table: $table, candidate tables are ${
-      tables
-        .mkString(",")
-    }")
+    assert(tables.contains(table), s"Invalid table: $table, candidate tables " +
+        s"are ${tables.mkString(",")}")
     val df = spark.read.format(config.format).load(s"$baseInputPath/$table")
-    // Get the data types of all columns
-    val columnDataTypes = df.dtypes
-
-    // Filter columns that are numeric
-    val numericColumns = columnDataTypes.filter {
-      case (_, dataType) =>
-        dataType == "ByteType" || dataType == "IntegerType" || dataType == "LongType" || dataType
-          .startsWith("DecimalType")
-    }.map {
-      case (columnName, _) => columnName
+    df.schema.map { field =>
+      (field.name, field.dataType)
+    }.collect {
+      case (columnName, ByteType | IntegerType | LongType | _: DecimalType) =>
+        columnName
     }
-    numericColumns
   }
 
   /**
    * To get columns in a dataframe that work with min/max.
-   * Now numeric columns are limited to [byte, int, long, decimal, string]
+   * currently min/max columns are limited to [byte, int, long, decimal, string, timestamp, date]
    *
    * @param table table name
    * @return min/max type column names
    */
   private def getMinMaxColumns(table: String): Seq[String] = {
-    assert(tables.contains(table), s"Invalid table: $table, candidate tables are ${
-      tables
-          .mkString(",")
-    }")
+    assert(tables.contains(table), s"Invalid table: $table, candidate tables " +
+        s"are ${tables.mkString(",")}")
     val df = spark.read.format(config.format).load(s"$baseInputPath/$table")
-    // Get the data types of all columns
 
-    df.dtypes.filter {
-      case (_, dataType) =>
-        dataType == "ByteType" || dataType == "IntegerType" || dataType == "LongType" ||
-            dataType.startsWith("DecimalType") || dataType == "StringType" ||
-            dataType == "TimestampType" || dataType == "DateType"
-    }.map {
-      case (columnName, _) => columnName
+    df.schema.map { field =>
+      (field.name, field.dataType)
+    }.collect {
+      case (columnName, ByteType | IntegerType | LongType | StringType |
+                        TimestampType | DateType| _: DecimalType) =>
+        columnName
     }
   }
-
 
   /**
    * To get numeric columns in a dataframe and also in candidate columns
