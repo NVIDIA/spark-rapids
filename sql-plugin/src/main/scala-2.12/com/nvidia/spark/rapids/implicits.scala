@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection
+import scala.collection.{mutable, SeqLike}
 import scala.collection.generic.CanBuildFrom
-import scala.collection.mutable
 import scala.reflect.ClassTag
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -84,7 +83,7 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class AutoCloseableSeq[A <: AutoCloseable](val in: collection.SeqLike[A, _]) {
+  implicit class AutoCloseableSeq[A <: AutoCloseable](val in: SeqLike[A, _]) {
     /**
      * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
      * element of the sequence, even if prior close calls fail. In case of failure in any of the
@@ -112,7 +111,7 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: collection.SeqLike[A, _]) {
+  implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: SeqLike[A, _]) {
     /**
      * safeFree: Is an implicit on a sequence of RapidsBuffer classes that tries to free each
      * element of the sequence, even if prior free calls fail. In case of failure in any of the
@@ -206,7 +205,7 @@ object RapidsPluginImplicits {
      * @return a sequence of B, in the success case
      */
     protected def safeMap[B <: AutoCloseable, That](
-        in: collection.SeqLike[A, Repr],
+        in: SeqLike[A, Repr],
         fn: A => B)
         (implicit bf: CanBuildFrom[Repr, B, That]): That = {
       def builder: mutable.Builder[B, That] = {
@@ -228,7 +227,7 @@ object RapidsPluginImplicits {
               // @ unchecked suppresses a warning that the type of B
               // was eliminated due to erasure. That said B is AutoCloseble
               // and SeqLike[AutoCloseable, _] is defined
-              case b: collection.SeqLike[B @ unchecked, _] => b.safeClose()
+              case b: SeqLike[B @ unchecked, _] => b.safeClose()
               case a: Array[AutoCloseable] => a.safeClose()
             }
           }
@@ -285,29 +284,6 @@ object RapidsPluginImplicits {
     def safeMap[B <: AutoCloseable](fn: GpuColumnVector => B): Seq[B] = {
       val colIds: Seq[Int] = 0 until in.numCols
       super.safeMap(colIds, (i: Int) => fn(in.column(i).asInstanceOf[GpuColumnVector]))
-    }
-  }
-
-  // Allows an scala.collection.mutable.ArrayBuffer to be used as stack to handle the removal
-  // of scala.collection.mutable.ArrayStack in Scala 2.13
-  implicit class ArrayBufferAsStack[A](in: mutable.ArrayBuffer[A]) {
-
-    /**
-     * pop: Pop the top element off of the stack
-     *
-     * @return the element on top of the stack
-     */
-    def pop(): A = {
-      in.remove(in.size-1)
-    }
-
-    /**
-     * push: Push an element onto the stack.
-     *
-     * @param elem The element to push
-     */
-    def push(elem: A): Unit = {
-      in.append(elem)
     }
   }
 }

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.{Comparator, LinkedList, PriorityQueue}
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ArrayStack}
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -450,7 +450,7 @@ case class GpuOutOfCoreSortIterator(
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
       var bytesLeftToFetch = targetSize
-      val pendingSort = new ArrayBuffer[SpillableColumnarBatch]()
+      val pendingSort = new ArrayStack[SpillableColumnarBatch]()
       closeOnExcept(pendingSort) { _ =>
         while (!pending.isEmpty &&
             (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {

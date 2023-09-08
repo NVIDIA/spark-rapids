@@ -20,7 +20,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{ArrayBufferAsStack, AutoCloseableProducingSeq, AutoCloseableSeq}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -242,7 +242,7 @@ class GpuSorter(
    * @return the sorted data.
    */
   final def mergeSortAndCloseWithRetry(
-      spillableBatches: mutable.ArrayBuffer[SpillableColumnarBatch],
+      spillableBatches: mutable.ArrayStack[SpillableColumnarBatch],
       sortTime: GpuMetric): SpillableColumnarBatch = {
     closeOnExcept(spillableBatches) { _ =>
       assert(spillableBatches.nonEmpty)
@@ -259,7 +259,7 @@ class GpuSorter(
           // so as a work around we concatenate all of the data together and then sort it.
           // It is slower, but it works
           val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches) { _ =>
-            val tablesToMerge = spillableBatches.toSeq.safeMap { sb =>
+            val tablesToMerge = spillableBatches.safeMap { sb =>
               withResource(sb.getColumnarBatch()) { cb =>
                 GpuColumnVector.from(cb)
               }
@@ -278,16 +278,16 @@ class GpuSorter(
           }
         } else {
           closeOnExcept(spillableBatches) { _ =>
-            val batchesToMerge = new mutable.ArrayBuffer[SpillableColumnarBatch]()
+            val batchesToMerge = new mutable.ArrayStack[SpillableColumnarBatch]()
             closeOnExcept(batchesToMerge) { _ =>
               while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
                 // pop a spillable batch if there is one, and add it to `batchesToMerge`.
                 if (spillableBatches.nonEmpty) {
-                  batchesToMerge.append(spillableBatches.pop())
+                  batchesToMerge.push(spillableBatches.pop())
                 }
                 if (batchesToMerge.size > 1) {
                   val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-                    val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
+                    val tablesToMerge = batchesToMerge.safeMap { sb =>
                       withResource(sb.getColumnarBatch()) { cb =>
                         GpuColumnVector.from(cb)
                       }
