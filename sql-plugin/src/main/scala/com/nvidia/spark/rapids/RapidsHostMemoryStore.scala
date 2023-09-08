@@ -43,10 +43,6 @@ class RapidsHostMemoryStore(
 
   override def spillableOnAdd: Boolean = false
 
-  override protected def setSpillable(buffer: RapidsBufferBase, spillable: Boolean): Unit = {
-    doSetSpillable(buffer, spillable)
-  }
-
   override def getMaxSize: Option[Long] = Some(maxSize)
 
   private def allocateHostBuffer(
@@ -194,10 +190,7 @@ class RapidsHostMemoryStore(
     // the catalog lock, which should not possible. The event handler is set to null
     // when we free the `RapidsHostMemoryBuffer` and if the buffer is not free, we
     // take out another handle (in the catalog).
-    // TODO: This is not robust (to rely on outside locking and addReference/free)
-    //  and should be revisited.
-    require(buffer.setEventHandler(this) == null,
-      "HostMemoryBuffer with non-null event handler failed to add!!")
+    HostAlloc.addEventHandler(buffer, this)
 
     /**
      * Override from the MemoryBuffer.EventHandler interface.
@@ -227,7 +220,7 @@ class RapidsHostMemoryStore(
     override def free(): Unit = synchronized {
       if (isValid) {
         // it is going to be invalid when calling super.free()
-        buffer.setEventHandler(null)
+        HostAlloc.removeEventHandler(buffer, this)
       }
       super.free()
     }
@@ -359,7 +352,7 @@ class RapidsHostMemoryStore(
      * all columns are spillable.
      */
     override def updateSpillability(): Unit = {
-      doSetSpillable(this, columnSpillability.size == numDistinctColumns)
+      setSpillable(this, columnSpillability.size == numDistinctColumns)
     }
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
@@ -369,7 +362,7 @@ class RapidsHostMemoryStore(
 
     override def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       columnSpillability.clear()
-      doSetSpillable(this, false)
+      setSpillable(this, false)
       RapidsHostColumnVector.incRefCounts(hostCb)
     }
 

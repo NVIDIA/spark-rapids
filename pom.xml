@@ -77,6 +77,7 @@
         <module>integration_tests</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
+        <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
     </modules>
@@ -193,9 +194,22 @@
                 <repository>
                     <id>cloudera-repo</id>
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
                 </repository>
             </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
             <modules>
+                <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
@@ -280,6 +294,7 @@
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
             </properties>
             <modules>
+                <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-spark321db</module>
             </modules>
         </profile>
@@ -431,7 +446,14 @@
                     </snapshots>
                 </repository>
             </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
             <modules>
+                <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
             </modules>
@@ -464,6 +486,7 @@
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
+                <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-spark330db</module>
             </modules>
         </profile>
@@ -495,6 +518,7 @@
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
+                <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-spark332db</module>
             </modules>
         </profile>

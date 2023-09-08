@@ -55,7 +55,7 @@ Then a folder with name pattern: `SCALE_<scale factor>_<complexity>_<format>_<da
 will be created under the `<PATH_TO_SAVE_DATA>` that user just provided.
 
 ## Test Query Sets
-To be added.
+Please refer to [Query Sets](../integration_tests/ScaleTest.md#query-sets) in `integration_tests` module for more details.
 
 ## Table Metadata and Schema
 
