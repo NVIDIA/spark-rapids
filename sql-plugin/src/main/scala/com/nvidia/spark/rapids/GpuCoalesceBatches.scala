@@ -92,7 +92,7 @@ object ConcatAndConsumeAll {
    */
   def getSingleBatchWithVerification(batches: Iterator[ColumnarBatch],
       format: Seq[Attribute]): ColumnarBatch = {
-    import collection.JavaConverters._
+    import scala.collection.JavaConverters._
     if (!batches.hasNext) {
       GpuColumnVector.emptyBatch(format.asJava)
     } else {

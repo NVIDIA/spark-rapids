@@ -49,7 +49,9 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[HiveSimpleUDF](a, conf, p, r) {
-          private val opRapidsFunc = a.function match {
+
+          val function = createFunction(a)
+          private val opRapidsFunc = function match {
             case rapidsUDF: RapidsUDF => Some(rapidsUDF)
             case _ => None
           }
@@ -90,7 +92,8 @@ class HiveProviderImpl extends HiveProviderCmdShims {
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[HiveGenericUDF](a, conf, p, r) {
-          private val opRapidsFunc = a.function match {
+          val function = createFunction(a)
+          private val opRapidsFunc = function match {
             case rapidsUDF: RapidsUDF => Some(rapidsUDF)
             case _ => None
           }

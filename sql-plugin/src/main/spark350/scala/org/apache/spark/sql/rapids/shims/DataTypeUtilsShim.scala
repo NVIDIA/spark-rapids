@@ -15,18 +15,18 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution
+package org.apache.spark.sql.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.types.DataTypeUtils
+import org.apache.spark.sql.types.StructType
 
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+object DataTypeUtilsShim {
+  def fromAttributes(attributes: Seq[Attribute]): StructType =
+    DataTypeUtils.fromAttributes(attributes)
 
-class GpuShuffleMeta(
-    shuffle: ShuffleExchangeExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)
+  def toAttributes(structType: StructType): Seq[Attribute] =
+    DataTypeUtils.toAttributes(structType)
+}
