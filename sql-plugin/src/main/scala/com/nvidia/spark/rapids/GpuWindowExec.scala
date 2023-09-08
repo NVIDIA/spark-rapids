@@ -691,7 +691,6 @@ object GroupedAggregations {
       orderPositions: Seq[Int],
       frame: GpuSpecifiedWindowFrame,
       minPeriods: Int): WindowOptions = {
-    println("CALEB: Getting window options!")
     frame.frameType match {
       case RowFrame =>
         withResource(getRowBasedLower(frame)) { lower =>
@@ -937,67 +936,22 @@ class GroupedAggregations {
         if (frameSpec.frameType == frameType) {
           // For now I am going to assume that we don't need to combine calls across frame specs
           // because it would just not help that much
-          /*
-          val result = withResource(
-            getWindowOptions(boundOrderSpec, orderByPositions, frameSpec)) { windowOpts =>
-            val allAggs = functions.map {
-              case (winFunc, _) => winFunc.aggOverWindow(inputCb, windowOpts)
-            }.toSeq
-            withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
-              aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
-            }
-          }
-           */
-
-          /*
-          // BORKED! Zip method.
           val result = {
-            val allWindowOpts = functions.map { case (_, _) =>
-              getWindowOptions(boundOrderSpec, orderByPositions, frameSpec, 1)
-            }.toSeq
-            withResource(allWindowOpts) { allWindowOpts =>
-              val allAggs = functions.zip(allWindowOpts).map {
-                case (winFunc, windowOpts) => winFunc._1.aggOverWindow(inputCb, windowOpts)
-              }.toSeq
+            val functionsSeq = functions.toIndexedSeq
+            val allWindowOpts = {for (i <- 0 until functionsSeq.size) yield
+              getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
+                getMinPeriodsFor(functionsSeq(i)._1))
+            }
+            withResource(allWindowOpts.toIndexedSeq) { allWindowOpts =>
+              val allAggs = {
+                for (i <- 0 until functionsSeq.size) yield
+                  functionsSeq(i)._1.aggOverWindow(inputCb, allWindowOpts(i))
+              }.toIndexedSeq
               withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
                 aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
               }
             }
           }
-
-           */
-
-          println("CALEB: 2")
-          val result = {
-              val functionsSeq = functions.toIndexedSeq
-              val allWindowOpts = {for (i <- 0 until functionsSeq.size) yield
-                getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
-                  getMinPeriodsFor(functionsSeq(i)._1))
-              }
-              withResource(allWindowOpts.toIndexedSeq) { allWindowOpts =>
-                val allAggs = {
-                  for (i <- 0 until functionsSeq.size) yield
-                    functionsSeq(i)._1.aggOverWindow(inputCb, allWindowOpts(i))
-                }.toIndexedSeq
-                withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
-                  aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
-                }
-              }
-          }
-
-          println("CALEB: 3")
-          /*
-          // This one works. Same as the original.
-          val result = withResource(
-            getWindowOptions(boundOrderSpec, orderByPositions, frameSpec, 1)) { windowOpts =>
-              val allAggs = functions.map { case (winFunc, _) =>
-                  winFunc.aggOverWindow(inputCb, windowOpts)
-              }.toSeq
-              withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
-                aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
-              }
-            }
-           */
 
           withResource(result) { result =>
             functions.zipWithIndex.foreach {
