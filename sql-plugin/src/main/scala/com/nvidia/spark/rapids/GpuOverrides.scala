@@ -3086,6 +3086,19 @@ object GpuOverrides extends Logging {
          |For instance decimal strings not longer than 18 characters / hexadecimal strings
          |not longer than 15 characters disregarding the sign cannot cause an overflow.
          """.stripMargin.replaceAll("\n", " ")),
+    expr[FormatNumber](
+      "Formats numeric column x to a format like '#,###,###.##', rounded to d decimal places" +
+      " with HALF_EVEN round mode, and returns the result as a string column.\n" + 
+      "If d is 0, the result has no decimal point or fractional part. If d is less than 0, " + 
+      "the result will be null.",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("x", TypeSig.cpuNumeric, TypeSig.cpuNumeric),
+          ParamCheck("d", TypeSig.INT, TypeSig.INT))),
+      (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuFormatNumber(lhs, rhs)
+      }
+    ),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +

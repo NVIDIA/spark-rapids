@@ -1989,8 +1989,6 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   }
 }
 
-
-
 class GpuConvMeta(
   expr: Conv,
   conf: RapidsConf,
@@ -2079,4 +2077,33 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression)
   override def third: Expression = toBase
 
   override def dataType: DataType = StringType
+}
+
+case class GpuFormatNumber(x: Expression, d: Expression)
+    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerant {
+  
+  override def left: Expression = x
+  override def right: Expression = d
+  override def dataType: DataType = StringType
+  override def nullable: Boolean = true
+  override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    // TODO: implement this
+    lhs.getBase.castTo(DType.STRING)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, dataType)) { col =>
+      doColumnar(col, rhs)
+    }
+  }
 }
