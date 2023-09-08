@@ -72,7 +72,7 @@ class RapidsGdsStore(
       extends RapidsBufferBase(id, meta, spillPriority) {
     override val storageTier: StorageTier = StorageTier.GDS
 
-    override def getMemoryUsedBytes(): Long = size
+    override val memoryUsedBytes: Long = size
 
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
   }
@@ -232,7 +232,7 @@ class RapidsGdsStore(
         var isPending: Boolean = true)
         extends RapidsGdsBuffer(id, size, meta, spillPriority) {
 
-      override def getMemoryUsedBytes(): Long = size
+      override val memoryUsedBytes: Long = size
 
       override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
         closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>

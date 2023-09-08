@@ -111,7 +111,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         id, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
-    override def getMemoryUsedBytes(): Long = size
+    override val memoryUsedBytes: Long = size
 
     override val storageTier: StorageTier = StorageTier.DISK
 

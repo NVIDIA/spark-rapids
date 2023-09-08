@@ -264,7 +264,7 @@ class RapidsDeviceMemoryStore(
       chunkedPacker.getMeta
     }
 
-    override def getMemoryUsedBytes: Long = unpackedSizeInBytes
+    override val memoryUsedBytes: Long = unpackedSizeInBytes
 
     override def getPackedSizeBytes: Long = getChunkedPacker.getTotalContiguousSize
 
@@ -415,7 +415,7 @@ class RapidsDeviceMemoryStore(
         with MemoryBuffer.EventHandler
         with RapidsBufferChannelWritable {
 
-    override def getMemoryUsedBytes(): Long = size
+    override val memoryUsedBytes: Long = size
 
     override val storageTier: StorageTier = StorageTier.DEVICE
 

@@ -103,7 +103,7 @@ class RapidsHostMemoryStore(
       stream: Cuda.Stream): Boolean = {
     // this spillStore has a maximum size requirement (host only). We need to spill from it
     // in order to make room for `buffer`.
-    val targetTotalSize = maxSize - buffer.getMemoryUsedBytes
+    val targetTotalSize = maxSize - buffer.memoryUsedBytes
     if (targetTotalSize <= 0) {
       // lets not spill to host when the buffer we are about
       // to spill is larger than our limit
@@ -112,7 +112,7 @@ class RapidsHostMemoryStore(
       val amountSpilled =
         synchronousSpill(targetTotalSize, stream).map {
           case BufferSpill(spilledBuffer, _) =>
-            spilledBuffer.getMemoryUsedBytes
+            spilledBuffer.memoryUsedBytes
         }.sum
 
       if (amountSpilled != 0) {
@@ -120,7 +120,7 @@ class RapidsHostMemoryStore(
         TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
       }
       // if after spill we can fit the new buffer, return true
-      buffer.getMemoryUsedBytes <= currentSize
+      buffer.memoryUsedBytes <= currentSize
     }
   }
 
@@ -219,7 +219,7 @@ class RapidsHostMemoryStore(
     }
 
     /** The size of this buffer in bytes. */
-    override def getMemoryUsedBytes: Long = size
+    override val memoryUsedBytes: Long = size
 
     // If this require triggers, we are re-adding a `HostMemoryBuffer` outside of
     // the catalog lock, which should not possible. The event handler is set to null
@@ -364,7 +364,7 @@ class RapidsHostMemoryStore(
       null
     }
 
-    override def getMemoryUsedBytes: Long = hostSizeInByes
+    override val memoryUsedBytes: Long = hostSizeInByes
 
     /**
      * Mark a column as spillable

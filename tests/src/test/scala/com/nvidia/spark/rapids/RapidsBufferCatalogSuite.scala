@@ -330,7 +330,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
       var _acquireAttempts: Int = acquireAttempts
       var currentPriority: Long =  initialPriority
       override val id: RapidsBufferId = bufferId
-      override def getMemoryUsedBytes: Long = 0
+      override val memoryUsedBytes: Long = 0
       override def meta: TableMeta = tableMeta
       override val storageTier: StorageTier = tier
       override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null

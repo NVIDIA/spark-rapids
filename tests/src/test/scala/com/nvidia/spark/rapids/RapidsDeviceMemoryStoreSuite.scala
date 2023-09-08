@@ -482,7 +482,7 @@ class RapidsDeviceMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
         throw new UnsupportedOperationException
 
       /** The size of this buffer in bytes. */
-      override def getMemoryUsedBytes: Long = size
+      override val memoryUsedBytes: Long = size
     }
   }
 }

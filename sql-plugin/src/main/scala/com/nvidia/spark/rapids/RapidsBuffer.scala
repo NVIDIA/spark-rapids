@@ -230,14 +230,14 @@ trait RapidsBuffer extends AutoCloseable {
    *
    * @note Do not use this size to allocate a target buffer to copy, always use `getPackedSize.`
    */
-  def getMemoryUsedBytes: Long
+  val memoryUsedBytes: Long
 
   /**
    * The size of this buffer if it has already gone through contiguous_split.
    *
    * @note Use this function when allocating a target buffer for spill or shuffle purposes.
    */
-  def getPackedSizeBytes: Long = getMemoryUsedBytes
+  def getPackedSizeBytes: Long = memoryUsedBytes
 
   /**
    * At spill time, obtain an iterator used to copy this buffer to a different tier.
@@ -389,7 +389,7 @@ sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
     override val meta: TableMeta) extends RapidsBuffer {
 
-  override def getMemoryUsedBytes: Long = 0L
+  override val memoryUsedBytes: Long = 0L
 
   override val storageTier: StorageTier = StorageTier.DEVICE
 
@@ -451,7 +451,7 @@ trait RapidsHostBatchBuffer extends AutoCloseable {
    */
   def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
-  def getMemoryUsedBytes(): Long
+  val memoryUsedBytes: Long
 }
 
 trait RapidsBufferChannelWritable {

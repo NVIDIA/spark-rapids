@@ -592,7 +592,7 @@ class RapidsBufferCatalog(
         val totalSpilled = bufferSpills.map { case BufferSpill(spilledBuffer, maybeNewBuffer) =>
           maybeNewBuffer.foreach(registerNewBuffer)
           removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
-          spilledBuffer.getMemoryUsedBytes
+          spilledBuffer.memoryUsedBytes
         }.sum
         Some(totalSpilled)
       }
