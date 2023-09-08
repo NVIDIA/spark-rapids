@@ -239,6 +239,37 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     }
   }
 
+  test("skip host: spill table to disk with small host bounce buffer") {
+    val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
+    val bufferPath = bufferId.getDiskPath(null)
+    assert(!bufferPath.exists)
+    val spillPriority = -7
+    withResource(new RapidsDeviceMemoryStore(1L*1024*1024, 10)) { devStore =>
+      val catalog = new RapidsBufferCatalog(devStore)
+      withResource(new AlwaysFailingRapidsHostMemoryStore) {
+        hostStore =>
+          devStore.setSpillStore(hostStore)
+          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+            hostStore.setSpillStore(diskStore)
+            val handle = addTableToCatalog(catalog, bufferId, spillPriority)
+            withResource(buildTable()) { expectedTable =>
+              withResource(
+                GpuColumnVector.from(expectedTable, mockTableDataTypes)) { expectedBatch =>
+                catalog.synchronousSpill(devStore, 0)
+                withResource(catalog.acquireBuffer(handle)) { buffer =>
+                  assert(handle.id.getDiskPath(null).exists())
+                  assertResult(StorageTier.DISK)(buffer.storageTier)
+                  withResource(buffer.getColumnarBatch(mockTableDataTypes)) { fromDiskBatch =>
+                    TestUtils.compareBatches(expectedBatch, fromDiskBatch)
+                  }
+                }
+              }
+            }
+          }
+      }
+    }
+  }
+
   test("exclusive spill files are deleted when buffer deleted") {
     testBufferFileDeletion(canShareDiskPaths = false)
   }

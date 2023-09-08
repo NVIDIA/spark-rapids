@@ -49,10 +49,10 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     val (fileOffset, diskLength) = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
       path.synchronized {
-        writeToFile(incoming, path, append = true)
+        writeToFile(incoming, path, append = true, stream)
       }
     } else {
-      writeToFile(incoming, path, append = false)
+      writeToFile(incoming, path, append = false, stream)
     }
 
     logDebug(s"Spilled to $path $fileOffset:$diskLength")
@@ -80,13 +80,14 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
   private def writeToFile(
       incoming: RapidsBuffer,
       path: File,
-      append: Boolean): (Long, Long) = {
+      append: Boolean,
+      stream: Cuda.Stream): (Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
         withResource(new FileOutputStream(path, append)) { fos =>
           withResource(fos.getChannel) { outputChannel =>
             val startOffset = outputChannel.position()
-            val writtenBytes = fileWritable.writeToChannel(outputChannel)
+            val writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
             (startOffset, writtenBytes)
           }
         }

@@ -359,14 +359,17 @@ abstract class RapidsBufferStore(val tier: StorageTier)
   }
 
   /**
-   * If `spillStore` defines a maximum size, spill to make room for `buffer`.
+   * Tries to make room for `buffer` in the host store by spilling.
+   *
+   * @param buffer buffer that will be copied to the host store if it fits
+   * @param stream CUDA stream to synchronize for memory operations
+   * @return true if the buffer fits after a potential spill
    */
   protected def trySpillToMaximumSize(
       buffer: RapidsBuffer,
       stream: Cuda.Stream): Boolean = {
-    true // default to success
+    true // default to success, HostMemoryStore overrides this
   }
-
 
   /** Base class for all buffers in this store. */
   abstract class RapidsBufferBase(

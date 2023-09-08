@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.nio.ByteBuffer
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer}
+import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
 
 abstract class AbstractHostByteBufferIterator
     extends Iterator[ByteBuffer] {
@@ -69,32 +69,34 @@ class HostByteBufferIterator(hostBuffer: HostMemoryBuffer)
 
 /**
  * Create an iterator that will emit ByteBuffer instances sequentially
- * to work around the 2GB ByteBuffer size limitation. This allows
- * the entire address range of a >2GB host buffer to be covered
- * by a sequence of ByteBuffer instances.
- * <p>NOTE: It is the caller's responsibility to ensure this iterator
- * does not outlive the host buffer. The iterator DOES NOT increment
- * the reference count of the host buffer to ensure it remains valid.
- *
- * @param hostBuffer host buffer to iterate
+ * to work around the 2GB ByteBuffer size limitation after copying a `MemoryBuffer`
+ * (which is likely a `DeviceMemoryBuffer`) to a host-backed bounce buffer
+ * that is likely smaller than 2GB.
+ * @note It is the caller's responsibility to ensure this iterator
+ *   does not outlive `memoryBuffer`. The iterator DOES NOT increment
+ *   the reference count of `memoryBuffer` to ensure it remains valid.
+ * @param memoryBuffer memory buffer to copy. This is likely a DeviceMemoryBuffer
+ * @param bounceBuffer a host bounce buffer that will be used to stage copies onto the host
+ * @param stream stream to synchronize on after staging to bounceBuffer
  * @return ByteBuffer iterator
  */
-class DeviceToHostByteBufferIterator(
-    deviceMemoryBuffer: DeviceMemoryBuffer,
+class MemoryBufferToHostByteBufferIterator(
+    memoryBuffer: MemoryBuffer,
     bounceBuffer: HostMemoryBuffer,
     stream: Cuda.Stream)
     extends AbstractHostByteBufferIterator {
-  override val totalLength: Long = if (deviceMemoryBuffer == null) {
+  override val totalLength: Long = if (memoryBuffer == null) {
     0
   } else {
-    deviceMemoryBuffer.getLength
+    memoryBuffer.getLength
   }
 
-  override protected val limit: Long = bounceBuffer.getLength
+  override protected val limit: Long =
+    Math.min(bounceBuffer.getLength, Integer.MAX_VALUE)
 
   override def getByteBuffer(offset: Long, length: Long): ByteBuffer = {
     bounceBuffer
-      .copyFromMemoryBufferAsync(0, deviceMemoryBuffer, offset, length, stream)
+      .copyFromMemoryBufferAsync(0, memoryBuffer, offset, length, stream)
     stream.sync()
     bounceBuffer.asByteBuffer(0, length.toInt)
   }

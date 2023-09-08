@@ -37,7 +37,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *    during spill in chunked_pack. The parameter defaults to 128MB,
  *    with a rule-of-thumb of 1MB per SM.
  */
-class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024)
+class RapidsDeviceMemoryStore(
+    chunkedPackBounceBufferSize: Long = 128L*1024*1024,
+    hostBounceBufferSize: Long = 128L*1024*1024)
   extends RapidsBufferStore(StorageTier.DEVICE) {
 
   // The RapidsDeviceMemoryStore handles spillability via ref counting
@@ -48,7 +50,7 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
     DeviceMemoryBuffer.allocate(chunkedPackBounceBufferSize)
 
   private var hostSpillBounceBuffer: HostMemoryBuffer =
-    HostMemoryBuffer.allocate(chunkedPackBounceBufferSize)
+    HostMemoryBuffer.allocate(hostBounceBufferSize)
 
   override protected def createBuffer(
       other: RapidsBuffer,
@@ -378,15 +380,15 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
       }
     }
 
-    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+    override def writeToChannel(outputChannel: WritableByteChannel, stream: Cuda.Stream): Long = {
       var written: Long = 0L
       withResource(getCopyIterator) { copyIter =>
         while(copyIter.hasNext) {
           val iter =
-            new DeviceToHostByteBufferIterator(
-              copyIter.next().asInstanceOf[DeviceMemoryBuffer],
+            new MemoryBufferToHostByteBufferIterator(
+              copyIter.next(),
               hostSpillBounceBuffer,
-              Cuda.DEFAULT_STREAM)
+              stream)
           iter.foreach { bb =>
             try {
               while (bb.hasRemaining) {
@@ -488,12 +490,12 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
       super.free()
     }
 
-    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+    override def writeToChannel(outputChannel: WritableByteChannel, stream: Cuda.Stream): Long = {
       var written: Long = 0L
-      val iter = new DeviceToHostByteBufferIterator(
+      val iter = new MemoryBufferToHostByteBufferIterator(
         contigBuffer,
         hostSpillBounceBuffer,
-        Cuda.DEFAULT_STREAM)
+        stream)
       iter.foreach { bb =>
         try {
           while (bb.hasRemaining) {

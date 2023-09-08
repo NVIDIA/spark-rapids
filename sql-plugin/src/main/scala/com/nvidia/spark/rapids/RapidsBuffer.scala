@@ -459,7 +459,10 @@ trait RapidsBufferChannelWritable {
    * At spill time, write this buffer to an nio WritableByteChannel.
    * @param writableChannel that this buffer can just write itself to, either byte-for-byte
    *                        or via serialization if needed.
+   * @param stream the Cuda.Stream for the spilling thread. If the `RapidsBuffer` that
+   *               implements this method is on the device, synchronization may be needed
+   *               for staged copies.
    * @return the amount of bytes written to the channel
    */
-  def writeToChannel(writableChannel: WritableByteChannel): Long
+  def writeToChannel(writableChannel: WritableByteChannel, stream: Cuda.Stream): Long
 }

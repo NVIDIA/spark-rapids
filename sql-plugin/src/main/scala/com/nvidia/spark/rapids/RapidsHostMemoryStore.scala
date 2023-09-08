@@ -105,7 +105,9 @@ class RapidsHostMemoryStore(
     // in order to make room for `buffer`.
     val targetTotalSize = maxSize - buffer.getMemoryUsedBytes
     if (targetTotalSize <= 0) {
-      false // lets not spill to host
+      // lets not spill to host when the buffer we are about
+      // to spill is larger than our limit
+      false
     } else {
       val amountSpilled =
         synchronousSpill(targetTotalSize, stream).map {
@@ -117,7 +119,7 @@ class RapidsHostMemoryStore(
         logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
         TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
       }
-      // would fit now
+      // if after spill we can fit the new buffer, return true
       buffer.getMemoryUsedBytes <= currentSize
     }
   }
@@ -191,7 +193,7 @@ class RapidsHostMemoryStore(
       }
     }
 
-    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+    override def writeToChannel(outputChannel: WritableByteChannel, ignored: Cuda.Stream): Long = {
       var written: Long = 0L
       val iter = new HostByteBufferIterator(buffer)
       iter.foreach { bb =>
@@ -409,7 +411,7 @@ class RapidsHostMemoryStore(
         "RapidsHostColumnarBatch does not support getCopyIterator")
     }
 
-    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+    override def writeToChannel(outputChannel: WritableByteChannel, ignored: Cuda.Stream): Long = {
       withResource(Channels.newOutputStream(outputChannel)) { outputStream =>
         withResource(new DataOutputStream(outputStream)) { dos =>
           val columns = RapidsHostColumnVector.extractBases(hostCb)
