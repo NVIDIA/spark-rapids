@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.channels.WritableByteChannel
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable
@@ -24,8 +25,10 @@ import ai.rapids.cudf.{ColumnVector, Cuda, DeviceMemoryBuffer, HostMemoryBuffer,
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 
 import org.apache.spark.sql.rapids.TempSpillBufferId
+import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -44,6 +47,9 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
   // bounce buffer to be used during chunked pack in GPU to host memory spill
   private var chunkedPackBounceBuffer: DeviceMemoryBuffer =
     DeviceMemoryBuffer.allocate(chunkedPackBounceBufferSize)
+
+  private var hostSpillBounceBuffer: HostMemoryBuffer =
+    HostMemoryBuffer.allocate(chunkedPackBounceBufferSize)
 
   override protected def createBuffer(
       other: RapidsBuffer,
@@ -215,7 +221,8 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
       extends RapidsBufferBase(
         id,
         null,
-        spillPriority) {
+        spillPriority)
+          with RapidsBufferChannelWritable {
 
     /** The storage tier for this buffer */
     override val storageTier: StorageTier = StorageTier.DEVICE
@@ -371,6 +378,30 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
         }
       }
     }
+
+    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+      var written: Long = 0L
+      withResource(getCopyIterator) { copyIter =>
+        while(copyIter.hasNext) {
+          val iter =
+            new DeviceToHostByteBufferIterator(
+              copyIter.next().asInstanceOf[DeviceMemoryBuffer],
+              hostSpillBounceBuffer,
+              Cuda.DEFAULT_STREAM)
+          iter.foreach { bb =>
+            try {
+              while (bb.hasRemaining) {
+                written += outputChannel.write(bb)
+              }
+            } finally {
+              RapidsStorageUtils.dispose(bb)
+            }
+          }
+        }
+        written
+      }
+    }
+
   }
 
   class RapidsDeviceMemoryBuffer(
@@ -380,7 +411,8 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long)
       extends RapidsBufferBase(id, meta, spillPriority)
-        with MemoryBuffer.EventHandler {
+        with MemoryBuffer.EventHandler
+        with RapidsBufferChannelWritable {
 
     override def getMemoryUsedBytes(): Long = size
 
@@ -456,10 +488,32 @@ class RapidsDeviceMemoryStore(chunkedPackBounceBufferSize: Long = 128L*1024*1024
       }
       super.free()
     }
+
+    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+      var written: Long = 0L
+      val iter = new DeviceToHostByteBufferIterator(
+        contigBuffer,
+        hostSpillBounceBuffer,
+        Cuda.DEFAULT_STREAM)
+      iter.foreach { bb =>
+        try {
+          while (bb.hasRemaining) {
+            written += outputChannel.write(bb)
+          }
+        } finally {
+          RapidsStorageUtils.dispose(bb)
+        }
+      }
+      written
+    }
   }
   override def close(): Unit = {
-    super.close()
-    chunkedPackBounceBuffer.close()
-    chunkedPackBounceBuffer = null
+    try {
+      super.close()
+    } finally {
+      Seq(chunkedPackBounceBuffer, hostSpillBounceBuffer).safeClose()
+      chunkedPackBounceBuffer = null
+      hostSpillBounceBuffer = null
+    }
   }
 }
