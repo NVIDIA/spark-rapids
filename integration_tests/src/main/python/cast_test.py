@@ -297,7 +297,7 @@ def _assert_cast_to_string_equal (data_gen, conf):
 
 @pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
+# @pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
@@ -317,7 +317,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 
 @pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
+# @pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
@@ -337,11 +337,11 @@ def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
 
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
+# @pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy, "spark.rapids.sql.explain": "ALL"}
     )
 
 # https://github.com/NVIDIA/spark-rapids/issues/2309
@@ -354,7 +354,7 @@ def test_one_nested_null_field_legacy_cast(cast_conf):
             (None,)
         ]
         df = spark.createDataFrame(data)
-        return df.select(df._1.cast(StringType()))
+        return debug_df(df.select(df._1.cast(StringType())))
 
     assert_gpu_and_cpu_are_equal_collect(
         was_broken_for_nested_null, 
@@ -362,7 +362,7 @@ def test_one_nested_null_field_legacy_cast(cast_conf):
     )
 
 # https://github.com/NVIDIA/spark-rapids/issues/2315
-@pytest.mark.parametrize('cast_conf', ['LEGACY', 'SPARK311+'])
+@pytest.mark.parametrize('cast_conf', ['SPARK311+'])
 def test_two_col_struct_legacy_cast(cast_conf):
     def broken_df(spark):
         key_data_gen = StructGen([

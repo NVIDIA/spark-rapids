@@ -25,43 +25,46 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, TimeZoneAwareExpression}
-import org.apache.spark.sql.rapids.GpuTimeUnaryExpression
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = None)
-  extends GpuTimeUnaryExpression {
+  extends ShimUnaryExpression with GpuExpression with ToStringBase with TimeZoneAwareExpression {
+
+  override lazy val resolved: Boolean = childrenResolved
 
   override def dataType: DataType = StringType
 
   override def nullable: Boolean = false
 
-  override lazy val resolved: Boolean = childrenResolved
+  override def withTimeZone(timeZoneId: String): GpuToPrettyString =
+    copy(timeZoneId = Some(timeZoneId))
 
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
-    copy(timeZoneId = Option(timeZoneId))
+  override def withNewChildInternal(newChild: Expression): Expression =
+    copy(child = newChild)
 
-  override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    val c = child.columnarEvalAny(batch)
-    if (c.isInstanceOf[GpuColumnVector]) {
-      processColumnVector(c.asInstanceOf[GpuColumnVector])
-    } else {
-      if (!c.asInstanceOf[Scalar].isValid) {
-        withResource(c.asInstanceOf[Scalar]) { sc =>
-          Scalar.fromString("NULL")
-        }
-      } else {
-        c
-      }
-    }
-  }
+  override protected def leftBracket: String = "{"
+
+  override protected def rightBracket: String = "}"
+
+  override protected def nullString: String = "NULL"
+
+//  override protected def useDecimalPlainString: Boolean = true
+
+//  override protected def useHexFormatForBinary: Boolean = true
 
   private def processColumnVector(cv: GpuColumnVector) = {
-    if (cv.hasNull) {
+    val stringCol = withResource(cv) { originalCol =>
+      //TODO: casting a string column might not achieve what we want as the left, right brackets
+      //are dependant on the sql conf and not what we want
+      castToString(originalCol.getBase, originalCol.dataType(), false, false, false)
+    }
+
+    if (stringCol.hasNulls()) {
       withResource(cv.asInstanceOf[GpuColumnVector]) { columnVector =>
-        withResource(columnVector.getBase.isNull) { isNull =>
-          withResource(Scalar.fromString("NULL")) { nullString =>
-            GpuColumnVector.from(isNull.ifElse(nullString, cv.getBase), StringType)
+        withResource(columnVector.getBase.isNull()) { isNull =>
+          withResource(Scalar.fromString(nullString)) { nullString =>
+            GpuColumnVector.from(isNull.ifElse(nullString, stringCol), StringType)
           }
         }
       }
@@ -70,13 +73,33 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
     }
   }
 
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    val c = child.columnarEvalAny(batch)
+    if (c.isInstanceOf[GpuColumnVector]) {
+      processColumnVector(c.asInstanceOf[GpuColumnVector])
+    } else {
+      withResource(c.asInstanceOf[Scalar]) { scalar =>
+        if (!scalar.isValid) {
+          withResource(c.asInstanceOf[Scalar]) { sc =>
+            Scalar.fromString(nullString)
+          }
+        } else {
+          if (scalar.getType == DType.STRING) {
+            // TODO: unsure if we should cast it or just return as is
+            scalar.incRefCount()
+          } else {
+            GpuScalar.from(GpuScalar.extract(scalar).toString, StringType)
+          }
+        }
+      }
+    }
+  }
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val c = child.columnarEval(batch)
     processColumnVector(c)
   }
 
-  override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    GpuCast.doCast(input.getBase, input.dataType(), StringType, false,
-      legacyCastToString = false, stringToDateAnsiModeEnabled = false)
-  }
+//  override def doColumnar(input: GpuColumnVector): ColumnVector = None
+
 }

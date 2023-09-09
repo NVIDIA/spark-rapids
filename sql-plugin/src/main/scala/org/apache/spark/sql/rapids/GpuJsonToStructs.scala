@@ -17,9 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{AnotherCastClass, GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 
@@ -197,7 +196,7 @@ case class GpuJsonToStructs(
               } else {
                 val col = rawTable.getColumn(i)
                 // getSparkType is only used to get the from type for cast
-                doCast(col, getSparkType(col), dtype, false, false, false)
+                AnotherCastClass(col, getSparkType(col), dtype, false, false, false)
               }
             }
 
