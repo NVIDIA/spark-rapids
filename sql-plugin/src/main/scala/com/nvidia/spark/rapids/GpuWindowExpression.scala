@@ -81,13 +81,10 @@ abstract class GpuWindowExpressionMetaBase(
               case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
-                if (lower > 0) {
-                  willNotWorkOnGpu(s"lower-bounds ahead of current row is not supported. " +
-                      s"Found $lower")
-                }
-                if (upper < 0) {
-                  willNotWorkOnGpu(s"upper-bounds behind the current row is not supported. " +
-                      s"Found $upper")
+                // Negative bounds are allowed, so long as lower does not exceed upper.
+                if (upper < lower) {
+                  willNotWorkOnGpu("upper-bounds must equal or exceed the lower bounds. " +
+                    s"Found lower=$lower, upper=$upper ")
                 }
             }
           case RangeFrame =>

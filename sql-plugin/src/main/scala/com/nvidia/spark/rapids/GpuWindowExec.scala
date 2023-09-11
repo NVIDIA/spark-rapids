@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCount}
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCollectList, GpuCollectSet, GpuCount}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -756,7 +756,9 @@ object GroupedAggregations {
 
   private def getMinPeriodsFor(boundGpuWindowFunction: BoundGpuWindowFunction): Int =
     boundGpuWindowFunction.windowFunc match {
-      case GpuCount(_, _) => 1
+      case GpuCount(_, _) => 0
+      case GpuCollectList(_, _, _) => 0
+      case GpuCollectSet(_, _, _) => 0
       case _ => 1
     }
 
