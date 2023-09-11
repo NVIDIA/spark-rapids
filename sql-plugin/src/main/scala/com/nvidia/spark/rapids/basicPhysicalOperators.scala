@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -1004,15 +1005,15 @@ class GpuRangeIterator(
 
   private val safePartitionStart = getSafeMargin(partitionStart) // inclusive
   private val safePartitionEnd = getSafeMargin(partitionEnd) // exclusive, unless start == this
-  private[this] var number: Long = safePartitionStart
+  private[this] var currentPosition: Long = safePartitionStart
   private[this] var done: Boolean = false
 
   override def hasNext: Boolean = {
     if (!done) {
       if (step > 0) {
-        number < safePartitionEnd
+        currentPosition < safePartitionEnd
       } else {
-        number > safePartitionEnd
+        currentPosition > safePartitionEnd
       }
     } else false
   }
@@ -1020,11 +1021,11 @@ class GpuRangeIterator(
   override def next(): ColumnarBatch = {
     GpuSemaphore.acquireIfNecessary(taskContext)
     withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
-      val start = number
+      val start = currentPosition
       val remainingRows = (safePartitionEnd - start) / step
       // Start is inclusive so we need to produce at least one row
       val rowsExpected = Math.max(1, Math.min(remainingRows, maxRowCountPerBatch))
-      val iter = withRetry(AutoCloseableLong(rowsExpected), splitRowsNumberInHalf) { rows =>
+      val iter = withRetry(AutoCloseableLong(rowsExpected), reduceRowsNumberByHalf) { rows =>
         withResource(Scalar.fromLong(start)) { startScalar =>
           withResource(Scalar.fromLong(step)) { stepScalar =>
             withResource(
@@ -1038,11 +1039,15 @@ class GpuRangeIterator(
       }
       assert(iter.hasNext)
       closeOnExcept(iter.next()) { batch =>
-        // it should has only one batch
+        // This "iter" returned from the "withRetry" block above has only one batch,
+        // because the split function "reduceRowsNumberByHalf" returns a Seq with a single
+        // element inside.
+        // By doing this, we can pull out this single batch directly without maintaining
+        // this extra `iter` for the next loop.
         assert(iter.isEmpty)
         val endInclusive = start + ((batch.numRows() - 1) * step)
-        number = endInclusive + step
-        if (number < endInclusive ^ step < 0) {
+        currentPosition = endInclusive + step
+        if (currentPosition < endInclusive ^ step < 0) {
           // we have Long.MaxValue + Long.MaxValue < Long.MaxValue
           // and Long.MinValue + Long.MinValue > Long.MinValue, so iff the step causes a
           // step back, we are pretty sure that we have an overflow.
@@ -1059,13 +1064,17 @@ class GpuRangeIterator(
   /**
    * Reduce the input rows number by half, and it returns a Seq with only one element,
    * that is the half value.
+   * This will be used with the split_retry block to generate a single batch a with smaller
+   * size when getting relevant OOMs.
    */
-  private def splitRowsNumberInHalf: AutoCloseableLong => Seq[AutoCloseableLong] =
+  private def reduceRowsNumberByHalf: AutoCloseableLong => Seq[AutoCloseableLong] =
     (rowsNumber) => {
       withResource(rowsNumber) { _ =>
-        assert(rowsNumber.value > 0)
-        val firstHalf = math.max(1L, rowsNumber.value / 2)
-        Seq(AutoCloseableLong(firstHalf))
+        if (rowsNumber.value < 10) {
+          throw new SplitAndRetryOOM(s"GPU OutOfMemory: the number of rows generated is" +
+            s" too small to be split ${rowsNumber.value}!")
+        }
+        Seq(AutoCloseableLong(rowsNumber.value / 2))
       }
     }
 
