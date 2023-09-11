@@ -39,6 +39,7 @@ class RapidsGdsStore(
 
   override protected def createBuffer(
       other: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
       stream: Cuda.Stream): Option[RapidsBufferBase] = {
     // assume that we get 1 buffer
     val otherBuffer = withResource(other.getCopyIterator) { it =>

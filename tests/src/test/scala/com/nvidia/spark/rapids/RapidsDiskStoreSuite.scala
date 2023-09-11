@@ -280,7 +280,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
   class AlwaysFailingRapidsHostMemoryStore extends RapidsHostMemoryStore(0L){
     override def createBuffer(
-        other: RapidsBuffer, stream: Cuda.Stream): Option[RapidsBufferBase] = {
+        other: RapidsBuffer,
+        catalog: RapidsBufferCatalog,
+        stream: Cuda.Stream): Option[RapidsBufferBase] = {
       None
     }
   }

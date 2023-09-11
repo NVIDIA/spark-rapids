@@ -460,7 +460,7 @@ class RapidsBufferCatalog(
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer = {
     val id = handle.id
-    (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
+    def lookupAndReturn: Option[RapidsBuffer] = {
       val buffers = bufferMap.get(id)
       if (buffers == null || buffers.isEmpty) {
         throw new NoSuchElementException(
@@ -468,7 +468,27 @@ class RapidsBufferCatalog(
       }
       val buffer = buffers.head
       if (buffer.addReference()) {
-        return buffer
+        Some(buffer)
+      } else {
+        None
+      }
+    }
+
+    // fast path
+    (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
+      val mayBuffer = lookupAndReturn
+      if (mayBuffer.isDefined) {
+        return mayBuffer.get
+      }
+    }
+
+    // try one last time after locking the catalog (slow path)
+    // if there is a lot of contention here, I would rather lock the world than
+    // have tasks error out with "Unable to acquire"
+    synchronized {
+      val mayBuffer = lookupAndReturn
+      if (mayBuffer.isDefined) {
+        return mayBuffer.get
       }
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
@@ -588,15 +608,20 @@ class RapidsBufferCatalog(
       } else {
         // this thread wins the race and should spill
         spillCount += 1
-        val bufferSpills = store.synchronousSpill(targetTotalSize, stream)
-        val totalSpilled = bufferSpills.map { case BufferSpill(spilledBuffer, maybeNewBuffer) =>
-          maybeNewBuffer.foreach(registerNewBuffer)
-          removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
-          spilledBuffer.memoryUsedBytes
-        }.sum
+        val totalSpilled = store.synchronousSpill(targetTotalSize, this, stream)
         Some(totalSpilled)
       }
     }
+  }
+
+  def updateTiers(bufferSpill: BufferSpill): Long = bufferSpill match {
+    case BufferSpill(spilledBuffer, maybeNewBuffer) =>
+      logInfo (s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
+          s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
+          s"${maybeNewBuffer}")
+      maybeNewBuffer.foreach(registerNewBuffer)
+      removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
+      spilledBuffer.memoryUsedBytes
   }
 
   /**
@@ -613,7 +638,7 @@ class RapidsBufferCatalog(
     // do not create a new one, else add a reference
     acquireBuffer(buffer.id, StorageTier.DEVICE) match {
       case None =>
-        val maybeNewBuffer = deviceStorage.copyBuffer(buffer, stream)
+        val maybeNewBuffer = deviceStorage.copyBuffer(buffer, this, stream)
         maybeNewBuffer.map { newBuffer =>
           newBuffer.addReference() // add a reference since we are about to use it
           registerNewBuffer(newBuffer)
@@ -748,7 +773,9 @@ object RapidsBufferCatalog extends Logging {
     // We are going to re-initialize so make sure all of the old things were closed...
     closeImpl()
     assert(memoryEventHandler == null)
-    deviceStorage = new RapidsDeviceMemoryStore(rapidsConf.chunkedPackBounceBufferSize)
+    deviceStorage = new RapidsDeviceMemoryStore(
+      rapidsConf.chunkedPackBounceBufferSize,
+      rapidsConf.spillToDiskBounceBufferSize)
     diskBlockManager = new RapidsDiskBlockManager(conf)
     if (rapidsConf.isGdsSpillEnabled) {
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)

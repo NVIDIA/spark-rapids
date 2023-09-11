@@ -100,6 +100,7 @@ class RapidsHostMemoryStore(
 
   override protected def trySpillToMaximumSize(
       buffer: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
       stream: Cuda.Stream): Boolean = {
     // this spillStore has a maximum size requirement (host only). We need to spill from it
     // in order to make room for `buffer`.
@@ -107,16 +108,13 @@ class RapidsHostMemoryStore(
     if (targetTotalSize <= 0) {
       // lets not spill to host when the buffer we are about
       // to spill is larger than our limit
+      logInfo(s"not spilling at all. " +
+          s"Max size: ${maxSize} buffer size ${buffer.memoryUsedBytes}")
       false
     } else {
-      val amountSpilled =
-        synchronousSpill(targetTotalSize, stream).map {
-          case BufferSpill(spilledBuffer, _) =>
-            spilledBuffer.memoryUsedBytes
-        }.sum
-
+      val amountSpilled = synchronousSpill(targetTotalSize, catalog, stream)
       if (amountSpilled != 0) {
-        logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
+        logInfo(s"Spilled $amountSpilled bytes from ${name} to make room for ${buffer.id}")
         TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
       }
       // if after spill we can fit the new buffer, return true
@@ -126,8 +124,9 @@ class RapidsHostMemoryStore(
 
   override protected def createBuffer(
       other: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
       stream: Cuda.Stream): Option[RapidsBufferBase] = {
-    val wouldFit = trySpillToMaximumSize(other, stream)
+    val wouldFit = trySpillToMaximumSize(other, catalog, stream)
     // TODO: this is disabled for now since subsequent work will tie this into
     //   our host allocator apis.
     if (false && !wouldFit) {

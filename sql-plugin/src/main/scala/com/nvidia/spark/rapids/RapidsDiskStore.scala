@@ -37,6 +37,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
 
   override protected def createBuffer(
       incoming: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
       stream: Cuda.Stream): Option[RapidsBufferBase] = {
     // assuming that the disk store gets contiguous buffers
     val id = incoming.id

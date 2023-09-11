@@ -54,6 +54,7 @@ class RapidsDeviceMemoryStore(
 
   override protected def createBuffer(
       other: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
       stream: Cuda.Stream): Option[RapidsBufferBase] = {
     val memoryBuffer = withResource(other.getCopyIterator) { copyIterator =>
       copyIterator.next()

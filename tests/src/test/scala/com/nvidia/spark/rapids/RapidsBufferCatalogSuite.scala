@@ -243,7 +243,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
               assertResult(unspilled)(unspilledSame)
             }
             // verify that we invoked the copy function exactly once
-            verify(deviceStore, times(1)).copyBuffer(any(), any())
+            verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
             unspilled
           }
           val unspilledSame = catalog.unspillBufferToDeviceStore(
@@ -253,7 +253,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
             assertResult(unspilled)(unspilledSame)
           }
           // verify that we invoked the copy function exactly once
-          verify(deviceStore, times(1)).copyBuffer(any(), any())
+          verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
         }
       }
     }

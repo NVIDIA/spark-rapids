@@ -466,6 +466,7 @@ class RapidsDeviceMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
 
     override protected def createBuffer(
         b: RapidsBuffer,
+        c: RapidsBufferCatalog,
         s: Cuda.Stream): Option[RapidsBufferBase] = {
       spilledBuffers += b.id
       Some(new MockRapidsBuffer(
