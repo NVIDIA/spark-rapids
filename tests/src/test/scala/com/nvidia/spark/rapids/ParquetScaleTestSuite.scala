@@ -473,7 +473,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, map(map)") {
-    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/9129")
     assume(true, "Move to scale test")
     val schema =
       """
