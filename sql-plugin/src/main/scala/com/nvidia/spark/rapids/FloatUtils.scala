@@ -84,4 +84,25 @@ object FloatUtils {
       }
     }
   }
+
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+    withResource(input.castTo(DType.STRING)) { cudfCast =>
+
+      // replace "e+" with "E"
+      val replaceExponent = withResource(Scalar.fromString("e+")) { cudfExponent =>
+        withResource(Scalar.fromString("E")) { sparkExponent =>
+          cudfCast.stringReplace(cudfExponent, sparkExponent)
+        }
+      }
+
+      // replace "Inf" with "Infinity"
+      withResource(replaceExponent) { replaceExponent =>
+        withResource(Scalar.fromString("Inf")) { cudfInf =>
+          withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
+            replaceExponent.stringReplace(cudfInf, sparkInfinity)
+          }
+        }
+      }
+    }
+  }
 }

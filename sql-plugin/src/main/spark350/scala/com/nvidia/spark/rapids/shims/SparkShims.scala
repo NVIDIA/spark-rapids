@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
+import org.apache.spark.sql.types.BinaryType
 
 object SparkShimImpl extends Spark340PlusShims {
 
@@ -32,6 +33,13 @@ object SparkShimImpl extends Spark340PlusShims {
         "generate pretty string for all kinds of values",
         ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING, TypeSig.all, TypeSig.all),
         (a, conf, p, r) => new UnaryExprMeta[ToPrettyString](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            if (a.asInstanceOf[ToPrettyString].child.dataType == BinaryType) {
+              willNotWorkOnGpu("converting binary to string is not supported. " +
+                "See https://github.com/NVIDIA/spark-rapids/issues/9220")
+            }
+          }
+
           override def convertToGpu(child: Expression): GpuExpression = {
             GpuToPrettyString(child)
           }

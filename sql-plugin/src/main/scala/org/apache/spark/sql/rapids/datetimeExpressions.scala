@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
-import com.nvidia.spark.rapids.{AnotherCastClass, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, CastOperation, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -460,7 +460,7 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
       }
     case DoubleType | FloatType =>
       (input: GpuColumnVector) => {
-        AnotherCastClass(input.getBase, input.dataType, TimestampType, false, false, false)
+        CastOperation(input.getBase, input.dataType, TimestampType, false, false, false)
       }
     case dt: DecimalType =>
       (input: GpuColumnVector) => {

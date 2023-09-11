@@ -36,9 +36,9 @@ trait ToStringBase {
   // The string value to use to represent null elements in array/struct/map.
   protected def nullString: String
 
-//  protected def useDecimalPlainString: Boolean
-//
-//  protected def useHexFormatForBinary: Boolean
+  protected def useDecimalPlainString: Boolean
+
+  protected def useHexFormatForBinary: Boolean
 
   def castToString(
       input: ColumnView,
@@ -51,7 +51,7 @@ trait ToStringBase {
     case TimestampType => castTimestampToString(input)
     case FloatType | DoubleType => castFloatingTypeToString(input)
     case BinaryType => castBinToString(input)
-    case _: DecimalType => GpuCastShims.CastDecimalToString(input, ansiMode)
+    case _: DecimalType => GpuCastShims.CastDecimalToString(input, useDecimalPlainString)
     case StructType(fields) =>
       castStructToString(input, fields, ansiMode, legacyCastToString,
         stringToDateAnsiModeEnabled)
@@ -62,6 +62,8 @@ trait ToStringBase {
       )
     case from: MapType =>
       castMapToString(input, from, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+    case _ =>
+      input.castTo(GpuColumnVector.getNonNestedRapidsType(StringType))
   }
 
   private def castTimestampToString(input: ColumnView): ColumnVector = {
@@ -94,24 +96,7 @@ trait ToStringBase {
   }
 
   private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
-    withResource(input.castTo(DType.STRING)) { cudfCast =>
-
-      // replace "e+" with "E"
-      val replaceExponent = withResource(Scalar.fromString("e+")) { cudfExponent =>
-        withResource(Scalar.fromString("E")) { sparkExponent =>
-          cudfCast.stringReplace(cudfExponent, sparkExponent)
-        }
-      }
-
-      // replace "Inf" with "Infinity"
-      withResource(replaceExponent) { replaceExponent =>
-        withResource(Scalar.fromString("Inf")) { cudfInf =>
-          withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
-            replaceExponent.stringReplace(cudfInf, sparkInfinity)
-          }
-        }
-      }
-    }
+    FloatUtils.castFloatingTypeToString(input)
   }
 
   private def castBinToString(input: ColumnView): ColumnVector = {
@@ -219,7 +204,7 @@ trait ToStringBase {
       Seq(leftStr, rightStr, emptyStr, nullStr).safeMap(Scalar.fromString)
     ) { case Seq(left, right, empty, nullRep) =>
       val strChildContainsNull = withResource(input.getChildColumnView(0)) { child =>
-        AnotherCastClass(child, elementType, StringType, ansiMode,
+        CastOperation(child, elementType, StringType, ansiMode,
           legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
@@ -258,13 +243,13 @@ trait ToStringBase {
     // cast the key column and value column to string columns
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        AnotherCastClass(
+        CastOperation(
           keyColumn, from.keyType, StringType, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
       }
       val strValue = closeOnExcept(strKey) { _ =>
         withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          AnotherCastClass(
+          CastOperation(
             valueColumn, from.valueType, StringType, ansiMode, legacyCastToString,
             stringToDateAnsiModeEnabled)
         }
@@ -343,7 +328,7 @@ trait ToStringBase {
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += AnotherCastClass(firstColumnView, inputSchema.head.dataType, StringType,
+          columns += CastOperation(firstColumnView, inputSchema.head.dataType, StringType,
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
@@ -351,7 +336,7 @@ trait ToStringBase {
             // legacy: ","
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
-            val nonFirstColumn = AnotherCastClass(nonFirstColumnView,
+            val nonFirstColumn = CastOperation(nonFirstColumnView,
               inputSchema(nonFirstIndex).dataType, StringType, ansiMode,
               legacyCastToString, stringToDateAnsiModeEnabled)
             if (legacyCastToString) {

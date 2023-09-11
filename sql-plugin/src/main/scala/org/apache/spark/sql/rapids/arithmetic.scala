@@ -401,12 +401,12 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
 
   def regularMultiply(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      AnotherCastClass(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
+      CastOperation(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
-        AnotherCastClass(rhs.getBase, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
+        CastOperation(rhs.getBase, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
           legacyCastToString = false, stringToDateAnsiModeEnabled = false)
       }
       withResource(castRhs) { castRhs =>
@@ -418,7 +418,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
               if (failOnError) {
                 withResource(wouldOverflow.any()) { anyOverflow =>
                   if (anyOverflow.isValid && anyOverflow.getBoolean) {
-                    throw new IllegalStateException(AnotherCastClass.INVALID_INPUT_MESSAGE)
+                    throw new IllegalStateException(CastOperation.INVALID_INPUT_MESSAGE)
                   }
                 }
                 mult.incRefCount()
@@ -435,7 +435,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
       }
     }
     withResource(ret) { ret =>
-      GpuColumnVector.from(AnotherCastClass(ret, intermediateResultType, dataType,
+      GpuColumnVector.from(CastOperation(ret, intermediateResultType, dataType,
         ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
         dataType)
     }
@@ -457,7 +457,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
       if (failOnError) {
         withResource(retTab.getColumn(0).any()) { anyOverflow =>
           if (anyOverflow.isValid && anyOverflow.getBoolean) {
-            throw new ArithmeticException(AnotherCastClass.INVALID_INPUT_MESSAGE)
+            throw new ArithmeticException(CastOperation.INVALID_INPUT_MESSAGE)
           }
         }
         retTab.getColumn(1).incRefCount()
@@ -851,13 +851,13 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   def regularDivide(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      AnotherCastClass(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
+      CastOperation(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
-          AnotherCastClass(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
+          CastOperation(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
             legacyCastToString = false, stringToDateAnsiModeEnabled = false)
         }
       }
@@ -870,7 +870,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
       // to see if the divide is too large to fit in the expected type. This should never happen
       // in the common case with us. It will also handle rounding the result to the final scale
       // to match what Spark does.
-      GpuColumnVector.from(AnotherCastClass(ret, intermediateResultType, dataType,
+      GpuColumnVector.from(CastOperation(ret, intermediateResultType, dataType,
         ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
         dataType)
     }
@@ -901,7 +901,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
       if (failOnError) {
         withResource(overflowed.any()) { anyOverflow =>
           if (anyOverflow.isValid && anyOverflow.getBoolean) {
-            throw new ArithmeticException(AnotherCastClass.INVALID_INPUT_MESSAGE)
+            throw new ArithmeticException(CastOperation.INVALID_INPUT_MESSAGE)
           }
         }
         quotient.incRefCount()

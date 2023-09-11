@@ -241,11 +241,11 @@ case class GpuCast(
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
-    AnotherCastClass(input.getBase, input.dataType(), dataType, ansiMode,
+    CastOperation(input.getBase, input.dataType(), dataType, ansiMode,
       legacyCastToString, stringToDateAnsiModeEnabled)
 }
 
-object AnotherCastClass {
+object CastOperation {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
   private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
@@ -270,24 +270,7 @@ object AnotherCastClass {
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
   private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
-    withResource(input.castTo(DType.STRING)) { cudfCast =>
-
-      // replace "e+" with "E"
-      val replaceExponent = withResource(Scalar.fromString("e+")) { cudfExponent =>
-        withResource(Scalar.fromString("E")) { sparkExponent =>
-          cudfCast.stringReplace(cudfExponent, sparkExponent)
-        }
-      }
-
-      // replace "Inf" with "Infinity"
-      withResource(replaceExponent) { replaceExponent =>
-        withResource(Scalar.fromString("Inf")) { cudfInf =>
-          withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
-            replaceExponent.stringReplace(cudfInf, sparkInfinity)
-          }
-        }
-      }
-    }
+    FloatUtils.castFloatingTypeToString(input)
   }
 
   def fixDecimalBounds(input: ColumnView,
@@ -324,12 +307,12 @@ object AnotherCastClass {
       ansiMode: Boolean,
       legacyCastToString: Boolean,
       stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
-    new AnotherCastClass(input, fromDataType, toDataType, ansiMode,
+    new CastOperation(input, fromDataType, toDataType, ansiMode,
       legacyCastToString, stringToDateAnsiModeEnabled).doCast
   }
 }
 
-case class AnotherCastClass(
+case class CastOperation(
     input: ColumnView,
     fromDataType: DataType,
     toDataType: DataType,
@@ -337,12 +320,18 @@ case class AnotherCastClass(
     legacyCastToString: Boolean,
     stringToDateAnsiModeEnabled: Boolean) extends ToStringBase {
 
-  import AnotherCastClass._
+  import CastOperation._
 
   override protected val (leftBracket, rightBracket) =
     if (legacyCastToString) ("[", "]") else ("{", "}")
 
   override protected val nullString: String = if (legacyCastToString) "" else "null"
+
+  // In ANSI mode, Spark always uses plain string representation on casting Decimal values
+  // as strings. Otherwise, the casting may use scientific notation if an exponent is needed.
+  override protected def useDecimalPlainString: Boolean = ansiMode
+
+  override protected def useHexFormatForBinary: Boolean = false
 
   def doCast: ColumnVector = {
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
@@ -607,7 +596,7 @@ case class AnotherCastClass(
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
-          withResource(AnotherCastClass(childView, nestedFrom, nestedTo,
+          withResource(CastOperation(childView, nestedFrom, nestedTo,
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) {
             childColumnVector =>
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
@@ -1051,12 +1040,12 @@ case class AnotherCastClass(
     // as possible
     withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        AnotherCastClass(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
+        CastOperation(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          AnotherCastClass(valueColumn, from.valueType, to.valueType, ansiMode,
+          CastOperation(valueColumn, from.valueType, to.valueType, ansiMode,
             legacyCastToString, stringToDateAnsiModeEnabled)
         }
         withResource(castValue) { castValue =>
@@ -1081,7 +1070,7 @@ case class AnotherCastClass(
       stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
       from.indices.foreach { index =>
-        childColumns += AnotherCastClass(
+        childColumns += CastOperation(
           input.getChildColumnView(index),
           from(index).dataType,
           to(index).dataType,

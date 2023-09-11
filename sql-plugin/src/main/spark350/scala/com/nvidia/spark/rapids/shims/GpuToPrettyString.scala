@@ -49,19 +49,17 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
 
   override protected def nullString: String = "NULL"
 
-//  override protected def useDecimalPlainString: Boolean = true
+  override protected def useDecimalPlainString: Boolean = true
 
-//  override protected def useHexFormatForBinary: Boolean = true
+  override protected def useHexFormatForBinary: Boolean = true
 
   private def processColumnVector(cv: GpuColumnVector) = {
     val stringCol = withResource(cv) { originalCol =>
-      //TODO: casting a string column might not achieve what we want as the left, right brackets
-      //are dependant on the sql conf and not what we want
       castToString(originalCol.getBase, originalCol.dataType(), false, false, false)
     }
 
     if (stringCol.hasNulls()) {
-      withResource(cv.asInstanceOf[GpuColumnVector]) { columnVector =>
+      withResource(stringCol.asInstanceOf[GpuColumnVector]) { columnVector =>
         withResource(columnVector.getBase.isNull()) { isNull =>
           withResource(Scalar.fromString(nullString)) { nullString =>
             GpuColumnVector.from(isNull.ifElse(nullString, stringCol), StringType)
@@ -69,7 +67,7 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
         }
       }
     } else {
-      cv
+      GpuColumnVector.from(stringCol, StringType)
     }
   }
 
@@ -99,7 +97,5 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
     val c = child.columnarEval(batch)
     processColumnVector(c)
   }
-
-//  override def doColumnar(input: GpuColumnVector): ColumnVector = None
 
 }
