@@ -526,7 +526,7 @@ object GpuAggregateIterator extends Logging {
         withResource(
           new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime,
             opTime)) { _ =>
-          val batchesToConcat = attempt.map(_.getColumnarBatch())
+          val batchesToConcat = attempt.safeMap(_.getColumnarBatch())
           withResource(batchesToConcat) { _ =>
             val numCols = batchesToConcat.head.numCols()
             val dataTypes = (0 until numCols).map {
