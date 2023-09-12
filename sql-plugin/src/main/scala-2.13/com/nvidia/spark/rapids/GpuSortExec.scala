@@ -545,7 +545,7 @@ case class GpuOutOfCoreSortIterator(
       }
     } else {
       // withRetryNoSplit will take over the batches.
-      withRetryNoSplit(spillCbs) { attempt =>
+      withRetryNoSplit(spillCbs.toSeq) { attempt =>
         onConcatOutput()
         val tables = attempt.safeMap { sp =>
           withResource(sp.getColumnarBatch())(GpuColumnVector.from)

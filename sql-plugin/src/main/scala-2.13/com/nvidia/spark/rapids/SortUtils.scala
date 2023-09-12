@@ -258,8 +258,8 @@ class GpuSorter(
         if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
           // so as a work around we concatenate all of the data together and then sort it.
           // It is slower, but it works
-          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches) { _ =>
-            val tablesToMerge = spillableBatches.toSeq.safeMap { sb =>
+          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
+            val tablesToMerge = attempt.safeMap { sb =>
               withResource(sb.getColumnarBatch()) { cb =>
                 GpuColumnVector.from(cb)
               }
