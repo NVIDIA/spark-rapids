@@ -1112,7 +1112,11 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
 
     if (aggPattern.nonEmpty && strPatternToReplace != "all") {
-      val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
+      // The type is required here for Scala 2.13. The compiler automatically would make this
+      // Product with Serializable since the output of the second map call below are case objects 
+      // and this would be the most precise supertype of that output
+      val aggPatternsCanReplace: Array[Set[AggregateMode]] = 
+          strPatternToReplace.split("\\|").map { subPattern =>
         subPattern.split("&").map {
           case "partial" => Partial
           case "partialmerge" => PartialMerge
