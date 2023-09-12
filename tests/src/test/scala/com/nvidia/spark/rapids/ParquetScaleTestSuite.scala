@@ -208,7 +208,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
 
   test("Statistics tests for Parquet files written by GPU, float/double") {
     assume(false, "Blocked by https://github.com/rapidsai/cudf/issues/13948")
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
 
     val schema = StructType(Seq(
       StructField("c01", FloatType),
@@ -238,7 +238,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, basic types") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
       struct<
@@ -267,7 +267,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, array") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     basicTypes.foreach { t =>
       val schema = s"struct<c01: array<$t>>"
       val nullProbabilities = Seq(0d, 0.5d)
@@ -292,7 +292,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, map") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     basicTypes.foreach { t =>
       val nullProbabilities = Seq(0d, 0.5d)
       nullProbabilities.foreach { nullProbability =>
@@ -311,7 +311,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, struct") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema = basicTypes.zipWithIndex.map { case (t, index) =>
       s"c0$index: $t"
     }.mkString("struct<\nc1: struct<", ", \n", ">>")
@@ -326,7 +326,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, struct(array, map, struct)") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
       struct<
@@ -357,7 +357,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, array(struct, array)") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
       struct<
@@ -385,7 +385,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, map(array)") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
     struct<
@@ -409,7 +409,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, map(struct)") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
       struct<
@@ -439,7 +439,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, array(map)") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
       struct<
@@ -524,7 +524,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
   }
 
   test("Statistics tests for Parquet files written by GPU, map(map)") {
-    assume(true, "Move to scale test")
+    assume(false, "Move to scale test")
     val schema =
       """
       struct<
