@@ -201,7 +201,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           }
         }
         if (bssToIssue.nonEmpty) {
-          doHandleTransferRequest(bssToIssue)
+          doHandleTransferRequest(bssToIssue.toSeq)
         }
       }
 
@@ -368,7 +368,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
         // If we are still able to handle at least one `BufferSendState`, add any
         // others that also failed due back to the queue.
-        addToContinueQueue(toTryAgain)
+        addToContinueQueue(toTryAgain.toSeq)
       }
 
       serverStream.sync()

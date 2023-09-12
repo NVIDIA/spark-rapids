@@ -388,7 +388,7 @@ class AggHelper(
         // perform the aggregate
         val aggTbl = preProcessedTbl
             .groupBy(groupOptions, groupingOrdinals: _*)
-            .aggregate(cudfAggsOnColumn: _*)
+            .aggregate(cudfAggsOnColumn.toSeq: _*)
 
         withResource(aggTbl) { _ =>
           GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
@@ -899,7 +899,7 @@ class GpuMergeAggregateIterator(
     //   of batches for the partial aggregate case. This would be done in case
     //   a retry failed a certain number of times.
     val concatBatch = withResource(batches) { _ =>
-      val concatSpillable = concatenateBatches(metrics, batches)
+      val concatSpillable = concatenateBatches(metrics, batches.toSeq)
       withResource(concatSpillable) { _.getColumnarBatch() }
     }
     computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)

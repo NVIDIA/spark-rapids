@@ -562,8 +562,8 @@ class GpuDynamicPartitionDataSingleWriter(
           // clear the caches
           savedStatus.get.tableCaches.clear()
 
-          withRetryNoSplit(toConcat) { spillables: ListBuffer[SpillableColumnarBatch] =>
-            withResource(spillables.toSeq.safeMap(_.getColumnarBatch())) { batches =>
+          withRetryNoSplit(toConcat.toSeq) { spillables =>
+            withResource(spillables.safeMap(_.getColumnarBatch())) { batches =>
               withResource(batches.map(GpuColumnVector.from)) { subTables =>
                 Table.concatenate(subTables: _*)
               }
@@ -998,9 +998,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
     // get concat table or the single table
     val spillableToWrite = if (status.tableCaches.length >= 2) {
       // concat the sub batches to write in once.
-      val concatted = withRetryNoSplit(status.tableCaches) { 
-          spillableSubBatches: ListBuffer[SpillableColumnarBatch] =>
-        withResource(spillableSubBatches.toSeq.safeMap(_.getColumnarBatch())) { subBatches =>
+      val concatted = withRetryNoSplit(status.tableCaches.toSeq) { spillableSubBatches =>
+        withResource(spillableSubBatches.safeMap(_.getColumnarBatch())) { subBatches =>
           withResource(subBatches.map(GpuColumnVector.from)) { subTables =>
             Table.concatenate(subTables: _*)
           }

@@ -316,7 +316,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         case c: CommandResultExec => recurse(c.commandPhysicalPlan, predicate, accum)
         case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
       }
-      accum
+      accum.toSeq
     }
 
     recurse(plan, predicate, new ListBuffer[SparkPlan]())

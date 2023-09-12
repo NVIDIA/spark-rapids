@@ -2185,7 +2185,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
-    _.startsWith("spark.rapids.")).asJava
+    _.startsWith("spark.rapids.")).toMap.asJava
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 

@@ -813,7 +813,7 @@ abstract class TypeChecks[RET] {
     val unsupportedTypes: Map[DataType, Set[String]] = fields
       .filterNot(attr => sig.isSupportedByPlugin(attr.dataType))
       .groupBy(_.dataType)
-      .mapValues(_.map(_.name).toSet)
+      .mapValues(_.map(_.name).toSet).toMap
 
     tagTimezoneInfoIfHasTimestampType(unsupportedTypes, meta)
 
