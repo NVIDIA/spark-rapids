@@ -236,6 +236,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Expm1"></a>spark.rapids.sql.expression.Expm1|`expm1`|Euler's number e raised to a power minus 1|true|None|
 <a name="sql.expression.Flatten"></a>spark.rapids.sql.expression.Flatten|`flatten`|Creates a single array from an array of arrays|true|None|
 <a name="sql.expression.Floor"></a>spark.rapids.sql.expression.Floor|`floor`|Floor of a number|true|None|
+<a name="sql.expression.FormatNumber"></a>spark.rapids.sql.expression.FormatNumber|`format_number`|Formats numeric column x to a format like '#,###,###.##', rounded to d decimal places with HALF_EVEN round mode, and returns the result as a string column.
+If d is 0, the result has no decimal point or fractional part. If d is less than 0, the result will be null.|true|None|
 <a name="sql.expression.FromUTCTimestamp"></a>spark.rapids.sql.expression.FromUTCTimestamp|`from_utc_timestamp`|Render the input UTC timestamp in the input timezone|true|None|
 <a name="sql.expression.FromUnixTime"></a>spark.rapids.sql.expression.FromUnixTime|`from_unixtime`|Get the string from a unix timestamp|true|None|
 <a name="sql.expression.GetArrayItem"></a>spark.rapids.sql.expression.GetArrayItem| |Gets the field at `ordinal` in the Array|true|None|
