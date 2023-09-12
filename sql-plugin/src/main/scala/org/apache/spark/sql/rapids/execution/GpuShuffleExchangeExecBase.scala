@@ -32,6 +32,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrde
 import org.apache.spark.sql.catalyst.plans.physical.RoundRobinPartitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
@@ -113,12 +114,24 @@ abstract class GpuShuffleMetaBase(
     }
   }
 
-  override def convertToGpu(): GpuExec =
+  override final def convertToGpu(): GpuExec = {
+    // Any AQE child node should be marked columnar if we're columnar.
+    val newChild = childPlans.head.wrapped match {
+      case adaptive: AdaptiveSparkPlanExec =>
+        val goal = TargetSize(conf.gpuTargetBatchSizeBytes)
+        SparkShimImpl.columnarAdaptivePlan(adaptive, goal)
+      case _ => childPlans.head.convertIfNeeded()
+    }
+    convertShuffleToGpu(newChild)
+  }
+
+  protected def convertShuffleToGpu(newChild: SparkPlan): GpuExec = {
     GpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
-      childPlans.head.convertIfNeeded(),
+      newChild,
       shuffle.shuffleOrigin
     )(shuffle.outputPartitioning)
+  }
 }
 
 object GpuShuffleMetaBase {

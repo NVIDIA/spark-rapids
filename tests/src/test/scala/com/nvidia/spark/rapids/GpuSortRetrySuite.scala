@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.{RetryOOM, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, AttributeReference, ExprId, SortOrder}
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
+class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
 
   private val ref = GpuBoundReference(0, IntegerType, nullable = false)(ExprId(0), "a")
   private val sortOrder = SortOrder(ref, Ascending)
@@ -206,4 +206,38 @@ class GpuOutOfCoreSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSuga
     }
   }
 
+  test("GPU each batch sort with RetryOOM") {
+    val eachBatchIter = new GpuSortEachBatchIterator(
+      Iterator(buildBatch, buildBatch),
+      gpuSorter,
+      singleBatch = false)
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+    while (eachBatchIter.hasNext) {
+      var pos = 0
+      var curValue = 0
+      withResource(eachBatchIter.next()) { cb =>
+        assertResult(NUM_ROWS)(cb.numRows())
+        withResource(cb.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hCol =>
+          while (pos < hCol.getRowCount.toInt) {
+            assertResult(curValue)(hCol.getInt(pos))
+            pos += 1
+            curValue += 1
+          }
+        }
+      }
+    }
+  }
+
+  test("GPU each batch sort throws SplitAndRetryOOM") {
+    val inputIter = Iterator(buildBatch, buildBatch)
+    val eachBatchIter = new GpuSortEachBatchIterator(
+      inputIter,
+      gpuSorter,
+      singleBatch = false)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    assertThrows[SplitAndRetryOOM] {
+      eachBatchIter.next()
+    }
+    inputIter.foreach(_.close())
+  }
 }

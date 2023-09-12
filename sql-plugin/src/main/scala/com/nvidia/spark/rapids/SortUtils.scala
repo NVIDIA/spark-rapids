@@ -389,4 +389,21 @@ class GpuSorter(
       GpuColumnVector.from(sortedTbl, originalTypes)
     }
   }
+
+  /**
+   * Similar as fullySortBatch, but with retry support.
+   * The input `inputSbBatch` will be closed after the call.
+   */
+  final def fullySortBatchAndCloseWithRetry(
+      inputSbBatch: SpillableColumnarBatch,
+      sortTime: GpuMetric,
+      opTime: GpuMetric): ColumnarBatch = {
+    RmmRapidsRetryIterator.withRetryNoSplit(inputSbBatch) { _ =>
+      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
+        withResource(inputSbBatch.getColumnarBatch()) { inputBatch =>
+          fullySortBatch(inputBatch, sortTime)
+        }
+      }
+    }
+  }
 }

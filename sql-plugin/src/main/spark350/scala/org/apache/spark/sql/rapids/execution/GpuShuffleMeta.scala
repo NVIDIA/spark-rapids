@@ -22,6 +22,7 @@ package org.apache.spark.sql.rapids.execution
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta}
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
 class GpuShuffleMeta(
@@ -31,10 +32,10 @@ class GpuShuffleMeta(
     rule: DataFromReplacementRule)
   extends GpuShuffleMetaBase(shuffle, conf, parent, rule) {
 
-  override def convertToGpu(): GpuExec =
+  override protected def convertShuffleToGpu(newChild: SparkPlan): GpuExec =
     GpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
-      childPlans.head.convertIfNeeded(),
+      newChild,
       shuffle.shuffleOrigin,
       shuffle.advisoryPartitionSize
     )(shuffle.outputPartitioning)

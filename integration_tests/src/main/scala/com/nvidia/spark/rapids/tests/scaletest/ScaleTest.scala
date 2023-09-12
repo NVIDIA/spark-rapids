@@ -18,10 +18,12 @@ package com.nvidia.spark.rapids.tests.scaletest
 
 import java.util.concurrent._
 
+import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.NANOSECONDS
 
+import com.nvidia.spark.rapids.tests.scaletest.Utils.stackTraceAsString
 import scopt.OptionParser
 
 import org.apache.spark.sql.SparkSession
@@ -30,6 +32,11 @@ import org.apache.spark.sql.SparkSession
  * Entry point for Scale Test
  */
 object ScaleTest {
+
+  val STATUS_COMPLETED = "Completed"
+  val STATUS_COMPLETED_WITH_TASK_FAILURES = "CompletedWithTaskFailures"
+  val STATUS_TIMEOUT = "Timeout"
+  val STATUS_FAILED = "Failed"
 
   // case class represents all input commandline arguments
   case class Config(scaleFactor: Int = 1,
@@ -43,11 +50,12 @@ object ScaleTest {
       iterations: Int = 1,
       queries: Seq[String] = Seq(),
       overwrite: Boolean = false,
-      timeout: Long = 600000L)
+      timeout: Long = 600000L,
+      dry: Boolean = false)
 
   /**
    *
-   * @param query the final query string to run in Spark SQL
+   * @param query the test query
    * @param iterations number of iterations for the query to run in a line
    * @param baseOutputPath base path for the output, the final output will append a postfix for
    *                       iterations
@@ -56,10 +64,7 @@ object ScaleTest {
    * @param spark SparkSession instance
    * @return a Sequence of elapses for all iterations
    */
-  private def runOneQueryForIterations(name: String,
-      query: String,
-      iterations: Int,
-      timeout: Long,
+  private def runOneQueryForIterations(query: TestQuery,
       baseOutputPath: String,
       overwrite: Boolean,
       format: String,
@@ -68,9 +73,10 @@ object ScaleTest {
   = {
     val mode = if (overwrite == true) "overwrite" else "error"
     val executionTimes = ListBuffer[Long]()
+    val exceptions = new ConcurrentLinkedQueue[String]()
+    val status = ListBuffer[String]()
 
-    (1 to iterations).foreach(i => {
-      println(s"Iteration: $i")
+    (1 to query.iterations).foreach(i => {
       while (idleSessionListener.isBusy()){
         // Scala Test aims for stability not performance. And the sleep time will not be calculated
         // into execution time.
@@ -78,30 +84,64 @@ object ScaleTest {
         println(s"There are still jobs running, waiting for $sleepTime seconds.")
         Thread.sleep(sleepTime * 1000)
       }
+      val taskFailureListener = new TaskFailureListener
       try {
         val future = scala.concurrent.Future {
+          spark.sparkContext.setJobGroup(query.name, s"query=${query.name},iteration=$i")
+          println(s"Iteration: $i")
+
+          spark.conf.set("spark.sql.shuffle.partitions", query.shufflePartitions)
+          spark.sparkContext.addSparkListener(taskFailureListener)
+
           val start = System.nanoTime()
-          spark.sql(query).write.mode(mode).format(format).save(s"${baseOutputPath}_$i")
+          spark.sql(query.content).write.mode(mode).format(format).save(s"${baseOutputPath}_$i")
           val end = System.nanoTime()
           val elapsed = NANOSECONDS.toMillis(end - start)
           executionTimes += elapsed
+
+          val failureOpt = taskFailureListener.taskFailures.headOption
+          val statusForIter = failureOpt.map(_ => STATUS_COMPLETED_WITH_TASK_FAILURES)
+            .getOrElse(STATUS_COMPLETED)
+          failureOpt.foreach(failure => exceptions.add(failure.toString))
+          status.append(statusForIter)
         }
         scala.concurrent.Await.result(future,
-          scala.concurrent.duration.Duration(timeout, TimeUnit.MILLISECONDS))
+          scala.concurrent.duration.Duration(query.timeout, TimeUnit.MILLISECONDS))
       } catch {
-        case _: java.util.concurrent.TimeoutException =>
+        case e: java.util.concurrent.TimeoutException =>
           println(s"Timeout at iteration $i")
           // use "-1" to mark timeout execution
           executionTimes += -1
           spark.sparkContext.cancelAllJobs()
+          status.append(STATUS_TIMEOUT)
+          exceptions.add(e.getMessage)
         case e: Exception =>
           // We don't want a query failure to fail over the whole test.
           println(s"Query failed: $query - ${e.getMessage}")
+          executionTimes += -1
+          status.append(STATUS_FAILED)
+          exceptions.add(stackTraceAsString(e))
+      } finally {
+        spark.sparkContext.removeSparkListener(taskFailureListener)
       }
     })
-    QueryMeta(name, executionTimes)
+    QueryMeta(query.name, query.content, status, exceptions.asScala.toSeq, executionTimes)
   }
 
+  /**
+   * print generated queries and its physical plan, most for debug purpose
+   * @param spark spark session
+   * @param queryMap query map
+   */
+  private def printQueries(spark: SparkSession, queryMap: Map[String, TestQuery]): Unit
+  = {
+    for ((queryName, query) <- queryMap) {
+      println("*"*80)
+      println(queryName)
+      println(query.content)
+      spark.sql(query.content).explain()
+    }
+  }
 
   private def runScaleTest(config: Config): Unit = {
     // Init SparkSession
@@ -112,16 +152,19 @@ object ScaleTest {
     spark.sparkContext.addSparkListener(idleSessionListener)
     val querySpecs = new QuerySpecs(config, spark)
     querySpecs.initViews()
-    val queryMap = querySpecs.getCandidateQueries()
+    val queryMap = querySpecs.getCandidateQueries
+    if (config.dry) {
+      printQueries(spark, queryMap)
+      sys.exit(1)
+    }
     var results = Seq[QueryMeta]()
     for ((queryName, query) <- queryMap) {
       val outputPath = s"${config.outputDir}/$queryName"
       println(s"Running Query: $queryName for ${query.iterations} iterations")
       println(s"${query.content}")
       // run one query for several iterations in a row
-      val queryMeta = runOneQueryForIterations(query.name, query.content, query.iterations, query
-        .timeout,
-        outputPath, config.overwrite, config.format, spark, idleSessionListener)
+      val queryMeta = runOneQueryForIterations(query, outputPath, config.overwrite, config.format,
+        spark, idleSessionListener)
       results  = results :+ queryMeta
     }
     val report = new TestReport(config, results)
@@ -180,6 +223,10 @@ object ScaleTest {
         .optional()
         .action((x, c) => c.copy(timeout = x))
         .text("timeout for each query in milliseconds, default is 10 minutes(600000)")
+      opt[Unit]("dry")
+      .optional()
+        .action((_, c) => c.copy(dry = true))
+        .text("Flag argument. Only print the queries but not execute them.")
     }
   }
 

@@ -34,7 +34,7 @@ import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     batchWriteBufferSize: Long)
-    extends RapidsBufferStore(StorageTier.GDS) {
+    extends RapidsBufferStoreWithoutSpill(StorageTier.GDS) {
   private[this] val batchSpiller = new BatchSpiller()
 
   override protected def createBuffer(

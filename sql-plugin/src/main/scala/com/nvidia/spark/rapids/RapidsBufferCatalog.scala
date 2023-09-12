@@ -544,8 +544,8 @@ class RapidsBufferCatalog(
    * Free memory in `store` by spilling buffers to the spill store synchronously.
    * @param store store to spill from
    * @param targetTotalSize maximum total size of this store after spilling completes
-   * @param stream CUDA stream to use or null for default stream
-   * @return optionally number of bytes that were spilled, or None if this called
+   * @param stream CUDA stream to use or omit for default stream
+   * @return optionally number of bytes that were spilled, or None if this call
    *         made no attempt to spill due to a detected spill race
    */
   def synchronousSpill(
@@ -625,8 +625,8 @@ class RapidsBufferCatalog(
             }
           }
         }
+        Some(totalSpilled)
       }
-      Some(totalSpilled)
     }
   }
 
@@ -807,6 +807,26 @@ object RapidsBufferCatalog extends Logging {
   }
 
   /**
+   * Set a `RapidsDiskStore` instance to use when instantiating our
+   * catalog.
+   *
+   * @note This should only be called from tests!
+   */
+  def setDiskStorage(rdms: RapidsDiskStore): Unit = {
+    diskStorage = rdms
+  }
+
+  /**
+   * Set a `RapidsHostMemoryStore` instance to use when instantiating our
+   * catalog.
+   *
+   * @note This should only be called from tests!
+   */
+  def setHostStorage(rhms: RapidsHostMemoryStore): Unit = {
+    hostStorage = rhms
+  }
+
+  /**
    * Set a `RapidsBufferCatalog` instance to use our singleton.
    * @note This should only be called from tests!
    */
@@ -908,6 +928,8 @@ object RapidsBufferCatalog extends Logging {
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
 
+  def getHostStorage: RapidsHostMemoryStore = hostStorage
+
   def shouldUnspill: Boolean = _shouldUnspill
 
   /**
@@ -969,6 +991,21 @@ object RapidsBufferCatalog extends Logging {
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
 
   /**
+   * Free memory in `store` by spilling buffers to its spill store synchronously.
+   * @param store           store to spill from
+   * @param targetTotalSize maximum total size of this store after spilling completes
+   * @param stream          CUDA stream to use or omit for default stream
+   * @return optionally number of bytes that were spilled, or None if this call
+   *         made no attempt to spill due to a detected spill race
+   */
+  def synchronousSpill(
+      store: RapidsBufferStore,
+      targetTotalSize: Long,
+      stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Option[Long] = {
+    singleton.synchronousSpill(store, targetTotalSize, stream)
+  }
+
+  /**
    * Given a `MemoryBuffer` find out if a `MemoryBuffer.EventHandler` is associated
    * with it.
    *
@@ -986,20 +1023,31 @@ object RapidsBufferCatalog extends Logging {
    *           brand new to the store, or the `RapidsBuffer` is invalid and
    *           about to be removed).
    */
-  private def getExistingRapidsBufferAndAcquire(
-      buffer: MemoryBuffer): Option[RapidsBuffer] = {
-    val eh = buffer.getEventHandler
-    eh match {
-      case null =>
-        None
-      case rapidsBuffer: RapidsBuffer =>
-        if (rapidsBuffer.addReference()) {
-          Some(rapidsBuffer)
-        } else {
-          None
-        }
+  private def getExistingRapidsBufferAndAcquire(buffer: MemoryBuffer): Option[RapidsBuffer] = {
+    buffer match {
+      case hb: HostMemoryBuffer =>
+        HostAlloc.findEventHandler(hb) {
+          case rapidsBuffer: RapidsBuffer =>
+            if (rapidsBuffer.addReference()) {
+              Some(rapidsBuffer)
+            } else {
+              None
+            }
+        }.flatten
       case _ =>
-        throw new IllegalStateException("Unknown event handler")
+        val eh = buffer.getEventHandler
+        eh match {
+          case null =>
+            None
+          case rapidsBuffer: RapidsBuffer =>
+            if (rapidsBuffer.addReference()) {
+              Some(rapidsBuffer)
+            } else {
+              None
+            }
+          case _ =>
+            throw new IllegalStateException("Unknown event handler")
+        }
     }
   }
 }
