@@ -1460,10 +1460,17 @@ def test_to_date_with_window_functions():
                                       _grpkey_longs_with_nullable_dates,
                                       _grpkey_longs_with_decimals,
                                       _grpkey_longs_with_nullable_decimals,
-                                      _grpkey_longs_with_nullable_larger_decimals,
-                                      #  _grpkey_decimals_with_nulls  # TODO: Approx decimal for avg.
+                                      _grpkey_longs_with_nullable_larger_decimals
                                       ], ids=idfn)
-def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size):
+@pytest.mark.parametrize('window_spec', [
+    "3 PRECEDING AND -1 FOLLOWING",
+    "-2 PRECEDING AND 4 FOLLOWING",
+    "UNBOUNDED PRECEDING AND -1 FOLLOWING",
+    "-1 PRECEDING AND UNBOUNDED FOLLOWING",
+    "10 PRECEDING AND -1 FOLLOWING",
+    "5 PRECEDING AND -2 FOLLOWING"
+], ids=idfn)
+def test_window_aggs_for_negative_rows_partitioned_2(data_gen, batch_size, window_spec):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     assert_gpu_and_cpu_are_equal_sql(
@@ -1471,20 +1478,20 @@ def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size):
         "window_agg_table",
         'SELECT '
         ' SUM(c) OVER '
-        '   (PARTITION by a order by b,c asc rows between 3 preceding and -1 following) as sum_c_asc, '
+        '   (PARTITION BY a ORDER BY b,c ASC ROWS BETWEEN {window}) AS sum_c_asc, '
         ' MAX(c) OVER '
-        '   (PARTITION BY a ORDER BY b DESC, c DESC ROWS BETWEEN -2 preceding and 4 following) as max_c_desc, '
-        ' min(c) over '
-        '   (partition by a order by b,c rows between UNBOUNDED preceding and -1 FOLLOWING) as min_c_asc, '
-        ' count(1) over '
-        '   (partition by a order by b,c rows between -1 preceding and UNBOUNDED following) as count_1, '
-        ' count(c) over '
-        '   (partition by a order by b,c rows between 10 preceding and -1 following) as count_c, '
-        ' avg(c) over '
-        '   (partition by a order by b,c rows between -1 preceding and UNBOUNDED following) as avg_c, '
+        '   (PARTITION BY a ORDER BY b DESC, c DESC ROWS BETWEEN {window}) AS max_c_desc, '
+        ' MIN(c) over '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS min_c_asc, '
+        ' COUNT(1) over '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_1, '
+        ' COUNT(c) over '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_c, '
+        ' AVG(c) over '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS avg_c, '
         ' COLLECT_LIST(c) over '
-        '   (partition by a order by b,c rows between 5 preceding and -2 following) as list_c '
-        'from window_agg_table ',
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS list_c '
+        'FROM window_agg_table '.format(window=window_spec),
         conf=conf)
 
 
@@ -1499,7 +1506,6 @@ def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size):
                                       _grpkey_longs_with_nullable_decimals,
                                       # TODO: Sorting DECIMAL(23,10) borked on CPU, Spark 3.2.1.
                                       _grpkey_longs_with_nullable_larger_decimals,
-                                      #  _grpkey_decimals_with_nulls  # TODO: Approx decimal for avg.
                                       ], ids=idfn)
 def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
