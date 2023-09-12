@@ -95,7 +95,6 @@ class RangeRetrySuite extends RmmSparkRetrySuiteBase {
   }
 
   test("GPU range iterator with invalid inputs") {
-    // start == end
     assertThrows[AssertionError] {
       val invalidEnd = BigInt(49)
       new GpuRangeIterator(start, invalidEnd, step, maxRows, null, NoopMetric)
