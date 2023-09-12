@@ -102,7 +102,7 @@ object ParquetSchemaClipShims {
       if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
 
     def typeNotImplemented() =
-      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: ${typeString}")
+      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $typeString")
 
     def illegalType() =
       TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $parquetType")
@@ -185,7 +185,7 @@ object ParquetSchemaClipShims {
         if (!SQLConf.get.isParquetINT96AsTimestamp) {
           TrampolineUtil.throwAnalysisException(
             "INT96 is not supported unless it's interpreted as timestamp. " +
-                s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
+              s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
         }
         TimestampType
 
@@ -204,6 +204,7 @@ object ParquetSchemaClipShims {
         typeAnnotation match {
           case _: DecimalLogicalTypeAnnotation =>
             makeDecimalType(Decimal.maxPrecisionForBytes(parquetType.getTypeLength))
+          case null => BinaryType
           case _: IntervalLogicalTypeAnnotation => typeNotImplemented()
           case _ => illegalType()
         }
