@@ -202,13 +202,23 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
                     .json(data_path),
             conf=updated_conf)
 
-@allow_non_gpu('BatchScanExec', 'FileSourceScanExec', 'ProjectExec')
+@allow_non_gpu('BatchScanExec', 'ProjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
-def test_json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list):
+def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
+    json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
+
+@allow_non_gpu('FileSourceScanExec', 'ProjectExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.parametrize('ts_part', json_supported_ts_parts)
+@pytest.mark.parametrize('date_format', json_supported_date_formats)
+@pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+def test_json_ts_formats_round_trip_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
+    json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'json', 'FileSourceScanExec')
+
+def json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
     full_format = date_format + ts_part
     data_gen = TimestampGen(tzinfo=None if timestamp_type == "TIMESTAMP_NTZ" else timezone.utc)
     gen = StructGen([('a', data_gen)], nullable=False)
@@ -230,7 +240,6 @@ def test_json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, ti
             .option('timestampFormat', full_format) \
             .json(data_path)
 
-    cpu_scan_class = 'BatchScanExec' if v1_enabled_list == '' else 'FileSourceScanExec'
 
     if timestamp_type == "TIMESTAMP_LTZ":
         assert_cpu_and_gpu_are_equal_collect_with_capture(
