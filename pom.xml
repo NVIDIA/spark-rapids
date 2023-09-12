@@ -598,16 +598,6 @@
                 <scala.version>2.13.8</scala.version>
                 <scala.binary.version>2.12</scala.binary.version>
             </properties>
-            <dependencyManagement>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.scalatest</groupId>
-                        <artifactId>scalatest_${scala.binary.version}</artifactId>
-                        <version>3.2.16</version>
-                        <scope>test</scope>
-                    </dependency>
-                </dependencies>
-            </dependencyManagement>
             <build>
                 <pluginManagement>
                     <plugins>
@@ -1418,6 +1408,24 @@
                         <version>1.5.1</version>
                     </dependency>
                 </dependencies>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.basedir}/src/main/scala-${scala.binary.version}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
