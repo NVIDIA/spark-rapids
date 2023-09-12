@@ -81,7 +81,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       // device buffers "spillability" is handled via DeviceMemoryBuffer ref counting
       // so spillableOnAdd should be false, all other buffer tiers are spillable at
       // all times.
-      if (spillableOnAdd) {
+      if (spillableOnAdd && buffer.memoryUsedBytes > 0) {
         if (spillable.offer(buffer)) {
           totalBytesSpillable += buffer.memoryUsedBytes
         }
@@ -124,7 +124,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
      * @param isSpillable whether the buffer should now be spillable
      */
     def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = synchronized {
-      if (isSpillable) {
+      if (isSpillable && buffer.memoryUsedBytes > 0) {
         // if this buffer is in the store and isn't currently spilling
         if (!spilling.contains(buffer.id) && buffers.containsKey(buffer.id)) {
           // try to add it to the spillable collection
@@ -205,6 +205,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
    * @param buffer data from another store
+   * @param catalog RapidsBufferCatalog we may need to modify during this copy
    * @param stream CUDA stream to use for copy or null
    * @return the new buffer that was created
    */
@@ -232,6 +233,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    * @note DO NOT close the buffer unless adding a reference!
    * @note `createBuffer` impls should synchronize against `stream` before returning, if needed.
    * @param buffer data from another store
+   * @param catalog RapidsBufferCatalog we may need to modify during this create
    * @param stream CUDA stream to use or null
    * @return the new buffer that was created.
    */
@@ -272,11 +274,10 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       targetTotalSize: Long,
       catalog: RapidsBufferCatalog,
       stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Long = {
-    logWarning(s"Targeting a ${name} size of $targetTotalSize. " +
-      s"Current total ${currentSize}. " +
-      s"Current spillable ${currentSpillableSize}")
-
     if (currentSpillableSize > targetTotalSize) {
+      logWarning(s"Targeting a ${name} size of $targetTotalSize. " +
+          s"Current total ${currentSize}. " +
+          s"Current spillable ${currentSpillableSize}")
       val bufferSpills = new mutable.ArrayBuffer[BufferSpill]()
       withResource(new NvtxRange(s"${name} sync spill", NvtxColor.ORANGE)) { _ =>
         logWarning(s"${name} store spilling to reduce usage from " +
@@ -375,8 +376,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
             s"to tier ${lastTier}")
     }
     // return the buffer to free and the new buffer to register
-    logInfo(s"Spilled ${buffer.id} from ${buffer.storageTier} " +
-        s"to ${maybeNewBuffer.map(_.storageTier)}")
     BufferSpill(buffer, maybeNewBuffer)
   }
 

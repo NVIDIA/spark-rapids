@@ -385,18 +385,20 @@ class RapidsDeviceMemoryStore(
       var written: Long = 0L
       withResource(getCopyIterator) { copyIter =>
         while(copyIter.hasNext) {
-          val iter =
-            new MemoryBufferToHostByteBufferIterator(
-              copyIter.next(),
-              hostSpillBounceBuffer,
-              stream)
-          iter.foreach { bb =>
-            try {
-              while (bb.hasRemaining) {
-                written += outputChannel.write(bb)
+          withResource(copyIter.next()) { slice =>
+            val iter =
+              new MemoryBufferToHostByteBufferIterator(
+                slice,
+                hostSpillBounceBuffer,
+                stream)
+            iter.foreach { bb =>
+              try {
+                while (bb.hasRemaining) {
+                  written += outputChannel.write(bb)
+                }
+              } finally {
+                RapidsStorageUtils.dispose(bb)
               }
-            } finally {
-              RapidsStorageUtils.dispose(bb)
             }
           }
         }

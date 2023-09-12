@@ -608,15 +608,14 @@ class RapidsBufferCatalog(
       } else {
         // this thread wins the race and should spill
         spillCount += 1
-        val totalSpilled = store.synchronousSpill(targetTotalSize, this, stream)
-        Some(totalSpilled)
+        Some(store.synchronousSpill(targetTotalSize, this, stream))
       }
     }
   }
 
   def updateTiers(bufferSpill: BufferSpill): Long = bufferSpill match {
     case BufferSpill(spilledBuffer, maybeNewBuffer) =>
-      logInfo (s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
+      logDebug(s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
           s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
           s"${maybeNewBuffer}")
       maybeNewBuffer.foreach(registerNewBuffer)

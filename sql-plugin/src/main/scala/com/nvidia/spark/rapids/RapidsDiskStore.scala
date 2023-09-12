@@ -89,6 +89,11 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           withResource(fos.getChannel) { outputChannel =>
             val startOffset = outputChannel.position()
             val writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
+            if (writtenBytes == 0) {
+              throw new IllegalStateException(
+                s"Buffer ${fileWritable} wrote 0 bytes disk on spill. This is not supported!"
+              )
+            }
             (startOffset, writtenBytes)
           }
         }
@@ -118,10 +123,11 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
+        require(size > 0,
+          s"$this attempted an invalid 0-byte mmap of a file")
         val path = id.getDiskPath(diskBlockManager)
         val mappedBuffer = HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE,
           fileOffset, size)
-        logDebug(s"Created mmap buffer for $path $fileOffset:$size")
         hostBuffer = Some(mappedBuffer)
       }
       hostBuffer.foreach(_.incRefCount())

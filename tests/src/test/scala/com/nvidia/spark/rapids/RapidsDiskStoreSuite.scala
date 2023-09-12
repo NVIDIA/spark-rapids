@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.{spy, times, verify}
@@ -43,6 +43,14 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
         .column(5.0, 2.0, 3.0, 1.0)
         .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
         .build()
+  }
+
+  private def buildEmptyTable(): Table = {
+    withResource(buildTable()) { tbl =>
+      withResource(ColumnVector.fromBooleans(false, false, false, false)) { mask =>
+        tbl.filter(mask) // filter all out
+      }
+    }
   }
 
   private val mockTableDataTypes: Array[DataType] =
@@ -270,6 +278,60 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     }
   }
 
+
+  test("0-byte table is never spillable as we would fail to mmap") {
+    val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
+    val bufferPath = bufferId.getDiskPath(null)
+    val bufferId2 = MockRapidsBufferId(2, canShareDiskPaths = false)
+    assert(!bufferPath.exists)
+    val spillPriority = -7
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    withResource(new RapidsDeviceMemoryStore) { devStore =>
+      val catalog = new RapidsBufferCatalog(devStore)
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+        devStore.setSpillStore(hostStore)
+        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          hostStore.setSpillStore(diskStore)
+          val handle = addZeroRowsTableToCatalog(catalog, bufferId, spillPriority - 1)
+          val handle2 = addTableToCatalog(catalog, bufferId2, spillPriority)
+          withResource(handle2) { _ =>
+            assert(!handle.id.getDiskPath(null).exists())
+            withResource(buildTable()) { expectedTable =>
+              withResource(buildEmptyTable()) { expectedEmptyTable =>
+                withResource(
+                  GpuColumnVector.from(
+                    expectedTable, mockTableDataTypes)) { expectedCb =>
+                  withResource(
+                    GpuColumnVector.from(
+                      expectedEmptyTable, mockTableDataTypes)) { expectedEmptyCb =>
+                    catalog.synchronousSpill(devStore, 0)
+                    catalog.synchronousSpill(hostStore, 0)
+                    withResource(catalog.acquireBuffer(handle2)) { buffer =>
+                      withResource(catalog.acquireBuffer(handle)) { emptyBuffer =>
+                        // the 0-byte table never moved from device. It is not spillable
+                        assertResult(StorageTier.DEVICE)(emptyBuffer.storageTier)
+                        withResource(emptyBuffer.getColumnarBatch(mockTableDataTypes)) { cb =>
+                          TestUtils.compareBatches(expectedEmptyCb, cb)
+                        }
+                        // the second table (with rows) did spill
+                        assertResult(StorageTier.DISK)(buffer.storageTier)
+                        withResource(buffer.getColumnarBatch(mockTableDataTypes)) { cb =>
+                          TestUtils.compareBatches(expectedCb, cb)
+                        }
+                      }
+                    }
+                    assertResult(0)(devStore.currentSize)
+                    assertResult(0)(hostStore.currentSize)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   test("exclusive spill files are deleted when buffer deleted") {
     testBufferFileDeletion(canShareDiskPaths = false)
   }
@@ -341,6 +403,19 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     catalog.addTable(
       bufferId,
       buildTable(),
+      spillPriority,
+      false)
+  }
+
+  private def addZeroRowsTableToCatalog(
+      catalog: RapidsBufferCatalog,
+      bufferId: RapidsBufferId,
+      spillPriority: Long): RapidsBufferHandle = {
+    val table = buildEmptyTable()
+    // store takes ownership of the table
+    catalog.addTable(
+      bufferId,
+      table,
       spillPriority,
       false)
   }

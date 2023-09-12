@@ -42,7 +42,7 @@ class RapidsHostMemoryStore(
     maxSize: Long)
     extends RapidsBufferStore(StorageTier.HOST) {
 
-  override def spillableOnAdd: Boolean = false
+  override protected def spillableOnAdd: Boolean = false
 
   override def getMaxSize: Option[Long] = Some(maxSize)
 
@@ -108,17 +108,15 @@ class RapidsHostMemoryStore(
     if (targetTotalSize <= 0) {
       // lets not spill to host when the buffer we are about
       // to spill is larger than our limit
-      logInfo(s"not spilling at all. " +
-          s"Max size: ${maxSize} buffer size ${buffer.memoryUsedBytes}")
       false
     } else {
       val amountSpilled = synchronousSpill(targetTotalSize, catalog, stream)
       if (amountSpilled != 0) {
-        logInfo(s"Spilled $amountSpilled bytes from ${name} to make room for ${buffer.id}")
+        logDebug(s"Spilled $amountSpilled bytes from ${name} to make room for ${buffer.id}")
         TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
       }
       // if after spill we can fit the new buffer, return true
-      buffer.memoryUsedBytes <= currentSize
+      buffer.memoryUsedBytes <= (maxSize - currentSize)
     }
   }
 
@@ -131,6 +129,8 @@ class RapidsHostMemoryStore(
     //   our host allocator apis.
     if (false && !wouldFit) {
       // skip host
+      logWarning(s"Buffer ${other} with size ${other.memoryUsedBytes} does not fit " +
+          s"in the host store, skipping tier.")
       None
     } else {
       withResource(other.getCopyIterator) { otherBufferIterator =>
@@ -338,10 +338,6 @@ class RapidsHostMemoryStore(
 
     override val storageTier: StorageTier = StorageTier.HOST
 
-    // This is the current size in batch form. It is to be used while this
-    // batch hasn't migrated to another store.
-    private val hostSizeInByes: Long = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
-
     // By default all columns are NOT spillable since we are not the only owners of
     // the columns (the caller is holding onto a ColumnarBatch that will be closed
     // after instantiation, triggering onClosed callbacks)
@@ -363,7 +359,9 @@ class RapidsHostMemoryStore(
       null
     }
 
-    override val memoryUsedBytes: Long = hostSizeInByes
+    // This is the current size in batch form. It is to be used while this
+    // batch hasn't migrated to another store.
+    override val memoryUsedBytes: Long = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
 
     /**
      * Mark a column as spillable
