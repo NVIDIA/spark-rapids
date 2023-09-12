@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, Count, Max, Min, Sum}
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -85,6 +86,20 @@ abstract class GpuWindowExpressionMetaBase(
                 if (upper < lower) {
                   willNotWorkOnGpu("upper-bounds must equal or exceed the lower bounds. " +
                     s"Found lower=$lower, upper=$upper ")
+                }
+                // Also check for negative offsets.
+                if (upper < 0 || lower < 0) {
+                  windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
+                    case _: Average => // Supported
+                    case _: CollectList => // Supported
+                    case _: Count => // Supported
+                    case _: Max => // Supported
+                    case _: Min => // Supported
+                    case _: Sum => // Supported
+                    case f: AggregateFunction =>
+                      willNotWorkOnGpu("negative row bounds unsupported for specified " +
+                        s"aggregation: ${f.prettyName}")
+                  }
                 }
             }
           case RangeFrame =>
