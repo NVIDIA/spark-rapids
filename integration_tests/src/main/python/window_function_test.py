@@ -1463,11 +1463,11 @@ def test_to_date_with_window_functions():
                                       _grpkey_longs_with_nullable_larger_decimals,
                                       #  _grpkey_decimals_with_nulls  # TODO: Approx decimal for avg.
                                       ], ids=idfn)
-def test_window_aggs_for_negative_rows(data_gen, batch_size):
+def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=2048),
+        lambda spark: gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'SELECT '
         ' SUM(c) OVER '
@@ -1484,6 +1484,45 @@ def test_window_aggs_for_negative_rows(data_gen, batch_size):
         '   (partition by a order by b,c rows between -1 preceding and UNBOUNDED following) as avg_c, '
         ' COLLECT_LIST(c) over '
         '   (partition by a order by b,c rows between 5 preceding and -2 following) as list_c '
+        'from window_agg_table ',
+        conf=conf)
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      # TODO: Sorting DECIMAL(23,10) borked on CPU, Spark 3.2.1.
+                                      _grpkey_longs_with_nullable_larger_decimals,
+                                      #  _grpkey_decimals_with_nulls  # TODO: Approx decimal for avg.
+                                      ], ids=idfn)
+def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' SUM(c) OVER '
+        '   (order by b,c,a rows between 3 preceding and -1 following) as sum_c_asc, '
+        ' MAX(c) OVER '
+        '   (PARTITION BY a ORDER BY b DESC, c DESC, a DESC ROWS BETWEEN -2 preceding and 4 following) as max_c_desc, '
+        ' min(c) over '
+        '   (partition by a order by b,c,a rows between UNBOUNDED preceding and -1 FOLLOWING) as min_c_asc, '
+        ' count(1) over '
+        '   (partition by a order by b,c,a rows between -1 preceding and UNBOUNDED following) as count_1, '
+        ' count(c) over '
+        '   (partition by a order by b,c,a rows between 10 preceding and -1 following) as count_c, '
+        ' avg(c) over '
+        '   (partition by a order by b,c,a rows between -1 preceding and UNBOUNDED following) as avg_c, '
+        ' COLLECT_LIST(c) over '
+        '   (partition by a order by b,c,a rows between 5 preceding and -2 following) as list_c '
         'from window_agg_table ',
         conf=conf)
 
