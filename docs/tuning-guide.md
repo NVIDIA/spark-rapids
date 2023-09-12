@@ -104,8 +104,11 @@ Configuration key: [`spark.rapids.memory.host.spillStorageSize`](configs.md#memo
 
 Default value: `-1`
 
-This is the amount of host memory that is used to cache spilled data before it is flushed to disk,
-by default it is the combined size of [pinned](configs.md#memory.pinnedPool.size) and [pageable](additional-functionality/advanced_configs.md#memory.host.pageablePool.size) memory pools.
+This is the amount of host memory that is used to cache spilled data before it is flushed to disk.
+The default value is '-1', it is the combined size of [pinned](configs.md#memory.pinnedPool.size) 
+and [pageable](additional-functionality/advanced_configs.md#memory.host.pageablePool.size) memory pools.
+If there is no spilling, the default value for the spill storage is fine. But it is recommended to
+use a few gigabytes pinned memory in both spilling and no-spilling cases.
 The GPU Accelerator employs different algorithms that allow it to process more data than can fit in
 the GPU's memory. We do not support this for all operations, and are constantly trying to add more.
 The way that this can work is by spilling parts of the data to host memory or to disk, and then
