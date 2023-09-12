@@ -993,10 +993,8 @@ private[rapids] class GpuRangeIterator(
     taskContext: TaskContext,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with Logging {
 
-  // This iterator is designed for GpuRangeExec, so it has some requirements for the inputs.
+  // This iterator is designed for GpuRangeExec, so it has the requirement for the inputs.
   assert((partitionEnd - partitionStart) % step == 0)
-  assert(partitionEnd != partitionStart && (partitionEnd > partitionStart) == (step > 0),
-    "GpuRangeIterator doesn't support generating empty range.")
 
   private def getSafeMargin(bi: BigInt): Long = {
     if (bi.isValidLong) {
@@ -1024,6 +1022,9 @@ private[rapids] class GpuRangeIterator(
   }
 
   override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
     GpuSemaphore.acquireIfNecessary(taskContext)
     withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
       val start = currentPosition

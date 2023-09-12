@@ -75,21 +75,13 @@ class RangeRetrySuite extends RmmSparkRetrySuiteBase {
 
   test("GPU range iterator generates emtpy range") {
     // start == end
-    assertThrows[AssertionError] {
-      new GpuRangeIterator(start, start, step, maxRows, null, NoopMetric)
+    assert {
+      new GpuRangeIterator(start, start, step, maxRows, null, NoopMetric).isEmpty
     }
     // start < end but step < 0
-    assertThrows[AssertionError] {
+    assert {
       val negativeStep = -2
-      new GpuRangeIterator(start, end, negativeStep, maxRows, null, NoopMetric)
-    }
-  }
-
-  test("GPU range iterator with invalid inputs") {
-    // start == end
-    assertThrows[AssertionError] {
-      val invalidEnd = BigInt(49)
-      new GpuRangeIterator(start, invalidEnd, step, maxRows, null, NoopMetric)
+      new GpuRangeIterator(start, end, negativeStep, maxRows, null, NoopMetric).isEmpty
     }
   }
 
@@ -100,5 +92,13 @@ class RangeRetrySuite extends RmmSparkRetrySuiteBase {
       assertResult(1)(batch.numRows())
     }
     assert(rangeIter.isEmpty)
+  }
+
+  test("GPU range iterator with invalid inputs") {
+    // start == end
+    assertThrows[AssertionError] {
+      val invalidEnd = BigInt(49)
+      new GpuRangeIterator(start, invalidEnd, step, maxRows, null, NoopMetric)
+    }
   }
 }
