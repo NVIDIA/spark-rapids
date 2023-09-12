@@ -985,13 +985,18 @@ case class GpuFastSampleExec(
   }
 }
 
-class GpuRangeIterator(
+private[rapids] class GpuRangeIterator(
     partitionStart: BigInt,
     partitionEnd: BigInt,
     step: Long,
     maxRowCountPerBatch: Long,
     taskContext: TaskContext,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with Logging {
+
+  // This iterator is designed for GpuRangeExec, so it has some requirements for the inputs.
+  assert((partitionEnd - partitionStart) % step == 0)
+  assert(partitionEnd != partitionStart && (partitionEnd > partitionStart) == (step > 0),
+    "GpuRangeIterator doesn't support generating empty range.")
 
   private def getSafeMargin(bi: BigInt): Long = {
     if (bi.isValidLong) {
