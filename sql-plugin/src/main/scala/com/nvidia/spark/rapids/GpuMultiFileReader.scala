@@ -233,6 +233,35 @@ object MultiFileReaderUtils {
     }
   }
 
+  /**
+   * Add all partition values found to the batch. There could be more then one partition
+   * value in the batch so we have to build up columns with the correct number of rows
+   * for each partition value.
+   *
+   * @param batch           - input batch, will be closed after the call returns
+   * @param partitionValues - partition values collected from the batch
+   * @param partitionRows   - row numbers collected from the batch, and it should have
+   *                        the same size with "partitionValues"
+   * @param partitionSchema - the partition schema
+   * @return a new columnar batch iterator with partition values
+   */
+  def addMultiplePartitionValuesAndCloseIter(batch: ColumnarBatch,
+      partitionValues: Array[InternalRow],
+      partitionRows: Array[Long],
+      partitionSchema: StructType): Iterator[ColumnarBatch] = {
+    if (partitionSchema.nonEmpty) {
+      if (partitionValues.length > 1) {
+        concatAndAddPartitionColsToBatchAndCloseIter(batch, partitionRows, partitionValues,
+          partitionSchema)
+      } else {
+        // single partition, add like other readers
+        addSinglePartitionValuesAndCloseIter(batch, partitionValues.head, partitionSchema)
+      }
+    } else {
+      new SingleGpuColumnarBatchIterator(batch)
+    }
+  }
+
   def addSinglePartitionValuesAndClose(batch: ColumnarBatch, partitionValues: InternalRow,
       partitionSchema: StructType): ColumnarBatch = {
     if (partitionSchema.nonEmpty) {
@@ -249,6 +278,22 @@ object MultiFileReaderUtils {
     }
   }
 
+  def addSinglePartitionValuesAndCloseIter(batch: ColumnarBatch, partitionValues: InternalRow,
+      partitionSchema: StructType): Iterator[ColumnarBatch] = {
+    if (partitionSchema.nonEmpty) {
+      val partitionScalars = closeOnExcept(batch) { _ =>
+        ColumnarPartitionReaderWithPartitionValues.createPartitionValues(
+          partitionValues.toSeq(partitionSchema), partitionSchema)
+      }
+      withResource(partitionScalars) { _ =>
+        ColumnarPartitionReaderWithPartitionValues.addPartitionValuesIter(batch,
+          partitionScalars, GpuColumnVector.extractTypes(partitionSchema))
+      }
+    } else {
+      new SingleGpuColumnarBatchIterator(batch)
+    }
+  }
+
   private def concatAndAddPartitionColsToBatchAndClose(cb: ColumnarBatch, partRows: Array[Long],
       partValues: Array[InternalRow], partSchema: StructType): ColumnarBatch = {
     withResource(cb) { _ =>
@@ -256,6 +301,12 @@ object MultiFileReaderUtils {
         ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, partsCols)
       }
     }
+  }
+
+  private def concatAndAddPartitionColsToBatchAndCloseIter(cb: ColumnarBatch, partRows: Array[Long],
+      partValues: Array[InternalRow], partSchema: StructType): Iterator[ColumnarBatch] = {
+      val partsColsIter = buildPartitionsColumnsIter(partRows, partValues, partSchema)
+      ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatchIter(cb, partsColsIter)
   }
 
   private def buildPartitionsColumns(partRows: Array[Long], partValues: Array[InternalRow],
@@ -278,6 +329,29 @@ object MultiFileReaderUtils {
         }
       }
       partsCols
+    }
+  }
+
+  private def buildPartitionsColumnsIter(partRows: Array[Long], partValues: Array[InternalRow],
+      partSchema: StructType): Iterator[Array[GpuColumnVector]] = {
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    val rowNumsAndValues = partRows.zip(partValues)
+    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
+      for ((field, colIndex) <- partSchema.zipWithIndex) {
+        val dataType = field.dataType
+        withResource(new Array[ColumnVector](partValues.length)) { onePartCols =>
+          rowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
+            val singleValue = valueRow.get(colIndex, dataType)
+            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
+              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
+            }
+          }
+          partsCols(colIndex) = GpuColumnVector.from(
+            ColumnVector.concatenate(onePartCols: _*), field.dataType)
+        }
+      }
+      Iterator.single(partsCols)
     }
   }
 }

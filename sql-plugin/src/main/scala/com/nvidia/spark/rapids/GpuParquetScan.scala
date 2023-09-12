@@ -2528,16 +2528,16 @@ class MultiFileCloudParquetPartitionReader(
 
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      val batch = if (meta.allPartValues.isDefined) {
+      if (meta.allPartValues.isDefined) {
         val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
         val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
-        MultiFileReaderUtils.addMultiplePartitionValuesAndClose(origBatch, allPartInternalRows,
+        MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(origBatch, allPartInternalRows,
           rowsPerPartition, partitionSchema)
       } else {
-        addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
+        val batch = addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
+        new SingleGpuColumnarBatchIterator(batch)
       }
 
-      new SingleGpuColumnarBatchIterator(batch)
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head

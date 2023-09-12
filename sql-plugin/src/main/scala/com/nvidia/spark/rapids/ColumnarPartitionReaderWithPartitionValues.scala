@@ -82,6 +82,15 @@ object ColumnarPartitionReaderWithPartitionValues {
     }
   }
 
+  def addPartitionValuesIter(
+      fileBatch: ColumnarBatch,
+      partitionValues: Array[Scalar],
+      sparkTypes: Array[DataType]): Iterator[ColumnarBatch] = {
+    val partitionColumnsIter = buildPartitionColumnsIter(fileBatch.numRows, partitionValues,
+      sparkTypes)
+    addGpuColumVectorsToBatchIter(fileBatch, partitionColumnsIter)
+  }
+
   /**
    * The caller is responsible for closing the fileBatch passed in.
    */
@@ -94,6 +103,19 @@ object ColumnarPartitionReaderWithPartitionValues {
     fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
     result
   }
+
+  def addGpuColumVectorsToBatchIter(
+     fileBatch: ColumnarBatch,
+     partitionColumnsIter: Iterator[Array[GpuColumnVector]]): Iterator[ColumnarBatch] = {
+    partitionColumnsIter.map { partitionColumns =>
+      val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
+      val resultCols = fileBatchCols ++ partitionColumns
+      val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
+      fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+      result
+    }
+  }
+
 
   private def buildPartitionColumns(
       numRows: Int,
@@ -108,6 +130,26 @@ object ColumnarPartitionReaderWithPartitionValues {
       }
       succeeded = true
       result
+    } finally {
+      if (!succeeded) {
+        result.filter(_ != null).safeClose()
+      }
+    }
+  }
+
+  private def buildPartitionColumnsIter(
+      numRows: Int,
+      partitionValues: Array[Scalar],
+      sparkTypes: Array[DataType]): Iterator[Array[GpuColumnVector]] = {
+    var succeeded = false
+    val result = new Array[GpuColumnVector](partitionValues.length)
+    try {
+      for (i <- result.indices) {
+        result(i) = GpuColumnVector.from(
+          ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
+      }
+      succeeded = true
+      Iterator.single(result)
     } finally {
       if (!succeeded) {
         result.filter(_ != null).safeClose()

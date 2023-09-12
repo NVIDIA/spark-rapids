@@ -22,15 +22,15 @@ import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
-import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuMultiFileReaderSuite extends AnyFunSuite {
+class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
 
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
@@ -72,6 +72,18 @@ class GpuMultiFileReaderSuite extends AnyFunSuite {
 
     withResource(multiFileReader) { _ =>
       assertResult(false)(multiFileReader.next())
+    }
+  }
+
+  test("test column size exceeding cudf limit") {
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val df = spark.range(10000)
+          .withColumn("partCol", lit("The phrase The quick brown fox jumps"))
+        df.write.partitionBy("partCol").parquet(file.getCanonicalPath)
+        val res = spark.read.parquet(file.getCanonicalPath).collect()
+        print(res.length)
+      })
     }
   }
 }

@@ -107,22 +107,30 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   private var leftValues: Array[InternalRow] = partValues
   private var leftRowNums: Array[Long] = partRowNums
+  private var nextBatchIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
 
-  override def hasNext: Boolean = inputIter.hasNext
+  override def hasNext: Boolean = {
+    // Check if there is a next batch available, or if we need to process the current batch
+    if (!nextBatchIter.hasNext && inputIter.hasNext) {
+      val batch = inputIter.next()
+      nextBatchIter = if (partSchema.nonEmpty) {
+        val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
+          computeValuesAndRowNumsForBatch(batch.numRows())
+        }
+        MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(batch,
+          readPartValues, readPartRows, partSchema)
+      } else {
+        new SingleGpuColumnarBatchIterator(batch)
+      }
+    }
+    nextBatchIter.hasNext
+  }
 
   override def next(): ColumnarBatch = {
-    if (!hasNext) throw new NoSuchElementException()
-    val hasPartitionCols = partSchema.nonEmpty
-    val batch = inputIter.next()
-    if (hasPartitionCols) {
-      val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
-        computeValuesAndRowNumsForBatch(batch.numRows())
-      }
-      MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch, readPartValues,
-        readPartRows, partSchema)
-    } else {
-      batch
+    if (!hasNext) {
+      throw new NoSuchElementException("No more batches to iterate")
     }
+    nextBatchIter.next()
   }
 
   private[this] def computeValuesAndRowNumsForBatch(batchRowNum: Int):
