@@ -1516,20 +1516,20 @@ def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
         "window_agg_table",
         'SELECT '
         ' SUM(c) OVER '
-        '   (order by b,c,a rows between 3 preceding and -1 following) as sum_c_asc, '
+        '   (ORDER BY b,c,a ROWS BETWEEN 3 PRECEDING AND -1 FOLLOWING) AS sum_c_asc, '
         ' MAX(c) OVER '
-        '   (PARTITION BY a ORDER BY b DESC, c DESC, a DESC ROWS BETWEEN -2 preceding and 4 following) as max_c_desc, '
+        '   (ORDER BY b DESC, c DESC, a DESC ROWS BETWEEN -2 PRECEDING AND 4 FOLLOWING) AS max_c_desc, '
         ' min(c) over '
-        '   (partition by a order by b,c,a rows between UNBOUNDED preceding and -1 FOLLOWING) as min_c_asc, '
-        ' count(1) over '
-        '   (partition by a order by b,c,a rows between -1 preceding and UNBOUNDED following) as count_1, '
-        ' count(c) over '
-        '   (partition by a order by b,c,a rows between 10 preceding and -1 following) as count_c, '
-        ' avg(c) over '
-        '   (partition by a order by b,c,a rows between -1 preceding and UNBOUNDED following) as avg_c, '
+        '   (ORDER BY b,c,a ROWS BETWEEN UNBOUNDED PRECEDING AND -1 FOLLOWING) AS min_c_asc, '
+        ' COUNT(1) over '
+        '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS count_1, '
+        ' COUNT(c) over '
+        '   (ORDER BY b,c,a ROWS BETWEEN 10 PRECEDING AND -1 FOLLOWING) AS count_c, '
+        ' AVG(c) over '
+        '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS avg_c, '
         ' COLLECT_LIST(c) over '
-        '   (partition by a order by b,c,a rows between 5 preceding and -2 following) as list_c '
-        'from window_agg_table ',
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING) AS list_c '
+        'FROM window_agg_table ',
         conf=conf)
 
 
