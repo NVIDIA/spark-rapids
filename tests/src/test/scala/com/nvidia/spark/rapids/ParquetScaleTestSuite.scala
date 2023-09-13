@@ -30,7 +30,6 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.tests.datagen.{DBGen, TableGen}
-import org.apache.spark.sql.tests.datagen.BigDataGenConsts.{maxTimestampForOrc, minTimestampForOrc}
 import org.apache.spark.sql.types._
 
 class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
@@ -256,7 +255,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     // "float",  "Blocked by https://github.com/rapidsai/cudf/issues/13948"
     // "double", "Blocked by https://github.com/rapidsai/cudf/issues/13948"
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c01").setNullProbability(0.5)
     tab("c06").setNullProbability(0.5)
@@ -274,7 +272,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       nullProbabilities.foreach { nullProbability =>
         try {
           val gen = DBGen()
-          gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
           val tab = gen.addTable("tab", schema, rowsNum)
           tab("c01").setNullProbability(nullProbability)
           tab("c01").setLength(5) // avoid row group exceeds 128M, we expect one row group
@@ -298,7 +295,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       nullProbabilities.foreach { nullProbability =>
         val schema = s"struct<c01: map<$t, $t>>"
         val gen = DBGen()
-        gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
         val tab = gen.addTable("tab", schema, rowsNum)
         tab("c01").setNullProbability(nullProbability)
         tab("c01").setLength(3) // avoid row group exceeds 128M, we expect one row group
@@ -316,7 +312,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       s"c0$index: $t"
     }.mkString("struct<\nc1: struct<", ", \n", ">>")
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.5)
 
@@ -345,7 +340,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       >
       """
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.9)
     tab("c2").setNullProbability(0.9)
@@ -371,7 +365,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       >
       """
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.8)
     tab("c2").setNullProbability(0.8)
@@ -396,7 +389,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     >
     """
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.8)
     tab("c1").setLength(3)
@@ -426,7 +418,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       >
       """
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.8)
     tab("c1").setLength(3)
@@ -447,7 +438,6 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
       >
       """
     val gen = DBGen()
-    gen.setDefaultValueRange(TimestampType, minTimestampForOrc, maxTimestampForOrc)
     val tab = gen.addTable("tab", schema, rowsNum)
     tab("c1").setNullProbability(0.8)
     tab("c1")("child").setLength(3)
