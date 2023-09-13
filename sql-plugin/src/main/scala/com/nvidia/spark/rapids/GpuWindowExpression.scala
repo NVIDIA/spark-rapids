@@ -662,7 +662,15 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression {
+  /**
+   * Get "min-periods" value, i.e. the minimum number of periods/rows
+   * above which a non-null value is returned for the function.
+   * Otherwise, null is returned.
+   * @return Non-negative value for min-periods.
+   */
+  def getMinPeriods: Int = 1
+}
 
 /**
  * This is a special window function that simply replaces itself with one or more
