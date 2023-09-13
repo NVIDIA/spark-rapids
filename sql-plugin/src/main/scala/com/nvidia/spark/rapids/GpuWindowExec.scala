@@ -931,22 +931,19 @@ class GroupedAggregations {
           // For now I am going to assume that we don't need to combine calls across frame specs
           // because it would just not help that much
           val result = {
-            val functionsSeq = functions.toIndexedSeq
-            val allWindowOpts = {for (i <- 0 until functionsSeq.size) yield
+            val allWindowOpts = functions.map { f =>
               getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
-                functionsSeq(i)._1.windowFunc.getMinPeriods)
+                f._1.windowFunc.getMinPeriods)
             }
-            withResource(allWindowOpts.toIndexedSeq) { allWindowOpts =>
-              val allAggs = {
-                for (i <- 0 until functionsSeq.size) yield
-                  functionsSeq(i)._1.aggOverWindow(inputCb, allWindowOpts(i))
-              }.toIndexedSeq
+            withResource(allWindowOpts.toSeq) { allWindowOpts =>
+              val allAggs = allWindowOpts.zip(functions).map { case (windowOpt, f) =>
+                f._1.aggOverWindow(inputCb, windowOpt)
+              }
               withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
                 aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
               }
             }
           }
-
           withResource(result) { result =>
             functions.zipWithIndex.foreach {
               case ((func, outputIndexes), resultIndex) =>
