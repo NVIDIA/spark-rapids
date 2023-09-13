@@ -293,6 +293,12 @@ def test_map_expr_expr_keys_dupe_exception():
             conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
             error_message = "Duplicate map key")
 
+def test_map_keys_null_exception():
+    assert_gpu_and_cpu_error(
+            lambda spark: spark.sql(
+                "select map(x, -1) from (select explode(array(1,null)) as x)").collect(),
+            conf = {},
+            error_message = "Cannot use null as map key")
 
 def test_map_expr_literal_keys_dupe_last_win():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
