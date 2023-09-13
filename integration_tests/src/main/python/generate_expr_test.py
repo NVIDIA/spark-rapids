@@ -214,3 +214,7 @@ def test_generate_outer_fallback():
         lambda spark: spark.sql("SELECT array(struct(1, 'a'), struct(2, 'b')) as x")\
             .repartition(1).selectExpr("inline_outer(x)"),
         "GenerateExec")
+    
+def test_stack():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(1).selectExpr('stack(1, 1, 2, 3)'))
