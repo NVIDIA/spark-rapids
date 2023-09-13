@@ -1462,15 +1462,13 @@ def test_to_date_with_window_functions():
                                       _grpkey_longs_with_nullable_decimals,
                                       _grpkey_longs_with_nullable_larger_decimals
                                       ], ids=idfn)
-@pytest.mark.parametrize('window_spec', [
-    "3 PRECEDING AND -1 FOLLOWING",
-    "-2 PRECEDING AND 4 FOLLOWING",
-    "UNBOUNDED PRECEDING AND -1 FOLLOWING",
-    "-1 PRECEDING AND UNBOUNDED FOLLOWING",
-    "10 PRECEDING AND -1 FOLLOWING",
-    "5 PRECEDING AND -2 FOLLOWING"
-], ids=idfn)
-def test_window_aggs_for_negative_rows_partitioned_2(data_gen, batch_size, window_spec):
+@pytest.mark.parametrize('window_spec', ["3 PRECEDING AND -1 FOLLOWING",
+                                         "-2 PRECEDING AND 4 FOLLOWING",
+                                         "UNBOUNDED PRECEDING AND -1 FOLLOWING",
+                                         "-1 PRECEDING AND UNBOUNDED FOLLOWING",
+                                         "10 PRECEDING AND -1 FOLLOWING",
+                                         "5 PRECEDING AND -2 FOLLOWING"], ids=idfn)
+def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size, window_spec):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     assert_gpu_and_cpu_are_equal_sql(
@@ -1481,16 +1479,18 @@ def test_window_aggs_for_negative_rows_partitioned_2(data_gen, batch_size, windo
         '   (PARTITION BY a ORDER BY b,c ASC ROWS BETWEEN {window}) AS sum_c_asc, '
         ' MAX(c) OVER '
         '   (PARTITION BY a ORDER BY b DESC, c DESC ROWS BETWEEN {window}) AS max_c_desc, '
-        ' MIN(c) over '
+        ' MIN(c) OVER '
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS min_c_asc, '
-        ' COUNT(1) over '
+        ' COUNT(1) OVER '
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_1, '
-        ' COUNT(c) over '
+        ' COUNT(c) OVER '
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_c, '
-        ' AVG(c) over '
+        ' AVG(c) OVER '
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS avg_c, '
-        ' COLLECT_LIST(c) over '
-        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS list_c '
+        ' COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS list_c, '
+        ' SORT_ARRAY(COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window})) AS sorted_set_c '
         'FROM window_agg_table '.format(window=window_spec),
         conf=conf)
 
@@ -1519,16 +1519,18 @@ def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
         '   (ORDER BY b,c,a ROWS BETWEEN 3 PRECEDING AND -1 FOLLOWING) AS sum_c_asc, '
         ' MAX(c) OVER '
         '   (ORDER BY b DESC, c DESC, a DESC ROWS BETWEEN -2 PRECEDING AND 4 FOLLOWING) AS max_c_desc, '
-        ' min(c) over '
+        ' min(c) OVER '
         '   (ORDER BY b,c,a ROWS BETWEEN UNBOUNDED PRECEDING AND -1 FOLLOWING) AS min_c_asc, '
-        ' COUNT(1) over '
+        ' COUNT(1) OVER '
         '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS count_1, '
-        ' COUNT(c) over '
+        ' COUNT(c) OVER '
         '   (ORDER BY b,c,a ROWS BETWEEN 10 PRECEDING AND -1 FOLLOWING) AS count_c, '
-        ' AVG(c) over '
+        ' AVG(c) OVER '
         '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS avg_c, '
-        ' COLLECT_LIST(c) over '
-        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING) AS list_c '
+        ' COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING) AS list_c, '
+        ' SORT_ARRAY(COLLECT_SET(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING)) AS set_c '
         'FROM window_agg_table ',
         conf=conf)
 
