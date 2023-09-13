@@ -46,8 +46,9 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
+import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -173,7 +174,7 @@ object MultiFileReaderThreadPool extends Logging {
   }
 }
 
-object MultiFileReaderUtils {
+object MultiFileReaderUtils extends Logging {
 
   private implicit def toURI(path: String): URI = {
     try {
@@ -332,8 +333,34 @@ object MultiFileReaderUtils {
     }
   }
 
+  /**
+   * Calculates the maximum column size for StringType columns in 'partSchema'
+   * based on the values in 'partValues'.
+   */
+  private def calculateMaxColumnSizes(partValues: Array[InternalRow],
+      partSchema: StructType): Seq[(Int, Int)]= {
+    partSchema.zipWithIndex.map {
+      case (field, colIndex) =>
+        val maxColumnSize = field.dataType match {
+          case StringType =>
+            // For StringType columns, find the maximum size among values in 'partValues'
+            val maxStringSize = partValues.map { valueRow =>
+              val singleValue = valueRow.get(colIndex, StringType)
+              singleValue.asInstanceOf[UTF8String].numBytes()
+            }.max
+            maxStringSize
+          case _ => Int.MaxValue
+        }
+        (colIndex, maxColumnSize)
+    }
+  }
+
   private def buildPartitionsColumnsIter(partRows: Array[Long], partValues: Array[InternalRow],
       partSchema: StructType): Iterator[Array[GpuColumnVector]] = {
+    val maxColumnSizes = calculateMaxColumnSizes(partValues, partSchema)
+    maxColumnSizes.foreach {
+      case (colIndex, maxSize) => logDebug(s"Col Index: $colIndex, Max Size: $maxSize")
+    }
     // build the partitions vectors for all partitions within each column
     // and concatenate those together then go to the next column
     val rowNumsAndValues = partRows.zip(partValues)

@@ -111,7 +111,11 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   override def hasNext: Boolean = {
     // Check if there is a next batch available, or if we need to process the current batch
-    if (!nextBatchIter.hasNext && inputIter.hasNext) {
+    if (nextBatchIter.hasNext) {
+      true
+    } else if (!inputIter.hasNext) {
+      false
+    } else {
       val batch = inputIter.next()
       nextBatchIter = if (partSchema.nonEmpty) {
         val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
@@ -122,8 +126,8 @@ class GpuColumnarBatchWithPartitionValuesIterator(
       } else {
         new SingleGpuColumnarBatchIterator(batch)
       }
+      nextBatchIter.hasNext
     }
-    nextBatchIter.hasNext
   }
 
   override def next(): ColumnarBatch = {
