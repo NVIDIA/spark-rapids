@@ -613,40 +613,6 @@ class RapidsBufferCatalog(
     }
   }
 
-  /**
-   * Given a specific `RapidsBuffer` spill it to `spillStore`
-   * @return the buffer, if successfully spilled, in order for the caller to free it
-   * @note called with catalog lock held
-   */
-  private def spillBuffer(
-      buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Option[RapidsBuffer] = {
-    if (buffer.addReference()) {
-      withResource(buffer) { _ =>
-        logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
-        val bufferHasSpilled = isBufferSpilled(buffer.id, buffer.storageTier)
-        if (!bufferHasSpilled) {
-          // if the spillStore specifies a maximum size spill taking this ceiling
-          // into account before trying to create a buffer there
-          // TODO: we may need to handle what happens if we can't spill anymore
-          //   because all host buffers are being referenced.
-          trySpillToMaximumSize(buffer, spillStore, stream)
-
-          // copy the buffer to spillStore
-          val newBuffer = spillStore.copyBuffer(buffer, stream)
-
-          // once spilled, we get back a new RapidsBuffer instance in this new tier
-          registerNewBuffer(newBuffer)
-        } else {
-          logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
-            s"already stored in multiple tiers")
-        }
->>>>>>> 740d1175060555ad373f30ed780a58215b6c3419
-      }
-    }
-  }
-
   def updateTiers(bufferSpill: BufferSpill): Long = bufferSpill match {
     case BufferSpill(spilledBuffer, maybeNewBuffer) =>
       logDebug(s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
