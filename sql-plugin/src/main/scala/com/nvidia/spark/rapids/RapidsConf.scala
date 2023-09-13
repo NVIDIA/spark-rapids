@@ -436,6 +436,7 @@ object RapidsConf {
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
       "lz4, lzf, snappy, and zstd.")
+    .internal()
     .stringConf
     .createWithDefault("zstd")
 
