@@ -26,7 +26,7 @@ import org.mockito.Mockito.{spy, times, verify}
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, FloatType, IntegerType, StringType}
+import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
 class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
@@ -54,7 +54,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
   }
 
   private val mockTableDataTypes: Array[DataType] =
-    Array(IntegerType, StringType, FloatType, DecimalType(10, 5))
+    Array(IntegerType, StringType, DoubleType, DecimalType(10, 5))
 
   test("spill updates catalog") {
     val bufferId = MockRapidsBufferId(7, canShareDiskPaths = false)
