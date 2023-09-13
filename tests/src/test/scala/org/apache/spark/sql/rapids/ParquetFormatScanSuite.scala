@@ -33,8 +33,9 @@ import org.apache.parquet.io.api.{Binary, RecordConsumer}
 import org.apache.parquet.schema.{MessageType, MessageTypeParser}
 import org.scalatest.concurrent.Eventually
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.types._
 import org.apache.spark.util.Utils
 
 /**
@@ -384,6 +385,116 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
+        }
+      }, conf = conf)
+    }
+
+    test(s"FIXED_LEN_BYTE_ARRAY(16) BINARY $parserType") {
+      assume(isSpark340OrLater)
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required fixed_len_byte_array(16) test;
+            |}
+        """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/FIXED_BIN16_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("test", 0) {
+                rc.addBinary(Binary.fromString("1234567890123456"))
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("test", 0) {
+                rc.addBinary(Binary.fromString("ABCDEFGHIJKLMNOP"))
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row("1234567890123456".getBytes),
+            Row("ABCDEFGHIJKLMNOP".getBytes)), data)
+        }
+      }, conf = conf)
+    }
+
+    test(s"FIXED_LEN_BYTE_ARRAY(16) binaryAsString $parserType") {
+      assume(isSpark340OrLater)
+      // Parquet does not let us tag a FIXED_LEN_BYTE_ARRAY with utf8 to make it a string
+      // Spark ignores binaryAsString for it, so we need to test that we do the same
+      val conf = new SparkConf()
+          .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType)
+          .set("spark.sql.parquet.binaryAsString", "true")
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required fixed_len_byte_array(16) test;
+            |}
+        """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/FIXED_BIN16_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("test", 0) {
+                rc.addBinary(Binary.fromString("1234567890123456"))
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("test", 0) {
+                rc.addBinary(Binary.fromString("ABCDEFGHIJKLMNOP"))
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row("1234567890123456".getBytes),
+            Row("ABCDEFGHIJKLMNOP".getBytes)), data)
+        }
+      }, conf = conf)
+    }
+
+    test(s"FIXED_LEN_BYTE_ARRAY(16) String in Schema $parserType") {
+      assume(isSpark340OrLater)
+      // Parquet does not let us tag a FIXED_LEN_BYTE_ARRAY with utf8 to make it a string
+      // Spark also fails the task if we try to read it as a String so we should verify that
+      // We also throw an exception.
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required fixed_len_byte_array(16) test;
+            |}
+        """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/FIXED_BIN16_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("test", 0) {
+                rc.addBinary(Binary.fromString("1234567890123456"))
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("test", 0) {
+                rc.addBinary(Binary.fromString("ABCDEFGHIJKLMNOP"))
+              }
+            }
+          })
+
+          try {
+            spark.read.schema(StructType(Seq(StructField("test", StringType))))
+                .parquet(testPath).collect()
+            fail("We read back in some data, but we expected an exception...")
+          } catch {
+            case _: SparkException =>
+              // It would be nice to verify that the exception is what we expect, but we are not
+              //  doing CPU vs GPU so we will just doing a GPU pass here.
+          }
         }
       }, conf = conf)
     }

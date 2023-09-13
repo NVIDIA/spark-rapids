@@ -625,8 +625,8 @@ class RapidsBufferCatalog(
             }
           }
         }
+        Some(totalSpilled)
       }
-      Some(totalSpilled)
     }
   }
 
@@ -1023,20 +1023,31 @@ object RapidsBufferCatalog extends Logging {
    *           brand new to the store, or the `RapidsBuffer` is invalid and
    *           about to be removed).
    */
-  private def getExistingRapidsBufferAndAcquire(
-      buffer: MemoryBuffer): Option[RapidsBuffer] = {
-    val eh = buffer.getEventHandler
-    eh match {
-      case null =>
-        None
-      case rapidsBuffer: RapidsBuffer =>
-        if (rapidsBuffer.addReference()) {
-          Some(rapidsBuffer)
-        } else {
-          None
-        }
+  private def getExistingRapidsBufferAndAcquire(buffer: MemoryBuffer): Option[RapidsBuffer] = {
+    buffer match {
+      case hb: HostMemoryBuffer =>
+        HostAlloc.findEventHandler(hb) {
+          case rapidsBuffer: RapidsBuffer =>
+            if (rapidsBuffer.addReference()) {
+              Some(rapidsBuffer)
+            } else {
+              None
+            }
+        }.flatten
       case _ =>
-        throw new IllegalStateException("Unknown event handler")
+        val eh = buffer.getEventHandler
+        eh match {
+          case null =>
+            None
+          case rapidsBuffer: RapidsBuffer =>
+            if (rapidsBuffer.addReference()) {
+              Some(rapidsBuffer)
+            } else {
+              None
+            }
+          case _ =>
+            throw new IllegalStateException("Unknown event handler")
+        }
     }
   }
 }
