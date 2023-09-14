@@ -200,33 +200,6 @@ object GpuCast extends ToStringBase {
 
   override protected def useHexFormatForBinary: Boolean = false
 
-  def fixDecimalBounds(input: ColumnView,
-      outOfBounds: ColumnView,
-      ansiMode: Boolean): ColumnVector = {
-    if (ansiMode) {
-      withResource(outOfBounds.any()) { isAny =>
-        if (isAny.isValid && isAny.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
-        }
-      }
-      input.copyToColumnVector()
-    } else {
-      withResource(Scalar.fromNull(input.getType)) { nullVal =>
-        outOfBounds.ifElse(nullVal, input)
-      }
-    }
-  }
-
-  def checkNFixDecimalBounds(
-      input: ColumnView,
-      to: DecimalType,
-      ansiMode: Boolean): ColumnVector = {
-    assert(input.getType.isDecimalType)
-    withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
-      fixDecimalBounds(input, outOfBounds, ansiMode)
-    }
-  }
-
   def doCast(
       input: ColumnView,
       fromDataType: DataType,
@@ -1066,6 +1039,33 @@ object GpuCast extends ToStringBase {
           }
         }
       }
+    }
+  }
+
+  def fixDecimalBounds(input: ColumnView,
+      outOfBounds: ColumnView,
+      ansiMode: Boolean): ColumnVector = {
+    if (ansiMode) {
+      withResource(outOfBounds.any()) { isAny =>
+        if (isAny.isValid && isAny.getBoolean) {
+          throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
+        }
+      }
+      input.copyToColumnVector()
+    } else {
+      withResource(Scalar.fromNull(input.getType)) { nullVal =>
+        outOfBounds.ifElse(nullVal, input)
+      }
+    }
+  }
+
+  def checkNFixDecimalBounds(
+      input: ColumnView,
+      to: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
+    assert(input.getType.isDecimalType)
+    withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
+      fixDecimalBounds(input, outOfBounds, ansiMode)
     }
   }
 
