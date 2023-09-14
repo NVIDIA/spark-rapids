@@ -185,18 +185,19 @@ object GpuCast extends ToStringBase {
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  override protected def leftBracket: String =
-    if (SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)) "[" else "{"
+  private def ansiMode = SQLConf.get.getConf(SQLConf.ANSI_ENABLED)
 
-  override protected def rightBracket: String =
-    if (SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)) "]" else "}"
+  private def legacyCastString = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 
-  override protected def nullString: String =
-    if (SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)) "" else "null"
+  override protected def leftBracket: String = if (legacyCastString) "[" else "{"
+
+  override protected def rightBracket: String = if (legacyCastString) "]" else "}"
+
+  override protected def nullString: String = if (legacyCastString) "" else "null"
 
   // In ANSI mode, Spark always uses plain string representation on casting Decimal values
   // as strings. Otherwise, the casting may use scientific notation if an exponent is needed.
-  override protected def useDecimalPlainString: Boolean = SQLConf.get.getConf(SQLConf.ANSI_ENABLED)
+  override protected def useDecimalPlainString: Boolean = ansiMode
 
   override protected def useHexFormatForBinary: Boolean = false
 
@@ -204,8 +205,8 @@ object GpuCast extends ToStringBase {
       input: ColumnView,
       fromDataType: DataType,
       toDataType: DataType,
-      ansiMode: Boolean = SQLConf.get.getConf(SQLConf.ANSI_ENABLED),
-      legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING),
+      ansiMode: Boolean = ansiMode,
+      legacyCastToString: Boolean = legacyCastString,
       stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
