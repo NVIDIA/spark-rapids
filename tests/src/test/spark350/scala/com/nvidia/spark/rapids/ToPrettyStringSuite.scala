@@ -31,7 +31,7 @@ import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, Stru
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
-class CastOperationSuite extends GpuUnitTests {
+class ToPrettyStringSuite extends GpuUnitTests {
 
   private val rapidsConf = new RapidsConf(Map[String, String]())
 
@@ -72,7 +72,7 @@ class CastOperationSuite extends GpuUnitTests {
       GpuColumnVector.from(ColumnVector.fromStrings(cpuResult),
       DataTypes.StringType)) { expected0 =>
       val dt = new HostColumnVector.ListType(true,
-        new HostColumnVector.BasicType(true, DType.INT32));
+        new HostColumnVector.BasicType(true, DType.INT32))
       withResource(GpuColumnVector.from(ColumnVector.fromLists(dt,
         v.toList.asJava),
         ArrayType(DataTypes.IntegerType))) { input =>
@@ -116,24 +116,25 @@ class CastOperationSuite extends GpuUnitTests {
       StructField("c", DataTypes.IntegerType)))
     val v = Array(1, 2, 3)
     val cpuResult = executeOnCpuAndReturn(dataType, InternalRow(v: _*))
-
     val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "struct_arg")
     val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
-    withResource(GpuColumnVector.from(
-        ColumnVector.fromStrings(cpuResult), DataTypes.StringType)) { expected0 =>
-        withResource(GpuColumnVector.from(
-          ColumnVector.fromStructs(new HostColumnVector.StructType(false,
-          List[HostColumnVector.DataType](
-            new HostColumnVector.BasicType(false, DType.INT32),
-            new HostColumnVector.BasicType(false, DType.INT32),
-            new HostColumnVector.BasicType(false, DType.INT32),
-          ).asJava
-        ).asInstanceOf[HostColumnVector.DataType],
+    val l =
+      List[HostColumnVector.DataType](
+        new HostColumnVector.BasicType(false, DType.INT32),
+        new HostColumnVector.BasicType(false, DType.INT32),
+        new HostColumnVector.BasicType(false, DType.INT32),
+      ).asJava
+    val structType = new HostColumnVector.StructType(false, l)
+    withResource(
+      GpuColumnVector.from(
+        ColumnVector.fromStrings(cpuResult), DataTypes.StringType)) { expected =>
+      withResource(GpuColumnVector.from(
+        ColumnVector.fromStructs(structType,
           List(new HostColumnVector.StructData(v.map(Int.box): _*)).asJava
         ), dataType)) { input =>
-          val batch = new ColumnarBatch(List(input).toArray, 1)
-          checkEvaluation(gpuToPrettyStr, expected0, batch)
-        }
+        val batch = new ColumnarBatch(List(input).toArray, 1)
+        checkEvaluation(gpuToPrettyStr, expected, batch)
+      }
     }
   }
 }
