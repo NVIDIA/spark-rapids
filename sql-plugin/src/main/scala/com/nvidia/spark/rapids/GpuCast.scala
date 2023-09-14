@@ -162,91 +162,7 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   override protected val needTimezoneTagging: Boolean = false
 }
 
-/**
- * Casts using the GPU
- */
-case class GpuCast(
-    child: Expression,
-    dataType: DataType,
-    ansiMode: Boolean = false,
-    timeZoneId: Option[String] = None,
-    legacyCastToString: Boolean = false,
-    stringToDateAnsiModeEnabled: Boolean = false)
-  extends GpuUnaryExpression
-    with TimeZoneAwareExpression
-    with NullIntolerant {
-
-  // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
-  override def hasSideEffects: Boolean = super.hasSideEffects || {
-    (child.dataType, dataType) match {
-      case (StringType, _) if ansiMode => true
-      case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
-      case (_: DecimalType, LongType) if ansiMode => true
-      case (LongType | _: DecimalType, IntegerType) if ansiMode => true
-      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode => true
-      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode => true
-      case (FloatType | DoubleType, ByteType) if ansiMode => true
-      case (FloatType | DoubleType, ShortType) if ansiMode => true
-      case (FloatType | DoubleType, IntegerType) if ansiMode => true
-      case (FloatType | DoubleType, LongType) if ansiMode => true
-      case (_: LongType, dayTimeIntervalType: DataType)
-        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) => true
-      case (_: IntegerType, dayTimeIntervalType: DataType)
-        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) =>
-        GpuTypeShims.hasSideEffectsIfCastIntToDayTime(dayTimeIntervalType)
-      case (dayTimeIntervalType: DataType, _: IntegerType | ShortType | ByteType)
-        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) => true
-      case (_: LongType, yearMonthIntervalType: DataType)
-        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
-      case (_: IntegerType, yearMonthIntervalType: DataType)
-        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) =>
-        GpuTypeShims.hasSideEffectsIfCastIntToYearMonth(yearMonthIntervalType)
-      case (yearMonthIntervalType: DataType, _: ShortType | ByteType)
-        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
-      case (FloatType | DoubleType, TimestampType) =>
-        GpuTypeShims.hasSideEffectsIfCastFloatToTimestamp
-      case _ => false
-    }
-  }
-
-  override def toString: String = s"cast($child as ${dataType.simpleString})"
-
-  override def checkInputDataTypes(): TypeCheckResult = {
-    if (Cast.canCast(child.dataType, dataType)) {
-      TypeCheckResult.TypeCheckSuccess
-    } else {
-      TypeCheckResult.TypeCheckFailure(
-        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
-    }
-  }
-
-  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
-    copy(timeZoneId = Option(timeZoneId))
-
-  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
-  // Otherwise behave like Expression.resolved.
-  override lazy val resolved: Boolean =
-  childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
-
-  def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
-
-  override def sql: String = dataType match {
-    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
-    // this type of casting can only be introduced by the analyzer, and can be omitted when
-    // converting back to SQL query string.
-    case _: ArrayType | _: MapType | _: StructType => child.sql
-    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
-  }
-
-  override def doColumnar(input: GpuColumnVector): ColumnVector =
-    CastOperation(input.getBase, input.dataType(), dataType, ansiMode,
-      legacyCastToString, stringToDateAnsiModeEnabled)
-}
-
-object CastOperation {
-
+object GpuCast extends ToStringBase {
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
   private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
   private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
@@ -269,9 +185,20 @@ object CastOperation {
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
-    FloatUtils.castFloatingTypeToString(input)
-  }
+  override protected def leftBracket: String =
+    if (SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)) "[" else "{"
+
+  override protected def rightBracket: String =
+    if (SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)) "]" else "}"
+
+  override protected def nullString: String =
+    if (SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)) "" else "null"
+
+  // In ANSI mode, Spark always uses plain string representation on casting Decimal values
+  // as strings. Otherwise, the casting may use scientific notation if an exponent is needed.
+  override protected def useDecimalPlainString: Boolean = SQLConf.get.getConf(SQLConf.ANSI_ENABLED)
+
+  override protected def useHexFormatForBinary: Boolean = false
 
   def fixDecimalBounds(input: ColumnView,
       outOfBounds: ColumnView,
@@ -300,45 +227,18 @@ object CastOperation {
     }
   }
 
-  def apply(
+  def doCast(
       input: ColumnView,
       fromDataType: DataType,
       toDataType: DataType,
-      ansiMode: Boolean,
-      legacyCastToString: Boolean,
+      ansiMode: Boolean = SQLConf.get.getConf(SQLConf.ANSI_ENABLED),
+      legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING),
       stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
-    new CastOperation(input, fromDataType, toDataType, ansiMode,
-      legacyCastToString, stringToDateAnsiModeEnabled).doCast
-  }
-}
-
-case class CastOperation(
-    input: ColumnView,
-    fromDataType: DataType,
-    toDataType: DataType,
-    ansiMode: Boolean,
-    legacyCastToString: Boolean,
-    stringToDateAnsiModeEnabled: Boolean) extends ToStringBase {
-
-  import CastOperation._
-
-  override protected val (leftBracket, rightBracket) =
-    if (legacyCastToString) ("[", "]") else ("{", "}")
-
-  override protected val nullString: String = if (legacyCastToString) "" else "null"
-
-  // In ANSI mode, Spark always uses plain string representation on casting Decimal values
-  // as strings. Otherwise, the casting may use scientific notation if an exponent is needed.
-  override protected def useDecimalPlainString: Boolean = ansiMode
-
-  override protected def useHexFormatForBinary: Boolean = false
-
-  def doCast: ColumnVector = {
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
     }
 
-  (fromDataType, toDataType) match {
+    (fromDataType, toDataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
 
@@ -596,10 +496,10 @@ case class CastOperation(
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
-          withResource(CastOperation(childView, nestedFrom, nestedTo,
+          withResource(doCast(childView, nestedFrom, nestedTo,
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) {
             childColumnVector =>
-            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
+              withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
           }
         }
 
@@ -1040,12 +940,12 @@ case class CastOperation(
     // as possible
     withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        CastOperation(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
+        doCast(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          CastOperation(valueColumn, from.valueType, to.valueType, ansiMode,
+          doCast(valueColumn, from.valueType, to.valueType, ansiMode,
             legacyCastToString, stringToDateAnsiModeEnabled)
         }
         withResource(castValue) { castValue =>
@@ -1070,7 +970,7 @@ case class CastOperation(
       stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
       from.indices.foreach { index =>
-        childColumns += CastOperation(
+        childColumns += doCast(
           input.getChildColumnView(index),
           from(index).dataType,
           to(index).dataType,
@@ -1258,4 +1158,89 @@ case class CastOperation(
       _.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
     }
   }
+}
+
+/**
+ * Casts using the GPU
+ */
+case class GpuCast(
+    child: Expression,
+    dataType: DataType,
+    ansiMode: Boolean = false,
+    timeZoneId: Option[String] = None,
+    legacyCastToString: Boolean = false,
+    stringToDateAnsiModeEnabled: Boolean = false)
+  extends GpuUnaryExpression
+    with TimeZoneAwareExpression
+    with NullIntolerant {
+
+  import GpuCast._
+
+  // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
+  override def hasSideEffects: Boolean = super.hasSideEffects || {
+    (child.dataType, dataType) match {
+      case (StringType, _) if ansiMode => true
+      case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
+      case (_: DecimalType, LongType) if ansiMode => true
+      case (LongType | _: DecimalType, IntegerType) if ansiMode => true
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode => true
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode => true
+      case (FloatType | DoubleType, ByteType) if ansiMode => true
+      case (FloatType | DoubleType, ShortType) if ansiMode => true
+      case (FloatType | DoubleType, IntegerType) if ansiMode => true
+      case (FloatType | DoubleType, LongType) if ansiMode => true
+      case (_: LongType, dayTimeIntervalType: DataType)
+        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) => true
+      case (_: IntegerType, dayTimeIntervalType: DataType)
+        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) =>
+        GpuTypeShims.hasSideEffectsIfCastIntToDayTime(dayTimeIntervalType)
+      case (dayTimeIntervalType: DataType, _: IntegerType | ShortType | ByteType)
+        if GpuTypeShims.isSupportedDayTimeType(dayTimeIntervalType) => true
+      case (_: LongType, yearMonthIntervalType: DataType)
+        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
+      case (_: IntegerType, yearMonthIntervalType: DataType)
+        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) =>
+        GpuTypeShims.hasSideEffectsIfCastIntToYearMonth(yearMonthIntervalType)
+      case (yearMonthIntervalType: DataType, _: ShortType | ByteType)
+        if GpuTypeShims.isSupportedYearMonthType(yearMonthIntervalType) => true
+      case (FloatType | DoubleType, TimestampType) =>
+        GpuTypeShims.hasSideEffectsIfCastFloatToTimestamp
+      case _ => false
+    }
+  }
+
+  override def toString: String = s"cast($child as ${dataType.simpleString})"
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (Cast.canCast(child.dataType, dataType)) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(
+        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
+    }
+  }
+
+  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
+  // Otherwise behave like Expression.resolved.
+  override lazy val resolved: Boolean =
+  childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
+
+  def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
+
+  override def sql: String = dataType match {
+    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
+    // this type of casting can only be introduced by the analyzer, and can be omitted when
+    // converting back to SQL query string.
+    case _: ArrayType | _: MapType | _: StructType => child.sql
+    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    doCast(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString,
+      stringToDateAnsiModeEnabled)
 }

@@ -1271,7 +1271,7 @@ abstract class GpuDecimalSum(
 
   override def windowOutput(result: ColumnVector): ColumnVector = {
     // Check for overflow
-    CastOperation.checkNFixDecimalBounds(result, dt, failOnErrorOverride)
+    GpuCast.checkNFixDecimalBounds(result, dt, failOnErrorOverride)
   }
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
@@ -1279,7 +1279,7 @@ abstract class GpuDecimalSum(
     // The fixer will do the bounds checks for us on the actual final values.
     if (!isRunningBatched) {
       // Check for overflow
-      CastOperation.checkNFixDecimalBounds(cols.head, dt, failOnErrorOverride)
+      GpuCast.checkNFixDecimalBounds(cols.head, dt, failOnErrorOverride)
     } else {
       super.scanCombine(isRunningBatched, cols)
     }

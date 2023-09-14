@@ -335,7 +335,7 @@ object GpuOrcScan {
       // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
       // enable or not.
       case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
-        CastOperation.castFloatingTypeToString(col)
+        GpuCast.castFloatingTypeToString(col)
 
       // float/double -> timestamp
       case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>
@@ -381,7 +381,7 @@ object GpuOrcScan {
       case (f: DType, t: DType) if f.isDecimalType && t.isDecimalType =>
         val fromDataType = DecimalType(f.getDecimalMaxPrecision, -f.getScale)
         val toDataType = DecimalType(t.getDecimalMaxPrecision, -t.getScale)
-        CastOperation(col, fromDataType, toDataType, ansiMode=false, legacyCastToString = false,
+        GpuCast.doCast(col, fromDataType, toDataType, ansiMode=false, legacyCastToString = false,
           stringToDateAnsiModeEnabled = false)
 
       case (DType.STRING, DType.STRING) if originalFromDt.isInstanceOf[CharType] =>

@@ -95,11 +95,11 @@ trait GpuAddSub extends CudfBinaryArithmetic {
             } else {
               // eval operands using the output precision
               val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-                CastOperation(lhs.getBase(), leftInputType, resultType, false, false, false)
+                GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
                 withResource(right.columnarEval(batch)) { rhs =>
-                  CastOperation(rhs.getBase(), rightInputType, resultType, false, false, false)
+                  GpuCast.doCast(rhs.getBase(), rightInputType, resultType, false, false, false)
                 }
               }
 
@@ -155,7 +155,7 @@ trait GpuAddSub extends CudfBinaryArithmetic {
       if (failOnError) {
         withResource(overflowed.any()) { anyOverflow =>
           if (anyOverflow.isValid && anyOverflow.getBoolean) {
-            throw new ArithmeticException(CastOperation.INVALID_INPUT_MESSAGE)
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
         sum.incRefCount()
@@ -322,7 +322,7 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
       if (failOnError) {
         withResource(overflowed.any()) { anyOverflow =>
           if (anyOverflow.isValid && anyOverflow.getBoolean) {
-            throw new ArithmeticException(CastOperation.INVALID_INPUT_MESSAGE)
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
         remainder.incRefCount()
@@ -342,13 +342,13 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
 
   private def regularRemainder(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      CastOperation(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
+      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
     }
     withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
-          CastOperation(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
+          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
             legacyCastToString = false, stringToDateAnsiModeEnabled = false)
         }
       }

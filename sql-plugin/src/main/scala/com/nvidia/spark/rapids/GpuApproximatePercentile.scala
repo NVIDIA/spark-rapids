@@ -143,7 +143,7 @@ case class ApproxPercentileFromTDigestExpr(
           // array and return that (after converting from Double to finalDataType)
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
             withResource(percentiles.extractListElement(0)) { childView =>
-              withResource(CastOperation(childView, DataTypes.DoubleType, finalDataType,
+              withResource(GpuCast.doCast(childView, DataTypes.DoubleType, finalDataType,
                   ansiMode = false, legacyCastToString = false,
                   stringToDateAnsiModeEnabled = false)) { childCv =>
                 GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
@@ -158,7 +158,7 @@ case class ApproxPercentileFromTDigestExpr(
               GpuColumnVector.from(percentiles.incRefCount(), dataType)
             } else {
               withResource(percentiles.getChildColumnView(0)) { childView =>
-                withResource(CastOperation(childView, DataTypes.DoubleType, finalDataType,
+                withResource(GpuCast.doCast(childView, DataTypes.DoubleType, finalDataType,
                     ansiMode = false, legacyCastToString = false,
                     stringToDateAnsiModeEnabled = false)) { childCv =>
                   withResource(percentiles.replaceListChild(childCv)) { x =>

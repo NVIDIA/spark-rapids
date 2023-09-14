@@ -151,25 +151,25 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to bytes",
     generateOutOfRangeDecimalDF(Byte.MinValue, Byte.MaxValue, 10, 0, Byte.MaxValue + 1),
-    msg = CastOperation.OVERFLOW_MESSAGE) {
+    msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to shorts",
     generateOutOfRangeDecimalDF(Short.MinValue, Short.MaxValue, 10, 0, Short.MaxValue + 1),
-    msg = CastOperation.OVERFLOW_MESSAGE) {
+    msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to Ints",
     generateOutOfRangeDecimalDF(Int.MinValue, Int.MaxValue, 10, 0, Int.MaxValue.toLong + 1),
-    msg = CastOperation.OVERFLOW_MESSAGE) {
+    msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to longs",
     generateOutOfRangeDecimalDF(Long.MinValue, Long.MaxValue, 18, -3,
-      BigDecimal("999999999999999999000")), msg = CastOperation.OVERFLOW_MESSAGE) {
+      BigDecimal("999999999999999999000")), msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
@@ -755,7 +755,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       testName: String,
       frame: SparkSession => DataFrame,
       sparkConf: SparkConf = sparkConf,
-      msg: String = CastOperation.INVALID_INPUT_MESSAGE,
+      msg: String = GpuCast.INVALID_INPUT_MESSAGE,
       assumeCondition: SparkSession => (Boolean, String) = null)
       (transformation: DataFrame => DataFrame)
     : Unit = {
@@ -882,7 +882,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def getExMsgForOverflowInTableInsert: String = {
     if (cmpSparkVersion(3, 3, 1) < 0) {
       // Prior to Spark-3.3.1, GPU throws an ArithmeticException with overflowMessage
-      CastOperation.OVERFLOW_MESSAGE
+      GpuCast.OVERFLOW_MESSAGE
     } else {
       // spark 3.3.1+ shows a different error message for overflow during table insert
       "due to an overflow."

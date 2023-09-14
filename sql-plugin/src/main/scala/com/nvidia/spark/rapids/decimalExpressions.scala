@@ -57,7 +57,7 @@ case class GpuCheckOverflow(child: Expression,
       }
     }
     withResource(rounded) { rounded =>
-      CastOperation.checkNFixDecimalBounds(rounded, dataType, !nullOnOverflow)
+      GpuCast.checkNFixDecimalBounds(rounded, dataType, !nullOnOverflow)
     }
   }
 }
@@ -120,7 +120,7 @@ case class GpuMakeDecimal(
         if (!nullOnOverflow) {
           withResource(outOfBounds.any()) { isAny =>
             if (isAny.isValid && isAny.getBoolean) {
-              throw new IllegalStateException(CastOperation.INVALID_INPUT_MESSAGE)
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
           outputView.copyToColumnVector()
