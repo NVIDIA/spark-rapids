@@ -21,7 +21,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
@@ -31,6 +31,15 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * A helper case class that contains the buffer we spilled from our current tier
+ * and likely a new buffer created in a spill store tier, but it can be set to None.
+ * If the buffer already exists in the target spill store, `newBuffer` will be None.
+ * @param spilledBuffer a `RapidsBuffer` we spilled from this store
+ * @param newBuffer an optional `RapidsBuffer` in the target spill store.
+ */
+case class BufferSpill(spilledBuffer: RapidsBuffer, newBuffer: Option[RapidsBuffer])
 
 /**
  * Base class for all buffer store types.
@@ -67,14 +76,14 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       if (old != null) {
         throw new DuplicateBufferException(s"duplicate buffer registered: ${buffer.id}")
       }
-      totalBytesStored += buffer.getMemoryUsedBytes
+      totalBytesStored += buffer.memoryUsedBytes
 
       // device buffers "spillability" is handled via DeviceMemoryBuffer ref counting
       // so spillableOnAdd should be false, all other buffer tiers are spillable at
       // all times.
-      if (spillableOnAdd) {
+      if (spillableOnAdd && buffer.memoryUsedBytes > 0) {
         if (spillable.offer(buffer)) {
-          totalBytesSpillable += buffer.getMemoryUsedBytes
+          totalBytesSpillable += buffer.memoryUsedBytes
         }
       }
     }
@@ -84,9 +93,9 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       spilling.remove(id)
       val obj = buffers.remove(id)
       if (obj != null) {
-        totalBytesStored -= obj.getMemoryUsedBytes
+        totalBytesStored -= obj.memoryUsedBytes
         if (spillable.remove(obj)) {
-          totalBytesSpillable -= obj.getMemoryUsedBytes
+          totalBytesSpillable -= obj.memoryUsedBytes
         }
       }
     }
@@ -115,19 +124,19 @@ abstract class RapidsBufferStore(val tier: StorageTier)
      * @param isSpillable whether the buffer should now be spillable
      */
     def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = synchronized {
-      if (isSpillable) {
+      if (isSpillable && buffer.memoryUsedBytes > 0) {
         // if this buffer is in the store and isn't currently spilling
         if (!spilling.contains(buffer.id) && buffers.containsKey(buffer.id)) {
           // try to add it to the spillable collection
           if (spillable.offer(buffer)) {
-            totalBytesSpillable += buffer.getMemoryUsedBytes
+            totalBytesSpillable += buffer.memoryUsedBytes
             logDebug(s"Buffer ${buffer.id} is spillable. " +
               s"total=${totalBytesStored} spillable=${totalBytesSpillable}")
           } // else it was already there (unlikely)
         }
       } else {
         if (spillable.remove(buffer)) {
-          totalBytesSpillable -= buffer.getMemoryUsedBytes
+          totalBytesSpillable -= buffer.memoryUsedBytes
           logDebug(s"Buffer ${buffer.id} is not spillable. " +
             s"total=${totalBytesStored}, spillable=${totalBytesSpillable}")
         } // else it was already removed
@@ -139,8 +148,8 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       if (buffer != null) {
         // mark the id as "spilling" (this buffer is in the middle of a spill operation)
         spilling.add(buffer.id)
-        totalBytesSpillable -= buffer.getMemoryUsedBytes
-        logDebug(s"Spilling buffer ${buffer.id}. size=${buffer.getMemoryUsedBytes} " +
+        totalBytesSpillable -= buffer.memoryUsedBytes
+        logDebug(s"Spilling buffer ${buffer.id}. size=${buffer.memoryUsedBytes} " +
           s"total=${totalBytesStored}, new spillable=${totalBytesSpillable}")
       }
       buffer
@@ -196,15 +205,19 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
    * @param buffer data from another store
+   * @param catalog RapidsBufferCatalog we may need to modify during this copy
    * @param stream CUDA stream to use for copy or null
    * @return the new buffer that was created
    */
   def copyBuffer(
       buffer: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
-    freeOnExcept(createBuffer(buffer, stream)) { newBuffer =>
-      addBuffer(newBuffer)
-      newBuffer
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+    createBuffer(buffer, catalog, stream).map { newBuffer =>
+      freeOnExcept(newBuffer) { newBuffer =>
+        addBuffer(newBuffer)
+        newBuffer
+      }
     }
   }
 
@@ -220,12 +233,14 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    * @note DO NOT close the buffer unless adding a reference!
    * @note `createBuffer` impls should synchronize against `stream` before returning, if needed.
    * @param buffer data from another store
+   * @param catalog RapidsBufferCatalog we may need to modify during this create
    * @param stream CUDA stream to use or null
    * @return the new buffer that was created.
    */
   protected def createBuffer(
      buffer: RapidsBuffer,
-     stream: Cuda.Stream): RapidsBufferBase
+     catalog: RapidsBufferCatalog,
+     stream: Cuda.Stream): Option[RapidsBufferBase]
 
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = {
@@ -253,6 +268,129 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
   def nextSpillable(): RapidsBuffer = {
     buffers.nextSpillableBuffer()
+  }
+
+  def synchronousSpill(
+      targetTotalSize: Long,
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Long = {
+    if (currentSpillableSize > targetTotalSize) {
+      logWarning(s"Targeting a ${name} size of $targetTotalSize. " +
+          s"Current total ${currentSize}. " +
+          s"Current spillable ${currentSpillableSize}")
+      val bufferSpills = new mutable.ArrayBuffer[BufferSpill]()
+      withResource(new NvtxRange(s"${name} sync spill", NvtxColor.ORANGE)) { _ =>
+        logWarning(s"${name} store spilling to reduce usage from " +
+          s"${currentSize} total (${currentSpillableSize} spillable) " +
+          s"to $targetTotalSize bytes")
+
+        // If the store has 0 spillable bytes left, it has exhausted.
+        try {
+          var exhausted = false
+          var totalSpilled = 0L
+          while (!exhausted &&
+            currentSpillableSize > targetTotalSize) {
+            val nextSpillableBuffer = nextSpillable()
+            if (nextSpillableBuffer != null) {
+              if (nextSpillableBuffer.addReference()) {
+                withResource(nextSpillableBuffer) { _ =>
+                  val bufferHasSpilled =
+                    catalog.isBufferSpilled(
+                      nextSpillableBuffer.id,
+                      nextSpillableBuffer.storageTier)
+                  val bufferSpill = if (!bufferHasSpilled) {
+                    spillBuffer(
+                      nextSpillableBuffer, this, catalog, stream)
+                  } else {
+                    // if `nextSpillableBuffer` already spilled, we still need to
+                    // remove it from our tier and call free on it, but set
+                    // `newBuffer` to None because there's nothing to register
+                    // as it has already spilled.
+                    BufferSpill(nextSpillableBuffer, None)
+                  }
+                  totalSpilled += bufferSpill.spilledBuffer.memoryUsedBytes
+                  bufferSpills.append(bufferSpill)
+                  catalog.updateTiers(bufferSpill)
+                }
+              }
+            }
+          }
+          if (totalSpilled <= 0) {
+            // we didn't spill in this iteration, exit loop
+            exhausted = true
+            logWarning("Unable to spill enough to meet request. " +
+              s"Total=${currentSize} " +
+              s"Spillable=${currentSpillableSize} " +
+              s"Target=$targetTotalSize")
+          }
+          totalSpilled
+        } finally {
+          if (bufferSpills.nonEmpty) {
+            // This is a hack in order to completely synchronize with the GPU before we free
+            // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
+            // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
+            // all launched GPU work, otherwise crashes or data corruption could occur.
+            // A more performant implementation would be to synchronize on the thread that read
+            // the buffer via events.
+            // https://github.com/NVIDIA/spark-rapids/issues/8610
+            Cuda.deviceSynchronize()
+            bufferSpills.foreach(_.spilledBuffer.safeFree())
+          }
+        }
+      }
+    } else {
+      0L // nothing spilled
+    }
+  }
+
+  /**
+   * Given a specific `RapidsBuffer` spill it to `spillStore`
+   *
+   * @return a `BufferSpill` instance with the target buffer in this store, and an optional
+   *         new `RapidsBuffer` in the target spill store if this rapids buffer hadn't already
+   *         spilled.
+   * @note called with catalog lock held
+   */
+  private def spillBuffer(
+      buffer: RapidsBuffer,
+      store: RapidsBufferStore,
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream): BufferSpill = {
+    // copy the buffer to spillStore
+    var maybeNewBuffer: Option[RapidsBuffer] = None
+    var lastTier: Option[StorageTier] = None
+    var nextSpillStore = store.spillStore
+    while (maybeNewBuffer.isEmpty && nextSpillStore != null) {
+      lastTier = Some(nextSpillStore.tier)
+      // copy buffer if it fits
+      maybeNewBuffer = nextSpillStore.copyBuffer(buffer, catalog, stream)
+
+      // if it didn't fit, we can try a lower tier that has more space
+      if (maybeNewBuffer.isEmpty) {
+        nextSpillStore = nextSpillStore.spillStore
+      }
+    }
+    if (maybeNewBuffer.isEmpty) {
+      throw new IllegalStateException(
+        s"Unable to spill buffer ${buffer.id} of size ${buffer.memoryUsedBytes} " +
+            s"to tier ${lastTier}")
+    }
+    // return the buffer to free and the new buffer to register
+    BufferSpill(buffer, maybeNewBuffer)
+  }
+
+  /**
+   * Tries to make room for `buffer` in the host store by spilling.
+   *
+   * @param buffer buffer that will be copied to the host store if it fits
+   * @param stream CUDA stream to synchronize for memory operations
+   * @return true if the buffer fits after a potential spill
+   */
+  protected def trySpillToMaximumSize(
+      buffer: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream): Boolean = {
+    true // default to success, HostMemoryStore overrides this
   }
 
   /** Base class for all buffers in this store. */
@@ -411,7 +549,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
           freeBuffer()
         }
       } else {
-        logWarning(s"Trying to free an invalid buffer => $id, size = ${getMemoryUsedBytes}, $this")
+        logWarning(s"Trying to free an invalid buffer => $id, size = ${memoryUsedBytes}, $this")
       }
     }
 
@@ -453,7 +591,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       releaseResources()
     }
 
-    override def toString: String = s"$name buffer size=${getMemoryUsedBytes}"
+    override def toString: String = s"$name buffer size=${memoryUsedBytes}"
   }
 }
 

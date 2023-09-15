@@ -116,7 +116,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
             ArgumentMatchers.eq(handle.id), ArgumentMatchers.eq(StorageTier.DEVICE))
           withResource(catalog.acquireBuffer(handle)) { buffer =>
             assertResult(StorageTier.HOST)(buffer.storageTier)
-            assertResult(bufferSize)(buffer.getMemoryUsedBytes)
+            assertResult(bufferSize)(buffer.memoryUsedBytes)
             assertResult(handle.id)(buffer.id)
             assertResult(spillPriority)(buffer.getSpillPriority)
           }
@@ -556,7 +556,7 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
         override def getDiskPath(diskBlockManager: RapidsDiskBlockManager): File = null
       })
       when(mockStore.getMaxSize).thenAnswer(_ => None)
-      when(mockStore.copyBuffer(any(), any())).thenReturn(mockBuff)
+      when(mockStore.copyBuffer(any(), any(), any())).thenReturn(Some(mockBuff))
       when(mockStore.tier) thenReturn (StorageTier.DISK)
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
         devStore.setSpillStore(hostStore)
@@ -580,7 +580,9 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
               } // close the bigTable so it can be spilled
               bigTable = null
               catalog.synchronousSpill(devStore, 0)
-              verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
+              verify(mockStore, never()).copyBuffer(
+                ArgumentMatchers.any[RapidsBuffer],
+                ArgumentMatchers.any[RapidsBufferCatalog],
                 ArgumentMatchers.any[Cuda.Stream])
               withResource(catalog.acquireBuffer(bigHandle)) { buffer =>
                 assertResult(StorageTier.HOST)(buffer.storageTier)
@@ -598,7 +600,9 @@ class RapidsHostMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
             catalog.synchronousSpill(devStore, 0)
             val rapidsBufferCaptor: ArgumentCaptor[RapidsBuffer] =
               ArgumentCaptor.forClass(classOf[RapidsBuffer])
-            verify(mockStore).copyBuffer(rapidsBufferCaptor.capture(),
+            verify(mockStore).copyBuffer(
+              rapidsBufferCaptor.capture(),
+              ArgumentMatchers.any[RapidsBufferCatalog],
               ArgumentMatchers.any[Cuda.Stream])
             assertResult(bigHandle.id)(rapidsBufferCaptor.getValue.id)
           }
