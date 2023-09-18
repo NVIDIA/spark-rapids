@@ -551,12 +551,23 @@ def test_csv_read_count(spark_tmp_path):
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path))
 
+@allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.parametrize('date_format', csv_supported_date_formats)
+@pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
+@pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
+    csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
+
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
-def test_csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type):
+def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
+    csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'FileSourceScanExec')
+
+def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
     full_format = date_format + ts_part
     # specify to use no timezone rather than defaulting to UTC
     data_gen = TimestampGen(tzinfo=None)
@@ -573,7 +584,7 @@ def test_csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, ti
             .csv(data_path)
 
     conf = { 'spark.sql.timestampType': timestamp_type,
-             'spark.rapids.sql.explain': 'ALL'}
+             'spark.sql.sources.useV1SourceList': v1_enabled_list }
 
     # determine whether Spark CPU infers TimestampType or TimestampNtzType
     inferred_type = with_cpu_session(
@@ -583,13 +594,13 @@ def test_csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, ti
         # we fall back to CPU due to "unsupported data types in output: TimestampNTZType"
         assert_gpu_fallback_collect(
             lambda spark: do_read(spark),
-            cpu_fallback_class_name = 'FileSourceScanExec',
+            cpu_fallback_class_name = cpu_scan_class,
             conf = conf)
     else:
         assert_cpu_and_gpu_are_equal_collect_with_capture(
             lambda spark: do_read(spark),
-            exist_classes = 'GpuFileSourceScanExec',
-            non_exist_classes = 'FileSourceScanExec',
+            exist_classes = 'Gpu' + cpu_scan_class,
+            non_exist_classes = cpu_scan_class,
             conf = conf)
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
