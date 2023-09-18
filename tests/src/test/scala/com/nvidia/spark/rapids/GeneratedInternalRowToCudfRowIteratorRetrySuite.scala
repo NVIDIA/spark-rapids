@@ -85,16 +85,13 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
       ctriter, schema, TargetSize(Int.MaxValue),
       NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
-    assertResult(0)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
+    assertResult(0)(RmmSpark.getAndResetNumRetryThrow(1))
     withResource(myIter.next()) { devBatch =>
       withResource(buildBatch()) { expected =>
         TestUtils.compareBatches(expected, devBatch)
       }
     }
-    // TODO: enable this assert, for some reason this is returning 0, but I verified
-    //  via the debugger and printfs that we are retrying 2 times total in the first block,
-    //   and 3 times in the second block that I have added retries to.
-    //  assertResult(5)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
+    assertResult(5)(RmmSpark.getAndResetNumRetryThrow(1))
     assert(!myIter.hasNext)
     assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
     // This is my wrap around of checking that we did retry the last part
@@ -137,10 +134,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
         TestUtils.compareBatches(expected, devBatch)
       }
     }
-    // TODO: enable this assert, for some reason this is returning 0, but I verified
-    //  via the debugger and printfs that we are retrying 2 times total in the first block,
-    //   and 3 times in the second block that I have added retries to.
-    //  assertResult(5)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
+    assertResult(5)(RmmSpark.getAndResetNumRetryThrow(1))
     assert(!myIter.hasNext)
     assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
     // This is my wrap around of checking that we did retry the last part
