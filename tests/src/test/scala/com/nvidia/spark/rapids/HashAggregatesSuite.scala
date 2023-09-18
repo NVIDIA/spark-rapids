@@ -61,7 +61,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     batchSize: Int = 0,
     repart: Int = 1,
     maxFloatDiff: Double = 0.0)
-    (fn: DataFrame => DataFrame) {
+    (fn: DataFrame => DataFrame): Unit = {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
     }

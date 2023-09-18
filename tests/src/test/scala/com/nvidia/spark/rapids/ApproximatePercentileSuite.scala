@@ -102,7 +102,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     df.sparkSession.sql("SELECT approx_percentile(salary, array(0.5)) FROM salaries")
   }
 
-  def sqlFallbackTest(sql: String) {
+  def sqlFallbackTest(sql: String): Unit = {
 
     val conf = new SparkConf()
       .set("spark.rapids.sql.incompatibleOps.enabled", "true")
@@ -126,7 +126,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   private def doTest(
     func: SparkSession => DataFrame,
     percentileArg: Either[Double, Array[Double]] = Right(DEFAULT_PERCENTILES),
-    delta: Option[Int]) {
+    delta: Option[Int]): Unit = {
 
     val percentiles = withCpuSparkSession { spark =>
       calcPercentiles(spark, func, percentileArg, delta,

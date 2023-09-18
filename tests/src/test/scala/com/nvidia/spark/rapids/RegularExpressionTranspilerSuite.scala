@@ -672,7 +672,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doFuzzTest(None, RegexFindMode)
   }
 
-  private def doFuzzTest(validChars: Option[String], mode: RegexMode) {
+  private def doFuzzTest(validChars: Option[String], mode: RegexMode): Unit = {
 
     val r = new EnhancedRandom(new Random(seed = 0L),
       options = FuzzerOptions(validChars, maxStringLen = 12))
@@ -826,7 +826,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doStringSplitTest(patterns, data, -1)
   }
 
-  def assertTranspileToSplittableString(patterns: Set[String]) {
+  def assertTranspileToSplittableString(patterns: Set[String]): Unit = {
     for (pattern <- patterns) {
       val transpiler = new CudfRegexTranspiler(RegexSplitMode)
       transpiler.transpileToSplittableString(pattern) match {
@@ -839,7 +839,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  def assertNoTranspileToSplittableString(patterns: Set[String]) {
+  def assertNoTranspileToSplittableString(patterns: Set[String]): Unit = {
     for (pattern <- patterns) {
       val transpiler = new CudfRegexTranspiler(RegexSplitMode)
       transpiler.transpileToSplittableString(pattern) match {
@@ -853,7 +853,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  def doStringSplitTest(patterns: Set[String], data: Seq[String], limit: Int) {
+  def doStringSplitTest(patterns: Set[String], data: Seq[String], limit: Int): Unit = {
     for (pattern <- patterns) {
       val cpu = cpuSplit(pattern, data, limit)
       val transpiler = new CudfRegexTranspiler(RegexSplitMode)
@@ -883,7 +883,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   private def doAstFuzzTest(validDataChars: Option[String], validPatternChars: String,
-      mode: RegexMode) {
+      mode: RegexMode): Unit = {
     val (data, patterns) = generateDataAndPatterns(validDataChars, validPatternChars, mode)
     if (mode == RegexReplaceMode) {
       assertCpuGpuMatchesRegexpReplace(patterns.toSeq, data)
@@ -922,7 +922,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     (data, patterns.toSet)
   }
 
-  private def assertCpuGpuMatchesRegexpFind(javaPatterns: Seq[String], input: Seq[String]) = {
+  private def assertCpuGpuMatchesRegexpFind(javaPatterns: Seq[String], input: Seq[String]): Unit = {
     for ((javaPattern, patternIndex) <- javaPatterns.zipWithIndex) {
       val cpu = cpuContains(javaPattern, input)
       val (cudfPattern, _) =
@@ -946,7 +946,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   private def assertCpuGpuMatchesRegexpReplace(
       javaPatterns: Seq[String],
-      input: Seq[String]) = {
+      input: Seq[String]): Unit = {
     for ((javaPattern, patternIndex) <- javaPatterns.zipWithIndex) {
       val cpu = cpuReplace(javaPattern, input)
       val (cudfPattern, replaceString) =
@@ -1048,12 +1048,12 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  private def doTranspileTest(pattern: String, expected: String) {
+  private def doTranspileTest(pattern: String, expected: String): Unit = {
     val transpiled: String = transpile(pattern, RegexFindMode)
     assert(toReadableString(transpiled) === toReadableString(expected))
   }
 
-  private def doTranspileTest(pattern: String, expected: String, groupIdx: Int) {
+  private def doTranspileTest(pattern: String, expected: String, groupIdx: Int): Unit = {
     val transpiled: String = transpile(pattern, groupIdx)
     assert(toReadableString(transpiled) === toReadableString(expected))
   }
