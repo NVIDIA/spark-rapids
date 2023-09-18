@@ -304,7 +304,7 @@ trait RapidsBuffer extends AutoCloseable {
    * @param stream CUDA stream to use
    */
   def copyToMemoryBuffer(
-      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream): Unit
 
   /**
    * Get the device memory buffer from the underlying storage. If the buffer currently resides
