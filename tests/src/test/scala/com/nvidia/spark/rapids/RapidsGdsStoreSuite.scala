@@ -92,7 +92,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
          withResource(catalog.acquireBuffer(handle)) { buffer =>
            assertResult(StorageTier.GDS)(buffer.storageTier)
            assertResult(id)(buffer.id)
-           assertResult(size)(buffer.getMemoryUsedBytes)
+           assertResult(size)(buffer.memoryUsedBytes)
            assertResult(spillPriority)(buffer.getSpillPriority)
          }
        }
@@ -126,7 +126,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
           ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
         withResource(catalog.acquireBuffer(handle)) { buffer =>
           assertResult(StorageTier.GDS)(buffer.storageTier)
-          assertResult(bufferSize)(buffer.getMemoryUsedBytes)
+          assertResult(bufferSize)(buffer.memoryUsedBytes)
           assertResult(bufferId)(buffer.id)
           assertResult(spillPriority)(buffer.getSpillPriority)
         }

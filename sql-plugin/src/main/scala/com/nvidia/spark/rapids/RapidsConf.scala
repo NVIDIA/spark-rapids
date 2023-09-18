@@ -1995,6 +1995,16 @@ object RapidsConf {
         "The chunked pack bounce buffer must be at least 1MB in size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val SPILL_TO_DISK_BOUNCE_BUFFER_SIZE =
+    conf("spark.rapids.memory.host.spillToDiskBounceBufferSize")
+      .doc("Amount of host memory (in bytes) to set aside at startup for the " +
+          "bounce buffer used for gpu to disk spill that bypasses the host store.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v >= 1,
+        "The gpu to disk spill bounce buffer must have a positive size")
+      .createWithDefault(128L * 1024 * 1024)
+
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
       .internal()
@@ -2678,6 +2688,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 

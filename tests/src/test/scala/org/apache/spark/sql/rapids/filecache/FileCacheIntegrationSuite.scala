@@ -187,29 +187,21 @@ class FileCacheIntegrationSuite extends SparkQueryCompareTestSuite with BeforeAn
   }
 
   private def checkMetricsFullHit(func: () => Option[SparkPlan]): Unit = {
-    var expectedFooterMisses = 0L
-    var expectedDataRangeMisses = 0L
     var metrics: Map[String, SQLMetric] = func().get.metrics
     var attempts = 0
-    while (attempts < 10 && metrics(FILECACHE_DATA_RANGE_MISSES).value > expectedDataRangeMisses) {
-      expectedDataRangeMisses = metrics(FILECACHE_DATA_RANGE_MISSES).value
-      expectedFooterMisses = metrics(FILECACHE_FOOTER_MISSES).value
-      Thread.sleep(100)
+    while (attempts < 10 && metrics(FILECACHE_DATA_RANGE_MISSES).value > 0) {
+      Thread.sleep(1000)
       metrics = func().get.metrics
       attempts += 1
     }
     assert(metrics(FILECACHE_FOOTER_HITS).value > 0)
     assert(metrics(FILECACHE_FOOTER_HITS_SIZE).value > 0)
-    assertResult(expectedFooterMisses)(metrics(FILECACHE_FOOTER_MISSES).value)
-    if (expectedFooterMisses == 0) {
-      assertResult(0)(metrics(FILECACHE_FOOTER_MISSES_SIZE).value)
-    }
+    assertResult(0)(metrics(FILECACHE_FOOTER_MISSES).value)
+    assertResult(0)(metrics(FILECACHE_FOOTER_MISSES_SIZE).value)
     assert(metrics(FILECACHE_DATA_RANGE_HITS).value > 0)
     assert(metrics(FILECACHE_DATA_RANGE_HITS_SIZE).value > 0)
-    assertResult(expectedDataRangeMisses)(metrics(FILECACHE_DATA_RANGE_MISSES).value)
-    if (expectedDataRangeMisses == 0) {
-      assertResult(0)(metrics(FILECACHE_DATA_RANGE_MISSES_SIZE).value)
-    }
+    assertResult(0)(metrics(FILECACHE_DATA_RANGE_MISSES).value)
+    assertResult(0)(metrics(FILECACHE_DATA_RANGE_MISSES_SIZE).value)
     assert(metrics.contains(FILECACHE_FOOTER_READ_TIME))
     assert(metrics.contains(FILECACHE_DATA_RANGE_READ_TIME))
   }
