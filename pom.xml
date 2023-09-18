@@ -699,11 +699,10 @@
             333,
             330cdh,
             340,
-            341
+            341,
+            350
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            <!--TODO: re-enable https://github.com/NVIDIA/spark-rapids/issues/9116-->
-            <!--350-->
         </snapshot.buildvers>
         <databricks.buildvers>
             321db,

@@ -147,6 +147,10 @@ class RegexParser(pattern: String) {
         parseGroup()
       case '[' =>
         parseCharacterClass()
+      case ']' =>
+        RegexEscaped(']')
+      case '}' =>
+        RegexEscaped('}')
       case '\\' =>
         parseEscapedCharacter()
       case '\u0000' =>
@@ -1857,7 +1861,7 @@ sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
   override def toRegexString: String = ch.toString
 }
 
-sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
+sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent {
   def this(a: Char, position: Int) {
     this(a)
     this.position = Some(position)
