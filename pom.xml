@@ -1321,9 +1321,9 @@
                 </executions>
                 <dependencies>
                     <dependency>
-                        <groupId>org.scalastyle</groupId>
+                        <groupId>com.beautiful-scala</groupId>
                         <artifactId>scalastyle_${scala.binary.version}</artifactId>
-                        <version>1.0.0</version>
+                        <version>1.5.1</version>
                     </dependency>
                 </dependencies>
             </plugin>
