@@ -1489,7 +1489,7 @@ def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size, window_
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS avg_c, '
         ' COLLECT_LIST(c) OVER '
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS list_c, '
-        ' SORT_ARRAY(COLLECT_LIST(c) OVER '
+        ' SORT_ARRAY(COLLECT_SET(c) OVER '
         '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window})) AS sorted_set_c '
         'FROM window_agg_table '.format(window=window_spec),
         conf=conf)
