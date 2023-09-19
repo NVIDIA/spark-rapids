@@ -73,21 +73,24 @@ object ExternalSource extends Logging {
     deltaProvider.getExecRules
 
   /** If the file format is supported as an external source */
-  def isSupportedFormat(format: FileFormat): Boolean = {
-    if (hasSparkAvroJar) {
-      avroProvider.isSupportedFormat(format)
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
+    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format)) {
+      true
     } else false
   }
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
-    if (hasSparkAvroJar) {
+    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.isPerFileReadEnabledForFormat(format, conf)
     } else false
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (hasSparkAvroJar) {
+    val format = meta.wrapped.relation.fileFormat
+    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.tagSupportForGpuFileSourceScan(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"unsupported file format: ${format.getClass.getCanonicalName}")
     }
   }
 
@@ -96,7 +99,7 @@ object ExternalSource extends Logging {
    * Better to check if the format is supported first by calling 'isSupportedFormat'
    */
   def getReadFileFormat(format: FileFormat): FileFormat = {
-    if (hasSparkAvroJar) {
+    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.getReadFileFormat(format)
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
@@ -112,7 +115,7 @@ object ExternalSource extends Logging {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    if (hasSparkAvroJar) {
+    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
         fileScan)
     } else {

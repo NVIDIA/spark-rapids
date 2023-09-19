@@ -100,12 +100,17 @@ case class GpuFileSourceScanExec(
   // should update this to None and read directly from s3 to get faster.
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
-  private val isPerFileReadEnabled = relation.fileFormat match {
-    case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
-    case _: OrcFileFormat => rapidsConf.isOrcPerFileReadEnabled
-    case ef if ExternalSource.isSupportedFormat(ef) =>
-      ExternalSource.isPerFileReadEnabledForFormat(ef, rapidsConf)
-    case _ => true // For others, default to PERFILE reader
+  private val isPerFileReadEnabled = {
+    val formatCls = relation.fileFormat.getClass
+    if (formatCls == classOf[ParquetFileFormat]) {
+      rapidsConf.isParquetPerFileReadEnabled
+    } else if (formatCls == classOf[OrcFileFormat]) {
+      rapidsConf.isOrcPerFileReadEnabled
+    } else if (ExternalSource.isSupportedFormat(formatCls)) {
+      ExternalSource.isPerFileReadEnabledForFormat(relation.fileFormat, rapidsConf)
+    } else {
+      true // For others, default to PERFILE reader
+    }
   }
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
@@ -625,38 +630,38 @@ case class GpuFileSourceScanExec(
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
 
-    relation.fileFormat match {
-      case _: ParquetFileFormat =>
-        GpuParquetMultiFilePartitionReaderFactory(
-          sqlConf,
-          broadcastedHadoopConf,
-          relation.dataSchema,
-          requiredSchema,
-          readPartitionSchema,
-          pushedDownFilters.toArray,
-          rapidsConf,
-          allMetrics,
-          queryUsesInputFile,
-          alluxioPathReplacementMap)
-      case _: OrcFileFormat =>
-        GpuOrcMultiFilePartitionReaderFactory(
-          sqlConf,
-          broadcastedHadoopConf,
-          relation.dataSchema,
-          requiredSchema,
-          readPartitionSchema,
-          pushedDownFilters.toArray,
-          rapidsConf,
-          allMetrics,
-          queryUsesInputFile)
-      case ef if ExternalSource.isSupportedFormat(ef) =>
-        ExternalSource.createMultiFileReaderFactory(
-          ef,
-          broadcastedHadoopConf,
-          pushedDownFilters.toArray,
-          this)
-      case other =>
-        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
+    val formatCls = relation.fileFormat.getClass
+    if (formatCls == classOf[ParquetFileFormat]) {
+      GpuParquetMultiFilePartitionReaderFactory(
+        sqlConf,
+        broadcastedHadoopConf,
+        relation.dataSchema,
+        requiredSchema,
+        readPartitionSchema,
+        pushedDownFilters.toArray,
+        rapidsConf,
+        allMetrics,
+        queryUsesInputFile,
+        alluxioPathReplacementMap)
+    } else if (formatCls == classOf[OrcFileFormat]) {
+      GpuOrcMultiFilePartitionReaderFactory(
+        sqlConf,
+        broadcastedHadoopConf,
+        relation.dataSchema,
+        requiredSchema,
+        readPartitionSchema,
+        pushedDownFilters.toArray,
+        rapidsConf,
+        allMetrics,
+        queryUsesInputFile)
+    } else if (ExternalSource.isSupportedFormat(formatCls)) {
+      ExternalSource.createMultiFileReaderFactory(
+        relation.fileFormat,
+        broadcastedHadoopConf,
+        pushedDownFilters.toArray,
+        this)
+    } else {
+      throw new IllegalArgumentException(s"${formatCls.getCanonicalName} is not supported")
     }
   }
 
@@ -686,28 +691,36 @@ case class GpuFileSourceScanExec(
 
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    meta.wrapped.relation.fileFormat match {
-      case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
-      case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
-      case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      case ef if ExternalSource.isSupportedFormat(ef) =>
-        ExternalSource.tagSupportForGpuFileSourceScan(meta)
-      case other =>
-        meta.willNotWorkOnGpu(s"unsupported file format: ${other.getClass.getCanonicalName}")
+    val cls = meta.wrapped.relation.fileFormat.getClass
+    if (cls == classOf[CSVFileFormat]) {
+      GpuReadCSVFileFormat.tagSupport(meta)
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
+      GpuReadOrcFileFormat.tagSupport(meta)
+    } else if (cls == classOf[ParquetFileFormat]) {
+      GpuReadParquetFileFormat.tagSupport(meta)
+    } else if (cls == classOf[JsonFileFormat]) {
+      GpuReadJsonFileFormat.tagSupport(meta)
+    } else if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.tagSupportForGpuFileSourceScan(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"unsupported file format: ${cls.getCanonicalName}")
     }
   }
 
   def convertFileFormat(format: FileFormat): FileFormat = {
-    format match {
-      case _: CSVFileFormat => new GpuReadCSVFileFormat
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
-      case _: ParquetFileFormat => new GpuReadParquetFileFormat
-      case _: JsonFileFormat => new GpuReadJsonFileFormat
-      case ef if ExternalSource.isSupportedFormat(ef) => ExternalSource.getReadFileFormat(ef)
-      case other =>
-        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
-
+    val cls = format.getClass
+    if (cls == classOf[CSVFileFormat]) {
+      new GpuReadCSVFileFormat
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
+      new GpuReadOrcFileFormat
+    } else if (cls == classOf[ParquetFileFormat]) {
+      new GpuReadParquetFileFormat
+    } else if (cls == classOf[JsonFileFormat]) {
+      new GpuReadJsonFileFormat
+    } else if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.getReadFileFormat(format)
+    } else {
+      throw new IllegalArgumentException(s"${cls.getCanonicalName} is not supported")
     }
   }
 }

@@ -224,9 +224,11 @@ class GpuOptimisticTransaction
           }.toMap
       }
 
-      val gpuFileFormat = DeltaRuntimeShim.fileFormatFromLog(deltaLog) match {
-        case _: DeltaParquetFileFormat => new GpuParquetFileFormat
-        case f => throw new IllegalStateException(s"file format $f is not supported")
+      val deltaFileFormat = DeltaRuntimeShim.fileFormatFromLog(deltaLog)
+      val gpuFileFormat = if (deltaFileFormat.getClass == classOf[DeltaParquetFileFormat]) {
+        new GpuParquetFileFormat
+      } else {
+        throw new IllegalStateException(s"file format $deltaFileFormat is not supported")
       }
 
       try {

@@ -324,24 +324,23 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
 
     val spark = SparkSession.active
-
-    fileFormat = cmd.fileFormat match {
-      case _: CSVFileFormat =>
-        willNotWorkOnGpu("CSV output is not supported")
-        None
-      case _: JsonFileFormat =>
-        willNotWorkOnGpu("JSON output is not supported")
-        None
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: TextFileFormat =>
-        willNotWorkOnGpu("text output is not supported")
-        None
-      case f =>
-        willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
-        None
+    val formatCls = cmd.fileFormat.getClass
+    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+      willNotWorkOnGpu("CSV output is not supported")
+      None
+    } else if (formatCls == classOf[JsonFileFormat]) {
+      willNotWorkOnGpu("JSON output is not supported")
+      None
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(formatCls)) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[TextFileFormat]) {
+      willNotWorkOnGpu("text output is not supported")
+      None
+    } else {
+      willNotWorkOnGpu(s"unknown file format: ${formatCls.getCanonicalName}")
+      None
     }
   }
 

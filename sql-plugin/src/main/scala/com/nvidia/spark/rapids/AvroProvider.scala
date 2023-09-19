@@ -26,7 +26,7 @@ import org.apache.spark.util.SerializableConfiguration
 
 trait AvroProvider {
   /** If the file format is supported as an external source */
-  def isSupportedFormat(format: FileFormat): Boolean
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean
 
