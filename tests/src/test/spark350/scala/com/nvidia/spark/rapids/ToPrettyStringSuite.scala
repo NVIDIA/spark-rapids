@@ -122,7 +122,7 @@ class ToPrettyStringSuite extends GpuUnitTests {
       List[HostColumnVector.DataType](
         new HostColumnVector.BasicType(false, DType.INT32),
         new HostColumnVector.BasicType(false, DType.INT32),
-        new HostColumnVector.BasicType(false, DType.INT32),
+        new HostColumnVector.BasicType(false, DType.INT32)
       ).asJava
     val structType = new HostColumnVector.StructType(false, l)
     withResource(
