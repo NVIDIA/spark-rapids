@@ -207,14 +207,11 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
   }
 
   override def close(): Unit = {
-    val hasNextBeforeClose = hasNext
     val toClose = new ArrayBuffer[AutoCloseable]()
     toClose.appendAll(chunkedPacker)
     toClose.appendAll(Option(singleShotBuffer))
 
     toClose.safeClose()
-    require(!hasNextBeforeClose,
-      "RapidsBufferCopyIterator was closed before exhausting")
   }
 }
 
