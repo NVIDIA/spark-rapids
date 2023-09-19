@@ -27,6 +27,9 @@ import com.nvidia.spark.rapids.shims.GpuCastShims
 
 import org.apache.spark.sql.types._
 
+/**
+ * Parent trait for casting different types to StringType.
+ */
 trait ToStringBase {
   // The brackets that are used in casting structs and maps to strings
   protected def leftBracket: String
@@ -221,7 +224,7 @@ trait ToStringBase {
       Seq(leftStr, rightStr, emptyStr, nullStr).safeMap(Scalar.fromString)
     ) { case Seq(left, right, empty, nullRep) =>
       val strChildContainsNull = withResource(input.getChildColumnView(0)) { child =>
-        GpuCast.doCast(child, elementType, StringType, ansiMode,
+        castToString(child, elementType, ansiMode,
           legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
@@ -260,14 +263,12 @@ trait ToStringBase {
     // cast the key column and value column to string columns
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        GpuCast.doCast(
-          keyColumn, from.keyType, StringType, ansiMode, legacyCastToString,
+        castToString(keyColumn, from.keyType, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
       }
       val strValue = closeOnExcept(strKey) { _ =>
         withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          GpuCast.doCast(
-            valueColumn, from.valueType, StringType, ansiMode, legacyCastToString,
+          castToString(valueColumn, from.valueType, ansiMode, legacyCastToString,
             stringToDateAnsiModeEnabled)
         }
       }
@@ -345,7 +346,7 @@ trait ToStringBase {
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += GpuCast.doCast(firstColumnView, inputSchema.head.dataType, StringType,
+          columns += castToString(firstColumnView, inputSchema.head.dataType, 
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
@@ -353,8 +354,8 @@ trait ToStringBase {
             // legacy: ","
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
-            val nonFirstColumn = GpuCast.doCast(nonFirstColumnView,
-              inputSchema(nonFirstIndex).dataType, StringType, ansiMode,
+            val nonFirstColumn = castToString(nonFirstColumnView,
+              inputSchema(nonFirstIndex).dataType, ansiMode,
               legacyCastToString, stringToDateAnsiModeEnabled)
             if (legacyCastToString) {
               // " " if non-null

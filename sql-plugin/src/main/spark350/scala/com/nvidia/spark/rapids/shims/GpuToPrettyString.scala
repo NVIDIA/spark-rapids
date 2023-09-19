@@ -19,7 +19,6 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -53,49 +52,10 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
 
   override protected def useHexFormatForBinary: Boolean = true
 
-  private def processColumnVector(cv: GpuColumnVector) = {
-    val stringCol = withResource(cv) { originalCol =>
-      castToString(originalCol.getBase, originalCol.dataType(), false, false, false)
-    }
-
-    if (stringCol.hasNulls()) {
-      withResource(stringCol.asInstanceOf[GpuColumnVector]) { columnVector =>
-        withResource(columnVector.getBase.isNull()) { isNull =>
-          withResource(Scalar.fromString(nullString)) { nullString =>
-            GpuColumnVector.from(isNull.ifElse(nullString, stringCol), StringType)
-          }
-        }
-      }
-    } else {
-      GpuColumnVector.from(stringCol, StringType)
-    }
-  }
-
-  override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    val c = child.columnarEvalAny(batch)
-    if (c.isInstanceOf[GpuColumnVector]) {
-      processColumnVector(c.asInstanceOf[GpuColumnVector])
-    } else {
-      withResource(c.asInstanceOf[Scalar]) { scalar =>
-        if (!scalar.isValid) {
-          withResource(c.asInstanceOf[Scalar]) { sc =>
-            Scalar.fromString(nullString)
-          }
-        } else {
-          if (scalar.getType == DType.STRING) {
-            // TODO: unsure if we should cast it or just return as is
-            scalar.incRefCount()
-          } else {
-            GpuScalar.from(GpuScalar.extract(scalar).toString, StringType)
-          }
-        }
-      }
-    }
-  }
-
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    val c = child.columnarEval(batch)
-    processColumnVector(c)
+    withResource(child.columnarEval(batch)) { evaluatedCol =>
+      GpuColumnVector.from(castToString(evaluatedCol.getBase, evaluatedCol.dataType(), false, 
+        false, false), StringType)
+    }
   }
-
 }
