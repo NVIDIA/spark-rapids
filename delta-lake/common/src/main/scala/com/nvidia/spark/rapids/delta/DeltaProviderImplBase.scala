@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, RapidsConf, TypeSig}
 
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.FileFormat
 
 abstract class DeltaProviderImplBase extends DeltaProvider {
 
@@ -40,4 +41,8 @@ abstract class DeltaProviderImplBase extends DeltaProvider {
   override def getStrategyRules: Seq[Strategy] = Seq(
     RapidsProcessDeltaMergeJoinStrategy,
     RapidsDeltaWriteStrategy)
+
+  override def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
+    conf.isParquetPerFileReadEnabled
+  }
 }

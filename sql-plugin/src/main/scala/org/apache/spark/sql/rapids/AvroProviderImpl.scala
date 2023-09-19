@@ -31,7 +31,7 @@ class AvroProviderImpl extends AvroProvider {
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
-    format == classOf[AvroFileFormat]
+    format == classOf[AvroFileFormat] || format == classOf[GpuReadAvroFileFormat]
   }
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
@@ -60,7 +60,6 @@ class AvroProviderImpl extends AvroProvider {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    require(isSupportedFormat(format.getClass))
     GpuAvroMultiFilePartitionReaderFactory(
       fileScan.relation.sparkSession.sessionState.conf,
       fileScan.rapidsConf,

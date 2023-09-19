@@ -76,19 +76,29 @@ object ExternalSource extends Logging {
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format)) {
       true
-    } else false
+    } else if (deltaProvider.isSupportedFormat(format)) {
+      true
+    } else {
+      false
+    }
   }
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.isPerFileReadEnabledForFormat(format, conf)
-    } else false
+    } else if (deltaProvider.isSupportedFormat(format.getClass)) {
+      deltaProvider.isPerFileReadEnabledForFormat(format, conf)
+    } else {
+      false
+    }
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.tagSupportForGpuFileSourceScan(meta)
+    } else if (deltaProvider.isSupportedFormat(format.getClass)) {
+      deltaProvider.tagSupportForGpuFileSourceScan(meta)
     } else {
       meta.willNotWorkOnGpu(s"unsupported file format: ${format.getClass.getCanonicalName}")
     }
@@ -101,6 +111,8 @@ object ExternalSource extends Logging {
   def getReadFileFormat(format: FileFormat): FileFormat = {
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.getReadFileFormat(format)
+    } else if (deltaProvider.isSupportedFormat(format.getClass)) {
+      deltaProvider.getReadFileFormat(format)
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }
@@ -117,6 +129,9 @@ object ExternalSource extends Logging {
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
+        fileScan)
+    } else if (deltaProvider.isSupportedFormat(format.getClass)) {
+      deltaProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
         fileScan)
     } else {
       throw new RuntimeException(s"File format $format is not supported yet")

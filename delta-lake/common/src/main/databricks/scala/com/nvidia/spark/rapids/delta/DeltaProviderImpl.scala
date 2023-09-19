@@ -16,16 +16,20 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.databricks.sql.transaction.tahoe.DeltaLog
+import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge}
 import com.databricks.sql.transaction.tahoe.sources.DeltaDataSource
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.read.PartitionReaderFactory
+import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand
-import org.apache.spark.sql.rapids.ExternalSource
-import org.apache.spark.sql.sources.CreatableRelationProvider
+import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.rapids.{ExternalSource, GpuFileSourceScanExec}
+import org.apache.spark.sql.sources.{CreatableRelationProvider, Filter}
+import org.apache.spark.util.SerializableConfiguration
 
 /**
  * Implements the DeltaProvider interface for Databricks Delta Lake.
@@ -71,6 +75,34 @@ object DeltaProviderImpl extends DeltaProviderImplBase {
         (a, conf, p, r) => new UpdateCommandEdgeMeta(a, conf, p, r))
           .disabledByDefault("Delta Lake update support is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
+  }
+
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
+    format == classOf[DeltaParquetFileFormat] || format.isInstanceOf[GpuDeltaParquetFileFormat]
+  }
+
+  override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    val format = meta.wrapped.relation.fileFormat
+    if (format.getClass == classOf[DeltaParquetFileFormat]) {
+      GpuReadParquetFileFormat.tagSupport(meta)
+      GpuDeltaParquetFileFormat.tagSupportForGpuFileSourceScan(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
+    }
+  }
+
+  override def getReadFileFormat(format: FileFormat): FileFormat = {
+    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
+    GpuDeltaParquetFileFormat.convertToGpu(cpuFormat)
+  }
+
+  override def createMultiFileReaderFactory(
+      format: FileFormat,
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val gpuFormat = fileScan.relation.fileFormat.asInstanceOf[GpuDeltaParquetFileFormat]
+    gpuFormat.createMultiFileReaderFactory(broadcastedConf, pushedFilters, fileScan)
   }
 }
 

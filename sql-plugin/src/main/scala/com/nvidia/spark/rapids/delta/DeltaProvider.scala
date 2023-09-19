@@ -16,12 +16,17 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RunnableCommandRule, ShimLoader}
+import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RapidsConf, RunnableCommandRule, ShimLoader, SparkPlanMeta}
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.Strategy
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.connector.read.PartitionReaderFactory
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.sources.CreatableRelationProvider
+import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.sources.{CreatableRelationProvider, Filter}
+import org.apache.spark.util.SerializableConfiguration
 
 /** Probe interface to determine which Delta Lake provider to use. */
 trait DeltaProbe {
@@ -39,6 +44,20 @@ trait DeltaProvider {
       RunnableCommandRule[_ <: RunnableCommand]]
 
   def getStrategyRules: Seq[Strategy]
+
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
+
+  def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean
+
+  def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
+
+  def getReadFileFormat(format: FileFormat): FileFormat
+
+  def createMultiFileReaderFactory(
+      format: FileFormat,
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory
 }
 
 object DeltaProvider {
@@ -59,4 +78,22 @@ object NoDeltaProvider extends DeltaProvider {
       RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
 
   override def getStrategyRules: Seq[Strategy] = Nil
+
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = false
+
+  override def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean =
+    throw new IllegalStateException("unsupported format")
+
+  override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
+    throw new IllegalStateException("unsupported format")
+
+  override def getReadFileFormat(format: FileFormat): FileFormat =
+    throw new IllegalStateException("unsupported format")
+
+  override def createMultiFileReaderFactory(
+      format: FileFormat,
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory =
+    throw new IllegalStateException("unsupported format")
 }

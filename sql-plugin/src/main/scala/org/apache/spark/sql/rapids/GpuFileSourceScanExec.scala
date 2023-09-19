@@ -91,8 +91,7 @@ case class GpuFileSourceScanExec(
     dataOutAttrs ++ prunedPartOutAttrs
   }.getOrElse(originalOutput)
 
-  private[rapids] val readPartitionSchema =
-    requiredPartitionSchema.getOrElse(relation.partitionSchema)
+  val readPartitionSchema = requiredPartitionSchema.getOrElse(relation.partitionSchema)
 
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced.
