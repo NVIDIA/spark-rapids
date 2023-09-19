@@ -22,7 +22,7 @@ case class NonNaNFloatGenFunc(mapping: LocationToSeedMapping = null) extends Gen
   override def apply(rowLoc: RowLocation): Any = {
     val v = java.lang.Float.intBitsToFloat(DataGen.getRandomFor(mapping(rowLoc)).nextInt())
     if (v.isNaN) {
-      1.toFloat // ust use 1.0
+      1.toFloat // just use 1.0
     } else {
       v
     }
