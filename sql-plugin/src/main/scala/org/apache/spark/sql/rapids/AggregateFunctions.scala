@@ -573,6 +573,7 @@ object GpuMin{
 
 abstract class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
+    with GpuUnboundToUnboundWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction
     with Serializable {
@@ -601,6 +602,10 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min")
+
+  // UNBOUNDED TO UNBOUNDED WINDOW
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
+    new BatchedUnboundedToUnboundedBinaryFixer(BinaryOp.NULL_MIN, dataType)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection
@@ -752,6 +757,7 @@ object GpuMax {
 
 abstract class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
+    with GpuUnboundToUnboundWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction
     with Serializable {
@@ -780,6 +786,10 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max")
+
+  // UNBOUNDED TO UNBOUNDED WINDOW
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
+    new BatchedUnboundedToUnboundedBinaryFixer(BinaryOp.NULL_MAX, dataType)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection

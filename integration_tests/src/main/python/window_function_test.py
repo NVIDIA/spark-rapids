@@ -444,6 +444,42 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size):
         ' FROM window_agg_table ',
         conf={'spark.rapids.sql.batchSizeBytes': batch_size})
 
+# This is for aggregations that work with the optimized unbounded to unbounded window optimization.
+# They don't need to be batched specially, but it only works if all of the aggregations can support this.
+# the order returned should be consistent because the data ends up in a single task (no partitioning)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+def test_window_batched_unbounded_no_part(b_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['min(b) over (order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as min_col',
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as max_col']
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuCachedDoublePassWindowExec'],
+        conf = conf)
+
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+def test_window_batched_unbounded(b_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['min(b) over (order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as min_col',
+            'max(b) over (partition by a % 2 order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as max_col']
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuCachedDoublePassWindowExec'],
+        conf = conf)
 
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
