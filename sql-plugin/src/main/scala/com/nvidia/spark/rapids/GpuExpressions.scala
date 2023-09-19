@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
@@ -89,6 +90,21 @@ object GpuExpressionsUtils {
     case gl: GpuLiteral => Some(gl)
     case ga: GpuAlias => extractGpuLit(ga.child)
     case _ => None
+  }
+
+  /**
+   * Collect the Retryables from a Seq of expression.
+   */
+  def collectRetryables(expressions: Seq[Expression]): Seq[Retryable] = {
+    // There should be no dependence between expression and its children for
+    // the checkpoint and restore operations.
+    expressions.flatMap { expr =>
+      expr.collect {
+        case r: Retryable => r
+        case udf: GpuUserDefinedFunction if udf.retryable && udf.selfNonDeterministic =>
+          udf.function.asInstanceOf[Retryable]
+      }
+    }
   }
 }
 
@@ -169,10 +185,49 @@ trait GpuExpression extends Expression {
    * this is seen.
    */
   def disableTieredProjectCombine: Boolean = hasSideEffects
+
+  /**
+   * Whether an expression itself is non-deterministic when its "deterministic" is false,
+   * no matter whether it has any non-deterministic children.
+   *
+   * Default to false because Spark checks only children by default in Expression. So it
+   * is non-deterministic iff it has non-deterministic children.
+   *
+   * NOTE When overriding "deterministic", this should be taken care of.
+   */
+  val selfNonDeterministic: Boolean = false
+
+  /**
+   * true means this expression can be used inside a retry block, otherwise false.
+   * An expression is retryable when
+   *   - it is deterministic, or
+   *   - when being non-deterministic, it is a Retryable and its children are all retryable.
+   *
+   * One exception is the UDF. The UDF expression will be retryable when its
+   * "function" is a Retryable, even itself is not a Retryable.
+   */
+  lazy val retryable: Boolean = deterministic || {
+    val childrenAllRetryable = children.forall(_.asInstanceOf[GpuExpression].retryable)
+    if (selfNonDeterministic || children.forall(_.deterministic)) {
+      // self is non-deterministic, so need to check if it is a Retryable.
+      //
+      // "selfNonDeterministic" should be reliable enough, but it is still good to
+      // do this check for one case we are 100% sure self is non-deterministic (its
+      // "deterministic" is false but its children are all deterministic). This can
+      // minimize the possibility of missing expressions that happen to forget
+      // overriding "selfNonDeterministic" correctly.
+      this.isInstanceOf[Retryable] && childrenAllRetryable
+    } else {
+      childrenAllRetryable
+    }
+  }
 }
 
 abstract class GpuLeafExpression extends GpuExpression with ShimExpression {
   override final def children: Seq[Expression] = Nil
+
+  /* no children, so only self can be non-deterministic */
+  override final val selfNonDeterministic: Boolean = !deterministic
 }
 
 trait GpuUnevaluable extends GpuExpression {

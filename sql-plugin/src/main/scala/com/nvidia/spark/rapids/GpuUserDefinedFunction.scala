@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore, NvtxColor, NvtxRange}
-import com.nvidia.spark.RapidsUDF
+import com.nvidia.spark.{RapidsUDF, Retryable}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -45,6 +45,15 @@ trait GpuUserDefinedFunction extends GpuExpression
   override def hasSideEffects: Boolean = true
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
+  override val selfNonDeterministic: Boolean = !udfDeterministic
+  override lazy val retryable: Boolean = deterministic || {
+    val childrenAllRetryable = children.forall(_.asInstanceOf[GpuExpression].retryable)
+    if (selfNonDeterministic) {
+      function.isInstanceOf[Retryable] && childrenAllRetryable
+    } else {
+      childrenAllRetryable
+    }
+  }
 
   private[this] val nvtxRangeName = s"UDF: $name"
   private[this] lazy val funcCls = TrampolineUtil.getSimpleName(function.getClass)
@@ -107,6 +116,7 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   private[this] lazy val outputType = dataType.catalogString
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
+  override val selfNonDeterministic: Boolean = !udfDeterministic
   override def hasSideEffects: Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {

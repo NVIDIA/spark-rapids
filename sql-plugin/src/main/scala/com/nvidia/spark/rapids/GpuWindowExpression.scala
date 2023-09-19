@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
@@ -814,7 +815,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  * </code>
  * which can be output.
  */
-trait BatchedRunningWindowFixer extends AutoCloseable with CheckpointRestore {
+trait BatchedRunningWindowFixer extends AutoCloseable with Retryable {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition

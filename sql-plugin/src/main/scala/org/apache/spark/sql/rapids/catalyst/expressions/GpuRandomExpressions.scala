@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector, NvtxColor, NvtxRange}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
@@ -27,11 +28,11 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
-import org.apache.spark.util.random.XORShiftRandom
+import org.apache.spark.util.random.rapids.RapidsXORShiftRandom
 
 /** Generate a random column with i.i.d. uniformly distributed values in [0, 1). */
 case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpression
-  with ExpectsInputTypes with ExpressionWithRandomSeed {
+  with ExpectsInputTypes with ExpressionWithRandomSeed with Retryable {
 
   def this() = this(GpuLiteral(Utils.random.nextLong(), LongType))
 
@@ -40,12 +41,13 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   def seedExpression: Expression = child
 
   override lazy val deterministic: Boolean = false
+  override val selfNonDeterministic: Boolean = true
 
   /**
    * Record ID within each partition. By being transient, the Random Number Generator is
    * reset every time we serialize and deserialize and initialize it.
    */
-  @transient protected var rng: XORShiftRandom = _
+  @transient protected var rng: RapidsXORShiftRandom = _
 
   @transient protected lazy val seed: Long = child match {
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
@@ -55,6 +57,9 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   }
 
   @transient protected var previousPartition: Int = 0
+
+  @transient private var curXORShiftRandomSeed: Long = 0
+
   private def wasInitialized: Boolean = rng != null
 
   override def nullable: Boolean = false
@@ -64,17 +69,33 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegerType, LongType))
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    println(s"columnarEval for part ${TaskContext.getPartitionId()}")
+    assert(wasInitialized)
     withResource(new NvtxRange("GpuRand", NvtxColor.RED)) { _ =>
-      val partId = TaskContext.getPartitionId()
-      if (partId != previousPartition || !wasInitialized) {
-        rng = new XORShiftRandom(seed + partId)
-        previousPartition = partId
-      }
       val numRows = batch.numRows()
       withResource(HostColumnVector.builder(DType.FLOAT64, numRows)) { builder =>
         (0 until numRows).foreach(_ => builder.append(rng.nextDouble()))
         GpuColumnVector.from(builder.buildAndPutOnDevice(), dataType)
       }
     }
+  }
+
+  override def checkpoint(): Unit = {
+    // In a task, checkpoint is called before columnarEval, so init the random
+    // generator here.
+    val partId = TaskContext.getPartitionId()
+    println(s"====> checkpoint for part $partId, inited ? $wasInitialized," +
+      s" previous part: $previousPartition")
+    if (partId != previousPartition || !wasInitialized) {
+      rng = new RapidsXORShiftRandom(seed + partId)
+      previousPartition = partId
+    }
+    curXORShiftRandomSeed = rng.currentSeed
+  }
+
+  override def restore(): Unit = {
+    println(s"restore for part ${TaskContext.getPartitionId()}")
+    assert(wasInitialized)
+    rng.setHashedSeed(curXORShiftRandomSeed)
   }
 }
