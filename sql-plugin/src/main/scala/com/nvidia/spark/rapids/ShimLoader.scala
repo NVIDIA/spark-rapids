@@ -187,7 +187,7 @@ object ShimLoader extends Logging {
                   s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
                   s"parent classloader ${urlCl.getParent}")
               }
-            case _ => Unit
+            case _ => ()
           }
         }
       }

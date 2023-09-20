@@ -26,6 +26,7 @@ import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
+import scala.collection
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
@@ -2020,7 +2021,7 @@ class MultiFileParquetPartitionReader(
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], bContext: BatchContext): Long = {
+      blocks: collection.Seq[DataBlockBase], bContext: BatchContext): Long = {
 
     val actualFooterSize = calculateParquetFooterSize(blocks.toSeq, bContext.schema)
     // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
