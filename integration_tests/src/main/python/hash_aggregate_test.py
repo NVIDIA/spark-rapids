@@ -1192,16 +1192,19 @@ def test_collect_empty():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("select collect_set(null)"))
 
+#@pytest.mark.parametrize('data_gen', [StringGen("[A-I][A-I]")], ids=idfn)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_groupby_first_last(data_gen):
-    gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
+    gen_fn = [('a', RepeatSeqGen(LongGen(), length=10)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
         f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
-        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)))
+        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
+        # Disable RADIX sort as the CPU sort is not stable if it is
+        conf={'spark.sql.sort.enableRadixSort': False})
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _struct_only_nested_gens, ids=idfn)
