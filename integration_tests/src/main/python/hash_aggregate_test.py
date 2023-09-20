@@ -672,10 +672,12 @@ def test_min_max_group_by(data_gen):
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).coalesce(1)
+        lambda spark: gen_df(spark, data_gen, length=100, num_slices=1)
             .groupby('a')
             .agg(f.collect_list('b')),
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower(),
+            # Disable RADIX sort as the CPU sort is not stable if it is
+            'spark.sql.sort.enableRadixSort': False,
             'spark.sql.shuffle.partitions': '1'})
 
 @ignore_order(local=True)
@@ -1196,7 +1198,7 @@ def test_collect_empty():
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_groupby_first_last(data_gen):
-    gen_fn = [('a', RepeatSeqGen(LongGen(), length=10)), ('b', data_gen)]
+    gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
         f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
     assert_gpu_and_cpu_are_equal_collect(
