@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.util.concurrent.{ExecutionException, Future, LinkedBlockingQueue, TimeoutException, TimeUnit}
 
-import ai.rapids.cudf.{HostMemoryBuffer, HostMemoryReservation, PinnedMemoryPool}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{HostMemoryBuffer, HostMemoryReservation, PinnedMemoryPool, Rmm, RmmAllocationMode}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.mockito.Mockito.when
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 import org.scalatest.concurrent.{Signaler, TimeLimits}
@@ -28,11 +28,11 @@ import org.scalatest.time._
 import org.scalatestplus.mockito.MockitoSugar.mock
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     BeforeAndAfterAll with TimeLimits {
-
 
   def setMockContext(taskAttemptId: Long): Unit = {
     val context = mock[TaskContext]
@@ -200,6 +200,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   class AllocOnAnotherThread(val thread: TaskThread,
       val size: Long,
       val preferPinned: Boolean = true) extends AutoCloseable {
+
     var b: Option[HostMemoryBuffer] = None
     val fb: Future[Void] = thread.doIt(new TaskThreadOp[Void] {
       override def doIt(): Void = {
@@ -209,6 +210,8 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
 
       override def toString: String = "ALLOC(" + size + ")"
     })
+    var sb: Option[SpillableHostBuffer] = None
+    var fsb: Option[Future[Void]] = None
     var fc: Option[Future[Void]] = None
 
     def waitForAlloc(): Unit = {
@@ -218,6 +221,23 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     def assertAllocSize(expectedSize: Long): Unit = synchronized {
       assert(b.isDefined)
       assertResult(expectedSize)(b.get.getLength)
+    }
+
+    def makeSpillableOnThread(): Unit = {
+      if (fsb.isDefined) throw new IllegalStateException("Can only make the buffer spillable once")
+      fsb = Option(thread.doIt(new TaskThreadOp[Void] {
+        override def doIt(): Void = {
+          doMakeSpillable(SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          null
+        }
+
+        override def toString: String = "MAKE_SPILLABLE(" + size + ")"
+      }))
+    }
+
+    def waitForSpillable(): Unit = {
+      if (fsb.isEmpty) makeSpillableOnThread()
+      fsb.get.get(1000, TimeUnit.MILLISECONDS)
     }
 
     def freeOnThread(): Unit = {
@@ -244,14 +264,31 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
     private def doAlloc(): Void = {
       val tmp = HostAlloc.alloc(size, preferPinned)
       synchronized {
-        b = Option(tmp)
+        closeOnExcept(tmp) { _ =>
+          assert(b.isEmpty)
+          b = Option(tmp)
+        }
       }
+      null
+    }
+
+    private def doMakeSpillable(priority: Long): Void = synchronized {
+      val tmp = b.getOrElse {
+        throw new IllegalStateException("Buffer made spillable without a buffer")
+      }
+      closeOnExcept(tmp) { _ =>
+        b = None
+        assert(sb.isEmpty)
+      }
+      sb = Some(SpillableHostBuffer(tmp, tmp.getLength, priority))
       null
     }
 
     override def close(): Unit = synchronized {
       b.foreach(_.close())
       b = None
+      sb.foreach(_.close())
+      sb = None
     }
   }
 
@@ -331,14 +368,29 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
   }
 
   implicit val signaler: Signaler = MyThreadSignaler
+  private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {
+    RapidsBufferCatalog.close()
+    SparkSession.getActiveSession.foreach(_.stop())
+    SparkSession.clearActiveSession()
+    if (Rmm.isInitialized) {
+      rmmWasInitialized = true
+      Rmm.shutdown()
+    }
+    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     PinnedMemoryPool.shutdown()
     HostAlloc.initialize(-1)
+    val rc = new RapidsConf(Map.empty[String, String])
+    RapidsBufferCatalog.init(rc)
   }
 
   override def afterAll(): Unit = {
+    RapidsBufferCatalog.close()
     PinnedMemoryPool.shutdown()
+    if (!rmmWasInitialized) {
+      Rmm.shutdown()
+    }
     // 1 GiB
     PinnedMemoryPool.initialize(1 * 1024 * 1024 * 1024)
     HostAlloc.initialize(-1)
@@ -547,6 +599,121 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       } finally {
         thread1.done.get(1, TimeUnit.SECONDS)
         thread2.done.get(1, TimeUnit.SECONDS)
+        thread3.done.get(1, TimeUnit.SECONDS)
+      }
+    }
+  }
+
+  test("pinned blocking alloc with spill") {
+    PinnedMemoryPool.initialize(4 * 1024)
+    HostAlloc.initialize(0)
+
+    failAfter(Span(10, Seconds)) {
+      val thread1 = new TaskThread("thread1", 1)
+      thread1.initialize()
+      val thread2 = new TaskThread("thread2", 2)
+      thread2.initialize()
+
+      try {
+        withResource(new AllocOnAnotherThread(thread1, 4 * 1024)) { a =>
+          a.waitForAlloc()
+          a.assertAllocSize(4 * 1024)
+          // We don't have a way to wake up a thread when something is marked as spillable yet
+          // https://github.com/NVIDIA/spark-rapids/issues/9216
+          a.makeSpillableOnThread()
+          a.waitForSpillable()
+
+          withResource(new AllocOnAnotherThread(thread2, 1)) { a2 =>
+            // We ran out of memory, but instead of blocking this should spill...
+            a2.waitForAlloc()
+            a2.assertAllocSize(1)
+
+            a.freeOnThread()
+            a2.freeAndWait()
+          }
+        }
+      } finally {
+        thread1.done.get(1, TimeUnit.SECONDS)
+        thread2.done.get(1, TimeUnit.SECONDS)
+      }
+    }
+  }
+
+  test("non-pinned blocking alloc with spill") {
+    PinnedMemoryPool.initialize(0)
+    HostAlloc.initialize(4 * 1024)
+
+    failAfter(Span(10, Seconds)) {
+      val thread1 = new TaskThread("thread1", 1)
+      thread1.initialize()
+      val thread2 = new TaskThread("thread2", 2)
+      thread2.initialize()
+
+      try {
+        withResource(new AllocOnAnotherThread(thread1, 4 * 1024)) { a =>
+          a.waitForAlloc()
+          a.assertAllocSize(4 * 1024)
+          // We don't have a way to wake up a thread when something is marked as spillable yet
+          // https://github.com/NVIDIA/spark-rapids/issues/9216
+          a.makeSpillableOnThread()
+          a.waitForSpillable()
+
+          withResource(new AllocOnAnotherThread(thread2, 1)) { a2 =>
+            // We ran out of memory, but instead of blocking this should spill...
+            a2.waitForAlloc()
+            a2.assertAllocSize(1)
+
+            a.freeOnThread()
+            a2.freeAndWait()
+          }
+        }
+      } finally {
+        thread1.done.get(1, TimeUnit.SECONDS)
+        thread2.done.get(1, TimeUnit.SECONDS)
+      }
+    }
+  }
+
+  test("mixed blocking alloc with spill") {
+    PinnedMemoryPool.initialize(4 * 1024)
+    HostAlloc.initialize(4 * 1024)
+
+    failAfter(Span(10, Seconds)) {
+      val thread1 = new TaskThread("thread1", 1)
+      thread1.initialize()
+      val thread2 = new TaskThread("thread2", 2)
+      thread2.initialize()
+      val thread3 = new TaskThread("thread3", 3)
+      thread3.initialize()
+
+      try {
+        withResource(new AllocOnAnotherThread(thread1, 4 * 1024)) { a =>
+          a.waitForAlloc()
+          a.assertAllocSize(4 * 1024)
+          // We don't have a way to wake up a thread when something is marked as spillable yet
+          // https://github.com/NVIDIA/spark-rapids/issues/9216
+          a.makeSpillableOnThread()
+          a.waitForSpillable()
+
+
+          withResource(new AllocOnAnotherThread(thread2, 4 * 1024, false)) { a2 =>
+            a2.waitForAlloc()
+            a2.assertAllocSize(4 * 1024)
+
+            withResource(new AllocOnAnotherThread(thread3, 1, false)) { a3 =>
+              // We should still not be blocked because pinned memory was made spillable
+              a3.waitForAlloc()
+              a3.assertAllocSize(1)
+              a3.waitForFree()
+
+              a2.waitForFree()
+            }
+          }
+        }
+      } finally {
+        thread1.done.get(1, TimeUnit.SECONDS)
+        thread2.done.get(1, TimeUnit.SECONDS)
+        thread3.done.get(1, TimeUnit.SECONDS)
       }
     }
   }

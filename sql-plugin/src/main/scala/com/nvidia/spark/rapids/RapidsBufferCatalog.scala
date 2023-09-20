@@ -19,9 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -32,7 +30,6 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -378,7 +375,28 @@ class RapidsBufferCatalog(
       table: Table,
       initialSpillPriority: Long,
       needsSync: Boolean = true): RapidsBufferHandle = {
-    val id = TempSpillBufferId()
+    addTable(TempSpillBufferId(), table, initialSpillPriority, needsSync)
+  }
+
+  /**
+   * Adds a table to the device storage.
+   *
+   * This takes ownership of the table. The reason for this is that tables
+   * don't have a reference count, so we cannot cleanly capture ownership by increasing
+   * ref count and decreasing from the caller.
+   *
+   * @param id                   specific RapidsBufferId to use for this table
+   * @param table                table that will be owned by the store
+   * @param initialSpillPriority starting spill priority value
+   * @param needsSync            whether the spill framework should stream synchronize while adding
+   *                             this table (defaults to true)
+   * @return RapidsBufferHandle handle for this RapidsBuffer
+   */
+  def addTable(
+      id: RapidsBufferId,
+      table: Table,
+      initialSpillPriority: Long,
+      needsSync: Boolean): RapidsBufferHandle = {
     val rapidsBuffer = deviceStorage.addTable(
       id,
       table,
@@ -442,7 +460,7 @@ class RapidsBufferCatalog(
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer = {
     val id = handle.id
-    (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
+    def lookupAndReturn: Option[RapidsBuffer] = {
       val buffers = bufferMap.get(id)
       if (buffers == null || buffers.isEmpty) {
         throw new NoSuchElementException(
@@ -450,7 +468,27 @@ class RapidsBufferCatalog(
       }
       val buffer = buffers.head
       if (buffer.addReference()) {
-        return buffer
+        Some(buffer)
+      } else {
+        None
+      }
+    }
+
+    // fast path
+    (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
+      val mayBuffer = lookupAndReturn
+      if (mayBuffer.isDefined) {
+        return mayBuffer.get
+      }
+    }
+
+    // try one last time after locking the catalog (slow path)
+    // if there is a lot of contention here, I would rather lock the world than
+    // have tasks error out with "Unable to acquire"
+    synchronized {
+      val mayBuffer = lookupAndReturn
+      if (mayBuffer.isDefined) {
+        return mayBuffer.get
       }
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
@@ -552,14 +590,9 @@ class RapidsBufferCatalog(
       store: RapidsBufferStore,
       targetTotalSize: Long,
       stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Option[Long] = {
-    val spillStore = store.spillStore
-    if (spillStore == null) {
+    if (store.spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
     }
-
-    // total amount spilled in this invocation
-    var totalSpilled: Long = 0
-
     require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
     val mySpillCount = spillCount
@@ -573,124 +606,21 @@ class RapidsBufferCatalog(
         // None which lets the calling code know that rmm should retry allocation
         None
       } else {
-        // this thread win the race and should spill
+        // this thread wins the race and should spill
         spillCount += 1
-
-        logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
-          s"Current total ${store.currentSize}. " +
-          s"Current spillable ${store.currentSpillableSize}")
-
-        if (store.currentSpillableSize > targetTotalSize) {
-          withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
-            logWarning(s"${store.name} store spilling to reduce usage from " +
-              s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
-              s"to $targetTotalSize bytes")
-
-            // If the store has 0 spillable bytes left, it has exhausted.
-            var exhausted = false
-
-            val buffersToFree = new ArrayBuffer[RapidsBuffer]()
-
-            try {
-              while (!exhausted &&
-                store.currentSpillableSize > targetTotalSize) {
-                val nextSpillable = store.nextSpillable()
-                if (nextSpillable != null) {
-                  // we have a buffer (nextSpillable) to spill
-                  spillBuffer(nextSpillable, spillStore, stream)
-                    .foreach(buffersToFree.append(_))
-                  totalSpilled += nextSpillable.getMemoryUsedBytes
-                }
-              }
-              if (totalSpilled <= 0) {
-                // we didn't spill in this iteration, exit loop
-                exhausted = true
-                logWarning("Unable to spill enough to meet request. " +
-                  s"Total=${store.currentSize} " +
-                  s"Spillable=${store.currentSpillableSize} " +
-                  s"Target=$targetTotalSize")
-              }
-            } finally {
-              if (buffersToFree.nonEmpty) {
-                // This is a hack in order to completely synchronize with the GPU before we free
-                // a buffer. It is necessary because of non-synchronous cuDF calls that could fall
-                // behind where the CPU is. Freeing a rapids buffer in these cases needs to wait for
-                // all launched GPU work, otherwise crashes or data corruption could occur.
-                // A more performant implementation would be to synchronize on the thread that read
-                // the buffer via events.
-                // https://github.com/NVIDIA/spark-rapids/issues/8610
-                Cuda.deviceSynchronize()
-                buffersToFree.safeFree()
-              }
-            }
-          }
-        }
+        Some(store.synchronousSpill(targetTotalSize, this, stream))
       }
-      Some(totalSpilled)
     }
   }
 
-  /**
-   * Given a specific `RapidsBuffer` spill it to `spillStore`
-   * @return the buffer, if successfully spilled, in order for the caller to free it
-   * @note called with catalog lock held
-   */
-  private def spillBuffer(
-      buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Option[RapidsBuffer] = {
-    if (buffer.addReference()) {
-      withResource(buffer) { _ =>
-        logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
-        val bufferHasSpilled = isBufferSpilled(buffer.id, buffer.storageTier)
-        if (!bufferHasSpilled) {
-          // if the spillStore specifies a maximum size spill taking this ceiling
-          // into account before trying to create a buffer there
-          // TODO: we may need to handle what happens if we can't spill anymore
-          //   because all host buffers are being referenced.
-          trySpillToMaximumSize(buffer, spillStore, stream)
-
-          // copy the buffer to spillStore
-          val newBuffer = spillStore.copyBuffer(buffer, stream)
-
-          // once spilled, we get back a new RapidsBuffer instance in this new tier
-          registerNewBuffer(newBuffer)
-        } else {
-          logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
-            s"already stored in multiple tiers")
-        }
-      }
-      // we can now remove the old tier linkage
-      removeBufferTier(buffer.id, buffer.storageTier)
-
-      // return the buffer
-      Some(buffer)
-    } else {
-      None
-    }
-  }
-
-  /**
-   * If `spillStore` defines a maximum size, spill to make room for `buffer`.
-   */
-  private def trySpillToMaximumSize(
-      buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Unit = {
-    val spillStoreMaxSize = spillStore.getMaxSize
-    if (spillStoreMaxSize.isDefined) {
-      // this spillStore has a maximum size requirement (host only). We need to spill from it
-      // in order to make room for `buffer`.
-      val targetTotalSize =
-        math.max(spillStoreMaxSize.get - buffer.getMemoryUsedBytes, 0)
-      val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize, stream)
-      maybeAmountSpilled.foreach { amountSpilled =>
-        if (amountSpilled != 0) {
-          logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
-          TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
-        }
-      }
-    }
+  def updateTiers(bufferSpill: BufferSpill): Long = bufferSpill match {
+    case BufferSpill(spilledBuffer, maybeNewBuffer) =>
+      logDebug(s"Spilled ${spilledBuffer.id} from tier ${spilledBuffer.storageTier}. " +
+          s"Removing. Registering ${maybeNewBuffer.map(_.id).getOrElse ("None")} " +
+          s"${maybeNewBuffer}")
+      maybeNewBuffer.foreach(registerNewBuffer)
+      removeBufferTier(spilledBuffer.id, spilledBuffer.storageTier)
+      spilledBuffer.memoryUsedBytes
   }
 
   /**
@@ -707,10 +637,12 @@ class RapidsBufferCatalog(
     // do not create a new one, else add a reference
     acquireBuffer(buffer.id, StorageTier.DEVICE) match {
       case None =>
-        val newBuffer = deviceStorage.copyBuffer(buffer, stream)
-        newBuffer.addReference() // add a reference since we are about to use it
-        registerNewBuffer(newBuffer)
-        newBuffer
+        val maybeNewBuffer = deviceStorage.copyBuffer(buffer, this, stream)
+        maybeNewBuffer.map { newBuffer =>
+          newBuffer.addReference() // add a reference since we are about to use it
+          registerNewBuffer(newBuffer)
+          newBuffer
+        }.get // the GPU store has to return a buffer here for now, or throw OOM
       case Some(existingBuffer) => existingBuffer
     }
   }
@@ -764,7 +696,6 @@ class RapidsBufferCatalog(
 }
 
 object RapidsBufferCatalog extends Logging {
-
   private val MAX_BUFFER_LOOKUP_ATTEMPTS = 100
 
   private var deviceStorage: RapidsDeviceMemoryStore = _
@@ -841,7 +772,9 @@ object RapidsBufferCatalog extends Logging {
     // We are going to re-initialize so make sure all of the old things were closed...
     closeImpl()
     assert(memoryEventHandler == null)
-    deviceStorage = new RapidsDeviceMemoryStore(rapidsConf.chunkedPackBounceBufferSize)
+    deviceStorage = new RapidsDeviceMemoryStore(
+      rapidsConf.chunkedPackBounceBufferSize,
+      rapidsConf.spillToDiskBounceBufferSize)
     diskBlockManager = new RapidsDiskBlockManager(conf)
     if (rapidsConf.isGdsSpillEnabled) {
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
@@ -1023,20 +956,31 @@ object RapidsBufferCatalog extends Logging {
    *           brand new to the store, or the `RapidsBuffer` is invalid and
    *           about to be removed).
    */
-  private def getExistingRapidsBufferAndAcquire(
-      buffer: MemoryBuffer): Option[RapidsBuffer] = {
-    val eh = buffer.getEventHandler
-    eh match {
-      case null =>
-        None
-      case rapidsBuffer: RapidsBuffer =>
-        if (rapidsBuffer.addReference()) {
-          Some(rapidsBuffer)
-        } else {
-          None
-        }
+  private def getExistingRapidsBufferAndAcquire(buffer: MemoryBuffer): Option[RapidsBuffer] = {
+    buffer match {
+      case hb: HostMemoryBuffer =>
+        HostAlloc.findEventHandler(hb) {
+          case rapidsBuffer: RapidsBuffer =>
+            if (rapidsBuffer.addReference()) {
+              Some(rapidsBuffer)
+            } else {
+              None
+            }
+        }.flatten
       case _ =>
-        throw new IllegalStateException("Unknown event handler")
+        val eh = buffer.getEventHandler
+        eh match {
+          case null =>
+            None
+          case rapidsBuffer: RapidsBuffer =>
+            if (rapidsBuffer.addReference()) {
+              Some(rapidsBuffer)
+            } else {
+              None
+            }
+          case _ =>
+            throw new IllegalStateException("Unknown event handler")
+        }
     }
   }
 }

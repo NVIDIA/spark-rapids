@@ -48,8 +48,8 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     //     https://github.com/apache/spark/commit/6e862792fb
     // We do not want to create a shim class for this small change
     stringToAnsiDate: Boolean,
-    toTypeOverride: Option[DataType] = None) extends CastExprMetaBase(cast, conf, parent,
-  rule, doFloatToIntCheck) {
+    toTypeOverride: Option[DataType] = None)
+  extends CastExprMetaBase(cast, conf, parent, rule, doFloatToIntCheck) {
 
   override val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
 
@@ -306,7 +306,7 @@ object GpuCast extends ToStringBase {
         }
 
       case (dt: DecimalType, LongType) if dt.precision <= DType.DECIMAL32_MAX_PRECISION &&
-        dt.scale < 0 =>
+          dt.scale < 0 =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9281
         withResource(input.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))) { tmp =>
           tmp.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -405,7 +405,7 @@ object GpuCast extends ToStringBase {
               withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
                 inputWithoutNanAndInfinity =>
                   if (fromDataType == FloatType &&
-                    SparkShimImpl.hasCastFloatTimestampUpcast) {
+                      SparkShimImpl.hasCastFloatTimestampUpcast) {
                     withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
                       withResource(doubles.mul(microsPerSec, DType.INT64)) {
                         inputTimesMicrosCv =>
@@ -488,9 +488,8 @@ object GpuCast extends ToStringBase {
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
           withResource(doCast(childView, nestedFrom, nestedTo,
-            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) {
-            childColumnVector =>
-              withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { childColumnVector =>
+            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
           }
         }
 
@@ -548,12 +547,12 @@ object GpuCast extends ToStringBase {
   /**
    * Asserts that all values in a column are within the specific range.
    *
-   * @param values       ColumnVector to be performed with range check
-   * @param minValue     Range minimum value of input type T
-   * @param maxValue     Range maximum value of input type T
+   * @param values ColumnVector to be performed with range check
+   * @param minValue Range minimum value of input type T
+   * @param maxValue Range maximum value of input type T
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
-   * @param errorMsg     Specify the message in the `IllegalStateException`
+   * @param errorMsg Specify the message in the `IllegalStateException`
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange[T](values: ColumnView,
@@ -562,7 +561,7 @@ object GpuCast extends ToStringBase {
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
       errorMsg: String = OVERFLOW_MESSAGE)
-    (implicit ord: Ordering[T]): Unit = {
+      (implicit ord: Ordering[T]): Unit = {
 
     def throwIfAnyNan(): Unit = {
       withResource(values.isNan()) { valuesIsNan =>
@@ -609,9 +608,9 @@ object GpuCast extends ToStringBase {
    * Detects outlier values of a column given with specific range, and replaces them with
    * a inputted substitution value.
    *
-   * @param values       ColumnVector to be performed with range check
-   * @param minValue  Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue  Named parameter for function to create Scalar representing range maximum value
+   * @param values ColumnVector to be performed with range check
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
    * @param replaceValue Named parameter for function to create scalar to substitute outlier value
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
@@ -880,7 +879,7 @@ object GpuCast extends ToStringBase {
     // special timestamps
     val today = DateUtils.currentDate()
     val todayStr = new SimpleDateFormat("yyyy-MM-dd")
-      .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
+        .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
 
     var sanitizedInput = input.incRefCount()
 
@@ -936,8 +935,8 @@ object GpuCast extends ToStringBase {
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          doCast(valueColumn, from.valueType, to.valueType, ansiMode,
-            legacyCastToString, stringToDateAnsiModeEnabled)
+          doCast(valueColumn, from.valueType, to.valueType,
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         withResource(castValue) { castValue =>
           withResource(ColumnView.makeStructView(castKey, castValue)) { castKvStructColumn =>
@@ -966,8 +965,7 @@ object GpuCast extends ToStringBase {
           from(index).dataType,
           to(index).dataType,
           ansiMode,
-          legacyCastToString,
-          stringToDateAnsiModeEnabled)
+          legacyCastToString, stringToDateAnsiModeEnabled)
       }
       withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
         if (input.getNullCount == 0) {
@@ -1188,9 +1186,7 @@ case class GpuCast(
     timeZoneId: Option[String] = None,
     legacyCastToString: Boolean = false,
     stringToDateAnsiModeEnabled: Boolean = false)
-  extends GpuUnaryExpression
-    with TimeZoneAwareExpression
-    with NullIntolerant {
+  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   import GpuCast._
 
@@ -1246,7 +1242,7 @@ case class GpuCast(
   // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
   // Otherwise behave like Expression.resolved.
   override lazy val resolved: Boolean =
-  childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
+    childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
 
   def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
 

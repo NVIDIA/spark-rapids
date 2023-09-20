@@ -466,9 +466,11 @@ class RapidsDeviceMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
 
     override protected def createBuffer(
         b: RapidsBuffer,
-        s: Cuda.Stream): RapidsBufferBase = {
+        c: RapidsBufferCatalog,
+        s: Cuda.Stream): Option[RapidsBufferBase] = {
       spilledBuffers += b.id
-      new MockRapidsBuffer(b.id, b.getPackedSizeBytes, b.meta, b.getSpillPriority)
+      Some(new MockRapidsBuffer(
+        b.id, b.getPackedSizeBytes, b.meta, b.getSpillPriority))
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
@@ -481,7 +483,7 @@ class RapidsDeviceMemoryStoreSuite extends AnyFunSuite with MockitoSugar {
         throw new UnsupportedOperationException
 
       /** The size of this buffer in bytes. */
-      override def getMemoryUsedBytes: Long = size
+      override val memoryUsedBytes: Long = size
     }
   }
 }
