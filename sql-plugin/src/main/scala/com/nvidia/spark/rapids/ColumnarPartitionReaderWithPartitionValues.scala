@@ -86,9 +86,9 @@ object ColumnarPartitionReaderWithPartitionValues {
       fileBatch: ColumnarBatch,
       partitionValues: Array[Scalar],
       sparkTypes: Array[DataType]): Iterator[ColumnarBatch] = {
-    val partitionColumnsIter = buildPartitionColumnsIter(fileBatch.numRows, partitionValues,
+    val partitionColumnsBatch = buildPartitionColumnsBatch(fileBatch.numRows, partitionValues,
       sparkTypes)
-    addGpuColumVectorsToBatchIter(fileBatch, partitionColumnsIter)
+    addGpuColumVectorsToBatchIter(fileBatch, partitionColumnsBatch)
   }
 
   /**
@@ -106,16 +106,35 @@ object ColumnarPartitionReaderWithPartitionValues {
 
   def addGpuColumVectorsToBatchIter(
      fileBatch: ColumnarBatch,
-     partitionColumnsIter: Iterator[Array[GpuColumnVector]]): Iterator[ColumnarBatch] = {
-    partitionColumnsIter.map { partitionColumns =>
-      val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
-      val resultCols = fileBatchCols ++ partitionColumns
-      val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
-      fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-      result
-    }
-  }
+     partitionColumnVectors: Array[Array[GpuColumnVector]]): Iterator[ColumnarBatch] = {
+    val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
 
+    // Calculate the cumulative row counts for splitting the GPU ColumnVectors.
+    // Note:
+    //  1. ai.rapids.cudf.ColumnView#split only accepts 'int' indices
+    //  2. Split indices must be in cumulative format
+    val cumulativeRowCounts = partitionColumnVectors.scanLeft(0) {
+      case (cumulativeCount, partitionColumns) =>
+        cumulativeCount + partitionColumns.head.getRowCount.toInt
+    }.drop(1).dropRight(1)
+    // Split each column into multiple batches based on the split indices
+    val splitColumnVectors = fileBatchCols.map {
+      case gpuColumnVector: GpuColumnVector =>
+        val splitColumns = gpuColumnVector.getBase.split(cumulativeRowCounts: _*)
+        splitColumns.map(splitCol => GpuColumnVector.from(splitCol, gpuColumnVector.dataType()))
+    }
+
+    // Combine the split GPU ColumnVectors with partition ColumnVectors.
+    partitionColumnVectors.zipWithIndex.map {
+      case (partitionColumns, index) =>
+        val splitCols = splitColumnVectors.map(col => col(index))
+        val resultCols = splitCols ++ partitionColumns
+        val batchNumRows = resultCols.headOption.map(_.getRowCount.toInt).getOrElse(0)
+        val resultBatch = new ColumnarBatch(resultCols.toArray, batchNumRows)
+        splitCols.collect { case gpuCol: GpuColumnVector => gpuCol.incRefCount() }
+        resultBatch
+    }.toIterator
+  }
 
   private def buildPartitionColumns(
       numRows: Int,
@@ -137,10 +156,10 @@ object ColumnarPartitionReaderWithPartitionValues {
     }
   }
 
-  private def buildPartitionColumnsIter(
+  private def buildPartitionColumnsBatch(
       numRows: Int,
       partitionValues: Array[Scalar],
-      sparkTypes: Array[DataType]): Iterator[Array[GpuColumnVector]] = {
+      sparkTypes: Array[DataType]): Array[Array[GpuColumnVector]] = {
     var succeeded = false
     val result = new Array[GpuColumnVector](partitionValues.length)
     try {
@@ -149,7 +168,7 @@ object ColumnarPartitionReaderWithPartitionValues {
           ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
       }
       succeeded = true
-      Iterator.single(result)
+      Array(result)
     } finally {
       if (!succeeded) {
         result.filter(_ != null).safeClose()

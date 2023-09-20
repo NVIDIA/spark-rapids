@@ -2534,7 +2534,8 @@ class MultiFileCloudParquetPartitionReader(
         MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(origBatch, allPartInternalRows,
           rowsPerPartition, partitionSchema)
       } else {
-        val batch = addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
+        val batch = addPartitionValues(origBatch, meta.partitionedFile.partitionValues,
+          partitionSchema)
         new SingleGpuColumnarBatchIterator(batch)
       }
 

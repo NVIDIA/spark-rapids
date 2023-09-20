@@ -80,11 +80,11 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
       withGpuSparkSession(spark => {
         val df = spark.range(10000)
           .withColumn("partCol2",
-            expr("substring('abcdef', 1, " +
-              "floor(rand() * 5) + 1)"))
+            expr("substring('abcdefghijklm', 1, " +
+              "floor(rand() * 10) + 1)"))
           .withColumn("partCol3",
             expr("substring('abcdefghijklmnopqrstuvwxyz', 1," +
-              " floor(rand() * 10) + 1)"))
+              " floor(rand() * 20) + 1)"))
         df.write.partitionBy("partCol2", "partCol3").parquet(file.getCanonicalPath)
         val res = spark.read.parquet(file.getCanonicalPath).collect()
         print(res.length)
