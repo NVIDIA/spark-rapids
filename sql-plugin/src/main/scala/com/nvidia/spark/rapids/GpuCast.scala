@@ -48,16 +48,10 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     //     https://github.com/apache/spark/commit/6e862792fb
     // We do not want to create a shim class for this small change
     stringToAnsiDate: Boolean,
-    toTypeOverride: Option[DataType] = None)
-  extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
+    toTypeOverride: Option[DataType] = None) extends CastExprMetaBase(cast, conf, parent,
+  rule, doFloatToIntCheck) {
 
-  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
-    new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
-      doFloatToIntCheck, stringToAnsiDate, Some(newToType))
-
-  val fromType: DataType = cast.child.dataType
-  val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
-  val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  override val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
 
   override def tagExprForGpu(): Unit = {
     if (evalMode == GpuEvalMode.TRY) {
@@ -66,7 +60,34 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     recursiveTagExprForGpuCheck()
   }
 
-  private def recursiveTagExprForGpuCheck(
+  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
+    new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
+      doFloatToIntCheck, stringToAnsiDate, Some(newToType))
+
+  override def convertToGpu(child: Expression): GpuExpression =
+    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId, legacyCastToString,
+      stringToAnsiDate)
+
+}
+
+/** Meta-data for cast, ansi_cast and ToPrettyString */
+abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpression](
+    cast: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule,
+    doFloatToIntCheck: Boolean = false)
+  extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
+
+  val fromType: DataType = cast.child.dataType
+  val toType: DataType = cast.dataType
+  val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+
+  override def tagExprForGpu(): Unit = {
+    recursiveTagExprForGpuCheck()
+  }
+
+  protected def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,
       toDataType: DataType = toType,
       depth: Int = 0): Unit = {
@@ -153,10 +174,6 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
   def buildTagMessage(entry: ConfEntry[_]): String = {
     s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
   }
-
-  override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId, legacyCastToString,
-      stringToAnsiDate)
 
   // timezone tagging in type checks is good enough, so always false
   override protected val needTimezoneTagging: Boolean = false
@@ -274,7 +291,7 @@ object GpuCast extends ToStringBase {
         withResource(input.min()) { minInput =>
           withResource(input.max()) { maxInput =>
             if (minInput.isValid && minInput.getBigDecimal().compareTo(min) == -1 ||
-              maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
+                maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
               throw new ArithmeticException(OVERFLOW_MESSAGE)
             }
           }
@@ -559,9 +576,9 @@ object GpuCast extends ToStringBase {
 
     def throwIfOutOfRange(minInput: T, maxInput: T): Unit = {
       if (inclusiveMin && ord.compare(minInput, minValue) < 0 ||
-        !inclusiveMin && ord.compare(minInput, minValue) <= 0 ||
-        inclusiveMax && ord.compare(maxInput, maxValue) > 0 ||
-        !inclusiveMax && ord.compare(maxInput, maxValue) >= 0) {
+          !inclusiveMin && ord.compare(minInput, minValue) <= 0 ||
+          inclusiveMax && ord.compare(maxInput, maxValue) > 0 ||
+          !inclusiveMax && ord.compare(maxInput, maxValue) >= 0) {
         throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
       }
     }

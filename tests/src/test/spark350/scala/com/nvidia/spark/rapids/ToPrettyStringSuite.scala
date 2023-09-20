@@ -33,31 +33,36 @@ import org.apache.spark.unsafe.types.UTF8String
 
 class ToPrettyStringSuite extends GpuUnitTests {
 
-  private val rapidsConf = new RapidsConf(Map[String, String]())
-
-  private def tagExpressionForGpu(lit: Literal): RapidsMeta[_, _, _] = {
-    val toPrettyString = ToPrettyString(lit, Some("UTC"))
-    val wrapperLit = GpuOverrides.wrapExpr(toPrettyString, rapidsConf, None)
-    wrapperLit.initReasons()
-    wrapperLit.tagExprForGpu()
-    wrapperLit
-  }
-
-  test("test ToPrettyString is accelerated") {
-    val lit = Literal(1, DataTypes.IntegerType)
-    val wrapperLit = tagExpressionForGpu(lit)
-    assertResult(true)(wrapperLit.canThisBeReplaced)
-  }
-
-  test("test ToPrettyString should not be accelerated for BinaryType") {
-    val lit = Literal("1".getBytes(), DataTypes.BinaryType)
-    val wrapperLit = tagExpressionForGpu(lit)
-    assertResult(false)(wrapperLit.canThisBeReplaced)
-  }
-
   private def executeOnCpuAndReturn(dataType: DataType, value: Any): String = {
     ToPrettyString(Literal(value, dataType), Some("UTC"))
       .eval(null).asInstanceOf[UTF8String].toString()
+  }
+
+  private def asList(str: String): List[Byte] = {
+    val bytes: Array[Byte] = str.getBytes("UTF-8")
+    bytes.toList
+  }
+
+  test("test show() BinaryType") {
+    val dataType = DataTypes.BinaryType
+    val stringData = "this is a string"
+    // Execute on CPU
+    val cpuResult = executeOnCpuAndReturn(dataType, stringData.getBytes())
+
+    val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "binary_arg")
+    val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
+    withResource(
+      GpuColumnVector.from(ColumnVector.fromStrings(cpuResult),
+        DataTypes.StringType)) { expected0 =>
+      val dt = new HostColumnVector.ListType(true,
+        new HostColumnVector.BasicType(true, DType.UINT8))
+      withResource(GpuColumnVector.from(
+        ColumnVector.fromLists(dt, Array(asList(stringData).asJava): _*), DataTypes.BinaryType)) {
+        binaryCol =>
+          val batch = new ColumnarBatch(Array(binaryCol), 1)
+          checkEvaluation(gpuToPrettyStr, expected0, batch)
+      }
+    }
   }
 
   test("test show() Array") {
@@ -76,7 +81,7 @@ class ToPrettyStringSuite extends GpuUnitTests {
       withResource(GpuColumnVector.from(ColumnVector.fromLists(dt,
         v.toList.asJava),
         ArrayType(DataTypes.IntegerType))) { input =>
-        val batch = new ColumnarBatch(List(input).toArray, 2)
+        val batch = new ColumnarBatch(List(input).toArray, 1)
         checkEvaluation(gpuToPrettyStr, expected0, batch)
       }
     }

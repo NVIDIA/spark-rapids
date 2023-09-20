@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPrettyString}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
-import org.apache.spark.sql.types.BinaryType
+import org.apache.spark.sql.types.StringType
 
 object SparkShimImpl extends Spark340PlusShims {
 
@@ -31,19 +31,17 @@ object SparkShimImpl extends Spark340PlusShims {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[ToPrettyString]("An internal expressions which is used to " +
         "generate pretty string for all kinds of values",
-        ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING, TypeSig.all, TypeSig.all),
-        (a, conf, p, r) => new UnaryExprMeta[ToPrettyString](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            if (a.asInstanceOf[ToPrettyString].child.dataType == BinaryType) {
-              willNotWorkOnGpu("converting binary to string is not supported. " +
-                "See https://github.com/NVIDIA/spark-rapids/issues/9220")
+        new ToPrettyStringChecks(),
+        (toPrettyString, conf, p, r) => {
+          new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
+
+            override val toType: StringType.type = StringType
+
+            override def convertToGpu(child: Expression): GpuExpression = {
+              GpuToPrettyString(child)
             }
           }
-
-          override def convertToGpu(child: Expression): GpuExpression = {
-            GpuToPrettyString(child)
-          }
-        }),
+      }), 
       GpuOverrides.expr[PythonUDAF](
         "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated",

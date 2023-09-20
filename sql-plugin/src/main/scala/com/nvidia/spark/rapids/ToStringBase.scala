@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuCastShims
 
 import org.apache.spark.sql.types._
@@ -53,7 +54,7 @@ trait ToStringBase {
     case DateType => input.asStrings("%Y-%m-%d")
     case TimestampType => castTimestampToString(input)
     case FloatType | DoubleType => castFloatingTypeToString(input)
-    case BinaryType => castBinToString(input)
+    case BinaryType => castBinToString(input, useHexFormatForBinary)
     case _: DecimalType => GpuCastShims.CastDecimalToString(input, useDecimalPlainString)
     case StructType(fields) =>
       castStructToString(input, fields, ansiMode, legacyCastToString,
@@ -119,17 +120,29 @@ trait ToStringBase {
     }
   }
 
-  private def castBinToString(input: ColumnView): ColumnVector = {
-    // Spark interprets the binary as UTF-8 bytes. So the layout of the
-    // binary and the layout of the string are the same. We just need to play some games with
-    // the CPU side metadata to make CUDF think it is a String.
-    // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
-    // it back together again
-    withResource(input.getChildColumnView(0)) { dataCol =>
-      withResource(new ColumnView(DType.STRING, input.getRowCount,
-        Optional.of[java.lang.Long](input.getNullCount),
-        dataCol.getData, input.getValid, input.getOffsets)) { cv =>
-        cv.copyToColumnVector()
+  private def castBinToString(input: ColumnView, useHexString: Boolean): ColumnVector = {
+    if (useHexString) {
+      withResource(input.getChildColumnView(0)) { dataCol =>
+        withResource(CastStrings.fromIntegersWithBase(dataCol, 16)) { stringCol =>
+          withResource(input.replaceListChild(stringCol)) { cv =>
+            castArrayToString(cv, DataTypes.StringType, ansiMode = false,
+              legacyCastToString = false, stringToDateAnsiModeEnabled = false,
+              castingBinaryData = true)
+          }
+        }
+      }
+    } else {
+      // Spark interprets the binary as UTF-8 bytes. So the layout of the
+      // binary and the layout of the string are the same. We just need to play some games with
+      // the CPU side metadata to make CUDF think it is a String.
+      // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
+      // it back together again
+      withResource(input.getChildColumnView(0)) { dataCol =>
+        withResource(new ColumnView(DType.STRING, input.getRowCount,
+          Optional.of[java.lang.Long](input.getNullCount),
+          dataCol.getData, input.getValid, input.getOffsets)) { cv =>
+          cv.copyToColumnVector()
+        }
       }
     }
   }
@@ -154,13 +167,16 @@ trait ToStringBase {
    */
   private def concatenateStringArrayElements(
       input: ColumnView,
-      legacyCastToString: Boolean): ColumnVector = {
+      legacyCastToString: Boolean,
+      castingBinaryData: Boolean = false): ColumnVector = {
     val emptyStr = ""
     val spaceStr = " "
-    val nullStr = if (legacyCastToString) "" else nullString
-    val sepStr = if (legacyCastToString) "," else ", "
+    val sepStr =
+      if (useHexFormatForBinary && castingBinaryData) spaceStr
+        else if (legacyCastToString) "," else ", "
+
     withResource(
-      Seq(emptyStr, spaceStr, nullStr, sepStr).safeMap(Scalar.fromString)
+      Seq(emptyStr, spaceStr, nullString, sepStr).safeMap(Scalar.fromString)
     ) { case Seq(empty, space, nullRep, sep) =>
 
       val withSpacesIfLegacy = if (!legacyCastToString) {
@@ -213,7 +229,8 @@ trait ToStringBase {
       elementType: DataType,
       ansiMode: Boolean,
       legacyCastToString: Boolean,
-      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+      stringToDateAnsiModeEnabled: Boolean,
+      castingBinaryData: Boolean = false): ColumnVector = {
 
     val (leftStr, rightStr) = ("[", "]")
     val emptyStr = ""
@@ -230,7 +247,7 @@ trait ToStringBase {
 
       val concatenated = withResource(strChildContainsNull) { _ =>
         withResource(input.replaceListChild(strChildContainsNull)) {
-          concatenateStringArrayElements(_, legacyCastToString)
+          concatenateStringArrayElements(_, legacyCastToString, castingBinaryData)
         }
       }
 
