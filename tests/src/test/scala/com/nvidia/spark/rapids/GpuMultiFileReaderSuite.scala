@@ -16,7 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
 import java.util.concurrent.Callable
+
+import scala.util.Random
 
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.withResource
@@ -24,6 +27,7 @@ import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.functions._
@@ -75,19 +79,56 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("test column size exceeding cudf limit") {
+  def generateRandomString(length: Int): String = {
+    Iterator.fill(length)(Random.alphanumeric.head).mkString
+  }
+
+  def sqlExprToGenerateRandomString(length: Int, partitions: Int): String = {
+    val randomString = generateRandomString(length)
+    s"substring('$randomString', 1, floor(rand() * $partitions) + 1)"
+  }
+
+  def writeAndReadParquet(df: DataFrame, spark: SparkSession, outputFile: File): Unit = {
+    spark.conf.set("spark.rapids.sql.enabled", "false")
+    df.write.partitionBy("partCol").parquet(outputFile.getCanonicalPath)
+
+    spark.conf.set("spark.rapids.sql.enabled", "true")
+    val res = spark.read.parquet(outputFile.getCanonicalPath).collect()
+
+    print(res.length)
+    assert(res.length > 0)
+  }
+
+  test("WIP: test column size exceeding cudf limit" +
+    " - single partition column, single partition value") {
     withTempPath { file =>
       withGpuSparkSession(spark => {
         val df = spark.range(10000)
-          .withColumn("partCol2",
-            expr("substring('abcdefghijklm', 1, " +
-              "floor(rand() * 10) + 1)"))
-          .withColumn("partCol3",
-            expr("substring('abcdefghijklmnopqrstuvwxyz', 1," +
-              " floor(rand() * 20) + 1)"))
-        df.write.partitionBy("partCol2", "partCol3").parquet(file.getCanonicalPath)
-        val res = spark.read.parquet(file.getCanonicalPath).collect()
-        print(res.length)
+          .withColumn("partCol", lit(generateRandomString(80)))
+        writeAndReadParquet(df, spark, file)
+      })
+    }
+  }
+
+  test("WIP: test column size exceeding cudf limit" +
+    " - single partition column, multiple partition values") {
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val df = spark.range(10000)
+          .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 4)))
+        writeAndReadParquet(df, spark, file)
+      })
+    }
+  }
+
+  test("WIP: test column size exceeding cudf limit" +
+    " - multiple partition columns, multiple partition values") {
+    withTempPath { file =>
+      withGpuSparkSession(spark => {
+        val df = spark.range(10000)
+          .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 4)))
+          .withColumn("partCol2", expr(sqlExprToGenerateRandomString(20, 4)))
+        writeAndReadParquet(df, spark, file)
       })
     }
   }

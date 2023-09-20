@@ -107,17 +107,15 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   private var leftValues: Array[InternalRow] = partValues
   private var leftRowNums: Array[Long] = partRowNums
-  private var nextBatchIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
+  private var outputIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
 
-  override def hasNext: Boolean = {
-    // Check if there is a next batch available, or if we need to process the current batch
-    if (nextBatchIter.hasNext) {
-      true
-    } else if (!inputIter.hasNext) {
-      false
-    } else {
+  override def hasNext: Boolean = inputIter.hasNext || outputIter.hasNext
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) throw new NoSuchElementException()
+    if (!outputIter.hasNext) {
       val batch = inputIter.next()
-      nextBatchIter = if (partSchema.nonEmpty) {
+      outputIter = if (partSchema.nonEmpty) {
         val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
           computeValuesAndRowNumsForBatch(batch.numRows())
         }
@@ -126,15 +124,8 @@ class GpuColumnarBatchWithPartitionValuesIterator(
       } else {
         new SingleGpuColumnarBatchIterator(batch)
       }
-      nextBatchIter.hasNext
     }
-  }
-
-  override def next(): ColumnarBatch = {
-    if (!hasNext) {
-      throw new NoSuchElementException("No more batches to iterate")
-    }
-    nextBatchIter.next()
+    outputIter.next()
   }
 
   private[this] def computeValuesAndRowNumsForBatch(batchRowNum: Int):

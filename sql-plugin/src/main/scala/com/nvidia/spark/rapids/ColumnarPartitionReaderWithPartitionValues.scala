@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.{DataType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -156,23 +156,69 @@ object ColumnarPartitionReaderWithPartitionValues {
     }
   }
 
+  /**
+   * Calculates the sizes of each element in the `partValues` array based on the
+   * provided `partSchema`.
+   *
+   * @return An array of sequences representing the sizes of each cell in bytes.
+   */
+  private def calculateRowSizesScalar(partValues: Array[Scalar],
+                                      sparkTypes: Array[DataType]): Array[Long] = {
+    sparkTypes.zipWithIndex.map {
+      case (StringType, colIndex) =>
+        // Calculate the size of only StringType
+        val stringValue = partValues(colIndex).toString
+        stringValue.getBytes("UTF-8").length.toLong
+      case _ => 0L
+    }
+  }
+
+  /**
+   * Splits the partitions into two batches ensuring that each partition's
+   * cumulative size does not exceed cuDF limit.
+   *
+   * @return An optional of SplitPartitionInfo containing the split index and
+   *         the new partition row numbers.
+   */
+  private def splitPartitionIntoBatchesScalar(numRows: Int,
+      partValues: Array[Scalar], sparkTypes: Array[DataType]): Option[SplitPartitionInfo] = {
+    // Calculate the sizes of each cell in the input data
+    val rowSizes = calculateRowSizesScalar(partValues, sparkTypes)
+    val cuDFLimit = (1L << 32) - 1
+    // Initialize an option to store the new partition rows
+    var newPartitionInfo: Option[SplitPartitionInfo] = None
+    rowSizes.forall { size =>
+      val partColSize = numRows * size
+      // Check if size exceeds the cuDFLimit
+      if (partColSize > cuDFLimit) {
+        // Calculate the size of the new partition for the current column
+        val newPartLeftRowNum = cuDFLimit / size
+        val newPartRightRowNum = numRows - newPartLeftRowNum
+        // Store the split index and the new partition row numbers
+        newPartitionInfo = Some(SplitPartitionInfo(-1, newPartLeftRowNum, newPartRightRowNum))
+        false // Stop processing further rows
+      } else {
+        true // Continue processing next rowSize
+      }
+    }
+    newPartitionInfo
+  }
+
   private def buildPartitionColumnsBatch(
       numRows: Int,
       partitionValues: Array[Scalar],
       sparkTypes: Array[DataType]): Array[Array[GpuColumnVector]] = {
-    var succeeded = false
-    val result = new Array[GpuColumnVector](partitionValues.length)
-    try {
-      for (i <- result.indices) {
-        result(i) = GpuColumnVector.from(
-          ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
-      }
-      succeeded = true
-      Array(result)
-    } finally {
-      if (!succeeded) {
-        result.filter(_ != null).safeClose()
-      }
+    splitPartitionIntoBatchesScalar(numRows, partitionValues, sparkTypes) match {
+      case Some(SplitPartitionInfo(_, newLeftRowsNum, newRightRowsNum)) =>
+        val leftResult = buildPartitionColumns(newLeftRowsNum.toInt,
+          partitionValues, sparkTypes)
+        val rightResult = buildPartitionColumns(newRightRowsNum.toInt,
+          partitionValues, sparkTypes)
+        Array(leftResult, rightResult)
+
+      case None =>
+        // If no split is needed, return for the whole data as a single partition.
+        Array(buildPartitionColumns(numRows, partitionValues, sparkTypes))
     }
   }
 }
