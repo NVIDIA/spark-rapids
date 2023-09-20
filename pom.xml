@@ -580,6 +580,12 @@
                 <maven.compiler.target>17</maven.compiler.target>
             </properties>
         </profile>
+        <profile>
+            <id>arm64</id>
+            <properties>
+                <jni.classifier>${cuda.version}-arm64</jni.classifier>
+            </properties>
+        </profile>
     </profiles>
 
     <properties>
@@ -593,6 +599,7 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
+        <jni.classifier>${cuda.version}</jni.classifier>
         <spark-rapids-jni.version>23.10.0-SNAPSHOT</spark-rapids-jni.version>
         <spark-rapids-private.version>23.10.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -768,7 +775,7 @@
               <groupId>com.nvidia</groupId>
               <artifactId>spark-rapids-jni</artifactId>
               <version>${spark-rapids-jni.version}</version>
-              <classifier>${cuda.version}</classifier>
+              <classifier>${jni.classifier}</classifier>
             </dependency>
             <dependency>
                 <groupId>org.openucx</groupId>
