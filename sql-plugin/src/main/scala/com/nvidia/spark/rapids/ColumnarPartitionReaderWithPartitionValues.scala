@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -184,18 +186,20 @@ object ColumnarPartitionReaderWithPartitionValues {
       partValues: Array[Scalar], sparkTypes: Array[DataType]): Option[SplitPartitionInfo] = {
     // Calculate the sizes of each cell in the input data
     val rowSizes = calculateRowSizesScalar(partValues, sparkTypes)
-    val cuDFLimit = (1L << 32) - 1
+    val cuDFLimit = (1L << 31) - 1
     // Initialize an option to store the new partition rows
     var newPartitionInfo: Option[SplitPartitionInfo] = None
     rowSizes.forall { size =>
-      val partColSize = numRows * size
-      // Check if size exceeds the cuDFLimit
-      if (partColSize > cuDFLimit) {
-        // Calculate the size of the new partition for the current column
-        val newPartLeftRowNum = cuDFLimit / size
-        val newPartRightRowNum = numRows - newPartLeftRowNum
-        // Store the split index and the new partition row numbers
-        newPartitionInfo = Some(SplitPartitionInfo(-1, newPartLeftRowNum, newPartRightRowNum))
+      if(numRows * size > cuDFLimit) {
+        var remainingNumRows = numRows
+        val splitRowNums = ArrayBuffer[Int]()
+        while (remainingNumRows * size > cuDFLimit) {
+          val newPartLeftRowNum = (cuDFLimit / size).toInt
+          remainingNumRows -= newPartLeftRowNum
+          splitRowNums.append(newPartLeftRowNum)
+        }
+        splitRowNums.append(remainingNumRows)
+        newPartitionInfo = Some(SplitPartitionInfo(-1, splitRowNums.toArray))
         false // Stop processing further rows
       } else {
         true // Continue processing next rowSize
@@ -209,12 +213,8 @@ object ColumnarPartitionReaderWithPartitionValues {
       partitionValues: Array[Scalar],
       sparkTypes: Array[DataType]): Array[Array[GpuColumnVector]] = {
     splitPartitionIntoBatchesScalar(numRows, partitionValues, sparkTypes) match {
-      case Some(SplitPartitionInfo(_, newLeftRowsNum, newRightRowsNum)) =>
-        val leftResult = buildPartitionColumns(newLeftRowsNum.toInt,
-          partitionValues, sparkTypes)
-        val rightResult = buildPartitionColumns(newRightRowsNum.toInt,
-          partitionValues, sparkTypes)
-        Array(leftResult, rightResult)
+      case Some(SplitPartitionInfo(_, splitRowNums)) =>
+        splitRowNums.map(buildPartitionColumns(_, partitionValues, sparkTypes))
 
       case None =>
         // If no split is needed, return for the whole data as a single partition.

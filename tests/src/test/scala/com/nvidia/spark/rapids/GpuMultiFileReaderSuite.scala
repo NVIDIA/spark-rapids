@@ -103,8 +103,8 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
     " - single partition column, single partition value") {
     withTempPath { file =>
       withGpuSparkSession(spark => {
-        val df = spark.range(10000)
-          .withColumn("partCol", lit(generateRandomString(80)))
+        val df = spark.range(100000000)
+          .withColumn("partCol", lit(generateRandomString(100)))
         writeAndReadParquet(df, spark, file)
       })
     }
