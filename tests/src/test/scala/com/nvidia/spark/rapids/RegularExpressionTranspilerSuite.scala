@@ -484,12 +484,24 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doTranspileTest("a\\Z{1,}", expected)
   }
 
-  test("transpile predefined character classes") {
+  test("transpile predefined character classes Lower") {
     doTranspileTest("\\p{Lower}", "[a-z]")
+  }
+
+  test("transpile predefined character classes Alpha") {
     doTranspileTest("\\p{Alpha}", "[a-zA-Z]")
+  }
+
+  test("transpile predefined character classes Alnum") {
     doTranspileTest("\\p{Alnum}", "[a-zA-Z0-9]")
-    doTranspileTest("\\p{Punct}", "[!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]]")
-    doTranspileTest("\\p{Print}", "[a-zA-Z0-9!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]\u0020]")
+  }
+
+  test("transpile predefined character classes Punct") {
+    doTranspileTest("\\p{Punct}", "[!\"#$%&'()*+,\\-./:;<=>?@^_`{|}~\\[\\]\\\\]")
+  }
+
+  test("transpile predefined character classes Print") {
+    doTranspileTest("\\p{Print}", "[a-zA-Z0-9!\"#$%&'()*+,\\-./:;<=>?@^_`{|}~\\[\\]\\\\\u0020]")
   }
 
   test("transpile with group index to extract") {
