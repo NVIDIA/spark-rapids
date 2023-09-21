@@ -69,7 +69,7 @@ class GpuCoalesceBatchesRetrySuite
       injectRetry,
       injectSplitAndRetry,
       mockInjectSplitAndRetry))
-    ab
+    ab.toSeq
   }
 
   def getHostIter(

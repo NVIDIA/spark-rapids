@@ -535,7 +535,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
           bytesInWindow = math.min(1000, remaining),
           isLast = true))
 
-      endToEndTest(buff, expected, ptrBuffs)
+      endToEndTest(buff, expected.toSeq, ptrBuffs)
       buff
     }
     assert(bb.isClosed)
@@ -554,7 +554,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
           bytesInWindow = math.min(1000, remaining),
           isLast = true))
 
-      endToEndTest(buff, expected, ptrBuffs)
+      endToEndTest(buff, expected.toSeq, ptrBuffs)
       buff
     }
     assert(bb.isClosed)
@@ -581,7 +581,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
           bytesInWindow = math.min(1000, remaining),
           isLast = true))
 
-      endToEndTest(buff, expected, ptrBuffs)
+      endToEndTest(buff, expected.toSeq, ptrBuffs)
       buff
     }
     assert(bb.isClosed)
@@ -616,7 +616,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
           bytesInWindow = math.min(1000, remaining),
           isLast = true))
 
-      endToEndTest(buff, expected, ptrBuffs)
+      endToEndTest(buff, expected.toSeq, ptrBuffs)
       buff
     }
     assert(bb.isClosed)
