@@ -36,7 +36,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * A buffer store using host memory.
  * @param maxSize maximum size in bytes for all buffers in this store
- * @param pageableMemoryPoolSize maximum size in bytes for the internal pageable memory pool
  */
 class RapidsHostMemoryStore(
     maxSize: Option[Long])
@@ -92,7 +91,7 @@ class RapidsHostMemoryStore(
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
       val targetTotalSize = ms - buffer.memoryUsedBytes
-      if (targetTotalSize <= 0) {
+      if (targetTotalSize < 0) {
         // lets not spill to host when the buffer we are about
         // to spill is larger than our limit
         false
