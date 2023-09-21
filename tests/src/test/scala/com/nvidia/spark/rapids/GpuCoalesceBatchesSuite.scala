@@ -487,7 +487,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  def testCompressedBatches(maxCompressedBatchMemoryLimit: Long) {
+  def testCompressedBatches(maxCompressedBatchMemoryLimit: Long): Unit = {
     val coalesceTargetBytes = 8000
     val stop = 10000
     var start = 0

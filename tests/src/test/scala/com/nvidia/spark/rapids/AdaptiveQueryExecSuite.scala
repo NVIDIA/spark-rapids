@@ -632,7 +632,7 @@ class AdaptiveQueryExecSuite
     numLocalReaders.length
   }
 
-  def skewJoinTest(fun: SparkSession => Unit) {
+  def skewJoinTest(fun: SparkSession => Unit): Unit = {
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -699,7 +699,7 @@ class AdaptiveQueryExecSuite
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def testData(spark: SparkSession) {
+  private def testData(spark: SparkSession): Unit = {
     import spark.implicits._
     val data: Seq[(Int, String)] = (1 to 100).map(i => (i, i.toString))
     val df = data.toDF("key", "value")
@@ -707,7 +707,7 @@ class AdaptiveQueryExecSuite
     registerAsParquetTable(spark, df, "testData")  }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def testData2(spark: SparkSession) {
+  private def testData2(spark: SparkSession): Unit = {
     import spark.implicits._
     val df = Seq[(Int, Int)]((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))
       .toDF("a", "b")
@@ -716,7 +716,7 @@ class AdaptiveQueryExecSuite
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def testData3(spark: SparkSession) {
+  private def testData3(spark: SparkSession): Unit = {
     import spark.implicits._
     val df = Seq[(Int, Option[Int])]((1, None), (2, Some(2)))
       .toDF("a", "b")
@@ -725,7 +725,7 @@ class AdaptiveQueryExecSuite
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def uncommonTypeTestData(spark: SparkSession) {
+  private def uncommonTypeTestData(spark: SparkSession): Unit = {
     import scala.collection.JavaConverters._
     val df = spark.createDataFrame(
       List.tabulate(20)(i => Row(i % 3, BigDecimal(i), Array(i, i), Row(i))).asJava,
@@ -740,7 +740,7 @@ class AdaptiveQueryExecSuite
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
-  private def lowerCaseData(spark: SparkSession) {
+  private def lowerCaseData(spark: SparkSession): Unit = {
     import spark.implicits._
     // note that this differs from the original Spark test by generating a larger data set so that
     // we can trigger larger stats in the logical mode, preventing BHJ, and then our queries filter
@@ -753,7 +753,7 @@ class AdaptiveQueryExecSuite
     registerAsParquetTable(spark, df, "lowercaseData")
   }
 
-  private def registerAsParquetTable(spark: SparkSession, df: Dataset[Row], name: String) {
+  private def registerAsParquetTable(spark: SparkSession, df: Dataset[Row], name: String): Unit = {
     val path = new File(TEST_FILES_ROOT, s"$name.parquet").getAbsolutePath
     df.write
         .mode(SaveMode.Overwrite)
