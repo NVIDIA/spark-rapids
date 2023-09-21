@@ -18,15 +18,16 @@ package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
@@ -65,8 +66,8 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
       doFloatToIntCheck, stringToAnsiDate, Some(newToType))
 
   override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId, legacyCastToString,
-      stringToAnsiDate)
+    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId,
+      legacyCastComplexTypesToString, stringToAnsiDate)
 
 }
 
@@ -81,7 +82,6 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = cast.dataType
-  val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
 
   override def tagExprForGpu(): Unit = {
     recursiveTagExprForGpuCheck()
@@ -179,7 +179,71 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   override protected val needTimezoneTagging: Boolean = false
 }
 
-object GpuCast extends ToStringBase {
+trait CastOptions {
+  // The brackets that are used in casting structs and maps to strings
+  def leftBracket: String
+
+  def rightBracket: String
+
+  // The string value to use to represent null elements in array/struct/map.
+  def nullString: String
+
+  def useDecimalPlainString: Boolean
+
+  def useHexFormatForBinary: Boolean
+
+  def stringToDateAnsiModeEnabled: Boolean
+
+  def ansiMode: Boolean
+
+  def legacyCastComplexTypesToString: Boolean
+}
+
+object ToPrettyStringOptions extends CastOptions {
+  override def leftBracket: String = "{"
+
+  override def rightBracket: String = "}"
+
+  override def nullString: String = "NULL"
+
+  override def useDecimalPlainString: Boolean = true
+
+  override def useHexFormatForBinary: Boolean = true
+
+  override protected def stringToDateAnsiModeEnabled: Boolean = false
+
+  override def ansiMode: Boolean = false
+
+  override def legacyCastComplexTypesToString: Boolean = false
+}
+
+object DefaultCastOptions extends SparkConfCastOptions(false, false, false)
+
+object ArithmeticCastOptions {
+  def apply(failOnError: Boolean): SparkConfCastOptions =
+    new SparkConfCastOptions(false, failOnError, false)
+}
+
+class SparkConfCastOptions(
+    override val legacyCastComplexTypesToString: Boolean,
+    override val ansiMode: Boolean,
+    stringToDateAnsiMode: Boolean) extends CastOptions {
+
+  override val leftBracket: String = if (legacyCastComplexTypesToString) "[" else "{"
+
+  override val rightBracket: String = if (legacyCastComplexTypesToString) "]" else "}"
+
+  override val nullString: String = if (legacyCastComplexTypesToString) "" else "null"
+
+  override val useDecimalPlainString: Boolean = ansiMode
+
+  override val useHexFormatForBinary: Boolean = false
+
+  override val stringToDateAnsiModeEnabled: Boolean = stringToDateAnsiMode
+}
+
+object GpuCast {
+
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
   private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
   private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
@@ -202,29 +266,11 @@ object GpuCast extends ToStringBase {
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  private def ansiMode = SQLConf.get.getConf(SQLConf.ANSI_ENABLED)
-
-  private def legacyCastString = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
-
-  override protected def leftBracket: String = if (legacyCastString) "[" else "{"
-
-  override protected def rightBracket: String = if (legacyCastString) "]" else "}"
-
-  override protected def nullString: String = if (legacyCastString) "" else "null"
-
-  // In ANSI mode, Spark always uses plain string representation on casting Decimal values
-  // as strings. Otherwise, the casting may use scientific notation if an exponent is needed.
-  override protected def useDecimalPlainString: Boolean = ansiMode
-
-  override protected def useHexFormatForBinary: Boolean = false
-
   def doCast(
       input: ColumnView,
       fromDataType: DataType,
       toDataType: DataType,
-      ansiMode: Boolean = ansiMode,
-      legacyCastToString: Boolean = legacyCastString,
-      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+      options: CastOptions = DefaultCastOptions): ColumnVector = {
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
     }
@@ -240,7 +286,7 @@ object GpuCast extends ToStringBase {
       // Cast to String
       case (DateType | TimestampType | FloatType | DoubleType | BinaryType |
             _: DecimalType | _: ArrayType | _: MapType | _: StructType, StringType) =>
-        castToString(input, fromDataType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+        castToString(input, fromDataType, options)
 
 
       case (TimestampType, FloatType | DoubleType) =>
@@ -256,7 +302,7 @@ object GpuCast extends ToStringBase {
         withResource(input.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromInt(1000000)) { microsPerSec =>
             withResource(asLongs.floorDiv(microsPerSec, DType.INT64)) { cv =>
-              if (ansiMode) {
+              if (options.ansiMode) {
                 toDataType match {
                   case IntegerType =>
                     assertValuesInRange[Long](cv, Int.MinValue.toLong,
@@ -281,7 +327,7 @@ object GpuCast extends ToStringBase {
         }
 
       // ansi cast from larger-than-long integral-like types, to long
-      case (dt: DecimalType, LongType) if ansiMode =>
+      case (dt: DecimalType, LongType) if options.ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
         val min = BIG_DECIMAL_LONG_MIN.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
         val max = BIG_DECIMAL_LONG_MAX.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
@@ -313,7 +359,7 @@ object GpuCast extends ToStringBase {
         }
 
       // ansi cast from larger-than-integer integral-like types, to integer
-      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
+      case (LongType | _: DecimalType, IntegerType) if options.ansiMode =>
         fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Int.MinValue.toLong, Int.MaxValue.toLong)
@@ -324,7 +370,7 @@ object GpuCast extends ToStringBase {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
-      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
+      case (LongType | IntegerType | _: DecimalType, ShortType) if options.ansiMode =>
         fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Short.MinValue.toLong, Short.MaxValue.toLong)
@@ -337,7 +383,7 @@ object GpuCast extends ToStringBase {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
-      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if options.ansiMode =>
         fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Byte.MinValue.toLong, Byte.MaxValue.toLong)
@@ -352,7 +398,7 @@ object GpuCast extends ToStringBase {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
-      case (FloatType | DoubleType, ByteType) if ansiMode =>
+      case (FloatType | DoubleType, ByteType) if options.ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Byte.MinValue.toFloat, Byte.MaxValue.toFloat)
@@ -362,7 +408,7 @@ object GpuCast extends ToStringBase {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to short
-      case (FloatType | DoubleType, ShortType) if ansiMode =>
+      case (FloatType | DoubleType, ShortType) if options.ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Short.MinValue.toFloat, Short.MaxValue.toFloat)
@@ -372,7 +418,7 @@ object GpuCast extends ToStringBase {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to integer
-      case (FloatType | DoubleType, IntegerType) if ansiMode =>
+      case (FloatType | DoubleType, IntegerType) if options.ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Int.MinValue.toFloat, Int.MaxValue.toFloat)
@@ -382,7 +428,7 @@ object GpuCast extends ToStringBase {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to long
-      case (FloatType | DoubleType, LongType) if ansiMode =>
+      case (FloatType | DoubleType, LongType) if options.ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Long.MinValue.toFloat, Long.MaxValue.toFloat)
@@ -393,7 +439,7 @@ object GpuCast extends ToStringBase {
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
-        if (ansiMode && AnsiUtil.supportsAnsiCastFloatToTimestamp()) {
+        if (options.ansiMode && AnsiUtil.supportsAnsiCastFloatToTimestamp()) {
           // We are going through a util class because Spark 3.3.0+ throws an
           // exception if the float value is nan, +/- inf or out-of-range value,
           // where previously it didn't
@@ -423,9 +469,9 @@ object GpuCast extends ToStringBase {
           }
         }
       case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input, dt, ansiMode)
+        castFloatsToDecimal(input, dt, options.ansiMode)
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input, from, to, ansiMode)
+        castDecimalToDecimal(input, from, to, options.ansiMode)
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.castTo(DType.INT64)) { longs =>
@@ -456,49 +502,47 @@ object GpuCast extends ToStringBase {
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (StringType, ByteType | ShortType | IntegerType | LongType) =>
-        CastStrings.toInteger(input, ansiMode,
+        CastStrings.toInteger(input, options.ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, FloatType | DoubleType) =>
-        CastStrings.toFloat(input, ansiMode,
+        CastStrings.toFloat(input, options.ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, BooleanType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
-              castStringToBool(trimmed, ansiMode)
+              castStringToBool(trimmed, options.ansiMode)
             case DateType =>
-              if (stringToDateAnsiModeEnabled) {
-                castStringToDateAnsi(trimmed, ansiMode)
+              if (options.stringToDateAnsiModeEnabled) {
+                castStringToDateAnsi(trimmed, options.ansiMode)
               } else {
                 castStringToDate(trimmed)
               }
             case TimestampType =>
-              castStringToTimestamp(trimmed, ansiMode)
+              castStringToTimestamp(trimmed, options.ansiMode)
           }
         }
       case (StringType, dt: DecimalType) =>
-        CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
+        CastStrings.toDecimal(input, options.ansiMode, dt.precision, -dt.scale)
 
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
-        castIntegralsToDecimal(input, dt, ansiMode)
+        castIntegralsToDecimal(input, dt, options.ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
-          withResource(doCast(childView, nestedFrom, nestedTo,
-            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { childColumnVector =>
+          withResource(doCast(childView, nestedFrom, nestedTo, options)) { childColumnVector =>
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
           }
         }
 
       case (from: StructType, to: StructType) =>
-        castStructToStruct(from, to, input, ansiMode, legacyCastToString,
-          stringToDateAnsiModeEnabled)
+        castStructToStruct(from, to, input, options)
 
       case (from: MapType, to: MapType) =>
-        castMapToMap(from, to, input, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+        castMapToMap(from, to, input, options)
 
       case (dayTime: DataType, _: StringType) if GpuTypeShims.isSupportedDayTimeType(dayTime) =>
         GpuIntervalUtils.toDayTimeIntervalString(input, dayTime)
@@ -641,6 +685,321 @@ object GpuCast extends ToStringBase {
                 rangePredicate.ifElse(nullScalar, values)
               }
             }
+          }
+        }
+      }
+    }
+  }
+
+  def castToString(
+      input: ColumnView,
+      fromDataType: DataType, options: CastOptions): ColumnVector = fromDataType match {
+    case StringType => input.copyToColumnVector()
+    case DateType => input.asStrings("%Y-%m-%d")
+    case TimestampType => castTimestampToString(input)
+    case FloatType | DoubleType => castFloatingTypeToString(input)
+    case BinaryType => castBinToString(input, options.useHexFormatForBinary)
+    case _: DecimalType => GpuCastShims.CastDecimalToString(input, options.useDecimalPlainString)
+    case StructType(fields) => castStructToString(input, fields, options)
+
+    case ArrayType(elementType, _) =>
+      castArrayToString(input, elementType, options)
+      )
+    case from: MapType =>
+      castMapToString(input, from, options)
+    case _ =>
+      input.castTo(GpuColumnVector.getNonNestedRapidsType(StringType))
+  }
+
+  private def castTimestampToString(input: ColumnView): ColumnVector = {
+    // the complexity in this function is due to Spark's rules for truncating
+    // the fractional part of the timestamp string. Any trailing decimal place
+    // or zeroes should be truncated
+    // ".000000" -> ""
+    // ".000100" -> ".0001"
+    // ".100000" -> ".1"
+    // ".101010" -> ".10101"
+    withResource(input.castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
+      withResource(micros.asStrings("%Y-%m-%d %H:%M:%S.%6f")) { cv =>
+        // to keep code complexity down, do a first pass that
+        // removes ".000000" using simple string replace
+        val firstPass = withResource(Scalar.fromString(".000000")) { search =>
+          withResource(Scalar.fromString("")) { replace =>
+            cv.stringReplace(search, replace)
+          }
+        }
+        // now remove trailing zeroes from any remaining fractional parts
+        // the first group captures everything between
+        // the decimal point and the last non-zero digit
+        // the second group (non-capture) covers the remaining zeroes
+        withResource(firstPass) { _ =>
+          val prog = new RegexProgram("(\\.[0-9]*[1-9]+)(?:0+)?$")
+          firstPass.stringReplaceWithBackrefs(prog, "\\1")
+        }
+      }
+    }
+  }
+
+  /**
+   * A 5 steps solution for concatenating string array column. <p>
+   * Giving an input with 3 rows:
+   * `[ ["1", "2", null, "3"], [], null]` <p>
+   * When `legacyCastToString = true`: <p>
+   * Step 1: add space char in the front of all not-null elements:
+   * `[ [" 1", " 2", null, " 3"], [], null]` <p>
+   * step 2: cast `null` elements to their string representation :
+   * `[ [" 1", " 2", "", " 3"], [], null]`(here we use "" to represent null) <p>
+   * step 3: concatenate list elements, seperated by `","`:
+   * `[" 1, 2,, 3", null, null]` <p>
+   * step 4: remove the first char, if it is an `' '`:
+   * `["1, 2,, 3", null, null]` <p>
+   * step 5: replace nulls with empty string:
+   * `["1, 2,, 3", "", ""]` <p>
+   *
+   * when `legacyCastToString = false`, step 1, 4 are skipped
+   */
+  private def concatenateStringArrayElements(
+      input: ColumnView,
+      options: CastOptions,
+      castingBinaryData: Boolean = false): ColumnVector = {
+    val emptyStr = ""
+    val spaceStr = " "
+    val sepStr =
+      if (options.useHexFormatForBinary && castingBinaryData) spaceStr
+      else if (options.legacyCastComplexTypesToString) "," else ", "
+
+    withResource(
+      Seq(emptyStr, spaceStr, options.nullString, sepStr).safeMap(Scalar.fromString)
+    ) { case Seq(empty, space, nullRep, sep) =>
+
+      val withSpacesIfLegacy = if (!options.legacyCastComplexTypesToString) {
+        withResource(input.getChildColumnView(0)) {
+          _.replaceNulls(nullRep)
+        }
+      } else {
+        // add a space string to each non-null element
+        val (strChild, childNotNull, numElements) =
+          withResource(input.getChildColumnView(0)) { childCol =>
+            closeOnExcept(childCol.replaceNulls(nullRep)) {
+              (_, childCol.isNotNull(), childCol.getRowCount.toInt)
+            }
+          }
+        withResource(Seq(strChild, childNotNull)) { _ =>
+          val hasSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
+            ColumnVector.stringConcatenate(Array(spaceCol, strChild))
+          }
+          withResource(hasSpaces) {
+            childNotNull.ifElse(_, strChild)
+          }
+        }
+      }
+      val concatenated = withResource(withSpacesIfLegacy) { strChildCol =>
+        withResource(input.replaceListChild(strChildCol)) { strArrayCol =>
+          withResource(ColumnVector.fromScalar(sep, input.getRowCount.toInt)) {
+            strArrayCol.stringConcatenateListElements
+          }
+        }
+      }
+      val strCol = withResource(concatenated) {
+        _.replaceNulls(empty)
+      }
+      if (!options.legacyCastComplexTypesToString) {
+        strCol
+      } else {
+        // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
+        withResource(strCol) { _ =>
+          withResource(strCol.startsWith(space)) { startsWithSpace =>
+            withResource(strCol.substring(1)) { remain =>
+              startsWithSpace.ifElse(remain, strCol)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private def castArrayToString(input: ColumnView,
+      elementType: DataType,
+      options: CastOptions): ColumnVector = {
+
+    val (leftStr, rightStr) = ("[", "]")
+    val emptyStr = ""
+    val numRows = input.getRowCount.toInt
+
+    withResource(
+      Seq(leftStr, rightStr, emptyStr, options.nullString).safeMap(Scalar.fromString)
+    ) { case Seq(left, right, empty, nullRep) =>
+      val strChildContainsNull = withResource(input.getChildColumnView(0)) { child =>
+        castToString(child, elementType, options)
+      }
+
+      val concatenated = withResource(strChildContainsNull) { _ =>
+        withResource(input.replaceListChild(strChildContainsNull)) {
+          concatenateStringArrayElements(_, options)
+        }
+      }
+
+      // Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
+      val hasBrackets = withResource(concatenated) { _ =>
+        withResource(
+          Seq(left, right).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftColumn, rightColumn) =>
+          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, concatenated,
+            rightColumn))
+        }
+      }
+      withResource(hasBrackets) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+      }
+    }
+  }
+
+  private def castMapToString(
+      input: ColumnView,
+      from: MapType,
+      options: CastOptions): ColumnVector = {
+
+    val numRows = input.getRowCount.toInt
+    val (arrowStr, emptyStr, spaceStr) = ("->", "", " ")
+
+    // cast the key column and value column to string columns
+    val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
+      val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
+        castToString(keyColumn, from.keyType, options)
+      }
+      val strValue = closeOnExcept(strKey) { _ =>
+        withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
+          castToString(valueColumn, from.valueType, options)
+        }
+      }
+      (strKey, strValue)
+    }
+
+    // concatenate the key-value pairs to string
+    // Example: ("key", "value") -> "key -> value"
+    withResource(
+      Seq(options.leftBracket,
+        options.rightBracket,
+        arrowStr,
+        emptyStr,
+        options.nullString,
+        spaceStr).safeMap(Scalar.fromString)
+    ) { case Seq(leftScalar, rightScalar, arrowScalar, emptyScalar, nullScalar, spaceScalar) =>
+      val strElements = withResource(Seq(strKey, strValue)) { case Seq(strKey, strValue) =>
+        val numElements = strKey.getRowCount.toInt
+        withResource(Seq(spaceScalar, arrowScalar).safeMap(ColumnVector.fromScalar(_, numElements))
+        ) { case Seq(spaceCol, arrowCol) =>
+          if (options.legacyCastComplexTypesToString) {
+            withResource(
+              spaceCol.mergeAndSetValidity(BinaryOp.BITWISE_AND, strValue)
+            ) { spaceBetweenSepAndVal =>
+              ColumnVector.stringConcatenate(
+                emptyScalar, nullScalar,
+                Array(strKey, spaceCol, arrowCol, spaceBetweenSepAndVal, strValue))
+            }
+          } else {
+            ColumnVector.stringConcatenate(
+              emptyScalar, nullScalar, Array(strKey, spaceCol, arrowCol, spaceCol, strValue))
+          }
+        }
+      }
+
+      // concatenate elements
+      val strCol = withResource(strElements) { _ =>
+        withResource(input.replaceListChild(strElements)) {
+          concatenateStringArrayElements(_, options)
+        }
+      }
+      val resPreValidityFix = withResource(strCol) { _ =>
+        withResource(
+          Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftCol, rightCol) =>
+          ColumnVector.stringConcatenate(
+            emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))
+        }
+      }
+      withResource(resPreValidityFix) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+      }
+    }
+  }
+
+  private def castStructToString(
+      input: ColumnView,
+      inputSchema: Array[StructField],
+      options: CastOptions): ColumnVector = {
+
+    val emptyStr = ""
+    val separatorStr = if (options.legacyCastComplexTypesToString) "," else ", "
+    val spaceStr = " "
+    val numRows = input.getRowCount.toInt
+    val numInputColumns = input.getNumChildren
+
+    def doCastStructToString(
+        emptyScalar: Scalar,
+        nullScalar: Scalar,
+        sepColumn: ColumnVector,
+        spaceColumn: ColumnVector,
+        leftColumn: ColumnVector,
+        rightColumn: ColumnVector): ColumnVector = {
+      withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+        // legacy: [firstCol
+        //   3.1+: {firstCol
+        columns += leftColumn.incRefCount()
+        withResource(input.getChildColumnView(0)) { firstColumnView =>
+          columns += castToString(firstColumnView, inputSchema.head.dataType, options)
+        }
+        for (nonFirstIndex <- 1 until numInputColumns) {
+          withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
+            // legacy: ","
+            //   3.1+: ", "
+            columns += sepColumn.incRefCount()
+            val nonFirstColumn = castToString(nonFirstColumnView,
+              inputSchema(nonFirstIndex).dataType, options)
+            if (options.legacyCastComplexTypesToString) {
+              // " " if non-null
+              columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
+            }
+            columns += nonFirstColumn
+          }
+        }
+
+        columns += rightColumn.incRefCount()
+        withResource(ColumnVector.stringConcatenate(emptyScalar, nullScalar, columns.toArray))(
+          _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+        )
+      }
+    }
+    val scalars = Seq(emptyStr, options.nullString, separatorStr, spaceStr, options.leftBracket,
+      options.rightBracket)
+    withResource(scalars.safeMap(Scalar.fromString)) {
+      case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
+
+        withResource(
+          columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
+        ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
+
+          doCastStructToString(emptyScalar, nullScalar, sepColumn,
+            spaceColumn, leftColumn, rightColumn)
+        }
+    }
+  }
+
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+    withResource(input.castTo(DType.STRING)) { cudfCast =>
+
+      // replace "e+" with "E"
+      val replaceExponent = withResource(Scalar.fromString("e+")) { cudfExponent =>
+        withResource(Scalar.fromString("E")) { sparkExponent =>
+          cudfCast.stringReplace(cudfExponent, sparkExponent)
+        }
+      }
+
+      // replace "Inf" with "Infinity"
+      withResource(replaceExponent) { replaceExponent =>
+        withResource(Scalar.fromString("Inf")) { cudfInf =>
+          withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
+            replaceExponent.stringReplace(cudfInf, sparkInfinity)
           }
         }
       }
@@ -923,20 +1282,16 @@ object GpuCast extends ToStringBase {
       from: MapType,
       to: MapType,
       input: ColumnView,
-      ansiMode: Boolean,
-      legacyCastToString: Boolean,
-      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+      options: CastOptions): ColumnVector = {
     // For cudf a map is a list of (key, value) structs, but lets keep it in ColumnView as much
     // as possible
     withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        doCast(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
-          stringToDateAnsiModeEnabled)
+        doCast(keyColumn, from.keyType, to.keyType, options)
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          doCast(valueColumn, from.valueType, to.valueType,
-            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+          doCast(valueColumn, from.valueType, to.valueType, options)
         }
         withResource(castValue) { castValue =>
           withResource(ColumnView.makeStructView(castKey, castValue)) { castKvStructColumn =>
@@ -955,17 +1310,13 @@ object GpuCast extends ToStringBase {
       from: StructType,
       to: StructType,
       input: ColumnView,
-      ansiMode: Boolean,
-      legacyCastToString: Boolean,
-      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+      options: CastOptions): ColumnVector = {
     withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
       from.indices.foreach { index =>
         childColumns += doCast(
           input.getChildColumnView(index),
           from(index).dataType,
-          to(index).dataType,
-          ansiMode,
-          legacyCastToString, stringToDateAnsiModeEnabled)
+          to(index).dataType, options)
       }
       withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
         if (input.getNullCount == 0) {
@@ -976,6 +1327,31 @@ object GpuCast extends ToStringBase {
               isNull.ifElse(nullVal, casted)
             }
           }
+        }
+      }
+    }
+  }
+
+  private def castBinToString(input: ColumnView, options: CastOptions): ColumnVector = {
+    if (options.useHexFormatForBinary) {
+      withResource(input.getChildColumnView(0)) { dataCol =>
+        withResource(CastStrings.fromIntegersWithBase(dataCol, 16)) { stringCol =>
+          withResource(input.replaceListChild(stringCol)) { cv =>
+            castArrayToString(cv, DataTypes.StringType, options)
+          }
+        }
+      }
+    } else {
+      // Spark interprets the binary as UTF-8 bytes. So the layout of the
+      // binary and the layout of the string are the same. We just need to play some games with
+      // the CPU side metadata to make CUDF think it is a String.
+      // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
+      // it back together again
+      withResource(input.getChildColumnView(0)) { dataCol =>
+        withResource(new ColumnView(DType.STRING, input.getRowCount,
+          Optional.of[java.lang.Long](input.getNullCount),
+          dataCol.getData, input.getValid, input.getOffsets)) { cv =>
+          cv.copyToColumnVector()
         }
       }
     }
@@ -1184,11 +1560,14 @@ case class GpuCast(
     dataType: DataType,
     ansiMode: Boolean = false,
     timeZoneId: Option[String] = None,
-    legacyCastToString: Boolean = false,
+    legacyCastComplexTypesToString: Boolean = false,
     stringToDateAnsiModeEnabled: Boolean = false)
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   import GpuCast._
+
+  private val options: CastOptions =
+    new SparkConfCastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled)
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
   override def hasSideEffects: Boolean = super.hasSideEffects || {
@@ -1255,6 +1634,5 @@ case class GpuCast(
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
-    doCast(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString,
-      stringToDateAnsiModeEnabled)
+    doCast(input.getBase, input.dataType(), dataType, options)
 }

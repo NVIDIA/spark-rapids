@@ -156,9 +156,10 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
       for (int i = 0; i < batch.numCols(); i++) {
         DataType expectedSparkType = SparkSchemaUtil.convert(expectedColumnTypes.get(i).type());
         GpuColumnVector oldColumn = columns[i];
-        columns[i] = GpuColumnVector.from(
-            GpuCast.doCast(oldColumn.getBase(), oldColumn.dataType(), expectedSparkType,
-            false, false, false), expectedSparkType);
+        columns[i] =
+            GpuColumnVector.from(
+            GpuCast.doCast(oldColumn.getBase(), oldColumn.dataType(), expectedSparkType),
+            expectedSparkType);
       }
       ColumnarBatch newBatch = new ColumnarBatch(columns, batch.numRows());
       columns = null;

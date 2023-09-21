@@ -38,11 +38,6 @@ class ToPrettyStringSuite extends GpuUnitTests {
       .eval(null).asInstanceOf[UTF8String].toString()
   }
 
-  private def asList(str: String): List[Byte] = {
-    val bytes: Array[Byte] = str.getBytes("UTF-8")
-    bytes.toList
-  }
-
   test("test show() BinaryType") {
     val dataType = DataTypes.BinaryType
     val stringData = "this is a string"
@@ -57,7 +52,10 @@ class ToPrettyStringSuite extends GpuUnitTests {
       val dt = new HostColumnVector.ListType(true,
         new HostColumnVector.BasicType(true, DType.UINT8))
       withResource(GpuColumnVector.from(
-        ColumnVector.fromLists(dt, Array(asList(stringData).asJava): _*), DataTypes.BinaryType)) {
+        ColumnVector.fromLists(
+          dt,
+          Array(stringData.getBytes("UTF-8").toList.asJava): _*),
+        DataTypes.BinaryType)) {
         binaryCol =>
           val batch = new ColumnarBatch(Array(binaryCol), 1)
           checkEvaluation(gpuToPrettyStr, expected0, batch)

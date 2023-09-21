@@ -460,7 +460,7 @@ case class GpuSecondsToTimestamp(child: Expression) extends GpuNumberToTimestamp
       }
     case DoubleType | FloatType =>
       (input: GpuColumnVector) => {
-        GpuCast.doCast(input.getBase, input.dataType, TimestampType, false, false, false)
+        GpuCast.doCast(input.getBase, input.dataType, TimestampType)
       }
     case dt: DecimalType =>
       (input: GpuColumnVector) => {
