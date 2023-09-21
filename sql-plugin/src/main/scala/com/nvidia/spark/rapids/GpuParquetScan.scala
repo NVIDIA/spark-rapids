@@ -378,7 +378,7 @@ object GpuParquetPartitionReaderFactoryBase {
 }
 
 // contains meta about all the blocks in a file
-case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
+case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     isCorrectedInt96RebaseMode: Boolean, isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean)
