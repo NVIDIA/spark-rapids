@@ -28,7 +28,7 @@ import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = None)
-  extends ShimUnaryExpression with GpuExpression with ToStringBase with TimeZoneAwareExpression {
+  extends ShimUnaryExpression with GpuExpression with TimeZoneAwareExpression {
 
   override lazy val resolved: Boolean = childrenResolved
 
@@ -42,20 +42,14 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
   override def withNewChildInternal(newChild: Expression): Expression =
     copy(child = newChild)
 
-  override protected def leftBracket: String = "{"
-
-  override protected def rightBracket: String = "}"
-
-  override protected def nullString: String = "NULL"
-
-  override protected def useDecimalPlainString: Boolean = true
-
-  override protected def useHexFormatForBinary: Boolean = true
-
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(child.columnarEval(batch)) { evaluatedCol =>
-      GpuColumnVector.from(castToString(evaluatedCol.getBase, evaluatedCol.dataType(), false, 
-        false, false), StringType)
+      GpuColumnVector.from(
+        GpuCast.doCast(
+          evaluatedCol.getBase,
+          evaluatedCol.dataType(),
+          StringType,
+          ToPrettyStringOptions), StringType)
     }
   }
 }

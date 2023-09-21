@@ -439,7 +439,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
     }
     withResource(ret) { ret =>
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ArithmeticCastOptions(failOnError)).
+        ArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
