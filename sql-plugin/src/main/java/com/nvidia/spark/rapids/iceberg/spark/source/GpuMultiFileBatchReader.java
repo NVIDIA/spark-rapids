@@ -379,6 +379,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       super();
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     protected FilePartitionReaderBase createRapidsReader(PartitionedFile[] pFiles,
         StructType partitionSchema) {
