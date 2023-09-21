@@ -205,7 +205,7 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     "date",
     "timestamp")
 
-  test("Statistics tests for Parquet files written by GPU, float/double") {
+  test("Statistics tests for Parquet files written by GPU, float/double, with NaN") {
     assume(false, "Blocked by https://github.com/rapidsai/cudf/issues/13948")
     assume(false, "Move to scale test")
 
@@ -234,6 +234,114 @@ class ParquetScaleTestSuite extends SparkQueryCompareTestSuite with Logging {
     //    val tab = gen.addTable("tab", schemaStr, rowsNum)
     //    tab("c01").setNullProbability(0.5)
     //    checkStats(tab)
+  }
+
+  test("Statistics tests for Parquet files written by GPU, float/double, without NaN") {
+    assume(true, "Move to scale test")
+    val schemaStr =
+      """
+      struct<
+        c01: float,
+        c02: double
+      >
+      """
+    val gen = DBGen()
+    val tab = gen.addTable("tab", schemaStr, rowsNum)
+    tab("c01").setValueGen(NonNaNFloatGenFunc())
+    tab("c02").setValueGen(NonNaNDoubleGenFunc())
+
+    def genDf(tab: TableGen): SparkSession => DataFrame = spark => tab.toDF(spark)
+
+    withTempPath { testDataFile =>
+      // Write test data to a file on CPU
+      writeScaleTestDataOnCpu(testDataFile, genDf(tab))
+
+      // write data and get stats on CPU
+      val cpuStats = withCpuSparkSession(getStats(testDataFile), sparkConf)
+      val cpuFileSize = testDataFile.listFiles(f => f.getName.endsWith(".parquet"))(0).length()
+
+      // write data and get stats on GPU
+      val gpuStats = withGpuSparkSession(getStats(testDataFile), sparkConf)
+      val gpuFileSize = testDataFile.listFiles(f => f.getName.endsWith(".parquet"))(0).length()
+
+      // compare schema
+      assertResult(cpuStats.schema)(gpuStats.schema)
+
+      // Check the Gpu file size is not too large.
+      assert(gpuFileSize < 2 * cpuFileSize)
+
+      /**
+       *
+       * CPU stat:
+       *
+       * ParquetStat(WrappedArray([c01] optional float c01, [c02] optional double c02),
+       * WrappedArray(RowGroupStat(1000000,
+       * WrappedArray(
+       * ColumnChunkStat(optional float c01,
+       *   min = 0.0, max = 0.0,
+       *   hasNonNullValue = false,
+       *   isNumNullsSet = true,
+       *   numNulls = 500532),
+       * ColumnChunkStat(optional double c02,
+       *   min = 0.0,
+       *   max = 0.0,
+       *   hasNonNullValue = false,
+       *   isNumNullsSet = true,
+       *   numNulls = 498986)))))
+       *
+       * GPU stat:
+       *
+       * ParquetStat(WrappedArray([c01] optional float c01, [c02] optional double c02),
+       * WrappedArray(RowGroupStat(1000000,
+       * WrappedArray(
+       * ColumnChunkStat(optional float c01,
+       *   min = -3.4026107E38,
+       *   max = 3.4015179E38,
+       *   hasNonNullValue = true,
+       *   isNumNullsSet = true,
+       *   numNulls = 500532),
+       * ColumnChunkStat(optional double c02,
+       *   min = -1.7xxxxxE308,
+       *   max = 1.7xxxxE308,
+       *   hasNonNullValue = true,
+       *   isNumNullsSet = true,
+       *   numNulls = 498986)))))
+       *
+       * There are differences between CPU and GPU:
+       * CPU hasNonNullValue is false, CPU min/max is 0.0
+       */
+      assert(cpuStats.rowGroupStats.length == gpuStats.rowGroupStats.length)
+      assert(cpuStats.rowGroupStats(0).columnStats(0).isNumNullsSet ==
+          gpuStats.rowGroupStats(0).columnStats(0).isNumNullsSet)
+      assert(cpuStats.rowGroupStats(0).columnStats(1).isNumNullsSet ==
+          gpuStats.rowGroupStats(0).columnStats(1).isNumNullsSet)
+      assert(cpuStats.rowGroupStats(0).columnStats(0).numNulls ==
+          gpuStats.rowGroupStats(0).columnStats(0).numNulls)
+      assert(cpuStats.rowGroupStats(0).columnStats(1).numNulls ==
+          gpuStats.rowGroupStats(0).columnStats(1).numNulls)
+
+      // write by GPU, read min/max by CPU
+      val (floatMin, floatMax, doubleMin, doubleMax) = withTempPath { gpuFile =>
+        withGpuSparkSession(spark => {
+          // Read from the testing Parquet file and then write to a Parquet file
+          spark.read.parquet(testDataFile.getAbsolutePath).coalesce(1)
+              .write.mode("overwrite").parquet(gpuFile.getAbsolutePath)
+        })
+
+        val rowArray = withCpuSparkSession(spark => {
+          // Read from the testing Parquet file and then write to a Parquet file
+          spark.read.parquet(gpuFile.getAbsolutePath)
+              .selectExpr("min(c01)", "max(c01)", "min(c02)", "max(c02)").collect()
+        })
+
+        (rowArray(0)(0), rowArray(0)(1), rowArray(0)(2), rowArray(0)(3))
+      }
+
+      assertResult(floatMin)(gpuStats.rowGroupStats(0).columnStats(0).min)
+      assertResult(floatMax)(gpuStats.rowGroupStats(0).columnStats(0).max)
+      assertResult(doubleMin)(gpuStats.rowGroupStats(0).columnStats(1).min)
+      assertResult(doubleMax)(gpuStats.rowGroupStats(0).columnStats(1).max)
+    }
   }
 
   test("Statistics tests for Parquet files written by GPU, basic types") {

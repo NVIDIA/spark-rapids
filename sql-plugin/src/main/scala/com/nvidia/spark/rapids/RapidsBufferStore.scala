@@ -597,7 +597,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
 /**
  * Buffers that inherit from this type do not support changing the spillable status
- * of a `RapidsBuffer`. This is only used right now for disk and GDS.
+ * of a `RapidsBuffer`. This is only used right now for disk.
  * @param tier storage tier of this store
  */
 abstract class RapidsBufferStoreWithoutSpill(override val tier: StorageTier)
