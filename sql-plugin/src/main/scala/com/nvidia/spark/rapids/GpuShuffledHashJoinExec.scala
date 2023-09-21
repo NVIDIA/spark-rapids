@@ -253,7 +253,7 @@ object GpuShuffledHashJoinExec extends Logging {
   (Either[ColumnarBatch, Iterator[ColumnarBatch]], Iterator[ColumnarBatch]) = {
     val buildTime = coalesceMetrics(GpuMetric.BUILD_TIME)
     val buildTypes = buildOutput.map(_.dataType).toArray
-    closeOnExcept(new CloseableBufferedIterator(buildIter.buffered)) { bufBuildIter =>
+    closeOnExcept(new CloseableBufferedIterator(buildIter)) { bufBuildIter =>
       val startTime = System.nanoTime()
       // Batches type detection
       val isBuildSerialized = bufBuildIter.hasNext && isBatchSerialized(bufBuildIter.head)
@@ -401,7 +401,7 @@ object GpuShuffledHashJoinExec extends Logging {
     // will grab the semaphore when putting the first stream batch on the GPU, and
     // then we bring the build batch to the GPU and return.
     withResource(hostConcatResult) { _ =>
-      closeOnExcept(new CloseableBufferedIterator(streamIter.buffered)) { bufStreamIter =>
+      closeOnExcept(new CloseableBufferedIterator(streamIter)) { bufStreamIter =>
         withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
           if (bufStreamIter.hasNext) {
             bufStreamIter.head

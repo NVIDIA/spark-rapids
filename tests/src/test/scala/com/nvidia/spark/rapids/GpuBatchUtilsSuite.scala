@@ -158,7 +158,7 @@ class GpuBatchUtilsSuite extends AnyFunSuite {
     assert(GpuBatchUtils.estimateRowCount(200, 0, 1) == 1)
   }
 
-  private def compareEstimateWithActual(schema: StructType, rowCount: Int) {
+  private def compareEstimateWithActual(schema: StructType, rowCount: Int): Unit = {
     val rows = GpuBatchUtilsSuite.createRows(schema, rowCount)
     val estimate = GpuBatchUtils.estimateGpuMemory(schema, rows.length)
     val actual = calculateGpuMemory(schema, rows)

@@ -122,6 +122,25 @@ def test_split_re_no_limit():
             'split(a, "^[o]")'),
             conf=_regexp_conf)
 
+def test_split_with_dangling_brackets():
+    data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|{}]{1,2}){1,7}') \
+        .with_special_case('boo.and.foo') \
+        .with_special_case('boo?and?foo') \
+        .with_special_case('boo+and+foo') \
+        .with_special_case('boo^and^foo') \
+        .with_special_case('boo$and$foo') \
+        .with_special_case('boo|and|foo') \
+        .with_special_case('boo{and}foo') \
+        .with_special_case('boo$|and$|foo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, "[a-z]]")',
+            'split(a, "[boo]]]")',
+            'split(a, "[foo]}")',
+            'split(a, "[foo]}}")'),
+            conf=_regexp_conf)
+
+
 def test_split_optimized_no_re():
     data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|{}]{1,2}){1,7}') \
         .with_special_case('boo.and.foo') \
@@ -134,6 +153,11 @@ def test_split_optimized_no_re():
         .with_special_case('boo$|and$|foo')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, "]")',
+            'split(a, "]]")',
+            'split(a, "}")',
+            'split(a, "}}")',
+            'split(a, ",")',
             'split(a, "\\\\.")',
             'split(a, "\\\\?")',
             'split(a, "\\\\+")',
@@ -671,7 +695,7 @@ def test_regexp_replace_word():
 def test_predefined_character_classes():
     gen = mk_str_gen('[a-zA-Z]{0,2}[\r\n!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]{0,2}[0-9]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
+        lambda spark: unary_op_df(spark, gen, length=4096).selectExpr(
             'regexp_replace(a, "\\\\p{Lower}", "x")',
             'regexp_replace(a, "\\\\p{Upper}", "x")',
             'regexp_replace(a, "\\\\p{ASCII}", "x")',

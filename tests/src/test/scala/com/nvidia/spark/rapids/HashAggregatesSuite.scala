@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     batchSize: Int = 0,
     repart: Int = 1,
     maxFloatDiff: Double = 0.0)
-    (fn: DataFrame => DataFrame) {
+    (fn: DataFrame => DataFrame): Unit = {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
     }
