@@ -162,6 +162,20 @@ object ColumnarPartitionReaderWithPartitionValues {
    * Splits the numRows into multiple batches such that sum
    * of sizes does not exceed cudf limit
    *
+   * Example,
+   * Input:
+   *  numRows:    50
+   *  partValues: [ abc, abcdef ]
+   *
+   * Assume:
+   *  limit:      140 bytes
+   *
+   * Split Calculation:
+   *  Max Value Size: 6 (colIndex=2)
+   *  Need to split 3 times
+   *
+   * Result: [ 23, 23, 4 ]
+   *
    * @return An array of rows
    */
   private def splitPartitionIntoBatchesScalar(numRows: Int,

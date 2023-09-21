@@ -367,8 +367,29 @@ object MultiFileReaderUtils extends Logging {
    * Splits the (partRows, partValues) into multiple batches such that sum
    * of sizes does not exceed cudf limit
    *
+   * Example,
+   * Input:
+   *  partRows:   [ 10, 40, 70, 10, 11 ]
+   *  partValues: [ [abc, ab], [bc, ab], [abc, bc], [aa, cc], [ade, fd] ]
+   *
+   * Assume:
+   *  limit:      300 bytes
+   *
+   * Split Calculation:
+   *  At rowIndex = 2:
+   *  -> rollingSum(colIndex=0) = (10 * 3) + (40 * 2) = 110
+   *  -> rollingSum(colIndex=1) = (10 * 2) + (40 * 2) = 100
+   *  -> rollingSum(0) + (70 * 3) > 300
+   *  -> Hence, Split at index 2
+   *
+   * Result:
+   *    [
+   *      [ (10, [abc, ab]), (40, [bc, ab]), (50, [abc, bc]) ]
+   *      [ (20, [abc, bc]), (10, [aa, cc]), (11, [ade, fd]) ]
+   *    ]
+   *
    * @return An array of arrays, where each inner array contains
-   *         (row count, InternalRow) pairs for a batch.
+   *         (row count, InternalRow) pairs..
    */
   private def splitPartitionIntoBatches(partRows: Array[Long],
       partValues: Array[InternalRow],
