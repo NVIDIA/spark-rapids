@@ -672,10 +672,12 @@ def test_min_max_group_by(data_gen):
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).coalesce(1)
+        lambda spark: gen_df(spark, data_gen, length=100, num_slices=1)
             .groupby('a')
             .agg(f.collect_list('b')),
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower(),
+            # Disable RADIX sort as the CPU sort is not stable if it is
+            'spark.sql.sort.enableRadixSort': False,
             'spark.sql.shuffle.partitions': '1'})
 
 @ignore_order(local=True)
@@ -1201,7 +1203,9 @@ def test_groupby_first_last(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
-        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)))
+        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
+        # Disable RADIX sort as the CPU sort is not stable if it is
+        conf={'spark.sql.sort.enableRadixSort': False})
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _struct_only_nested_gens, ids=idfn)

@@ -62,7 +62,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = spy(new RapidsBufferCatalog(devStore))
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
@@ -102,7 +102,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) {
@@ -144,7 +144,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
@@ -288,7 +288,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) { hostStore =>
         devStore.setSpillStore(hostStore)
         withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
           hostStore.setSpillStore(diskStore)
@@ -340,7 +340,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     testBufferFileDeletion(canShareDiskPaths = true)
   }
 
-  class AlwaysFailingRapidsHostMemoryStore extends RapidsHostMemoryStore(0L){
+  class AlwaysFailingRapidsHostMemoryStore extends RapidsHostMemoryStore(Some(0L)){
     override def createBuffer(
         other: RapidsBuffer,
         catalog: RapidsBufferCatalog,
@@ -357,7 +357,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize)) {
+      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>

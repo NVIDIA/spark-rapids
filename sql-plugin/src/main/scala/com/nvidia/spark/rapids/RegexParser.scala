@@ -41,7 +41,8 @@ import com.nvidia.spark.rapids.RegexParser.toReadableString
  * - https://matt.might.net/articles/parsing-regex-with-recursive-descent/
  */
 class RegexParser(pattern: String) {
-  private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~"
+  // Note that [, ] and \ should be part of Punct, but they are handled separately
+  private val regexPunct = """!"#$%&'()*+,-./:;<=>?@^_`{|}~"""
   private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
       'b' -> '\b', 'e' -> '\u001b')
 
@@ -475,7 +476,7 @@ class RegexParser(pattern: String) {
         case "Punct" =>
           val res:ListBuffer[RegexCharacterClassComponent] =
               ListBuffer(regexPunct.map(RegexChar): _*)
-          res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'))
+          res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'), RegexEscaped('\\'))
         case "Graph" =>
           ListBuffer(getCharacters("Alnum"), getCharacters("Punct")).flatten
         case "Print" =>
@@ -1739,14 +1740,14 @@ sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
 sealed case class RegexGroup(capture: Boolean, term: RegexAST,
     val lookahead: Option[RegexLookahead])
     extends RegexAST {
-  def this(capture: Boolean, term: RegexAST) {
+  def this(capture: Boolean, term: RegexAST) = {
     this(capture, term, None)
   }
-  def this(capture: Boolean, term: RegexAST, position: Int) {
+  def this(capture: Boolean, term: RegexAST, position: Int) = {
     this(capture, term, None)
     this.position = Some(position)
   }
-  def this(capture: Boolean, term: RegexAST, position: Int, lookahead: Option[RegexLookahead]) {
+  def this(capture: Boolean, term: RegexAST, position: Int, lookahead: Option[RegexLookahead]) = {
     this(capture, term, lookahead)
     this.position = Some(position)
   }
@@ -1765,7 +1766,7 @@ sealed case class RegexGroup(capture: Boolean, term: RegexAST,
 }
 
 sealed case class RegexChoice(a: RegexAST, b: RegexAST) extends RegexAST {
-  def this(a: RegexAST, b: RegexAST, position: Int) {
+  def this(a: RegexAST, b: RegexAST, position: Int) = {
     this(a, b)
     this.position = Some(position)
   }
@@ -1774,7 +1775,7 @@ sealed case class RegexChoice(a: RegexAST, b: RegexAST) extends RegexAST {
 }
 
 sealed case class RegexRepetition(a: RegexAST, quantifier: RegexQuantifier) extends RegexAST {
-  def this(a: RegexAST, quantifier: RegexQuantifier, position: Int) {
+  def this(a: RegexAST, quantifier: RegexQuantifier, position: Int) = {
     this(a, quantifier)
     this.position = Some(position)
   }
@@ -1785,7 +1786,7 @@ sealed case class RegexRepetition(a: RegexAST, quantifier: RegexQuantifier) exte
 sealed trait RegexQuantifier extends RegexAST
 
 sealed case class SimpleQuantifier(ch: Char) extends RegexQuantifier {
-  def this(ch: Char, position: Int) {
+  def this(ch: Char, position: Int) = {
     this(ch)
     this.position = Some(position)
   }
@@ -1795,7 +1796,7 @@ sealed case class SimpleQuantifier(ch: Char) extends RegexQuantifier {
 
 sealed case class QuantifierFixedLength(length: Int)
     extends RegexQuantifier {
-  def this(length: Int, position: Int) {
+  def this(length: Int, position: Int) = {
     this(length)
     this.position = Some(position)
   }
@@ -1807,7 +1808,7 @@ sealed case class QuantifierFixedLength(length: Int)
 
 sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int])
     extends RegexQuantifier{
-  def this(minLength: Int, maxLength: Option[Int], position: Int) {
+  def this(minLength: Int, maxLength: Option[Int], position: Int) = {
     this(minLength, maxLength)
     this.position = Some(position)
   }
@@ -1825,7 +1826,7 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
 sealed trait RegexCharacterClassComponent extends RegexAST
 
 sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
-  def this(a: String, position: Int) {
+  def this(a: String, position: Int) = {
     this(a)
     this.position = Some(position)
   }
@@ -1842,7 +1843,7 @@ sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent 
 }
 
 sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent {
-  def this(a: String, position: Int) {
+  def this(a: String, position: Int) = {
     this(a)
     this.position = Some(position)
   }
@@ -1853,7 +1854,7 @@ sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent
 }
 
 sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
-  def this(ch: Char, position: Int) {
+  def this(ch: Char, position: Int) = {
     this(ch)
     this.position = Some(position)
   }
@@ -1862,7 +1863,7 @@ sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent {
-  def this(a: Char, position: Int) {
+  def this(a: Char, position: Int) = {
     this(a)
     this.position = Some(position)
   }
@@ -1873,7 +1874,9 @@ sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent {
 sealed case class RegexCharacterRange(start: RegexCharacterClassComponent,
     end: RegexCharacterClassComponent)
   extends RegexCharacterClassComponent{
-  def this(start: RegexCharacterClassComponent, end: RegexCharacterClassComponent, position: Int) {
+  def this(start: RegexCharacterClassComponent,
+           end: RegexCharacterClassComponent,
+           position: Int) = {
     this(start, end)
     this.position = Some(position)
   }
@@ -1889,7 +1892,7 @@ sealed case class RegexCharacterClass(
   def this (
       negated: Boolean,
       characters: ListBuffer[RegexCharacterClassComponent],
-      position: Int) {
+      position: Int) = {
     this(negated, characters)
     this.position = Some(position)
   }
@@ -1946,7 +1949,7 @@ sealed case class RegexCharacterClass(
 }
 
 sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAST {
-  def this(num: Int, isNew: Boolean, position: Int) {
+  def this(num: Int, isNew: Boolean, position: Int) = {
     this(num, isNew)
     this.position = Some(position)
   }
@@ -1956,7 +1959,7 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
     var numCaptureGroups: Int = 0) extends RegexAST {
-  def this(parts: ListBuffer[RegexAST], numCaptureGroups: Int, position: Int) {
+  def this(parts: ListBuffer[RegexAST], numCaptureGroups: Int, position: Int) = {
     this(parts, numCaptureGroups)
     this.position = Some(position)
   }

@@ -2250,7 +2250,7 @@ object SupportedOpsForTools {
     }
   }
 
-  private def outputSupportIO() {
+  private def outputSupportIO(): Unit = {
     // Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
     val conf = new RapidsConf(Map.empty[String, String])

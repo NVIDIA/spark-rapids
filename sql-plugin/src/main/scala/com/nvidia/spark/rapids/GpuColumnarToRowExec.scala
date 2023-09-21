@@ -223,7 +223,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     streamTime: GpuMetric,
     nullSafe: Boolean = false,
-    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] {
+    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] with AutoCloseable {
   // GPU batches read in must be closed by the receiver (us)
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null
@@ -240,6 +240,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
       closeCurrentBatch()
     }
   }
+
+  override def close(): Unit = closeCurrentBatch()
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {
