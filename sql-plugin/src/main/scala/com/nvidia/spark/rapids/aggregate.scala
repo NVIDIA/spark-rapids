@@ -82,17 +82,6 @@ object AggregateUtils {
     }
   }
 
-  // This can be removed when all of our sorting is stable by default
-  // https://github.com/NVIDIA/spark-rapids/issues/9275
-  def isAllowedForUnstableSortedAgg(aggExprs: Seq[AggregateExpression]): Boolean = {
-    aggExprs.map(e => e.aggregateFunction).forall {
-      // These aggregations depend on the input order, so we cannot do an out of core sort and
-      // have it match.
-      case _: First | _: Last | _: CollectList => false
-      case _ => true
-    }
-  }
-
   /**
    * Computes a target input batch size based on the assumption that computation can consume up to
    * 4X the configured batch size.
@@ -1190,8 +1179,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     lazy val aggModes = agg.aggregateExpressions.map(_.mode).toSet
     lazy val canUsePartialSortAgg = aggModes.forall { mode =>
       mode == Partial || mode == PartialMerge
-    } && agg.groupingExpressions.nonEmpty && // Don't do this for a reduce...
-        AggregateUtils.isAllowedForUnstableSortedAgg(agg.aggregateExpressions)
+    } && agg.groupingExpressions.nonEmpty // Don't do this for a reduce...
 
     lazy val groupingCanBeSorted = agg.groupingExpressions.forall { expr =>
       orderable.isSupportedByPlugin(expr.dataType)

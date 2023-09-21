@@ -1194,7 +1194,6 @@ def test_collect_empty():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("select collect_set(null)"))
 
-#@pytest.mark.parametrize('data_gen', [StringGen("[A-I][A-I]")], ids=idfn)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_groupby_first_last(data_gen):
