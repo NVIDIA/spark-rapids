@@ -61,7 +61,7 @@
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
-            <classifier>${cuda.version}</classifier>
+            <classifier>${jni.classifier}</classifier>
         </dependency>
         <!-- use aggregator jar because accessing internal classes -->
         <dependency>
