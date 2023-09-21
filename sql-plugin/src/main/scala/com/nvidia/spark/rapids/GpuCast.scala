@@ -787,6 +787,7 @@ object GpuCast {
       elementType: DataType,
       options: CastOptions): ColumnVector = {
 
+    // We use square brackets for arrays regardless 
     val (leftStr, rightStr) = ("[", "]")
     val emptyStr = ""
     val numRows = input.getRowCount.toInt
