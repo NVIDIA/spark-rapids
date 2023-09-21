@@ -32,6 +32,7 @@ import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
+import com.nvidia.spark.rapids.shims.ParquetFieldIdShims
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
@@ -210,6 +211,10 @@ class GpuOptimisticTransaction(
 
       val hadoopConf = spark.sessionState.newHadoopConfWithOptions(
         metadata.configuration ++ deltaLog.options)
+      if (metadata.columnMappingMode == IdMapping) {
+        // Need Parquet field IDs when doing column ID mapping
+        ParquetFieldIdShims.setWriteIdOverride(hadoopConf, true)
+      }
 
       if (spark.conf.get(DeltaSQLConf.DELTA_HISTORY_METRICS_ENABLED)) {
         val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
