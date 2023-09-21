@@ -337,96 +337,87 @@ object MultiFileReaderUtils extends Logging {
     }
   }
 
-  /**
-   * Calculates the sizes of each element in the `partValues` array based on the
-   * provided `partSchema`.
-   *
-   * @return An array of sequences representing the sizes of each cell in bytes.
-   */
-  private def calculateRowSizes(partValues: Array[InternalRow],
-      partSchema: StructType): Array[Seq[Long]] = {
-    partValues.map { valueRow =>
-      partSchema.zipWithIndex.map {
-        case (field, colIndex) =>
-          // Calculate the size of only StringType
-          field.dataType match {
-            case StringType =>
-              val stringValue = valueRow.getString(colIndex)
-              stringValue.getBytes("UTF-8").length.toLong
-            case _ => 0L
+  private def buildPartitionsColumns(partRowNumsAndValues: Array[(Long, InternalRow)],
+      partSchema: StructType): Array[GpuColumnVector] = {
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
+      for ((field, colIndex) <- partSchema.zipWithIndex) {
+        val dataType = field.dataType
+        withResource(new Array[ColumnVector](partRowNumsAndValues.length)) { onePartCols =>
+          partRowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
+            val singleValue = valueRow.get(colIndex, dataType)
+            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
+              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
+            }
           }
+          val res = if(onePartCols.length > 1) {
+            ColumnVector.concatenate(onePartCols: _*)
+          } else {
+            onePartCols.head
+          }
+          partsCols(colIndex) = GpuColumnVector.from(res, field.dataType)
+        }
       }
+      partsCols
     }
   }
 
   /**
-   * Splits the partitions into two batches ensuring that each partition's
-   * cumulative size does not exceed cuDF limit.
+   * Splits the (partRows, partValues) into multiple batches such that sum
+   * of sizes does not exceed cudf limit
    *
-   * @return An optional of SplitPartitionInfo containing the split index and
-   *         the new partition row numbers.
+   * @return An array of arrays, where each inner array contains
+   *         (row count, InternalRow) pairs for a batch.
    */
   private def splitPartitionIntoBatches(partRows: Array[Long],
-      partValues: Array[InternalRow], partSchema: StructType): Option[SplitPartitionInfo] = {
-    // Calculate the sizes of each cell in the input data
-    val rowSizes = calculateRowSizes(partValues, partSchema)
+      partValues: Array[InternalRow],
+      partSchema: StructType): Array[Array[(Long, InternalRow)]] = {
     val cuDFLimit = (1L << 31) - 1
-    // Initialize an array to keep track of rolling sums for each column
-    val rollingSum = Array.fill[Long](partSchema.length)(0L)
-    // Initialize an option to store the new partition rows
-    var newPartitionInfo: Option[SplitPartitionInfo] = None
+    val partitionInfo = ArrayBuffer[Array[(Long, InternalRow)]]()
+    val currentPartitionInfo = ArrayBuffer[(Long, InternalRow)]()
+    val rollingSum = mutable.HashMap.empty[Int, Long]
 
-    partRows.zip(rowSizes).zipWithIndex.takeWhile {
-      case ((rowNum, rowSizeSeq), rowIndex) =>
-        rowSizeSeq.zipWithIndex.forall {
-          case (size, index) =>
-            val partColSize = rowNum * size
-
-            // Check if adding the cell size exceeds the cuDFLimit
-            if (rollingSum(index) + partColSize > cuDFLimit) {
-              // TODO: Need to add loop instead of splitting in two parts
-              // Calculate the size of the new partition for the current column
-              val newPartColSize = cuDFLimit - rollingSum(index)
-              val newPartLeftRowNum = newPartColSize / size
-              val newPartRightRowNum = rowNum - newPartLeftRowNum
-
-              // Store the split index and the new partition row numbers
-              newPartitionInfo = Some(SplitPartitionInfo(rowIndex, Array(newPartLeftRowNum.toInt,
-                newPartRightRowNum.toInt)))
-              false // Stop processing further rows
-            } else {
-              // Update the rolling sum for the current column
-              rollingSum(index) += partColSize
-              true // Continue processing next rowSizeSeq
-            }
-        }
-        // Continue processing next partRow until newPartitionInfo is defined
-        newPartitionInfo.isEmpty
+    // Updates the current partition and resets rollingSum
+    def updateCurrentPartition(newRowNums: Long, valueRow: InternalRow): Unit = {
+      currentPartitionInfo(currentPartitionInfo.length - 1) = (newRowNums, valueRow)
+      partitionInfo.append(currentPartitionInfo.toArray)
+      currentPartitionInfo.clear()
+      rollingSum.clear()
     }
-    newPartitionInfo
-  }
 
+    var rowIndex = 0
+    while (rowIndex < partRows.length) {
+      val rowNum = partRows(rowIndex)
+      val valueRow = partValues(rowIndex)
+      currentPartitionInfo.append((rowNum, valueRow))
+      partSchema.zipWithIndex.foreach {
+        case (field, colIndex) if field.dataType == StringType =>
+          val valueSize = valueRow.getString(colIndex).getBytes("UTF-8").length.toLong
+          val remainingSpace = cuDFLimit - rollingSum.getOrElseUpdate(colIndex, 0)
+          if (remainingSpace < rowNum * valueSize) {
+            val newRowNums = remainingSpace / valueSize
+            updateCurrentPartition(newRowNums, valueRow)
+            partRows(rowIndex) -= newRowNums
+            rowIndex -= 1 // Decrement rowIndex to reprocess the current row with remaining space
+          } else {
+            rollingSum(colIndex) += rowNum * valueSize
+          }
+        case _ =>
+          // do nothing for other data types
+      }
+      rowIndex += 1
+    }
+    if (currentPartitionInfo.nonEmpty) {
+      partitionInfo.append(currentPartitionInfo.toArray)
+    }
+    partitionInfo.toArray
+  }
 
   private def buildPartitionsColumnsBatch(partRows: Array[Long], partValues: Array[InternalRow],
       partSchema: StructType): Array[Array[GpuColumnVector]] = {
-    splitPartitionIntoBatches(partRows, partValues, partSchema) match {
-      case Some(SplitPartitionInfo(splitIndex, splitRowNums)) =>
-        val (newLeftRowsNum, newRightRowsNum) = (splitRowNums(0), splitRowNums(1))
-        // Split the data into left and right partitions.
-        val (leftRows, rightRows) = partRows.splitAt(splitIndex)
-        val (leftValues, rightValues) = partValues.splitAt(splitIndex)
-
-        // Build and return seq for left and right partitions.
-        val leftResult = buildPartitionsColumns(leftRows :+ newLeftRowsNum.toLong,
-          leftValues :+ rightValues.head, partSchema)
-        val rightResult = buildPartitionsColumns(newRightRowsNum.toLong +: rightRows.tail,
-          rightValues, partSchema)
-        Array(leftResult, rightResult)
-
-      case None =>
-        // If no split is needed, return an seq for the whole data as a single partition.
-        Array(buildPartitionsColumns(partRows, partValues, partSchema))
-    }
+    splitPartitionIntoBatches(partRows, partValues, partSchema)
+      .map(buildPartitionsColumns(_, partSchema))
   }
 }
 

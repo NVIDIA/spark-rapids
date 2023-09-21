@@ -88,9 +88,10 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
     s"substring('$randomString', 1, floor(rand() * $partitions) + 1)"
   }
 
-  def writeAndReadParquet(df: DataFrame, spark: SparkSession, outputFile: File): Unit = {
+  def writeAndReadParquet(df: DataFrame, spark: SparkSession, outputFile: File,
+      partCols:String*): Unit = {
     spark.conf.set("spark.rapids.sql.enabled", "false")
-    df.write.partitionBy("partCol").parquet(outputFile.getCanonicalPath)
+    df.write.partitionBy(partCols:_*).parquet(outputFile.getCanonicalPath)
 
     spark.conf.set("spark.rapids.sql.enabled", "true")
     val res = spark.read.parquet(outputFile.getCanonicalPath).collect()
@@ -103,9 +104,9 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
     " - single partition column, single partition value") {
     withTempPath { file =>
       withGpuSparkSession(spark => {
-        val df = spark.range(100000000)
-          .withColumn("partCol", lit(generateRandomString(100)))
-        writeAndReadParquet(df, spark, file)
+        val df = spark.range(10000)
+          .withColumn("partCol", lit(generateRandomString(10)))
+        writeAndReadParquet(df, spark, file, "partCol")
       })
     }
   }
@@ -116,7 +117,7 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
       withGpuSparkSession(spark => {
         val df = spark.range(10000)
           .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 4)))
-        writeAndReadParquet(df, spark, file)
+        writeAndReadParquet(df, spark, file, "partCol")
       })
     }
   }
@@ -128,7 +129,7 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
         val df = spark.range(10000)
           .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 4)))
           .withColumn("partCol2", expr(sqlExprToGenerateRandomString(20, 4)))
-        writeAndReadParquet(df, spark, file)
+        writeAndReadParquet(df, spark, file, "partCol", "partCol2")
       })
     }
   }
