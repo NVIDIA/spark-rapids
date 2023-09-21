@@ -798,9 +798,15 @@ def test_conv_dec_to_from_hex(from_base, to_base, pattern):
         conf={'spark.rapids.sql.expression.Conv': True}
     )
 
-def test_format_number_integer():
-    gen = float_gen
+format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0), 
+                                      DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5), 
+                                      DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10), 
+                                      DecimalGen(precision=38, scale=-10)]
+
+@pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
+def test_format_number(data_gen):
+    gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen, length=15).selectExpr(
-            'format_number(a, 4)')
+        lambda spark: unary_op_df(spark, gen, length=100).selectExpr(
+            'format_number(a, 0)')
     )
