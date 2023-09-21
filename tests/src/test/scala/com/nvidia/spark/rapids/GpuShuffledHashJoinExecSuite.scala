@@ -55,9 +55,7 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
       optimalCase: Boolean = false)
       (verifyBuiltData: Either[ColumnarBatch, Iterator[ColumnarBatch]] => Unit): Unit = {
     val mockStreamIter = mock[Iterator[ColumnarBatch]]
-    val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
-    when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
-    when(mockBufferedStreamIterator.hasNext).thenReturn(true)
+    when(mockStreamIter.hasNext).thenReturn(true)
     val (builtData, _) = GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(
       buildIter,
       mockStreamIter,
@@ -68,11 +66,12 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
     verifyBuiltData(builtData)
     // build iterator should be drained
     assertResult(expected = false)(buildIter.hasNext)
-    verify(mockStreamIter, times(0)).hasNext
     if (optimalCase) {
-      verify(mockStreamIter, times(1)).buffered
-      verify(mockBufferedStreamIterator, times(1)).hasNext
-      verify(mockBufferedStreamIterator, times(1)).head
+      verify(mockStreamIter, times(1)).hasNext
+      verify(mockStreamIter, times(1)).next
+    } else {
+      verify(mockStreamIter, times(0)).hasNext
+      verify(mockStreamIter, times(0)).next
     }
   }
 

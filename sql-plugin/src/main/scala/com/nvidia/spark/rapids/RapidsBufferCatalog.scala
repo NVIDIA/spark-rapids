@@ -702,7 +702,6 @@ object RapidsBufferCatalog extends Logging {
   private var hostStorage: RapidsHostMemoryStore = _
   private var diskBlockManager: RapidsDiskBlockManager = _
   private var diskStorage: RapidsDiskStore = _
-  private var gdsStorage: RapidsGdsStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
   private var _shouldUnspill: Boolean = _
   private var _singleton: RapidsBufferCatalog = null
@@ -776,31 +775,25 @@ object RapidsBufferCatalog extends Logging {
       rapidsConf.chunkedPackBounceBufferSize,
       rapidsConf.spillToDiskBounceBufferSize)
     diskBlockManager = new RapidsDiskBlockManager(conf)
-    if (rapidsConf.isGdsSpillEnabled) {
-      gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
-      deviceStorage.setSpillStore(gdsStorage)
+    val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
+      // Disable the limit because it is handled by the RapidsHostMemoryStore
+      None
+    } else if (rapidsConf.hostSpillStorageSize == -1) {
+      // + 1 GiB by default to match backwards compatibility
+      Some(rapidsConf.pinnedPoolSize + (1024 * 1024 * 1024))
     } else {
-      val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
-        // Disable the limit because it is handled by the RapidsHostMemoryStore
-        None
-      } else if (rapidsConf.hostSpillStorageSize == -1) {
-        // + 1 GiB by default to match backwards compatibility
-        Some(rapidsConf.pinnedPoolSize + (1024 * 1024 * 1024))
-      } else {
-        Some(rapidsConf.hostSpillStorageSize)
-      }
-      hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize)
-      diskStorage = new RapidsDiskStore(diskBlockManager)
-      deviceStorage.setSpillStore(hostStorage)
-      hostStorage.setSpillStore(diskStorage)
+      Some(rapidsConf.hostSpillStorageSize)
     }
+    hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize)
+    diskStorage = new RapidsDiskStore(diskBlockManager)
+    deviceStorage.setSpillStore(hostStorage)
+    hostStorage.setSpillStore(diskStorage)
 
     logInfo("Installing GPU memory handler for spill")
     memoryEventHandler = new DeviceMemoryEventHandler(
       singleton,
       deviceStorage,
       rapidsConf.gpuOomDumpDir,
-      rapidsConf.isGdsSpillEnabled,
       rapidsConf.gpuOomMaxRetries)
 
     if (rapidsConf.sparkRmmStateEnable) {
@@ -855,10 +848,6 @@ object RapidsBufferCatalog extends Logging {
     if (diskStorage != null) {
       diskStorage.close()
       diskStorage = null
-    }
-    if (gdsStorage != null) {
-      gdsStorage.close()
-      gdsStorage = null
     }
   }
 
