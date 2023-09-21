@@ -284,7 +284,7 @@ private class HostAlloc(nonPinnedLimit: Long) {
   private def canNeverSucceed(amount: Long, preferPinned: Boolean): Boolean = {
     val pinnedFailed = (isPinnedOnly || preferPinned) && (amount > pinnedLimit)
     val nonPinnedFailed = isPinnedOnly || (amount > nonPinnedLimit)
-    pinnedFailed && nonPinnedFailed
+    !isUnlimited && pinnedFailed && nonPinnedFailed
   }
 
   private def checkSize(amount: Long, preferPinned: Boolean): Unit = {

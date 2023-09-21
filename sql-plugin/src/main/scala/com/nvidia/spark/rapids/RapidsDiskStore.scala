@@ -21,7 +21,7 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -192,7 +192,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       val path = id.getDiskPath(diskBlockManager)
       withResource(new FileInputStream(path)) { fis =>
         val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(fis)
-        val hostCols = closeOnExcept(hostBuffer) { _ =>
+        val hostCols = withResource(hostBuffer) { _ =>
           SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
         }
         new ColumnarBatch(hostCols.toArray, header.getNumRows)
