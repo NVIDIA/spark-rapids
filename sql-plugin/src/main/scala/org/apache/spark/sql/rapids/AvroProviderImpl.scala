@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ class AvroProviderImpl extends AvroProvider {
         (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
           override def tagSelfForGpu(): Unit = GpuAvroScan.tagSupport(this)
 
-          override def convertToGpu(): Scan =
+          override def convertToGpu(): GpuScan =
             GpuAvroScan(a.sparkSession,
               a.fileIndex,
               a.dataSchema,
@@ -112,14 +112,5 @@ class AvroProviderImpl extends AvroProvider {
               a.dataFilters)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-  }
-
-  def isSupportedScan(scan: Scan): Boolean = scan.isInstanceOf[GpuAvroScan]
-
-  def copyScanWithInputFileTrue(scan: Scan): Scan = scan match {
-    case avroScan: GpuAvroScan =>
-      avroScan.copy(queryUsesInputFile=true)
-    case _ =>
-      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
   }
 }

@@ -3619,7 +3619,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuCSVScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3636,7 +3636,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[JsonScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuJsonScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuJsonScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
