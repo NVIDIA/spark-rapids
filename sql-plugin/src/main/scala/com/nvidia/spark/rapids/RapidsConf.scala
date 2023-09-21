@@ -477,25 +477,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
-    .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
-      "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
-      "experimental feature. For more information on GDS, see " +
-      "https://docs.nvidia.com/gpudirect-storage/.")
-    .startupOnly()
-    .booleanConf
-    .createWithDefault(false)
-
-  val GDS_SPILL_BATCH_WRITE_BUFFER_SIZE =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size")
-    .doc("The size of the GPU memory buffer used to batch small buffers when spilling to GDS. " +
-        "Note that this buffer is mapped to the PCI Base Address Register (BAR) space, which may " +
-        "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and it is also used " +
-        "by UCX bounce buffers.")
-    .startupOnly()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.MiB.toBytes(8))
-
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -2288,10 +2269,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
-
-  lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
-
-  lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 

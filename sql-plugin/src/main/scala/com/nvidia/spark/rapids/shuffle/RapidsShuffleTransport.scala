@@ -32,7 +32,7 @@ trait TransactionCallback {
 }
 
 trait MemoryRegistrationCallback {
-  def apply(error: Option[Throwable] = None)
+  def apply(error: Option[Throwable] = None): Unit
 }
 
 /**
@@ -344,7 +344,7 @@ trait RapidsShuffleTransport extends AutoCloseable {
    * (throttle) Adds a set of requests to be throttled as limits allowed.
    * @param reqs requests to add to the throttle queue
    */
-  def queuePending(reqs: Seq[PendingTransferRequest])
+  def queuePending(reqs: Seq[PendingTransferRequest]): Unit
 
   /**
    * Cancel requests that are waiting in the queue (not in-flight) for a specific

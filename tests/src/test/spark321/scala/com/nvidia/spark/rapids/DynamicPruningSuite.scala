@@ -190,7 +190,7 @@ class DynamicPruningSuite
     factData(spark)
   }
 
-  private def dimData(spark: SparkSession) {
+  private def dimData(spark: SparkSession): Unit = {
     val schema = StructType(Seq(
       StructField("key", DataTypes.IntegerType, false),
       StructField("skey", DataTypes.IntegerType, false),
@@ -204,7 +204,7 @@ class DynamicPruningSuite
     ))
     registerAsParquetTable(spark, df, "dim", None)  }
 
-  private def factData(spark: SparkSession) {
+  private def factData(spark: SparkSession): Unit = {
     val schema = StructType(Seq(
       StructField("key", DataTypes.IntegerType, false),
       StructField("skey", DataTypes.IntegerType, false),
@@ -218,7 +218,7 @@ class DynamicPruningSuite
     registerAsParquetTable(spark, df, "fact", Some(List("key", "skey")))  }
 
   private def registerAsParquetTable(spark: SparkSession, df: Dataset[Row], name: String,
-      partitionBy: Option[Seq[String]]) {
+      partitionBy: Option[Seq[String]]): Unit = {
     val path = new File(TEST_FILES_ROOT, s"$name.parquet").getAbsolutePath
 
     partitionBy match {

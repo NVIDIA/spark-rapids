@@ -392,7 +392,7 @@ trait GpuOverridesListener {
   def optimizedPlan(
       plan: SparkPlanMeta[SparkPlan],
       sparkPlan: SparkPlan,
-      costOptimizations: Seq[Optimization])
+      costOptimizations: Seq[Optimization]): Unit
 }
 
 sealed trait FileFormatType

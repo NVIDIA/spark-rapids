@@ -61,7 +61,6 @@ object StorageTier extends Enumeration {
   val DEVICE: StorageTier = Value(0, "device memory")
   val HOST: StorageTier = Value(1, "host memory")
   val DISK: StorageTier = Value(2, "local disk")
-  val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
 /**
@@ -304,7 +303,7 @@ trait RapidsBuffer extends AutoCloseable {
    * @param stream CUDA stream to use
    */
   def copyToMemoryBuffer(
-      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream): Unit
 
   /**
    * Get the device memory buffer from the underlying storage. If the buffer currently resides
