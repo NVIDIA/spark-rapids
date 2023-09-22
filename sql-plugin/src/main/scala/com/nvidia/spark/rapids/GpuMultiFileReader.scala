@@ -173,8 +173,6 @@ object MultiFileReaderThreadPool extends Logging {
   }
 }
 
-case class SplitPartitionInfo(partitionIndex: Int, splitRowNums: Array[Int])
-
 object MultiFileReaderUtils extends Logging {
 
   private implicit def toURI(path: String): URI = {
@@ -255,8 +253,8 @@ object MultiFileReaderUtils extends Logging {
       partValues: Array[InternalRow], partSchema: StructType): Iterator[ColumnarBatch] = {
     withResource(cb) { _ =>
       // TODO: Use closeOnExcept for Array[Array[T]] type
-      val partsColsBatch = buildPartitionsColumnsBatch(partRows, partValues, partSchema)
-      ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatchIter(cb, partsColsBatch)
+      val batchOfPartCols = buildPartitionsColumnsBatch(partRows, partValues, partSchema)
+      ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatchIter(cb, batchOfPartCols)
     }
   }
 
@@ -286,76 +284,89 @@ object MultiFileReaderUtils extends Logging {
     }
   }
 
+  // scalastyle:off line.size.limit
   /**
-   * Splits the (partRows, partValues) into multiple batches such that sum
-   * of sizes does not exceed cudf limit
+   * Splits partitions into smaller batches such that the batch size
+   * does not exceed cudfLimit for any column.
    *
-   * Example,
+   * Data Structures used:
+   * - sizeOfBatch: HashMap to store the size of batches for each column
+   * - currentBatch: Array to hold the current batch's rows and partitionValues
+   * - resultBatches: Array to store the resulting batches
+   *
+   * Algorithm:
+   * - Initialize `sizeOfBatch` and `resultBatches`.
+   * - Iterate through `partRows`:
+   *    - Add (rows, [values]) to the current batch.
+   *    - For each column:
+   *        - Calculate the size of the current partition for the column.
+   *        - Check if adding this partition to the current batch exceeds cudfLimit.
+   *            - If it does, split the partition:
+   *              - Update the current batch's last value = (new rows, [values])
+   *              - Add it to the result batches.
+   *              - Process the remaining rows again
+   *            - Otherwise, increase the `sizeOfBatch` for the column.
+   *
+   * Example:
    * Input:
-   *  partRows:   [ 10, 40, 70, 10, 11 ]
-   *  partValues: [ [abc, ab], [bc, ab], [abc, bc], [aa, cc], [ade, fd] ]
-   *
-   * Assume:
-   *  limit:      300 bytes
-   *
-   * Split Calculation:
-   *  At rowIndex = 2:
-   *  -> rollingSum(colIndex=0) = (10 * 3) + (40 * 2) = 110
-   *  -> rollingSum(colIndex=1) = (10 * 2) + (40 * 2) = 100
-   *  -> rollingSum(0) + (70 * 3) > 300
-   *  -> Hence, Split at index 2
+   *    partRows:   [10, 40, 70, 10, 11]
+   *    partValues: [ [abc, ab], [bc, ab], [abc, bc], [aa, cc], [ade, fd] ]
+   *    cudfLimit:  300 bytes
    *
    * Result:
-   *    [
-   *      [ (10, [abc, ab]), (40, [bc, ab]), (50, [abc, bc]) ]
-   *      [ (20, [abc, bc]), (10, [aa, cc]), (11, [ade, fd]) ]
-   *    ]
+   * [
+   *    [ (10, [abc, ab]), (40, [bc, ab]), (63, [abc, bc]) ],
+   *    [ (7, [abc, bc]), (10, [aa, cc]), (11, [ade, fd]) ]
+   * ]
    *
-   * @return An array of arrays, where each inner array contains
-   *         (row count, InternalRow) pairs..
+   * @return An array of batches, containing (row sizes, partitionValues) pairs,
+   *         such that each batch's size is less than cudfLimit.
    */
+  // scalastyle:on line.size.limit
   private def splitPartitionIntoBatches(partRows: Array[Long],
       partValues: Array[InternalRow],
       partSchema: StructType): Array[Array[(Long, InternalRow)]] = {
     val cuDFLimit = (1L << 31) - 1
-    val partitionInfo = ArrayBuffer[Array[(Long, InternalRow)]]()
-    val currentPartitionInfo = ArrayBuffer[(Long, InternalRow)]()
-    val rollingSum = mutable.HashMap.empty[Int, Long]
-
-    // Updates the current partition and resets rollingSum
-    def updateCurrentPartition(newRowNums: Long, valueRow: InternalRow): Unit = {
-      currentPartitionInfo(currentPartitionInfo.length - 1) = (newRowNums, valueRow)
-      partitionInfo.append(currentPartitionInfo.toArray)
-      currentPartitionInfo.clear()
-      rollingSum.clear()
-    }
-
-    var rowIndex = 0
-    while (rowIndex < partRows.length) {
-      val rowNum = partRows(rowIndex)
-      val valueRow = partValues(rowIndex)
-      currentPartitionInfo.append((rowNum, valueRow))
+    val resultBatches = ArrayBuffer[Array[(Long, InternalRow)]]()
+    val currentBatch = ArrayBuffer[(Long, InternalRow)]()
+    // Initialize a HashMap to store the size of the current batch for each column
+    val sizeOfBatch = mutable.HashMap.empty[Int, Long]
+    var partIndex = 0
+    while (partIndex < partRows.length) {
+      val rowsInPartition = partRows(partIndex)
+      val valuesInPartition = partValues(partIndex)
+      // Add the partition's data to the current batch
+      currentBatch.append((rowsInPartition, valuesInPartition))
       partSchema.zipWithIndex.foreach {
         case (field, colIndex) if field.dataType == StringType =>
-          val valueSize = valueRow.getString(colIndex).getBytes("UTF-8").length.toLong
-          val remainingSpace = cuDFLimit - rollingSum.getOrElseUpdate(colIndex, 0)
-          if (remainingSpace < rowNum * valueSize) {
-            val newRowNums = remainingSpace / valueSize
-            updateCurrentPartition(newRowNums, valueRow)
-            partRows(rowIndex) -= newRowNums
-            rowIndex -= 1 // Decrement rowIndex to reprocess the current row with remaining space
+          val singleValue = valuesInPartition.getString(colIndex)
+          val sizeOfSingleValue = singleValue.getBytes("UTF-8").length.toLong
+          val sizeOfPartition = rowsInPartition * sizeOfSingleValue
+          // Check if adding the partition to the current batch exceeds cuDFLimit
+          if (sizeOfBatch.getOrElseUpdate(colIndex, 0L) + sizeOfPartition < cuDFLimit) {
+            sizeOfBatch(colIndex) += sizeOfPartition
           } else {
-            rollingSum(colIndex) += rowNum * valueSize
+            // Need to split the current partition
+            val newRows = (cuDFLimit - sizeOfBatch(colIndex)) / sizeOfSingleValue
+            // Update batches and clear states
+            currentBatch.update(currentBatch.length - 1, (newRows, valuesInPartition))
+            resultBatches.append(currentBatch.toArray)
+            currentBatch.clear()
+            sizeOfBatch.clear()
+            // Reprocess the current partition with remaining rows
+            partRows(partIndex) -= newRows
+            partIndex -= 1
           }
         case _ =>
-          // do nothing for other data types
+          // Assumption: Columns of other data type would not have fit already. Do nothing.
       }
-      rowIndex += 1
+      partIndex += 1
     }
-    if (currentPartitionInfo.nonEmpty) {
-      partitionInfo.append(currentPartitionInfo.toArray)
+    // Add the last remaining batch to resultBatches
+    if (currentBatch.nonEmpty) {
+      resultBatches.append(currentBatch.toArray)
     }
-    partitionInfo.toArray
+    resultBatches.toArray
   }
 
   private def buildPartitionsColumnsBatch(partRows: Array[Long], partValues: Array[InternalRow],
