@@ -343,13 +343,13 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
   private def regularRemainder(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType,
-        ArithmeticCastOptions(failOnError))
+        CastOptions.getArithmeticCastOptions(failOnError))
     }
     withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType,
-            ArithmeticCastOptions(failOnError))
+            CastOptions.getArithmeticCastOptions(failOnError))
         }
       }
       withResource(castRhs) { castRhs =>

@@ -181,6 +181,95 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   override protected val needTimezoneTagging: Boolean = false
 }
 
+object CastOptions {
+  val DEFAULT_CAST_OPTIONS = new CastOptions(false, false, false)
+  val ARITH_ANSI_OPTIONS = new CastOptions(false, true, false)
+  val TO_PRETTY_STRING_OPTIONS = ToPrettyStringOptions
+
+  def getArithmeticCastOptions(failOnError: Boolean): CastOptions = 
+    if (failOnError) ARITH_ANSI_OPTIONS else DEFAULT_CAST_OPTIONS
+
+  object ToPrettyStringOptions extends CastOptions(false, false, false) {
+    override def leftBracket: String = "{"
+
+    override def rightBracket: String = "}"
+
+    override def nullString: String = "NULL"
+
+    override def useDecimalPlainString: Boolean = true
+
+    override def useHexFormatForBinary: Boolean = true
+  }
+}
+
+/**
+ * This class is used to encapsulate parameters to use to help determine how to
+ * cast
+ *
+ * @param legacyCastComplexTypesToString If we should use legacy casting method
+ * @param ansiMode                       Whether the cast should be ANSI compliant
+ * @param stringToDateAnsiMode           Whether to cast String to Date using ANSI compliance
+ */
+class CastOptions(
+    legacyCastComplexTypesToString: Boolean,
+    ansiMode: Boolean,
+    stringToDateAnsiMode: Boolean) extends Serializable {
+
+  /**
+   * Retuns the left bracket to use when surrounding brackets when converting
+   * map or struct types to string
+   * example:
+   * [ "a" -> "b"] when legacyCastComplexTypesToString is enabled
+   * otherwise { "a" -> "b" }
+   */
+  val leftBracket: String = if (legacyCastComplexTypesToString) "[" else "{"
+
+  /**
+   * Returns the right bracket to use when surrounding brackets when converting
+   * map or struct types to string
+   * example:
+   * [ "a" -> "b"] when legacyCastComplexTypesToString is enabled
+   * otherwise { "a" -> "b" }
+   */
+  val rightBracket: String = if (legacyCastComplexTypesToString) "]" else "}"
+
+  /**
+   * Returns the string value to use to represent null elements in array/struct/map.
+   */
+  val nullString: String = if (legacyCastComplexTypesToString) "" else "null"
+
+  /**
+   * Returns whether a decimal value with exponents should be
+   * converted to a plain string, exactly like Java BigDecimal.toPlainString()
+   * example:
+   * plain string value of decimal 1.23E+7 is 12300000
+   */
+  val useDecimalPlainString: Boolean = ansiMode
+
+  /**
+   * Returns whether the binary data should be printed as hex values
+   * instead of ascii values
+   */
+  val useHexFormatForBinary: Boolean = false
+
+  /**
+   * Returns whether we should cast using ANSI compliance
+   */
+  val isAnsiMode: Boolean = ansiMode
+
+  /**
+   * Returns whether we should use ANSI compliance when casting a String
+   * to Date
+   */
+  val useAnsiStringToDateMode: Boolean = stringToDateAnsiMode
+
+  /**
+   * Returns whether we should use legacy behavior to convert complex types 
+   * like structs/maps to a String
+   */
+  val useLegacyComplexTypesToString: Boolean = legacyCastComplexTypesToString
+}
+
 object GpuCast {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
@@ -209,12 +298,12 @@ object GpuCast {
       input: ColumnView,
       fromDataType: DataType,
       toDataType: DataType,
-      options: CastOptions = DefaultCastOptions): ColumnVector = {
+      options: CastOptions = CastOptions.DEFAULT_CAST_OPTIONS): ColumnVector = {
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
     }
 
-    import options.ansiMode
+    val ansiMode = options.isAnsiMode
 
     (fromDataType, toDataType) match {
       case (NullType, to) =>
@@ -454,7 +543,7 @@ object GpuCast {
             case BooleanType =>
               castStringToBool(trimmed, options.ansiMode)
             case DateType =>
-              if (options.stringToDateAnsiModeEnabled) {
+              if (options.useAnsiStringToDateMode) {
                 castStringToDateAnsi(trimmed, ansiMode)
               } else {
                 castStringToDate(trimmed)
@@ -708,13 +797,13 @@ object GpuCast {
     val emptyStr = ""
     val spaceStr = " "
     val sepStr = if (useHexFormatForBinary && castingBinaryData) spaceStr
-      else if (legacyCastComplexTypesToString) "," else ", "
+      else if (useLegacyComplexTypesToString) "," else ", "
 
     withResource(
       Seq(emptyStr, spaceStr, nullString, sepStr).safeMap(Scalar.fromString)
     ) { case Seq(empty, space, nullRep, sep) =>
 
-      val withSpacesIfLegacy = if (!legacyCastComplexTypesToString) {
+      val withSpacesIfLegacy = if (!useLegacyComplexTypesToString) {
         withResource(input.getChildColumnView(0)) {
           _.replaceNulls(nullRep)
         }
@@ -745,7 +834,7 @@ object GpuCast {
       val strCol = withResource(concatenated) {
         _.replaceNulls(empty)
       }
-      if (!legacyCastComplexTypesToString) {
+      if (!useLegacyComplexTypesToString) {
         strCol
       } else {
         // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
@@ -764,6 +853,7 @@ object GpuCast {
       elementType: DataType,
       options: CastOptions): ColumnVector = {
 
+    // We use square brackets for arrays regardless 
     val (leftStr, rightStr) = ("[", "]")
     val emptyStr = ""
     val numRows = input.getRowCount.toInt
@@ -833,7 +923,7 @@ object GpuCast {
         val numElements = strKey.getRowCount.toInt
         withResource(Seq(spaceScalar, arrowScalar).safeMap(ColumnVector.fromScalar(_, numElements))
         ) { case Seq(spaceCol, arrowCol) =>
-          if (legacyCastComplexTypesToString) {
+          if (useLegacyComplexTypesToString) {
             withResource(
               spaceCol.mergeAndSetValidity(BinaryOp.BITWISE_AND, strValue)
             ) { spaceBetweenSepAndVal =>
@@ -876,7 +966,7 @@ object GpuCast {
     import options._
 
     val emptyStr = ""
-    val separatorStr = if (legacyCastComplexTypesToString) "," else ", "
+    val separatorStr = if (useLegacyComplexTypesToString) "," else ", "
     val spaceStr = " "
     val numRows = input.getRowCount.toInt
     val numInputColumns = input.getNumChildren
@@ -902,7 +992,7 @@ object GpuCast {
             columns += sepColumn.incRefCount()
             val nonFirstColumn = doCast(nonFirstColumnView,
               inputSchema(nonFirstIndex).dataType, StringType, options)
-            if (legacyCastComplexTypesToString) {
+            if (useLegacyComplexTypesToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
             }
@@ -1513,7 +1603,7 @@ case class GpuCast(
   import GpuCast._
 
   private val options: CastOptions =
-    new SparkConfCastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled)
+    new CastOptions(legacyCastComplexTypesToString, ansiMode, stringToDateAnsiModeEnabled)
 
   // when ansi mode is enabled, some cast expressions can throw exceptions on invalid inputs
   override def hasSideEffects: Boolean = super.hasSideEffects || {
