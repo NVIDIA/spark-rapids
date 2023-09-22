@@ -69,7 +69,6 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegerType, LongType))
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    println(s"columnarEval for part ${TaskContext.getPartitionId()}")
     assert(wasInitialized)
     withResource(new NvtxRange("GpuRand", NvtxColor.RED)) { _ =>
       val numRows = batch.numRows()
@@ -84,8 +83,6 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
     // In a task, checkpoint is called before columnarEval, so init the random
     // generator here.
     val partId = TaskContext.getPartitionId()
-    println(s"====> checkpoint for part $partId, inited ? $wasInitialized," +
-      s" previous part: $previousPartition")
     if (partId != previousPartition || !wasInitialized) {
       rng = new RapidsXORShiftRandom(seed + partId)
       previousPartition = partId
@@ -94,7 +91,6 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   }
 
   override def restore(): Unit = {
-    println(s"restore for part ${TaskContext.getPartitionId()}")
     assert(wasInitialized)
     rng.setHashedSeed(curXORShiftRandomSeed)
   }
