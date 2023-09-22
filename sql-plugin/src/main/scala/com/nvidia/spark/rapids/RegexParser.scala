@@ -41,7 +41,8 @@ import com.nvidia.spark.rapids.RegexParser.toReadableString
  * - https://matt.might.net/articles/parsing-regex-with-recursive-descent/
  */
 class RegexParser(pattern: String) {
-  private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~"
+  // Note that [, ] and \ should be part of Punct, but they are handled separately
+  private val regexPunct = """!"#$%&'()*+,-./:;<=>?@^_`{|}~"""
   private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
       'b' -> '\b', 'e' -> '\u001b')
 
@@ -475,7 +476,7 @@ class RegexParser(pattern: String) {
         case "Punct" =>
           val res:ListBuffer[RegexCharacterClassComponent] =
               ListBuffer(regexPunct.map(RegexChar): _*)
-          res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'))
+          res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'), RegexEscaped('\\'))
         case "Graph" =>
           ListBuffer(getCharacters("Alnum"), getCharacters("Punct")).flatten
         case "Print" =>

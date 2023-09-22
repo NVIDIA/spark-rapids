@@ -38,7 +38,7 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
     DeltaColumnMapping.createPhysicalSchema(inputSchema, referenceSchema, columnMappingMode)
   }
 
-  def createMultiFileReaderFactory(
+  override def createMultiFileReaderFactory(
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {

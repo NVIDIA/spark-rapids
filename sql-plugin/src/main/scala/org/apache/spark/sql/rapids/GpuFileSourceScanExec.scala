@@ -37,7 +37,6 @@ import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, Fil
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.execution.rapids.shims.FilePartitionShims
@@ -99,18 +98,12 @@ case class GpuFileSourceScanExec(
   // should update this to None and read directly from s3 to get faster.
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
-  private val isPerFileReadEnabled = {
-    val formatCls = relation.fileFormat.getClass
-    if (formatCls == classOf[ParquetFileFormat]) {
-      rapidsConf.isParquetPerFileReadEnabled
-    } else if (formatCls == classOf[OrcFileFormat]) {
-      rapidsConf.isOrcPerFileReadEnabled
-    } else if (ExternalSource.isSupportedFormat(formatCls)) {
-      ExternalSource.isPerFileReadEnabledForFormat(relation.fileFormat, rapidsConf)
-    } else {
-      true // For others, default to PERFILE reader
-    }
+  @transient private val gpuFormat = relation.fileFormat match {
+    case g: GpuReadFileFormatWithMetrics => g
+    case f => throw new IllegalStateException(s"${f.getClass} is not a GPU format with metrics")
   }
+
+  private val isPerFileReadEnabled = gpuFormat.isPerFileReadEnabled(rapidsConf)
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
@@ -367,8 +360,7 @@ case class GpuFileSourceScanExec(
   lazy val inputRDD: RDD[InternalRow] = {
     val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
       if (isPerFileReadEnabled) {
-        val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
-        val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
+        val reader = gpuFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
           dataSchema = relation.dataSchema,
           partitionSchema = readPartitionSchema,
@@ -624,44 +616,13 @@ case class GpuFileSourceScanExec(
   lazy val readerFactory: PartitionReaderFactory = {
     // here we are making an optimization to read more then 1 file at a time on the CPU side
     // if they are small files before sending it down to the GPU
-    val sqlConf = relation.sparkSession.sessionState.conf
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-
-    val formatCls = relation.fileFormat.getClass
-    if (formatCls == classOf[ParquetFileFormat]) {
-      GpuParquetMultiFilePartitionReaderFactory(
-        sqlConf,
-        broadcastedHadoopConf,
-        relation.dataSchema,
-        requiredSchema,
-        readPartitionSchema,
-        pushedDownFilters.toArray,
-        rapidsConf,
-        allMetrics,
-        queryUsesInputFile,
-        alluxioPathReplacementMap)
-    } else if (formatCls == classOf[OrcFileFormat]) {
-      GpuOrcMultiFilePartitionReaderFactory(
-        sqlConf,
-        broadcastedHadoopConf,
-        relation.dataSchema,
-        requiredSchema,
-        readPartitionSchema,
-        pushedDownFilters.toArray,
-        rapidsConf,
-        allMetrics,
-        queryUsesInputFile)
-    } else if (ExternalSource.isSupportedFormat(formatCls)) {
-      ExternalSource.createMultiFileReaderFactory(
-        relation.fileFormat,
-        broadcastedHadoopConf,
-        pushedDownFilters.toArray,
-        this)
-    } else {
-      throw new IllegalArgumentException(s"${formatCls.getCanonicalName} is not supported")
-    }
+    gpuFormat.createMultiFileReaderFactory(
+      broadcastedHadoopConf,
+      pushedDownFilters.toArray,
+      this)
   }
 
   // Filters unused DynamicPruningExpression expressions - one which has been replaced

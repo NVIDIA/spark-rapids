@@ -51,9 +51,6 @@ trait ScanWithMetrics {
   var metrics : Map[String, GpuMetric] = Map.empty
 }
 
-// Allows use of ScanWithMetrics from Java code
-class ScanWithMetricsWrapper extends ScanWithMetrics
-
 object GpuCSVScan {
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
@@ -213,7 +210,7 @@ case class GpuCSVScan(
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long)
-  extends TextBasedFileScan(sparkSession, options) with ScanWithMetrics {
+  extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: CSVOptions = new CSVOptions(
     options.asScala.toMap,
@@ -250,6 +247,8 @@ case class GpuCSVScan(
   def withFilters(
       partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+
+  override def withInputFile(): GpuScan = this
 
   override def equals(obj: Any): Boolean = obj match {
     case c: GpuCSVScan =>

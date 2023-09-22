@@ -23,14 +23,13 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
-import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.sources.{CreatableRelationProvider, Filter}
-import org.apache.spark.util.{SerializableConfiguration, Utils}
+import org.apache.spark.sql.sources.CreatableRelationProvider
+import org.apache.spark.util.Utils
 
 /**
  * The subclass of AvroProvider imports spark-avro classes. This file should not imports
@@ -83,16 +82,6 @@ object ExternalSource extends Logging {
     }
   }
 
-  def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
-    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
-      avroProvider.isPerFileReadEnabledForFormat(format, conf)
-    } else if (deltaProvider.isSupportedFormat(format.getClass)) {
-      deltaProvider.isPerFileReadEnabledForFormat(format, conf)
-    } else {
-      false
-    }
-  }
-
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
@@ -118,26 +107,6 @@ object ExternalSource extends Logging {
     }
   }
 
-  /**
-   * Create a multi-file reader factory for the input format.
-   * Better to check if the format is supported first by calling 'isSupportedFormat'
-   */
-  def createMultiFileReaderFactory(
-      format: FileFormat,
-      broadcastedConf: Broadcast[SerializableConfiguration],
-      pushedFilters: Array[Filter],
-      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
-      avroProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
-        fileScan)
-    } else if (deltaProvider.isSupportedFormat(format.getClass)) {
-      deltaProvider.createMultiFileReaderFactory(format, broadcastedConf, pushedFilters,
-        fileScan)
-    } else {
-      throw new RuntimeException(s"File format $format is not supported yet")
-    }
-  }
-
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     var scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Map.empty
     if (hasSparkAvroJar) {
@@ -147,31 +116,6 @@ object ExternalSource extends Logging {
       scans = scans ++ icebergProvider.getScans
     }
     scans
-  }
-
-  /** If the scan is supported as an external source */
-  def isSupportedScan(scan: Scan): Boolean = {
-    if (hasSparkAvroJar && avroProvider.isSupportedScan(scan)) {
-      true
-    } else if (hasIcebergJar && icebergProvider.isSupportedScan(scan)) {
-      true
-    } else {
-      false
-    }
-  }
-
-  /**
-   * Clone the input scan with setting 'true' to the 'queryUsesInputFile'.
-   * Better to check if the scan is supported first by calling 'isSupportedScan'.
-   */
-  def copyScanWithInputFileTrue(scan: Scan): Scan = {
-    if (hasSparkAvroJar && avroProvider.isSupportedScan(scan)) {
-      avroProvider.copyScanWithInputFileTrue(scan)
-    } else if (hasIcebergJar && icebergProvider.isSupportedScan(scan)) {
-      icebergProvider.copyScanWithInputFileTrue(scan)
-    } else {
-      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
-    }
   }
 
   def wrapCreatableRelationProvider[INPUT <: CreatableRelationProvider](

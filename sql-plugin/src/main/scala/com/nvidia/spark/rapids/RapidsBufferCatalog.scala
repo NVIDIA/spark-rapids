@@ -775,11 +775,14 @@ object RapidsBufferCatalog extends Logging {
       rapidsConf.chunkedPackBounceBufferSize,
       rapidsConf.spillToDiskBounceBufferSize)
     diskBlockManager = new RapidsDiskBlockManager(conf)
-    val hostSpillStorageSize = if (rapidsConf.hostSpillStorageSize == -1) {
+    val hostSpillStorageSize = if (rapidsConf.offHeapLimitEnabled) {
+      // Disable the limit because it is handled by the RapidsHostMemoryStore
+      None
+    } else if (rapidsConf.hostSpillStorageSize == -1) {
       // + 1 GiB by default to match backwards compatibility
-      rapidsConf.pinnedPoolSize + (1024 * 1024 * 1024)
+      Some(rapidsConf.pinnedPoolSize + (1024 * 1024 * 1024))
     } else {
-      rapidsConf.hostSpillStorageSize
+      Some(rapidsConf.hostSpillStorageSize)
     }
     hostStorage = new RapidsHostMemoryStore(hostSpillStorageSize)
     diskStorage = new RapidsDiskStore(diskBlockManager)
