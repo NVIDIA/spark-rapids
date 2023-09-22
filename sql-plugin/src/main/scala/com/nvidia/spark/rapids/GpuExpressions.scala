@@ -101,8 +101,6 @@ object GpuExpressionsUtils {
     expressions.flatMap { expr =>
       expr.collect {
         case r: Retryable => r
-        case udf: GpuUserDefinedFunction if udf.retryable && udf.selfNonDeterministic =>
-          udf.function.asInstanceOf[Retryable]
       }
     }
   }

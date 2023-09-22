@@ -46,14 +46,6 @@ trait GpuUserDefinedFunction extends GpuExpression
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
   override val selfNonDeterministic: Boolean = !udfDeterministic
-  override lazy val retryable: Boolean = deterministic || {
-    val childrenAllRetryable = children.forall(_.asInstanceOf[GpuExpression].retryable)
-    if (selfNonDeterministic) {
-      function.isInstanceOf[Retryable] && childrenAllRetryable
-    } else {
-      childrenAllRetryable
-    }
-  }
 
   private[this] val nvtxRangeName = s"UDF: $name"
   private[this] lazy val funcCls = TrampolineUtil.getSimpleName(function.getClass)
