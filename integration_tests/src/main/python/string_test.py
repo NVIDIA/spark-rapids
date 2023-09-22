@@ -804,7 +804,7 @@ format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalG
                                       DecimalGen(precision=38, scale=-10)]
 
 
-format_number_gens = [DoubleGen(min_exp=-10, max_exp=10, special_cases=[float('inf'), float('-inf'), float('nan')], nullable=False)]
+format_number_gens = [DoubleGen(min_exp=-30, max_exp=30, special_cases=[float('1e10'), float('5e12')], nullable=False)]
 
 @pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
 def test_format_number(data_gen):

@@ -2100,176 +2100,6 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
   }
 
-  // private def getPartsFromDouble(cv: ColumnVector, d: Int): (ColumnVector, ColumnVector) = {
-  //   val float64Str = withResource(cv.castTo(DType.FLOAT64)) { float64Cv =>
-  //     float64Cv.castTo(DType.STRING)
-  //   }
-  //   val partsDecimalType = DType.create(DType.DTypeEnum.DECIMAL128, -d-1)
-  //   val (intPartNoE, decPartNoE) = withResource(cv.castTo(partsDecimalType)) { decimalCv =>
-  //     withResource(decimalCv.round(d, RoundMode.HALF_UP)) {rounded =>
-  //       withResource(rounded.castTo(DType.STRING)) { roundedStr =>
-  //         withResource(roundedStr.stringSplit(".", 2)) { intAndDec =>
-  //           (intAndDec.getColumn(0).incRefCount(), intAndDec.getColumn(1).incRefCount())
-  //         }
-  //       }
-  //     }
-  //   }
-  //   val (containsE, noEReplaced) = withResource(float64Str) { _ =>
-  //     val containsE = withResource(Scalar.fromString("e")) { e =>
-  //       float64Str.stringContains(e)
-  //     }
-  //     val noEReplaced = withResource(Scalar.fromString("0e0")) { default =>
-  //       containsE.ifElse(float64Str, default)
-  //     }
-  //     (containsE, noEReplaced)
-  //   }
-  //   val (beforeE, afterE) = withResource(noEReplaced) { _ =>
-  //     withResource(noEReplaced.stringSplit("e", 2)) { splited =>
-  //       (splited.getColumn(0).incRefCount(), splited.getColumn(1).incRefCount())
-  //     }
-  //   }
-  //   // beforeE is a string, convert to decimal(_, -9) then to string
-  //   val beforeEDecimalType = DType.create(DType.DTypeEnum.DECIMAL128, -10)
-  //   val beforeEWithZeros = withResource(beforeE) { _ =>
-  //     withResource(beforeE.castTo(beforeEDecimalType)) { beforeEDec =>
-  //       withResource(beforeEDec.round(9, RoundMode.HALF_UP)) { rounded =>
-  //         rounded.castTo(DType.STRING)
-  //       }
-  //     }
-  //   }
-  //   val beforeEWithoutPoint = withResource(Scalar.fromString(".")) { point =>
-  //     withResource(Scalar.fromString("")) { empty =>
-  //       withResource(beforeEWithZeros) { _ =>
-  //         beforeEWithZeros.stringReplace(point, empty)
-  //       }
-  //     }
-  //   }
-  //   val repeatTimes = withResource(afterE) { _ =>
-  //     withResource(afterE.castTo(DType.INT64)) { exp =>
-  //       withResource(Scalar.fromLong(9)) { nine =>
-  //         exp.sub(nine)
-  //       }
-  //     }
-  //   }
-  //   // handle repeat times is negative
-  //   // record isNeg
-  //   val isNeg = closeOnExcept(repeatTimes) { _ =>
-  //     withResource(Scalar.fromLong(0)) { zero =>
-  //       repeatTimes.lessThan(zero)
-  //     }
-  //   }
-  //   // abs
-  //   val absRepeatTimes = closeOnExcept(repeatTimes) { _ =>
-  //     repeatTimes.abs()
-  //   }
-  //   // set default value if exp > 9 + d, might be unnecessary
-  //   val smallEnough = withResource(Scalar.fromLong(d + 9)) { maxLimit =>
-  //     closeOnExcept(repeatTimes) { _ =>
-  //       absRepeatTimes.greaterThan(maxLimit)
-  //     }
-  //   }
-  //   val absRepeatTimesWithDefault = withResource(absRepeatTimes) { _ =>
-  //     withResource(Scalar.fromLong(d + 10)) { maxLimit =>
-  //       smallEnough.ifElse(maxLimit, absRepeatTimes)
-  //     }
-  //   }
-  //   // workaround for pow: 
-  //   // turn to string, repeat zero for absRepeatTimesWithDefault times, 
-  //   // add a 1, convert to int64 back
-  //   val zeroCv2 = withResource(Scalar.fromString("0")) { zero =>
-  //     ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
-  //   }
-  //   val repeatZeros2 = withResource(zeroCv2) { _ =>
-  //     withResource(absRepeatTimesWithDefault) { _ =>
-  //       zeroCv2.repeatStrings(absRepeatTimesWithDefault)
-  //     }
-  //   }
-  //   val oneCv = withResource(Scalar.fromString("1")) { one =>
-  //     ColumnVector.fromScalar(one, cv.getRowCount.toInt)
-  //   }
-  //   val divisorStr = withResource(oneCv) { oneCv =>
-  //     withResource(repeatZeros2) { _ =>
-  //       ColumnVector.stringConcatenate(Array(oneCv, repeatZeros2))
-  //     }
-  //   }
-  //   val divisor = withResource(divisorStr) { _ =>
-  //     divisorStr.castTo(DType.INT64)
-  //   }
-  //   // div
-  //   val divided = closeOnExcept(beforeEWithoutPoint) { _ =>
-  //     withResource(beforeEWithoutPoint.castTo(partsDecimalType)) { dec =>
-  //       withResource(divisor) { _ =>
-  //         dec.div(divisor, partsDecimalType)
-  //       }
-  //     }
-  //   }
-  //   // calculate int part and dec part for exp is negative
-  //   val (negExpIntPart, negExpDecPart) = withResource(divided) { _ =>
-  //     withResource(divided.round(d, RoundMode.HALF_UP)) { rounded =>
-  //       withResource(rounded.castTo(DType.STRING)) { dividedStr =>
-  //         withResource(dividedStr.stringSplit(".", 2)) { intAndDec =>
-  //           (intAndDec.getColumn(0).incRefCount(), intAndDec.getColumn(1).incRefCount())
-  //         }
-  //       }
-  //     }
-  //   }
-  //   val zeroCv = withResource(Scalar.fromString("0")) { zero =>
-  //     ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
-  //   }
-  //   val repeatZeros = withResource(zeroCv) { _ =>
-  //     withResource(repeatTimes) { _ =>
-  //       zeroCv.repeatStrings(repeatTimes)
-  //     }
-  //   }
-  //   val intPartWithE = withResource(beforeEWithoutPoint) { _ =>
-  //     withResource(repeatZeros) { _ =>
-  //       ColumnVector.stringConcatenate(Array(beforeEWithoutPoint, repeatZeros))  
-  //     }
-  //   }
-  //   val containsEAndExpIsNeg = closeOnExcept(containsE) { _ =>
-  //     withResource(isNeg) { _ =>
-  //       containsE.and(isNeg)
-  //     }
-  //   }
-  //   val (normalIntPart, normalDecPart) = withResource(containsE) { _ =>
-  //     val intPart = withResource(intPartWithE) { _ =>
-  //       withResource(intPartNoE) { _ =>
-  //         containsE.ifElse(intPartWithE, intPartNoE)
-  //       }
-  //     }
-  //     val dzeros = "0" * d
-  //     val decPartZero = withResource(Scalar.fromString(dzeros)) { zeroString =>
-  //       ColumnVector.fromScalar(zeroString, cv.getRowCount.toInt)
-  //     }
-  //     val decPart = withResource(decPartZero) { _ =>
-  //       withResource(decPartNoE) { _ =>
-  //         containsE.ifElse(decPartZero, decPartNoE)
-  //       }
-  //     }
-  //     (intPart, decPart)
-  //   }
-  //   withResource(containsEAndExpIsNeg) { _ =>
-  //     val intPartPos = withResource(normalIntPart) { _ =>
-  //       withResource(negExpIntPart) { _ =>
-  //         containsEAndExpIsNeg.ifElse(negExpIntPart, normalIntPart)
-  //       }
-  //     }
-  //     val intPart = withResource(intPartPos) { _ =>
-  //       withResource(Scalar.fromString("-")) { negativeSign =>
-  //         withResource(Scalar.fromString("")) { emptyString =>
-  //           intPartPos.stringReplace(negativeSign, emptyString)
-  //         }
-  //       }
-  //     }
-  //     val decPart = withResource(normalDecPart) { _ =>
-  //       withResource(negExpDecPart) { _ =>
-  //         containsEAndExpIsNeg.ifElse(negExpDecPart, normalDecPart)
-  //       }
-  //     }
-  //     (intPart, decPart)
-  //   }
-  // }
-
   private def removeNegSign(cv: ColumnVector): ColumnVector = {
     withResource(Scalar.fromString("-")) { negativeSign =>
       withResource(Scalar.fromString("")) { emptyString =>
@@ -2294,13 +2124,93 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   private def expDoubleSplit(cv: ColumnVector, d: Int): (ColumnVector, ColumnVector) = {
+    // handle special case: 1.234567e+3 or 1.234567e-3
+
+    // get three parts first:
+    val replaceDelimToE = withResource(cv) { _ =>
+      withResource(Scalar.fromString("e")) { e =>
+        withResource(Scalar.fromString(".")) { p =>
+          cv.stringReplace(e, p)
+        }
+      }
+    }
+    val (intPart, decPart, expPart) = withResource(replaceDelimToE) { _ =>
+      withResource(replaceDelimToE.stringSplit(".", 3)) { intDecExp =>
+        (intDecExp.getColumn(0).incRefCount(),
+          intDecExp.getColumn(1).incRefCount(),
+          intDecExp.getColumn(2).incRefCount())
+      }
+    }
+    val exp = withResource(expPart) { _ =>
+      expPart.castTo(DType.INT32)
+    }
+
+    // 1.234567e+3: 1234.56700
+    // 1.23e+5: 123000.00000
+    // get length of decPart, call it decLen
+    val decLen = closeOnExcept(decPart) { _ =>
+      decPart.getCharLengths
+    }
+    // if decLen - exp > d, convert to float/double, round, convert back to string
+    // decLen's max value is 9, abs(expPart)'s min value is 7, so it is possible only when d < 2
+    // TODO: skip this for now
+    
+    // zerosNum = exp - decLen + d
+    val expSubDecLen = withResource(exp) { _ =>
+      withResource(decLen) { _ =>
+        exp.sub(decLen)
+      }
+    }
+    val zerosNum = withResource(expSubDecLen) { _ =>
+      withResource(Scalar.fromInt(d)) { d =>
+        expSubDecLen.add(d)
+      }
+    }
     val zeroCv = withResource(Scalar.fromString("0")) { zero =>
       ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
     }
-    val zeroCv2 = withResource(Scalar.fromString("0")) { zero =>
-      ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
+    val zeros = withResource(zerosNum) { _ =>
+      withResource(zeroCv) { _ =>
+        zeroCv.repeatStrings(zerosNum)
+      }
     }
-    (zeroCv, zeroCv2)
+    val intAndDecParts = withResource(intPart) { _ =>
+      withResource(decPart) { _ =>
+        withResource(zeros) { _ =>
+          ColumnVector.stringConcatenate(Array(intPart, decPart, zeros))
+        }
+      }
+    }
+    val (intPartPosExp, decPartPosExp) = withResource(intAndDecParts) { _ =>
+      val (start, end) = withResource(intAndDecParts.getCharLengths) { partsLength =>
+        (withResource(Scalar.fromInt(d)) { d =>
+          partsLength.sub(d)
+        }, partsLength.incRefCount())
+      }
+      val zeroCv = withResource(Scalar.fromInt(0)) { zero =>
+        ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
+      }
+      withResource(start) { _ =>
+        val intPart = withResource(zeroCv) { _ =>
+          intAndDecParts.substring(zeroCv, start)
+        }
+        val decPart = withResource(end) { _ =>
+          intAndDecParts.substring(start, end)
+        }
+        (intPart, decPart)
+      }
+    }
+    // TODO: 1.23e-2: 0.01230
+
+    (intPartPosExp, decPartPosExp)
+    // place holder
+    // val zeroCvx = withResource(Scalar.fromString("0")) { zero =>
+    //   ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
+    // }
+    // val zeroCvy = withResource(Scalar.fromString("0")) { zero =>
+    //   ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
+    // }
+    // (zeroCvx, zeroCvy)
   }
 
   private def getPartsFromDouble(cv: ColumnVector, d: Int): (ColumnVector, ColumnVector) = {
@@ -2332,7 +2242,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
     // replace normal case with 0e0 to avoid error
     val noEReplaced = withResource(cvStr) { _ =>
-      withResource(Scalar.fromString("0e0")) { default =>
+      withResource(Scalar.fromString("0.0e0")) { default =>
         containsE.ifElse(cvStr, default)
       }
     }
