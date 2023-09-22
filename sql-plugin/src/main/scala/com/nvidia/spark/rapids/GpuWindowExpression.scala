@@ -994,6 +994,55 @@ class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
   }
 }
 
+class BatchedUnboundedToUnboundedBinaryFixer(val binOp: BinaryOp, val dataType: DataType)
+    extends BatchedUnboundedToUnboundedWindowFixer {
+  private var previousResult: Option[Scalar] = None
+
+  override def updateState(scalar: Scalar): Unit = previousResult match {
+    case None =>
+      previousResult = Some(scalar.incRefCount())
+    case Some(prev) =>
+      // This is ugly, but for now it is simple to make it work
+      val result = withResource(ColumnVector.fromScalar(prev, 1)) { p1 =>
+        withResource(p1.binaryOp(binOp, scalar, prev.getType)) { result1 =>
+          result1.getScalarElement(0)
+        }
+      }
+      closeOnExcept(result) { _ =>
+        previousResult.foreach(_.close)
+        previousResult = Some(result)
+      }
+  }
+
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+      column: ColumnVector): ColumnVector = {
+    val scalar =  previousResult match {
+      case Some(value) =>
+        value.incRefCount()
+      case None =>
+        GpuScalar.from(null, dataType)
+    }
+
+    withResource(scalar) { scalar =>
+      samePartitionMask match {
+        case scala.Left(cv) =>
+          cv.ifElse(scalar, column)
+        case scala.Right(true) =>
+          ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+        case _ =>
+          column.incRefCount()
+      }
+    }
+  }
+
+  override def close(): Unit = reset()
+
+  override def reset(): Unit = {
+    previousResult.foreach(_.close())
+    previousResult = None
+  }
+}
+
 /**
  * This class fixes up batched running windows by performing a binary op on the previous value and
  * those in the the same partition by key group. It does not deal with nulls, so it works for things

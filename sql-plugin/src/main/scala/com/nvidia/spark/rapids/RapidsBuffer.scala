@@ -61,7 +61,6 @@ object StorageTier extends Enumeration {
   val DEVICE: StorageTier = Value(0, "device memory")
   val HOST: StorageTier = Value(1, "host memory")
   val DISK: StorageTier = Value(2, "local disk")
-  val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
 /**
@@ -207,14 +206,11 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
   }
 
   override def close(): Unit = {
-    val hasNextBeforeClose = hasNext
     val toClose = new ArrayBuffer[AutoCloseable]()
     toClose.appendAll(chunkedPacker)
     toClose.appendAll(Option(singleShotBuffer))
 
     toClose.safeClose()
-    require(!hasNextBeforeClose,
-      "RapidsBufferCopyIterator was closed before exhausting")
   }
 }
 
@@ -230,14 +226,14 @@ trait RapidsBuffer extends AutoCloseable {
    *
    * @note Do not use this size to allocate a target buffer to copy, always use `getPackedSize.`
    */
-  def getMemoryUsedBytes: Long
+  val memoryUsedBytes: Long
 
   /**
    * The size of this buffer if it has already gone through contiguous_split.
    *
    * @note Use this function when allocating a target buffer for spill or shuffle purposes.
    */
-  def getPackedSizeBytes: Long = getMemoryUsedBytes
+  def getPackedSizeBytes: Long = memoryUsedBytes
 
   /**
    * At spill time, obtain an iterator used to copy this buffer to a different tier.
@@ -304,7 +300,7 @@ trait RapidsBuffer extends AutoCloseable {
    * @param stream CUDA stream to use
    */
   def copyToMemoryBuffer(
-      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream): Unit
 
   /**
    * Get the device memory buffer from the underlying storage. If the buffer currently resides
@@ -389,7 +385,7 @@ sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
     override val meta: TableMeta) extends RapidsBuffer {
 
-  override def getMemoryUsedBytes: Long = 0L
+  override val memoryUsedBytes: Long = 0L
 
   override val storageTier: StorageTier = StorageTier.DEVICE
 
@@ -451,7 +447,7 @@ trait RapidsHostBatchBuffer extends AutoCloseable {
    */
   def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
-  def getMemoryUsedBytes(): Long
+  val memoryUsedBytes: Long
 }
 
 trait RapidsBufferChannelWritable {
@@ -459,7 +455,10 @@ trait RapidsBufferChannelWritable {
    * At spill time, write this buffer to an nio WritableByteChannel.
    * @param writableChannel that this buffer can just write itself to, either byte-for-byte
    *                        or via serialization if needed.
+   * @param stream the Cuda.Stream for the spilling thread. If the `RapidsBuffer` that
+   *               implements this method is on the device, synchronization may be needed
+   *               for staged copies.
    * @return the amount of bytes written to the channel
    */
-  def writeToChannel(writableChannel: WritableByteChannel): Long
+  def writeToChannel(writableChannel: WritableByteChannel, stream: Cuda.Stream): Long
 }

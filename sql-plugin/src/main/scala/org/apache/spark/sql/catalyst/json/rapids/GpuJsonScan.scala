@@ -198,7 +198,7 @@ case class GpuJsonScan(
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long)
-  extends TextBasedFileScan(sparkSession, options) with ScanWithMetrics {
+  extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: JSONOptions = new JSONOptions(
     options.asScala.toMap,
@@ -222,6 +222,8 @@ case class GpuJsonScan(
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
       maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
   }
+
+  override def withInputFile(): GpuScan = this
 }
 
 case class GpuJsonPartitionReaderFactory(
