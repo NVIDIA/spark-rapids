@@ -181,69 +181,6 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   override protected val needTimezoneTagging: Boolean = false
 }
 
-trait CastOptions extends Serializable {
-  // The brackets that are used in casting structs and maps to strings
-  def leftBracket: String
-
-  def rightBracket: String
-
-  // The string value to use to represent null elements in array/struct/map.
-  def nullString: String
-
-  def useDecimalPlainString: Boolean
-
-  def useHexFormatForBinary: Boolean
-
-  def stringToDateAnsiModeEnabled: Boolean
-
-  def ansiMode: Boolean
-
-  def legacyCastComplexTypesToString: Boolean
-}
-
-object ToPrettyStringOptions extends CastOptions {
-  override def leftBracket: String = "{"
-
-  override def rightBracket: String = "}"
-
-  override def nullString: String = "NULL"
-
-  override def useDecimalPlainString: Boolean = true
-
-  override def useHexFormatForBinary: Boolean = true
-
-  override def stringToDateAnsiModeEnabled: Boolean = false
-
-  override def ansiMode: Boolean = false
-
-  override def legacyCastComplexTypesToString: Boolean = false
-}
-
-object DefaultCastOptions extends SparkConfCastOptions(false, false, false)
-
-object ArithmeticCastOptions {
-  def apply(failOnError: Boolean): SparkConfCastOptions =
-    new SparkConfCastOptions(false, failOnError, false)
-}
-
-class SparkConfCastOptions(
-    override val legacyCastComplexTypesToString: Boolean,
-    override val ansiMode: Boolean,
-    stringToDateAnsiMode: Boolean) extends CastOptions {
-
-  override val leftBracket: String = if (legacyCastComplexTypesToString) "[" else "{"
-
-  override val rightBracket: String = if (legacyCastComplexTypesToString) "]" else "}"
-
-  override val nullString: String = if (legacyCastComplexTypesToString) "" else "null"
-
-  override val useDecimalPlainString: Boolean = ansiMode
-
-  override val useHexFormatForBinary: Boolean = false
-
-  override val stringToDateAnsiModeEnabled: Boolean = stringToDateAnsiMode
-}
-
 object GpuCast {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
