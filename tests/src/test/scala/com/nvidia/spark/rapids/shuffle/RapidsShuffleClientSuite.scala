@@ -78,7 +78,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       RapidsShuffleTestHelper.mockMetaResponse(mockTransaction, contigBuffSize, numBatches)
 
     // initialize metadata fetch
-    client.doFetch(shuffleRequests.map(_._1), mockHandler)
+    client.doFetch(shuffleRequests.map(_._1).toSeq, mockHandler)
 
     // the connection saw one request (for metadata)
     assertResult(1)(mockConnection.requests)
@@ -111,7 +111,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransaction, numBatches)
 
     // initialize metadata fetch
-    client.doFetch(shuffleRequests.map(_._1), mockHandler)
+    client.doFetch(shuffleRequests.map(_._1).toSeq, mockHandler)
 
     // the connection saw one request (for metadata)
     assertResult(1)(mockConnection.requests)
@@ -133,7 +133,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
 
-    client.doFetch(shuffleRequests.map(_._1), mockHandler)
+    client.doFetch(shuffleRequests.map(_._1).toSeq, mockHandler)
 
     assertResult(1)(mockConnection.requests)
 
@@ -162,7 +162,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
 
-    client.doFetch(shuffleRequests.map(_._1), mockHandler)
+    client.doFetch(shuffleRequests.map(_._1).toSeq, mockHandler)
 
     assertResult(1)(mockConnection.requests)
 
