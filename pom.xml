@@ -812,15 +812,22 @@
         <jdk17.buildvers>
             330
         </jdk17.buildvers>
-        <scala213.buildvers>
-            331,
-            340
-        </scala213.buildvers>
         <all.buildvers>
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
             ${databricks.buildvers},
         </all.buildvers>
+        <noSnapshotScala213.buildvers>
+            330,
+            331,
+            332,
+            333,
+            340,
+            341,
+            350
+        </noSnapshotScala213.buildvers>
+        <snapshotScala213.buildvers>
+        </snapshotScala213.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
         <cpd.sourceType>main</cpd.sourceType>
         <!-- SPARK-36796 for JDK-17 test-->
