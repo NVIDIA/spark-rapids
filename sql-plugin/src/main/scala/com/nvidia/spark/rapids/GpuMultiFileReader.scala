@@ -254,7 +254,7 @@ object MultiFileReaderUtils extends Logging {
     withResource(cb) { _ =>
       // TODO: Use closeOnExcept for Array[Array[T]] type
       val batchOfPartCols = buildPartitionsColumnsBatch(partRows, partValues, partSchema)
-      ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatchIter(cb, batchOfPartCols)
+      ColumnarPartitionReaderWithPartitionValues.addGpuColumnVectorsToBatchIter(cb, batchOfPartCols)
     }
   }
 
