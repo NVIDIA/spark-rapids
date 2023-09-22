@@ -405,12 +405,12 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
         lhs.getBase,
         lhs.dataType(),
         intermediateLhsType,
-        ArithmeticCastOptions(failOnError))
+        CastOptions.getArithmeticCastOptions(failOnError))
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType,
-          ArithmeticCastOptions(failOnError))
+          CastOptions.getArithmeticCastOptions(failOnError))
       }
       withResource(castRhs) { castRhs =>
         withResource(castLhs.mul(castRhs,
@@ -439,7 +439,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
     }
     withResource(ret) { ret =>
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ArithmeticCastOptions(failOnError)),
+        CastOptions.getArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
@@ -858,14 +858,14 @@ trait GpuDecimalDivideBase extends GpuExpression {
         lhs.getBase,
         lhs.dataType(),
         intermediateLhsType,
-        ArithmeticCastOptions(failOnError))
+        CastOptions.getArithmeticCastOptions(failOnError))
 
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
           GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType,
-            ArithmeticCastOptions(failOnError))
+            CastOptions.getArithmeticCastOptions(failOnError))
         }
       }
       withResource(castRhs) { castRhs =>
@@ -878,7 +878,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
       // in the common case with us. It will also handle rounding the result to the final scale
       // to match what Spark does.
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ArithmeticCastOptions(failOnError)),
+        CastOptions.getArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
