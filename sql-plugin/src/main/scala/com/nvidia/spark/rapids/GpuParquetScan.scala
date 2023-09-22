@@ -2534,9 +2534,8 @@ class MultiFileCloudParquetPartitionReader(
         MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(origBatch, allPartInternalRows,
           rowsPerPartition, partitionSchema)
       } else {
-        val batch = addPartitionValues(origBatch, meta.partitionedFile.partitionValues,
+        addPartitionValuesIter(origBatch, meta.partitionedFile.partitionValues,
           partitionSchema)
-        new SingleGpuColumnarBatchIterator(batch)
       }
 
     case buffer: HostMemoryBuffersWithMetaData =>
@@ -2603,10 +2602,10 @@ class MultiFileCloudParquetPartitionReader(
       } else {
         // this is a bit weird, we don't have number of rows when allPartValues isn't
         // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
-        batchIter.map { batch =>
+        batchIter.flatMap { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
+          addPartitionValuesIter(batch, partedFile.partitionValues, partitionSchema)
         }
       }
     }.flatten

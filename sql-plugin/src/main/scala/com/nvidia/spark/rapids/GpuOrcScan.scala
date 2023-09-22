@@ -2180,9 +2180,8 @@ class MultiFileCloudOrcPartitionReader(
             MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(batch,
               partValues, rowsPerPart, partitionSchema)
           case None =>
-            val newBatch = addPartitionValues(batch, meta.partitionedFile.partitionValues,
+            addPartitionValuesIter(batch, meta.partitionedFile.partitionValues,
               partitionSchema)
-            new SingleGpuColumnarBatchIterator(newBatch)
         }
 
       case buffer: HostMemoryBuffersWithMetaData =>
@@ -2197,9 +2196,8 @@ class MultiFileCloudOrcPartitionReader(
                 MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(batch,
                   partValues, rowsPerPart, partitionSchema)
               case None =>
-                val newBatch = addPartitionValues(batch, buffer.partitionedFile.partitionValues,
+                addPartitionValuesIter(batch, buffer.partitionedFile.partitionValues,
                   partitionSchema)
-                new SingleGpuColumnarBatchIterator(newBatch)
             }
           case _ =>
             EmptyGpuColumnarBatchIterator
