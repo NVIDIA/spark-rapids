@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg
-
-import com.nvidia.spark.rapids.{ScanRule, ShimLoader}
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.connector.read.Scan
 
-/** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
-trait IcebergProvider {
-  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+trait GpuScan extends Scan with ScanWithMetrics {
+  /** Create a version of this scan with input file name support */
+  def withInputFile(): GpuScan
 }
 
-object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoader.newIcebergProvider()
-
-  val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
-}
+// Allows use of GpuScan from Java code
+abstract class GpuScanWrapper extends GpuScan

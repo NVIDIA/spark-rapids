@@ -104,7 +104,7 @@ case class GpuAvroScan(
     rapidsConf: RapidsConf,
     partitionFilters: Seq[Expression] = Seq.empty,
     dataFilters: Seq[Expression] = Seq.empty,
-    queryUsesInputFile: Boolean = false) extends FileScan with ScanWithMetrics {
+    queryUsesInputFile: Boolean = false) extends FileScan with GpuScan {
   override def isSplitable(path: Path): Boolean = true
 
   override def createReaderFactory(): PartitionReaderFactory = {
@@ -144,6 +144,8 @@ case class GpuAvroScan(
   override def description(): String = {
     super.description() + ", PushedFilters: " + seqToString(pushedFilters)
   }
+
+  override def withInputFile(): GpuScan = copy(queryUsesInputFile = true)
 }
 
 /** Avro partition reader factory to build columnar reader */
