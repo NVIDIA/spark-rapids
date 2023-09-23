@@ -22,12 +22,13 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import collection.JavaConverters._
 import com.nvidia.spark.rapids.Arm._
+import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.shims.GpuToPrettyString
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Literal, NamedExpression, ToPrettyString}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, Literal, NamedExpression, ToPrettyString}
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData}
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -140,4 +141,57 @@ class ToPrettyStringSuite extends GpuUnitTests {
       }
     }
   }
+
+  private def testDataType(dataType: DataType) {
+    val schema = (new StructType)
+      .add(StructField("a", dataType, true))
+    val numRows = 100
+    val inputRows = GpuBatchUtilsSuite.createRows(schema, numRows)
+    val cpuOutput: Array[String] = inputRows.map {
+      input => 
+        ToPrettyString(BoundReference(0, dataType, true), Some("UTC"))
+        .eval(input).asInstanceOf[UTF8String].toString()
+    }
+    // cpuOutput.foreach(println)
+    val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "arg")
+    val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
+
+    withResource(new GpuColumnarBatchBuilder(schema, numRows)) { batchBuilder =>
+      val r2cConverter = new GpuRowToColumnConverter(schema)
+      inputRows.foreach(r2cConverter.convert(_, batchBuilder))
+      withResource {
+        closeOnExcept(batchBuilder.build(numRows)) { columnarBatch =>
+          withResource(GpuColumnVector.from(ColumnVector.fromStrings(cpuOutput: _*), 
+          DataTypes.StringType)) { expected =>
+            checkEvaluation(gpuToPrettyStr, expected, columnarBatch)
+          }
+          columnarBatch
+        }
+      }(cb => null)
+    }
+  }
+
+  test("test strings") {
+    testDataType(DataTypes.StringType)    
+  } 
+
+  test("test floats") {
+    testDataType(DataTypes.FloatType)
+  } 
+
+  test("test doubles") {
+    testDataType(DataTypes.DoubleType)
+  } 
+
+  test("test ints") {
+    testDataType(DataTypes.IntegerType)
+  } 
+
+  test("test longs") {
+    testDataType(DataTypes.LongType)
+  } 
+
+  test("test decimals") {
+    testDataType(DecimalType(8,2))
+  } 
 }

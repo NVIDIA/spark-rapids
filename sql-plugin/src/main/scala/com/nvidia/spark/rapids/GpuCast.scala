@@ -190,15 +190,15 @@ object CastOptions {
     if (failOnError) ARITH_ANSI_OPTIONS else DEFAULT_CAST_OPTIONS
 
   object ToPrettyStringOptions extends CastOptions(false, false, false) {
-    override def leftBracket: String = "{"
+    override val leftBracket: String = "{"
 
-    override def rightBracket: String = "}"
+    override val rightBracket: String = "}"
 
-    override def nullString: String = "NULL"
+    override val nullString: String = "NULL"
 
-    override def useDecimalPlainString: Boolean = true
+    override val useDecimalPlainString: Boolean = true
 
-    override def useHexFormatForBinary: Boolean = true
+    override val useHexFormatForBinary: Boolean = true
   }
 }
 
@@ -332,7 +332,7 @@ object GpuCast {
         withResource(input.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromInt(1000000)) { microsPerSec =>
             withResource(asLongs.floorDiv(microsPerSec, DType.INT64)) { cv =>
-              if (options.ansiMode) {
+              if (ansiMode) {
                 toDataType match {
                   case IntegerType =>
                     assertValuesInRange[Long](cv, Int.MinValue.toLong,
@@ -357,7 +357,7 @@ object GpuCast {
         }
 
       // ansi cast from larger-than-long integral-like types, to long
-      case (dt: DecimalType, LongType) if options.ansiMode =>
+      case (dt: DecimalType, LongType) if ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
         val min = BIG_DECIMAL_LONG_MIN.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
         val max = BIG_DECIMAL_LONG_MAX.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
@@ -389,7 +389,7 @@ object GpuCast {
         }
 
       // ansi cast from larger-than-integer integral-like types, to integer
-      case (LongType | _: DecimalType, IntegerType) if options.ansiMode =>
+      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
         fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Int.MinValue.toLong, Int.MaxValue.toLong)
@@ -400,7 +400,7 @@ object GpuCast {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
-      case (LongType | IntegerType | _: DecimalType, ShortType) if options.ansiMode =>
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
         fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Short.MinValue.toLong, Short.MaxValue.toLong)
@@ -413,7 +413,7 @@ object GpuCast {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
-      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if options.ansiMode =>
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
         fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Byte.MinValue.toLong, Byte.MaxValue.toLong)
@@ -428,7 +428,7 @@ object GpuCast {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
-      case (FloatType | DoubleType, ByteType) if options.ansiMode =>
+      case (FloatType | DoubleType, ByteType) if ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Byte.MinValue.toFloat, Byte.MaxValue.toFloat)
@@ -438,7 +438,7 @@ object GpuCast {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to short
-      case (FloatType | DoubleType, ShortType) if options.ansiMode =>
+      case (FloatType | DoubleType, ShortType) if ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Short.MinValue.toFloat, Short.MaxValue.toFloat)
@@ -448,7 +448,7 @@ object GpuCast {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to integer
-      case (FloatType | DoubleType, IntegerType) if options.ansiMode =>
+      case (FloatType | DoubleType, IntegerType) if ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Int.MinValue.toFloat, Int.MaxValue.toFloat)
@@ -458,7 +458,7 @@ object GpuCast {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to long
-      case (FloatType | DoubleType, LongType) if options.ansiMode =>
+      case (FloatType | DoubleType, LongType) if ansiMode =>
         fromDataType match {
           case FloatType =>
             assertValuesInRange[Float](input, Long.MinValue.toFloat, Long.MaxValue.toFloat)
@@ -469,7 +469,7 @@ object GpuCast {
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
-        if (options.ansiMode && AnsiUtil.supportsAnsiCastFloatToTimestamp()) {
+        if (ansiMode && AnsiUtil.supportsAnsiCastFloatToTimestamp()) {
           // We are going through a util class because Spark 3.3.0+ throws an
           // exception if the float value is nan, +/- inf or out-of-range value,
           // where previously it didn't
@@ -499,9 +499,9 @@ object GpuCast {
           }
         }
       case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input, dt, options.ansiMode)
+        castFloatsToDecimal(input, dt, ansiMode)
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input, from, to, options.ansiMode)
+        castDecimalToDecimal(input, from, to, ansiMode)
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.castTo(DType.INT64)) { longs =>
@@ -532,16 +532,16 @@ object GpuCast {
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (StringType, ByteType | ShortType | IntegerType | LongType) =>
-        CastStrings.toInteger(input, options.ansiMode,
+        CastStrings.toInteger(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, FloatType | DoubleType) =>
-        CastStrings.toFloat(input, options.ansiMode,
+        CastStrings.toFloat(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, BooleanType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
-              castStringToBool(trimmed, options.ansiMode)
+              castStringToBool(trimmed, ansiMode)
             case DateType =>
               if (options.useAnsiStringToDateMode) {
                 castStringToDateAnsi(trimmed, ansiMode)
@@ -549,14 +549,14 @@ object GpuCast {
                 castStringToDate(trimmed)
               }
             case TimestampType =>
-              castStringToTimestamp(trimmed, options.ansiMode)
+              castStringToTimestamp(trimmed, ansiMode)
           }
         }
       case (StringType, dt: DecimalType) =>
-        CastStrings.toDecimal(input, options.ansiMode, dt.precision, -dt.scale)
+        CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
-        castIntegralsToDecimal(input, dt, options.ansiMode)
+        castIntegralsToDecimal(input, dt, ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
@@ -851,7 +851,8 @@ object GpuCast {
 
   private def castArrayToString(input: ColumnView,
       elementType: DataType,
-      options: CastOptions): ColumnVector = {
+      options: CastOptions,
+      castingBinaryData: Boolean = false): ColumnVector = {
 
     // We use square brackets for arrays regardless 
     val (leftStr, rightStr) = ("[", "]")
@@ -868,7 +869,7 @@ object GpuCast {
 
       val concatenated = withResource(strChildContainsNull) { _ =>
         withResource(input.replaceListChild(strChildContainsNull)) {
-          concatenateStringArrayElements(_, options)
+          concatenateStringArrayElements(_, options, castingBinaryData)
         }
       }
 
@@ -1373,7 +1374,7 @@ object GpuCast {
       withResource(input.getChildColumnView(0)) { dataCol =>
         withResource(CastStrings.fromIntegersWithBase(dataCol, 16)) { stringCol =>
           withResource(input.replaceListChild(stringCol)) { cv =>
-            castArrayToString(cv, DataTypes.StringType, options)
+            castArrayToString(cv, DataTypes.StringType, options, true)
           }
         }
       }

@@ -49,7 +49,7 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
           evaluatedCol.getBase,
           evaluatedCol.dataType(),
           StringType,
-          ToPrettyStringOptions), StringType)
+          CastOptions.TO_PRETTY_STRING_OPTIONS), StringType)
     }
   }
 }
