@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg
+package com.nvidia.spark.rapids.delta.delta21x
 
-import com.nvidia.spark.rapids.{ScanRule, ShimLoader}
+import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
 
-import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.delta.DeltaColumnMappingMode
+import org.apache.spark.sql.types.StructType
 
-/** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
-trait IcebergProvider {
-  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-}
-
-object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoader.newIcebergProvider()
-
-  val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+case class GpuDelta21xParquetFileFormat(
+    override val columnMappingMode: DeltaColumnMappingMode,
+    override val referenceSchema: StructType) extends GpuDeltaParquetFileFormat {
 }

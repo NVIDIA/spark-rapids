@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -22,11 +22,15 @@ package com.nvidia.spark.rapids
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.Job
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.{FileFormat, OutputWriterFactory, PartitionedFile}
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.SerializableConfiguration
 
 trait GpuReadFileFormatWithMetrics extends FileFormat {
   final override def supportBatch(spark: SparkSession, dataSchema: StructType): Boolean = true
@@ -62,4 +66,11 @@ trait GpuReadFileFormatWithMetrics extends FileFormat {
       metrics: Map[String, GpuMetric],
       alluxioPathReplacementMap: Option[Map[String, String]])
   : PartitionedFile => Iterator[InternalRow]
+
+  def isPerFileReadEnabled(conf: RapidsConf): Boolean
+
+  def createMultiFileReaderFactory(
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory
 }

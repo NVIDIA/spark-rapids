@@ -19,14 +19,12 @@ package com.nvidia.spark.rapids.iceberg
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
-import com.nvidia.spark.rapids.{FileFormatChecks, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
+import com.nvidia.spark.rapids.{FileFormatChecks, GpuScan, IcebergFormatType, RapidsConf, ReadFileOp, ScanMeta, ScanRule, ShimReflectionUtils}
 import com.nvidia.spark.rapids.iceberg.spark.source.GpuSparkBatchQueryScan
 
 import org.apache.spark.sql.connector.read.Scan
 
 class IcebergProviderImpl extends IcebergProvider {
-  override def isSupportedScan(scan: Scan): Boolean = scan.isInstanceOf[GpuSparkBatchQueryScan]
-
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     val cpuIcebergScanClass = ShimReflectionUtils.loadClass(IcebergProvider.cpuScanClassName)
     Seq(new ScanRule[Scan](
@@ -60,17 +58,10 @@ class IcebergProviderImpl extends IcebergProvider {
           }
         }
 
-        override def convertToGpu(): Scan = convertedScan.get
+        override def convertToGpu(): GpuScan = convertedScan.get
       },
       "Iceberg scan",
       ClassTag(cpuIcebergScanClass))
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-  }
-
-  override def copyScanWithInputFileTrue(scan: Scan): Scan = scan match {
-    case icebergBatchScan: GpuSparkBatchQueryScan =>
-      icebergBatchScan.copyWithInputFileTrue();
-    case _ =>
-      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
   }
 }

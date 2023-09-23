@@ -355,7 +355,6 @@ object GpuCast {
             asLongs.floorDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
-
       // ansi cast from larger-than-long integral-like types, to long
       case (dt: DecimalType, LongType) if ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
@@ -853,7 +852,6 @@ object GpuCast {
       elementType: DataType,
       options: CastOptions,
       castingBinaryData: Boolean = false): ColumnVector = {
-
     // We use square brackets for arrays regardless 
     val (leftStr, rightStr) = ("[", "]")
     val emptyStr = ""

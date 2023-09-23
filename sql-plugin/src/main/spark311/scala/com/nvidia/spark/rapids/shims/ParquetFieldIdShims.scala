@@ -21,7 +21,6 @@
 {"spark": "320"}
 {"spark": "321"}
 {"spark": "321cdh"}
-{"spark": "321db"}
 {"spark": "322"}
 {"spark": "323"}
 {"spark": "324"}
@@ -39,5 +38,5 @@ object ParquetFieldIdShims {
   }
 
   /** Parquet field ID support configs are not supported until Spark 3.3 */
-  def getParquetIdWriteEnabled(sqlConf: SQLConf): Boolean = false
+  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = false
 }
