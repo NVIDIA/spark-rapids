@@ -624,23 +624,23 @@ class ArrayGen(DataGen):
         super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
-        self.child_gen = child_gen
+        self._child_gen = child_gen
         self.all_null = all_null
         self.convert_to_tuple = convert_to_tuple
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self.child_gen) + ')'
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self.child_gen._cache_repr() + ')'
+        return super()._cache_repr() + '(' + self._child_gen._cache_repr() + ')'
 
     def start(self, rand):
-        self.child_gen.start(rand)
+        self._child_gen.start(rand)
         def gen_array():
             if self.all_null:
                 return None
             length = rand.randint(self._min_length, self._max_length)
-            result = [self.child_gen.gen() for _ in range(0, length)]
+            result = [self._child_gen.gen() for _ in range(0, length)]
             # This is needed for map(array, _) tests because python cannot create
             # a dict(list, _), but it can create a dict(tuple, _)
             if self.convert_to_tuple:
@@ -649,7 +649,7 @@ class ArrayGen(DataGen):
         self._start(rand, gen_array)
 
     def contains_ts(self):
-        return self.child_gen.contains_ts()
+        return self._child_gen.contains_ts()
 
 class MapGen(DataGen):
     """Generate a Map"""
@@ -658,26 +658,26 @@ class MapGen(DataGen):
         assert not key_gen.nullable
         self._min_length = min_length
         self._max_length = max_length
-        self.key_gen = key_gen
-        self.value_gen = value_gen
+        self._key_gen = key_gen
+        self._value_gen = value_gen
         super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self.key_gen) + ',' + str(self.value_gen) + ')'
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + self.key_gen._cache_repr() + ',' + self.value_gen._cache_repr() + ')'
+        return super()._cache_repr() + '(' + self._key_gen._cache_repr() + ',' + self._value_gen._cache_repr() + ')'
 
     def start(self, rand):
-        self.key_gen.start(rand)
-        self.value_gen.start(rand)
+        self._key_gen.start(rand)
+        self._value_gen.start(rand)
         def make_dict():
             length = rand.randint(self._min_length, self._max_length)
-            return {self.key_gen.gen(): self.value_gen.gen() for idx in range(0, length)}
+            return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
         self._start(rand, make_dict)
 
     def contains_ts(self):
-        return self.key_gen.contains_ts() or self.value_gen.contains_ts()
+        return self._key_gen.contains_ts() or self._value_gen.contains_ts()
 
 
 class NullGen(DataGen):

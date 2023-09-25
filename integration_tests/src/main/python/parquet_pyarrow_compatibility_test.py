@@ -52,9 +52,9 @@ def get_pa_type(data_gen):
         fields = [pa.field(name, get_pa_type(child)) for name, child in data_gen.children]
         return pa.struct(fields)
     elif isinstance(data_gen, ArrayGen):
-        return pa.list_(get_pa_type(data_gen.child_gen))
+        return pa.list_(get_pa_type(data_gen._child_gen))
     elif isinstance(data_gen, MapGen):
-        return pa.map_(get_pa_type(data_gen.key_gen), get_pa_type(data_gen.value_gen))
+        return pa.map_(get_pa_type(data_gen._key_gen), get_pa_type(data_gen._value_gen))
     else:
         raise Exception("unexpected data_gen: " + str(data_gen))
 
