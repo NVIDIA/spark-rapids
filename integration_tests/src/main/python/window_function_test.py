@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later
+from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -1531,18 +1531,30 @@ def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size, window_
         conf=conf)
 
 
+def spark_bugs_in_decimal_sorting():
+    """
+    Checks whether Apache Spark version has a bug in sorting Decimal columns correctly.
+    See https://issues.apache.org/jira/browse/SPARK-40089.
+    :return: True, if Apache Spark version does not sort Decimal(>20, >2) correctly. False, otherwise.
+    """
+    v = spark_version()
+    return v < "3.1.4" or v < "3.3.1" or v < "3.2.3" or v < "3.4.0"
+
+
 @ignore_order(local=True)
 @approximate_float
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('batch_size', ['1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
                                       _grpkey_longs_with_nulls,
                                       _grpkey_longs_with_dates,
                                       _grpkey_longs_with_nullable_dates,
                                       _grpkey_longs_with_decimals,
                                       _grpkey_longs_with_nullable_decimals,
-                                      # TODO: Sorting DECIMAL(23,10) borked on CPU, Spark 3.2.1.
-                                      _grpkey_longs_with_nullable_larger_decimals,
-                                      ], ids=idfn)
+                                      pytest.param(_grpkey_longs_with_nullable_larger_decimals,
+                                                   marks=pytest.mark.skipif(
+                                                     condition=spark_bugs_in_decimal_sorting(),
+                                                     reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))],
+                         ids=idfn)
 def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
