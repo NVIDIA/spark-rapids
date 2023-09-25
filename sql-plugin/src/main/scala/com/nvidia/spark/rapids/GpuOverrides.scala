@@ -3087,12 +3087,9 @@ object GpuOverrides extends Logging {
          |not longer than 15 characters disregarding the sign cannot cause an overflow.
          """.stripMargin.replaceAll("\n", " ")),
     expr[FormatNumber](
-      "Formats numeric column x to a format like '#,###,###.##', rounded to d decimal places" +
-      " with HALF_EVEN round mode, and returns the result as a string column.\n" + 
-      "If d is 0, the result has no decimal point or fractional part. If d is less than 0, " + 
-      "the result will be null.",
+      "Formats the number x like '#,###,###.##', rounded to d decimal places.",
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
-        ("x", TypeSig.cpuNumeric, TypeSig.cpuNumeric),
+        ("x", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
       (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =

@@ -803,13 +803,25 @@ format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalG
                                       DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10), 
                                       DecimalGen(precision=38, scale=-10)]
 
-
-format_number_gens = [DoubleGen(min_exp=-120, max_exp=-100, special_cases=[], nullable=False)]
-
 @pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
-def test_format_number(data_gen):
+def test_format_number_supported(data_gen):
     gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen, length=100).selectExpr(
-            'format_number(a, 36)')
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, -2)',
+            'format_number(a, 0)',
+            'format_number(a, 1)',
+            'format_number(a, 5)',
+            'format_number(a, 10)',
+            'format_number(a, 100)')
+    )
+
+format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=-32), DoubleGen(min_exp=-13, max_exp=15)]
+
+@pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
+def test_format_number_float(data_gen):
+    gen = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, 5)')
     )
