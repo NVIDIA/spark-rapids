@@ -3423,14 +3423,27 @@ object GpuOverrides extends Logging {
             TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          if(childExprs.length == 2) {
-            val Seq(value, percentage) = childExprs
-            GpuPercentileDefault(value, percentage,
-              c.mutableAggBufferOffset, c.inputAggBufferOffset)
-          } else {
-            val Seq(value, percentage, frequency) = childExprs
-            GpuPercentileWithFrequency(value, percentage, frequency,
-              c.mutableAggBufferOffset, c.inputAggBufferOffset)
+          val Seq(value, percentage, frequency) = childExprs
+
+          System.out.println("freq type : " + frequency.getClass.getName)
+          System.out.println("freq : " + frequency)
+          frequency match {
+            case GpuLiteral(freq, LongType) if freq == 1 => {
+              System.out.println("literal : " + freq)
+              System.out.println("value type : " + value.getClass.getName)
+              System.out.println("percentage type : " + percentage.getClass.getName)
+              System.out.println("c.mutableAggBufferOffset type : " +
+                c.mutableAggBufferOffset.getClass.getName)
+              System.out.println("c.inputAggBufferOffset type : " +
+                c.inputAggBufferOffset.getClass.getName)
+
+              GpuPercentileDefault(value, percentage)
+            }
+            case v : Any =>  {
+              System.out.println("value : " + v)
+              System.out.println("value type : " + v.getClass.getName)
+              GpuPercentileWithFrequency(value, percentage, frequency)
+            }
           }
         }
         override def aggBufferAttribute: AttributeReference = {

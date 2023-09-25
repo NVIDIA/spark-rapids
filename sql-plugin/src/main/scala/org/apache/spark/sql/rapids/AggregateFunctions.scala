@@ -2067,10 +2067,7 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-abstract class GpuPercentileBase(input: Expression,
-                             percentage: Expression,
-                             mutableAggBufferOffset: Int = 0,
-                             inputAggBufferOffset: Int = 0) extends GpuAggregateFunction {
+abstract class GpuPercentileBase(percentage: Expression) extends GpuAggregateFunction {
   protected class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
     override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
       (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
@@ -2126,10 +2123,8 @@ abstract class GpuPercentileBase(input: Expression,
  * with the CPU version and automated checks.
  */
 case class GpuPercentileDefault(input: Expression,
-                             percentage: Expression,
-                             mutableAggBufferOffset: Int = 0,
-                             inputAggBufferOffset: Int = 0)
-  extends GpuPercentileBase(input, percentage, mutableAggBufferOffset, inputAggBufferOffset) {
+                                percentage: Expression)
+  extends GpuPercentileBase(percentage) {
 
   override val inputProjection: Seq[Expression] = Seq(input)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfHistogram(dataType))
@@ -2144,10 +2139,8 @@ case class GpuPercentileDefault(input: Expression,
  */
 case class GpuPercentileWithFrequency(input: Expression,
                              percentage: Expression,
-                             frequency: Expression,
-                             mutableAggBufferOffset: Int = 0,
-                             inputAggBufferOffset: Int = 0)
-  extends GpuPercentileBase(input, percentage, mutableAggBufferOffset, inputAggBufferOffset) {
+                             frequency: Expression)
+  extends GpuPercentileBase(percentage) {
 
   override val inputProjection: Seq[Expression] = {
       val childrenWithNames = GpuLiteral("value", StringType) :: input ::
