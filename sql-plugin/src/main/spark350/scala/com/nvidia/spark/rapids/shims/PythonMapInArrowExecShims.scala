@@ -38,7 +38,7 @@ object PythonMapInArrowExecShims {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
         (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r) {
-          override def tagPlanForGpu() {
+          override def tagPlanForGpu(): Unit = {
             super.tagPlanForGpu()
             if (SQLConf.get.getConf(SQLConf.ARROW_EXECUTION_USE_LARGE_VAR_TYPES)) {
 

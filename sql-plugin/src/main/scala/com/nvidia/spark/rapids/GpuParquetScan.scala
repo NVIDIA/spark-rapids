@@ -108,7 +108,7 @@ case class GpuParquetScan(
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false)
-  extends ScanWithMetrics with FileScan with Logging {
+  extends FileScan with GpuScan with Logging {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -146,6 +146,8 @@ case class GpuParquetScan(
   def withFilters(
       partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+
+  override def withInputFile(): GpuScan = copy(queryUsesInputFile = true)
 }
 
 object GpuParquetScan {
@@ -1035,8 +1037,12 @@ private case class GpuParquetFileFilterHandler(
       case PrimitiveTypeName.INT96 if dt == DataTypes.TimestampType =>
         return
 
-      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType ||
-        dt == DataTypes.BinaryType || canReadAsBinaryDecimal(pt, dt) =>
+      case PrimitiveTypeName.BINARY if dt == DataTypes.StringType =>
+        // PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY for StringType is not supported by parquet
+        return
+
+      case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if dt == DataTypes.BinaryType =>
         return
 
       case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY

@@ -33,11 +33,11 @@ object RapidsDeltaUtils {
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    DeltaLogShim.fileFormat(deltaLog) match {
-      case _: DeltaParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
-      case f =>
-        meta.willNotWorkOnGpu(s"file format $f is not supported")
+    val format = DeltaLogShim.fileFormat(deltaLog)
+    if (format.getClass == classOf[DeltaParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
+    } else {
+      meta.willNotWorkOnGpu(s"file format $format is not supported")
     }
     checkIncompatibleConfs(meta, schema, deltaLog, spark.sessionState.conf, options)
   }

@@ -21,9 +21,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuOrcScan, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuOrcScan, GpuScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 
 class RapidsOrcScanMeta(
@@ -37,7 +36,7 @@ class RapidsOrcScanMeta(
     GpuOrcScan.tagSupport(this)
   }
 
-  override def convertToGpu(): Scan =
+  override def convertToGpu(): GpuScan =
     GpuOrcScan(oScan.sparkSession,
       oScan.hadoopConf,
       oScan.fileIndex,

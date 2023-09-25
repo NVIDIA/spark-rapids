@@ -36,17 +36,6 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
     spark.internalCreateDataFrame(withoutFilters.execute(), schema)
   }
 
-  def withSQLConf(pairs: (String, String)*)(f: => Unit): Unit = {
-    pairs.foreach { case (k, v) =>
-      SQLConf.get.setConfString(k, v)
-    }
-    try f finally {
-      pairs.foreach { case (k, _) =>
-        SQLConf.get.unsetConf(k)
-      }
-    }
-  }
-
   def withAllDatasources(code: => Unit): Unit = {
     // test data source v1 and v2
     withSQLConf(SQLConf.USE_V1_SOURCE_LIST.key -> "parquet") {

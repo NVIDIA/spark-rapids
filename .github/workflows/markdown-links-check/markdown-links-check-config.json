@@ -11,6 +11,9 @@
     },
     {
       "pattern": "http://localhost*"
+    },
+    {
+      "pattern": "https://www.nvidia.com/en-us/security/pgp-key"
     }
   ],
   "timeout": "15s",

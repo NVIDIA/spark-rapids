@@ -41,25 +41,31 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
     }
   }
 
+  private def getAndResetNumRetryThrowCurrentTask: Int = {
+    // taskId 1 was associated with the current thread in RmmSparkRetrySuiteBase
+    RmmSpark.getAndResetNumRetryThrow(/*taskId*/ 1)
+  }
+
   test("a retry when copying to device is handled") {
     val batch = buildBatch()
-    val ctriter = new ColumnarToRowIterator(
-      Seq(batch).iterator,
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
-    val myIter = GeneratedInternalRowToCudfRowIterator(
-      ctriter, schema, TargetSize(Int.MaxValue),
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    // this forces a retry on the copy of the host column to a device column
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
-    withResource(myIter.next()) { devBatch =>
-      withResource(buildBatch()) { expected =>
-        TestUtils.compareBatches(expected, devBatch)
+    val batchIter = Seq(batch).iterator
+    withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
+      NoopMetric)) { ctriter =>
+      val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
+      val myIter = GeneratedInternalRowToCudfRowIterator(
+        ctriter, schema, TargetSize(Int.MaxValue),
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+      // this forces a retry on the copy of the host column to a device column
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+      withResource(myIter.next()) { devBatch =>
+        withResource(buildBatch()) { expected =>
+          TestUtils.compareBatches(expected, devBatch)
+        }
       }
+      assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
+      assert(!myIter.hasNext)
+      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
     }
-    assert(!GpuColumnVector.extractBases(batch).exists(_.getRefCount > 0))
-    assert(!myIter.hasNext)
-    assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
   }
 
   test("a retry when converting to a table is handled") {
@@ -78,31 +84,29 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
     }).when(deviceStorage)
         .addTable(any(), any(), any(), any())
 
-    val ctriter = new ColumnarToRowIterator(batchIter,
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
-    val myIter = spy(GeneratedInternalRowToCudfRowIterator(
-      ctriter, schema, TargetSize(Int.MaxValue),
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
-    assertResult(0)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
-    withResource(myIter.next()) { devBatch =>
-      withResource(buildBatch()) { expected =>
-        TestUtils.compareBatches(expected, devBatch)
+    withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
+      NoopMetric)) { ctriter =>
+      val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
+      val myIter = spy(GeneratedInternalRowToCudfRowIterator(
+        ctriter, schema, TargetSize(Int.MaxValue),
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+      assertResult(0)(getAndResetNumRetryThrowCurrentTask)
+      withResource(myIter.next()) { devBatch =>
+        withResource(buildBatch()) { expected =>
+          TestUtils.compareBatches(expected, devBatch)
+        }
       }
+      assertResult(5)(getAndResetNumRetryThrowCurrentTask)
+      assert(!myIter.hasNext)
+      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
+      // This is my wrap around of checking that we did retry the last part
+      // where we are converting the device column of rows into an actual column.
+      // Because we asked for 3 retries, we would ask the spill framework 4 times to materialize
+      // a batch.
+      verify(rapidsBufferSpy, times(4))
+          .getColumnarBatch(any())
     }
-    // TODO: enable this assert, for some reason this is returning 0, but I verified
-    //  via the debugger and printfs that we are retrying 2 times total in the first block,
-    //   and 3 times in the second block that I have added retries to.
-    //  assertResult(5)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
-    assert(!myIter.hasNext)
-    assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
-    // This is my wrap around of checking that we did retry the last part
-    // where we are converting the device column of rows into an actual column.
-    // Because we asked for 3 retries, we would ask the spill framework 4 times to materialize
-    // a batch.
-    verify(rapidsBufferSpy, times(4))
-        .getColumnarBatch(any())
   }
 
   test("spilling the device column of rows works") {
@@ -124,47 +128,46 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
     }).when(deviceStorage)
         .addTable(any(), any(), any(), any())
 
-    val ctriter = new ColumnarToRowIterator(batchIter,
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
-    val myIter = spy(GeneratedInternalRowToCudfRowIterator(
-      ctriter, schema, TargetSize(Int.MaxValue),
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
-    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
-    assertResult(0)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
-    withResource(myIter.next()) { devBatch =>
-      withResource(buildBatch()) { expected =>
-        TestUtils.compareBatches(expected, devBatch)
+    withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
+      NoopMetric)) { ctriter =>
+      val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
+      val myIter = spy(GeneratedInternalRowToCudfRowIterator(
+        ctriter, schema, TargetSize(Int.MaxValue),
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric))
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+      assertResult(0)(getAndResetNumRetryThrowCurrentTask)
+      withResource(myIter.next()) { devBatch =>
+        withResource(buildBatch()) { expected =>
+          TestUtils.compareBatches(expected, devBatch)
+        }
       }
+      assertResult(5)(getAndResetNumRetryThrowCurrentTask)
+      assert(!myIter.hasNext)
+      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
+      // This is my wrap around of checking that we did retry the last part
+      // where we are converting the device column of rows into an actual column.
+      // Because we asked for 3 retries, we would ask the spill framework 4 times to materialize
+      // a batch.
+      verify(rapidsBufferSpy, times(4))
+          .getColumnarBatch(any())
     }
-    // TODO: enable this assert, for some reason this is returning 0, but I verified
-    //  via the debugger and printfs that we are retrying 2 times total in the first block,
-    //   and 3 times in the second block that I have added retries to.
-    //  assertResult(5)(RmmSpark.getAndResetNumRetryThrow(RmmSpark.getCurrentThreadId))
-    assert(!myIter.hasNext)
-    assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
-    // This is my wrap around of checking that we did retry the last part
-    // where we are converting the device column of rows into an actual column.
-    // Because we asked for 3 retries, we would ask the spill framework 4 times to materialize
-    // a batch.
-    verify(rapidsBufferSpy, times(4))
-        .getColumnarBatch(any())
   }
 
   test("a split and retry when copying to device is not handled, and we throw") {
     val batch = buildBatch()
     val batchIter = Seq(batch).iterator
 
-    val ctriter = new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
-      NoopMetric)
-    val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
-    val myIter = GeneratedInternalRowToCudfRowIterator(
-      ctriter, schema, TargetSize(1),
-      NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
-    assertThrows[SplitAndRetryOOM] {
-      myIter.next()
+    withResource(new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
+      NoopMetric)) { ctriter =>
+      val schema = Array(AttributeReference("longcol", LongType)().toAttribute)
+      val myIter = GeneratedInternalRowToCudfRowIterator(
+        ctriter, schema, TargetSize(1),
+        NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+      assertThrows[SplitAndRetryOOM] {
+        myIter.next()
+      }
+      assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
     }
-    assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
   }
 }
