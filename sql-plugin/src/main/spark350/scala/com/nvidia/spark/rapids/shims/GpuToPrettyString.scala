@@ -19,6 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -44,12 +45,23 @@ case class GpuToPrettyString(child: Expression, timeZoneId: Option[String] = Non
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResource(child.columnarEval(batch)) { evaluatedCol =>
-      GpuColumnVector.from(
-        GpuCast.doCast(
-          evaluatedCol.getBase,
-          evaluatedCol.dataType(),
-          StringType,
-          CastOptions.TO_PRETTY_STRING_OPTIONS), StringType)
+      withResource(GpuCast.doCast(
+        evaluatedCol.getBase,
+        evaluatedCol.dataType(),
+        StringType,
+        CastOptions.TO_PRETTY_STRING_OPTIONS)) { possibleStringResult =>
+        if (possibleStringResult.hasNulls) {
+          withResource(possibleStringResult.isNull) { isNull =>
+            val stringColWithNulls = possibleStringResult
+            withResource(Scalar.fromString(CastOptions.TO_PRETTY_STRING_OPTIONS.nullString)) {
+              nullString =>
+                GpuColumnVector.from(isNull.ifElse(nullString, stringColWithNulls), StringType)
+            }
+          }
+        } else {
+          GpuColumnVector.from(possibleStringResult.incRefCount(), StringType)
+        }
+      }
     }
   }
 }
