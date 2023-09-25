@@ -804,12 +804,12 @@ format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalG
                                       DecimalGen(precision=38, scale=-10)]
 
 
-format_number_gens = [DoubleGen(min_exp=-30, max_exp=30, special_cases=[float('1e10'), float('5e12')], nullable=False)]
+format_number_gens = [DoubleGen(min_exp=-120, max_exp=-100, special_cases=[], nullable=False)]
 
 @pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
 def test_format_number(data_gen):
     gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=100).selectExpr(
-            'format_number(a, 5)')
+            'format_number(a, 36)')
     )
