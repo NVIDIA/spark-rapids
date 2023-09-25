@@ -2067,7 +2067,8 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-abstract class GpuPercentileBase(percentage: Expression) extends GpuAggregateFunction {
+abstract class GpuPercentile(childExprs: Seq[Expression]) extends GpuAggregateFunction
+  with Serializable {
   protected class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
     override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
       (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
@@ -2105,7 +2106,7 @@ abstract class GpuPercentileBase(percentage: Expression) extends GpuAggregateFun
   private final lazy val histogramBuff: AttributeReference =
     AttributeReference("histogramBuff", dataType)()
 
-  override def dataType: DataType = percentage.dataType match {
+  override def dataType: DataType = childExprs(1).dataType match {
     case _: ArrayType => ArrayType(DoubleType, containsNull = false)
     case _ => DoubleType
   }
@@ -2114,6 +2115,7 @@ abstract class GpuPercentileBase(percentage: Expression) extends GpuAggregateFun
   override def nullable: Boolean = false
 
   override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null, dataType))
+  override def children: Seq[Expression] = childExprs
 }
 
 /**
@@ -2122,13 +2124,10 @@ abstract class GpuPercentileBase(percentage: Expression) extends GpuAggregateFun
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-case class GpuPercentileDefault(input: Expression,
-                                percentage: Expression)
-  extends GpuPercentileBase(percentage) {
+case class GpuPercentileDefault(childExprs: Seq[Expression]) extends GpuPercentile(childExprs) {
 
-  override val inputProjection: Seq[Expression] = Seq(input)
+  override val inputProjection: Seq[Expression] = Seq(childExprs.head)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfHistogram(dataType))
-  override def children: Seq[Expression] = input :: percentage :: Nil
 }
 
 /**
@@ -2137,18 +2136,27 @@ case class GpuPercentileDefault(input: Expression,
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-case class GpuPercentileWithFrequency(input: Expression,
-                             percentage: Expression,
-                             frequency: Expression)
-  extends GpuPercentileBase(percentage) {
+case class GpuPercentileWithFrequency(childExprs: Seq[Expression])
+  extends GpuPercentile(childExprs) {
 
   override val inputProjection: Seq[Expression] = {
-      val childrenWithNames = GpuLiteral("value", StringType) :: input ::
-        GpuLiteral("frequency", StringType) :: frequency :: Nil
+      val childrenWithNames = GpuLiteral("value", StringType) :: childExprs.head ::
+        GpuLiteral("frequency", StringType) :: childExprs(2) :: Nil
       GpuCreateNamedStruct(childrenWithNames) :: Nil
   }
   override lazy val updateAggregates: Seq[CudfAggregate] =  Seq(new CudfMergeHistogram(dataType))
-  override def children: Seq[Expression] = input :: percentage :: frequency :: Nil
+}
+
+object GpuPercentile{
+  def apply(childExprs: Seq[Expression]): GpuPercentile = {
+    val Seq(_, _, frequency) = childExprs
+    frequency match {
+      case GpuLiteral(freq, LongType) if freq == 1 =>
+        GpuPercentileDefault(childExprs)
+      case _: Any =>
+        GpuPercentileWithFrequency(childExprs)
+    }
+  }
 }
 
 class CpuToGpuPercentileBufferConverter(elementType: DataType)
