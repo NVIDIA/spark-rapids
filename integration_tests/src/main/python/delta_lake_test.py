@@ -92,7 +92,7 @@ def test_delta_deletion_vector_read_fallback(spark_tmp_path, use_cdf):
 
 # ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
 # Delta Lake 2.1 from 2.2 in tests. https://github.com/NVIDIA/spark-rapids/issues/9276
-column_mappings = ["name", "id"]
+column_mappings = ["name"]
 if is_spark_340_or_later() or is_databricks_runtime():
     column_mappings.append("id")
 
