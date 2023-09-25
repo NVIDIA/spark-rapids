@@ -33,6 +33,7 @@ import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
+import com.nvidia.spark.rapids.shims.ParquetFieldIdShims
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
@@ -198,6 +199,10 @@ class GpuOptimisticTransaction(
 
       val hadoopConf = spark.sessionState.newHadoopConfWithOptions(
         metadata.configuration ++ deltaLog.options)
+      if (metadata.columnMappingMode == IdMapping) {
+        // Need Parquet field IDs when doing column ID mapping
+        ParquetFieldIdShims.setWriteIdOverride(hadoopConf, true)
+      }
 
       if (spark.conf.get(DeltaSQLConf.DELTA_HISTORY_METRICS_ENABLED)) {
         val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
@@ -218,9 +223,11 @@ class GpuOptimisticTransaction(
         case Some(writeOptions) => writeOptions.options
       }
 
-      val gpuFileFormat = deltaLog.fileFormat(metadata) match {
-        case _: DeltaParquetFileFormat => new GpuParquetFileFormat
-        case f => throw new IllegalStateException(s"file format $f is not supported")
+      val deltaFileFormat = deltaLog.fileFormat(metadata)
+      val gpuFileFormat = if (deltaFileFormat.getClass == classOf[DeltaParquetFileFormat]) {
+        new GpuParquetFileFormat
+      } else {
+        throw new IllegalStateException(s"file format $deltaFileFormat is not supported")
       }
 
       try {

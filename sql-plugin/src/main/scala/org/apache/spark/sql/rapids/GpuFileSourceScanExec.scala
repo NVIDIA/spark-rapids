@@ -651,28 +651,36 @@ case class GpuFileSourceScanExec(
 
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    meta.wrapped.relation.fileFormat match {
-      case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
-      case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
-      case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      case ef if ExternalSource.isSupportedFormat(ef) =>
-        ExternalSource.tagSupportForGpuFileSourceScan(meta)
-      case other =>
-        meta.willNotWorkOnGpu(s"unsupported file format: ${other.getClass.getCanonicalName}")
+    val cls = meta.wrapped.relation.fileFormat.getClass
+    if (cls == classOf[CSVFileFormat]) {
+      GpuReadCSVFileFormat.tagSupport(meta)
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
+      GpuReadOrcFileFormat.tagSupport(meta)
+    } else if (cls == classOf[ParquetFileFormat]) {
+      GpuReadParquetFileFormat.tagSupport(meta)
+    } else if (cls == classOf[JsonFileFormat]) {
+      GpuReadJsonFileFormat.tagSupport(meta)
+    } else if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.tagSupportForGpuFileSourceScan(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"unsupported file format: ${cls.getCanonicalName}")
     }
   }
 
   def convertFileFormat(format: FileFormat): FileFormat = {
-    format match {
-      case _: CSVFileFormat => new GpuReadCSVFileFormat
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
-      case _: ParquetFileFormat => new GpuReadParquetFileFormat
-      case _: JsonFileFormat => new GpuReadJsonFileFormat
-      case ef if ExternalSource.isSupportedFormat(ef) => ExternalSource.getReadFileFormat(ef)
-      case other =>
-        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
-
+    val cls = format.getClass
+    if (cls == classOf[CSVFileFormat]) {
+      new GpuReadCSVFileFormat
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
+      new GpuReadOrcFileFormat
+    } else if (cls == classOf[ParquetFileFormat]) {
+      new GpuReadParquetFileFormat
+    } else if (cls == classOf[JsonFileFormat]) {
+      new GpuReadJsonFileFormat
+    } else if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.getReadFileFormat(format)
+    } else {
+      throw new IllegalArgumentException(s"${cls.getCanonicalName} is not supported")
     }
   }
 }

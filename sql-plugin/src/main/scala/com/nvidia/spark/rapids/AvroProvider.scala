@@ -22,7 +22,7 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 
 trait AvroProvider {
   /** If the file format is supported as an external source */
-  def isSupportedFormat(format: FileFormat): Boolean
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 

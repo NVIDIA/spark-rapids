@@ -401,13 +401,16 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
 
   def regularMultiply(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
-        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+      GpuCast.doCast(
+        lhs.getBase,
+        lhs.dataType(),
+        intermediateLhsType,
+        CastOptions.getArithmeticCastOptions(failOnError))
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
-        GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
-          legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+        GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType,
+          CastOptions.getArithmeticCastOptions(failOnError))
       }
       withResource(castRhs) { castRhs =>
         withResource(castLhs.mul(castRhs,
@@ -436,7 +439,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
     }
     withResource(ret) { ret =>
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
+        CastOptions.getArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
@@ -851,14 +854,18 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   def regularDivide(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
-        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+      GpuCast.doCast(
+        lhs.getBase,
+        lhs.dataType(),
+        intermediateLhsType,
+        CastOptions.getArithmeticCastOptions(failOnError))
+
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
-          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
-            legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType,
+            CastOptions.getArithmeticCastOptions(failOnError))
         }
       }
       withResource(castRhs) { castRhs =>
@@ -871,7 +878,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
       // in the common case with us. It will also handle rounding the result to the final scale
       // to match what Spark does.
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
+        CastOptions.getArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
