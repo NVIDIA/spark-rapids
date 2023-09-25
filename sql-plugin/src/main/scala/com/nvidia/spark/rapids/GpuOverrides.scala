@@ -3328,13 +3328,13 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+          TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL +
-              TypeSig.STRUCT +
-              TypeSig.ARRAY).nested(),
+            TypeSig.NULL +
+            TypeSig.STRUCT +
+            TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
@@ -3401,6 +3401,48 @@ object GpuOverrides extends Logging {
           val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
           GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
         }
+      }),
+    expr[Percentile](
+      "Aggregation computing exact percentile",
+      ExprChecks.reductionAndGroupByAgg(
+        // The output can be a single number or array depending on whether percentiles param
+        // is a single number or an array.
+        TypeSig.gpuNumeric +
+          TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
+          TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+        Seq(
+          ParamCheck("input",
+            TypeSig.gpuNumeric,
+            TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+          ParamCheck("percentage",
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
+          ParamCheck("frequency",
+            TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG),
+            TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          if(childExprs.length == 2) {
+            val Seq(value, percentage) = childExprs
+            GpuPercentileDefault(value, percentage,
+              c.mutableAggBufferOffset, c.inputAggBufferOffset)
+          } else {
+            val Seq(value, percentage, frequency) = childExprs
+            GpuPercentileWithFrequency(value, percentage, frequency,
+              c.mutableAggBufferOffset, c.inputAggBufferOffset)
+          }
+        }
+        override def aggBufferAttribute: AttributeReference = {
+          val aggBuffer = c.aggBufferAttributes.head
+          aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+        }
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+          new CpuToGpuPercentileBufferConverter(c.child.dataType)
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+          new GpuToCpuPercentileBufferConverter()
+        override val supportBufferConversion: Boolean = true
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[ApproximatePercentile](
       "Approximate percentile",

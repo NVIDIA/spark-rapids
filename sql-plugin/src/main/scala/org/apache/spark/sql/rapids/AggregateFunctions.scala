@@ -388,9 +388,9 @@ class CudfMergeLists(override val dataType: DataType) extends CudfAggregate {
 }
 
 /**
- * Spark handles NaN's equality by different way for non-nested float/double and float/double 
- * in nested types. When we use non-nested versions of floats and doubles, NaN values are 
- * considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+ * Spark handles NaN's equality by different way for non-nested float/double and float/double
+ * in nested types. When we use non-nested versions of floats and doubles, NaN values are
+ * considered unequal, but when we collect sets of nested versions, NaNs are considered equal
  * on the CPU. So we set NaNEquality dynamically in CudfCollectSet and CudfMergeSets.
  * Note that dataType is ArrayType(child.dataType) here.
  */
@@ -401,7 +401,7 @@ class CudfCollectSet(override val dataType: DataType) extends CudfAggregate {
         case ArrayType(FloatType | DoubleType, _) =>
           ReductionAggregation.collectSet(
             NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.UNEQUAL)
-        case _: DataType => 
+        case _: DataType =>
           ReductionAggregation.collectSet(
             NullPolicy.EXCLUDE, NullEquality.EQUAL, NaNEquality.ALL_EQUAL)
       }
@@ -1981,17 +1981,17 @@ case class GpuCollectSet(
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_set"
-  
-  // Spark handles NaN's equality by different way for non-nested float/double and float/double 
-  // in nested types. When we use non-nested versions of floats and doubles, NaN values are 
-  // considered unequal, but when we collect sets of nested versions, NaNs are considered equal 
+
+  // Spark handles NaN's equality by different way for non-nested float/double and float/double
+  // in nested types. When we use non-nested versions of floats and doubles, NaN values are
+  // considered unequal, but when we collect sets of nested versions, NaNs are considered equal
   // on the CPU. So we set NaNEquality dynamically here.
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = child.dataType match {
-    case FloatType | DoubleType => 
+    case FloatType | DoubleType =>
       RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
         NaNEquality.UNEQUAL).onColumn(inputs.head._2)
-    case _ => 
+    case _ =>
       RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
         NaNEquality.ALL_EQUAL).onColumn(inputs.head._2)
   }
@@ -2011,16 +2011,16 @@ trait GpuToCpuBufferTransition extends ShimUnaryExpression with CodegenFallback 
   override def dataType: DataType = BinaryType
 }
 
-class CpuToGpuCollectBufferConverter(
-    elementType: DataType) extends CpuToGpuAggregateBufferConverter {
+class CpuToGpuCollectBufferConverter(elementType: DataType)
+  extends CpuToGpuAggregateBufferConverter {
   def createExpression(child: Expression): CpuToGpuBufferTransition = {
     CpuToGpuCollectBufferTransition(child, elementType)
   }
 }
 
-case class CpuToGpuCollectBufferTransition(
-    override val child: Expression,
-    private val elementType: DataType) extends CpuToGpuBufferTransition {
+case class CpuToGpuCollectBufferTransition(override val child: Expression,
+                                           private val elementType: DataType)
+  extends CpuToGpuBufferTransition {
 
   private lazy val row = new UnsafeRow(1)
 
@@ -2044,8 +2044,155 @@ class GpuToCpuCollectBufferConverter extends GpuToCpuAggregateBufferConverter {
   }
 }
 
-case class GpuToCpuCollectBufferTransition(
-    override val child: Expression) extends GpuToCpuBufferTransition {
+case class GpuToCpuCollectBufferTransition(override val child: Expression)
+  extends GpuToCpuBufferTransition {
+
+  private lazy val projection = UnsafeProjection.create(Array(child.dataType))
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
+    // Converts UnSafeArrayData into binary buffer, according to the serialize method of Collect.
+    // The binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. As Collect.serialize, we create an UnsafeProjection to
+    // transform ArrayData to binary view of the single field UnsafeRow. Unlike Collect.serialize,
+    // we don't have to build ArrayData from on-heap array, since the input is already formatted
+    // in ArrayData(UnsafeArrayData).
+    val arrayData = input.asInstanceOf[ArrayData]
+    projection.apply(InternalRow.apply(arrayData)).getBytes
+  }
+}
+
+/**
+ * Compute percentile of the input number(s).
+ *
+ * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
+ * with the CPU version and automated checks.
+ */
+abstract class GpuPercentileBase(input: Expression,
+                             percentage: Expression,
+                             mutableAggBufferOffset: Int = 0,
+                             inputAggBufferOffset: Int = 0) extends GpuAggregateFunction {
+  protected class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
+    override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+      (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
+    override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.histogram()
+    override val name: String = "CudfHistogram"
+  }
+
+  protected class CudfMergeHistogram(override val dataType: DataType) extends CudfAggregate {
+    override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+      (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+    override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeHistogram()
+    override val name: String = "CudfMergeHistogram"
+  }
+
+  case class GpuIdentity(child: Expression) extends GpuUnaryExpression {
+    override def prettyName: String = "identity"
+
+    override def dataType: DataType = child.dataType
+
+    override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.incRefCount()
+
+    override def nullable: Boolean = child.nullable
+
+    //    override def children: Seq[Expression] = Seq(child)
+
+    //override def canEqual(that: Any): Boolean = true
+  }
+
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMergeHistogram(dataType))
+  override lazy val evaluateExpression: Expression = {
+    // AggregationUtils.percentileFromHistogram()
+    // TODO
+    GpuIdentity(histogramBuff)
+  }
+  private final lazy val histogramBuff: AttributeReference =
+    AttributeReference("histogramBuff", dataType)()
+
+  override def dataType: DataType = percentage.dataType match {
+    case _: ArrayType => ArrayType(DoubleType, containsNull = false)
+    case _ => DoubleType
+  }
+  override def aggBufferAttributes: Seq[AttributeReference] = histogramBuff :: Nil
+  override def prettyName: String = "percentile"
+  override def nullable: Boolean = false
+
+  override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null, dataType))
+}
+
+/**
+ * Compute percentile of the input number(s).
+ *
+ * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
+ * with the CPU version and automated checks.
+ */
+case class GpuPercentileDefault(input: Expression,
+                             percentage: Expression,
+                             mutableAggBufferOffset: Int = 0,
+                             inputAggBufferOffset: Int = 0)
+  extends GpuPercentileBase(input, percentage, mutableAggBufferOffset, inputAggBufferOffset) {
+
+  override val inputProjection: Seq[Expression] = Seq(input)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfHistogram(dataType))
+  override def children: Seq[Expression] = input :: percentage :: Nil
+}
+
+/**
+ * Compute percentile of the input number(s).
+ *
+ * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
+ * with the CPU version and automated checks.
+ */
+case class GpuPercentileWithFrequency(input: Expression,
+                             percentage: Expression,
+                             frequency: Expression,
+                             mutableAggBufferOffset: Int = 0,
+                             inputAggBufferOffset: Int = 0)
+  extends GpuPercentileBase(input, percentage, mutableAggBufferOffset, inputAggBufferOffset) {
+
+  override val inputProjection: Seq[Expression] = {
+      val childrenWithNames = GpuLiteral("value", StringType) :: input ::
+        GpuLiteral("frequency", StringType) :: frequency :: Nil
+      GpuCreateNamedStruct(childrenWithNames) :: Nil
+  }
+  override lazy val updateAggregates: Seq[CudfAggregate] =  Seq(new CudfMergeHistogram(dataType))
+  override def children: Seq[Expression] = input :: percentage :: frequency :: Nil
+}
+
+class CpuToGpuPercentileBufferConverter(elementType: DataType)
+  extends CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition = {
+    CpuToGpuPercentileBufferTransition(child, elementType)
+  }
+}
+
+case class CpuToGpuPercentileBufferTransition(override val child: Expression,
+                                              private val elementType: DataType)
+  extends CpuToGpuBufferTransition {
+
+  private lazy val row = new UnsafeRow(1)
+
+  override def dataType: DataType = ArrayType(elementType, containsNull = false)
+
+  override protected def nullSafeEval(input: Any): ArrayData = {
+    // Converts binary buffer into UnSafeArrayData, according to the deserialize method of Collect.
+    // The input binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. Since array of elements exactly matches the GPU format, we
+    // don't need to do any conversion in memory level. Instead, we simply bind the binary data to
+    // a reused UnsafeRow. Then, fetch the only field as ArrayData.
+    val bytes = input.asInstanceOf[Array[Byte]]
+    row.pointTo(bytes, bytes.length)
+    row.getArray(0).copy()
+  }
+}
+
+class GpuToCpuPercentileBufferConverter extends GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition = {
+    GpuToCpuPercentileBufferTransition(child)
+  }
+}
+
+case class GpuToCpuPercentileBufferTransition(override val child: Expression)
+  extends GpuToCpuBufferTransition {
 
   private lazy val projection = UnsafeProjection.create(Array(child.dataType))
 
