@@ -88,7 +88,7 @@ abstract class GpuWindowExpressionMetaBase(
                     s"Found lower=$lower, upper=$upper ")
                 }
                 // Also check for negative offsets.
-                if (upper < 0 || lower < 0) {
+                if (upper < 0 || lower > 0) {
                   windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
                     case _: Average => // Supported
                     case _: CollectList => // Supported
