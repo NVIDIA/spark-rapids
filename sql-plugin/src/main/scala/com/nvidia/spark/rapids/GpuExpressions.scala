@@ -187,6 +187,9 @@ trait GpuExpression extends Expression {
   /**
    * Whether an expression itself is non-deterministic when its "deterministic" is false,
    * no matter whether it has any non-deterministic children.
+   * An expression is actually a tree, and deterministic being false means there is at
+   * least one tree node is non-deterministic, but we need to know the exact nodes which
+   * are non-deterministic to check if it implements the Retryable.
    *
    * Default to false because Spark checks only children by default in Expression. So it
    * is non-deterministic iff it has non-deterministic children.
@@ -200,9 +203,6 @@ trait GpuExpression extends Expression {
    * An expression is retryable when
    *   - it is deterministic, or
    *   - when being non-deterministic, it is a Retryable and its children are all retryable.
-   *
-   * One exception is the UDF. The UDF expression will be retryable when its
-   * "function" is a Retryable, even itself is not a Retryable.
    */
   lazy val retryable: Boolean = deterministic || {
     val childrenAllRetryable = children.forall(_.asInstanceOf[GpuExpression].retryable)

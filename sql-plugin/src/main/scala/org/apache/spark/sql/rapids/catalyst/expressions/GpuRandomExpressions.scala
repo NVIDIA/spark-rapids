@@ -58,7 +58,7 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
 
   @transient protected var previousPartition: Int = 0
 
-  @transient private var curXORShiftRandomSeed: Long = 0
+  @transient protected var curXORShiftRandomSeed: Option[Long] = None
 
   private def wasInitialized: Boolean = rng != null
 
@@ -68,8 +68,22 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
 
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegerType, LongType))
 
+  private def initRandom(): Unit = {
+    val partId = TaskContext.getPartitionId()
+    if (partId != previousPartition || !wasInitialized) {
+      rng = new RapidsXORShiftRandom(seed + partId)
+      previousPartition = partId
+    }
+  }
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    assert(wasInitialized)
+    if (curXORShiftRandomSeed.isEmpty) {
+      // checkpoint not called, need to init the random generator here
+      initRandom()
+    } else {
+      // make sure here uses the same random generator with checkpoint
+      assert(wasInitialized)
+    }
     withResource(new NvtxRange("GpuRand", NvtxColor.RED)) { _ =>
       val numRows = batch.numRows()
       withResource(HostColumnVector.builder(DType.FLOAT64, numRows)) { builder =>
@@ -80,18 +94,14 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   }
 
   override def checkpoint(): Unit = {
-    // In a task, checkpoint is called before columnarEval, so init the random
-    // generator here.
-    val partId = TaskContext.getPartitionId()
-    if (partId != previousPartition || !wasInitialized) {
-      rng = new RapidsXORShiftRandom(seed + partId)
-      previousPartition = partId
-    }
-    curXORShiftRandomSeed = rng.currentSeed
+    // In a task, checkpoint is called before columnarEval, so need to try to
+    // init the random generator here.
+    initRandom()
+    curXORShiftRandomSeed = Some(rng.currentSeed)
   }
 
   override def restore(): Unit = {
-    assert(wasInitialized)
-    rng.setHashedSeed(curXORShiftRandomSeed)
+    assert(wasInitialized && curXORShiftRandomSeed.isDefined)
+    rng.setHashedSeed(curXORShiftRandomSeed.get)
   }
 }
