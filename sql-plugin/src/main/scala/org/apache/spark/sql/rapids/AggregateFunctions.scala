@@ -2077,6 +2077,7 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
 
   override def doColumnar(value: GpuColumnVector, percentage: GpuColumnVector): ColumnVector = {
     TableDebug.get().debug("Final histogram", value.getBase);
+    TableDebug.get().debug("percentage", percentage.getBase);
     if (isReduction) {
       AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
         percentage.getBase)
@@ -2148,14 +2149,11 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
 }
 
 case class GpuGetListChild(child: Expression) extends GpuExpression {
-
-
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    val dt = dataType
     withResourceIfAllowed(child.columnarEvalAny(batch)) {
       case cv: GpuColumnVector =>
-        withResource(cv.getBase.getChildColumnView(0)) { view =>
-          GpuColumnVector.from(view.copyToColumnVector(), dt)
+        withResource(cv.getBase.getChildColumnView(0)) { child =>
+          GpuColumnVector.from(child.copyToColumnVector(), dataType)
         }
 
       case other =>
@@ -2169,6 +2167,7 @@ case class GpuGetListChild(child: Expression) extends GpuExpression {
   override def nullable: Boolean = child.nullable
 
   override def dataType: DataType = child.dataType
+  //.asInstanceOf[ArrayType].elementType
 
   override def children: Seq[Expression] = Seq(child)
 }
