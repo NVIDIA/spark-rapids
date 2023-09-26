@@ -27,12 +27,12 @@ corresponding profile flag `-P<jdk11|jdk17>`
 
 After this the jar should be at 
 `target/datagen_2.12-$PLUGIN_VERSION-spark$SPARK_VERSION.jar`
-for example a Spark 3.3.0 jar for the 23.10.0 release would be
-`target/datagen_2.12-23.10.0-spark330.jar`
+for example a Spark 3.3.0 jar for the 23.12.0 release would be
+`target/datagen_2.12-23.12.0-spark330.jar`
 
 To get a spark shell with this you can run 
 ```shell
-spark-shell --jars target/datagen_2.12-23.10.0-spark330.jar
+spark-shell --jars target/datagen_2.12-23.12.0-spark330.jar
 ```
 
 After that you should be good to go.
