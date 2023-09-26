@@ -111,11 +111,11 @@ trait HostMemoryBuffersWithMetaDataBase {
 trait MultiFileReaderFunctions {
 
   // Add partitioned columns into the batch
-  protected def addPartitionValuesIter(
+  protected def addPartitionValues(
       batch: ColumnarBatch,
       inPartitionValues: InternalRow,
-      partitionSchema: StructType): Iterator[ColumnarBatch] = {
-    MultiFileReaderUtils.addSinglePartitionValuesAndCloseIter(batch, inPartitionValues,
+      partitionSchema: StructType): SplitBatchReaderIterator = {
+    MultiFileReaderUtils.addSinglePartitionValuesAndClose(batch, inPartitionValues,
       partitionSchema)
   }
 
@@ -216,50 +216,52 @@ object MultiFileReaderUtils extends Logging {
    * @param partitionSchema - the partition schema
    * @return a new columnar batch iterator with partition values
    */
-  def addMultiplePartitionValuesAndCloseIter(batch: ColumnarBatch,
+    // splitForCudfSizeLimit
+    // return a Case Class ->
+  def addAllPartitionValuesAndClose(batch: ColumnarBatch,
       partitionValues: Array[InternalRow],
       partitionRows: Array[Long],
-      partitionSchema: StructType): Iterator[ColumnarBatch] = {
+      partitionSchema: StructType): SplitBatchReaderIterator = {
     if (partitionSchema.nonEmpty) {
       if (partitionValues.length > 1) {
-        concatAndAddPartitionColsToBatchAndCloseIter(batch, partitionRows, partitionValues,
+        concatAndAddPartitionColsToBatchAndClose(batch, partitionRows, partitionValues,
           partitionSchema)
       } else {
         // single partition, add like other readers
-        addSinglePartitionValuesAndCloseIter(batch, partitionValues.head, partitionSchema)
+        addSinglePartitionValuesAndClose(batch, partitionValues.head, partitionSchema)
       }
     } else {
-      new SingleGpuColumnarBatchIterator(batch)
+      new SplitBatchReaderIterator(Seq(SplitBatchReader.from(batch)))
     }
   }
 
-  def addSinglePartitionValuesAndCloseIter(batch: ColumnarBatch, partitionValues: InternalRow,
-      partitionSchema: StructType): Iterator[ColumnarBatch] = {
+  def addSinglePartitionValuesAndClose(batch: ColumnarBatch, partitionValues: InternalRow,
+      partitionSchema: StructType): SplitBatchReaderIterator = {
     if (partitionSchema.nonEmpty) {
       val partitionScalars = closeOnExcept(batch) { _ =>
         ColumnarPartitionReaderWithPartitionValues.createPartitionValues(
           partitionValues.toSeq(partitionSchema), partitionSchema)
       }
       withResource(partitionScalars) { _ =>
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValuesIter(batch,
+        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch,
           partitionScalars, GpuColumnVector.extractTypes(partitionSchema))
       }
     } else {
-      new SingleGpuColumnarBatchIterator(batch)
+      new SplitBatchReaderIterator(Seq(SplitBatchReader.from(batch)))
     }
   }
 
-  private def concatAndAddPartitionColsToBatchAndCloseIter(cb: ColumnarBatch, partRows: Array[Long],
-      partValues: Array[InternalRow], partSchema: StructType): Iterator[ColumnarBatch] = {
+  private def concatAndAddPartitionColsToBatchAndClose(cb: ColumnarBatch, partRows: Array[Long],
+      partValues: Array[InternalRow], partSchema: StructType): SplitBatchReaderIterator = {
     withResource(cb) { _ =>
-      // TODO: Use closeOnExcept for Array[Array[T]] type
-      val batchOfPartCols = buildPartitionsColumnsBatch(partRows, partValues, partSchema)
-      ColumnarPartitionReaderWithPartitionValues.addGpuColumnVectorsToBatchIter(cb, batchOfPartCols)
+      val batchOfPartCols = buildPartitionsColumnsBatch(partRows, partValues,
+        partSchema)
+      ColumnarPartitionReaderWithPartitionValues.addGpuColumnVectorsToBatch(cb, batchOfPartCols)
     }
   }
 
   private def buildPartitionsColumns(partRowNumsAndValues: Array[(Long, InternalRow)],
-      partSchema: StructType): Array[GpuColumnVector] = {
+      partSchema: StructType): Seq[GpuColumnVector] = {
     // build the partitions vectors for all partitions within each column
     // and concatenate those together then go to the next column
     closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
@@ -284,7 +286,6 @@ object MultiFileReaderUtils extends Logging {
     }
   }
 
-  // scalastyle:off line.size.limit
   /**
    * Splits partitions into smaller batches such that the batch size
    * does not exceed cudfLimit for any column.
@@ -322,11 +323,10 @@ object MultiFileReaderUtils extends Logging {
    * @return An array of batches, containing (row sizes, partitionValues) pairs,
    *         such that each batch's size is less than cudfLimit.
    */
-  // scalastyle:on line.size.limit
   private def splitPartitionIntoBatches(partRows: Array[Long],
       partValues: Array[InternalRow],
       partSchema: StructType): Array[Array[(Long, InternalRow)]] = {
-    val cuDFLimit = (1L << 31) - 1
+    val cuDFLimit = 50000 // (1L << 31) - 1
     val resultBatches = ArrayBuffer[Array[(Long, InternalRow)]]()
     val currentBatch = ArrayBuffer[(Long, InternalRow)]()
     // Initialize a HashMap to store the size of the current batch for each column
@@ -343,7 +343,7 @@ object MultiFileReaderUtils extends Logging {
           val sizeOfSingleValue = singleValue.getBytes("UTF-8").length.toLong
           val sizeOfPartition = rowsInPartition * sizeOfSingleValue
           // Check if adding the partition to the current batch exceeds cuDFLimit
-          if (sizeOfBatch.getOrElseUpdate(colIndex, 0L) + sizeOfPartition < cuDFLimit) {
+          if (sizeOfBatch.getOrElseUpdate(colIndex, 0L) + sizeOfPartition <= cuDFLimit) {
             sizeOfBatch(colIndex) += sizeOfPartition
           } else {
             // Need to split the current partition
@@ -370,7 +370,7 @@ object MultiFileReaderUtils extends Logging {
   }
 
   private def buildPartitionsColumnsBatch(partRows: Array[Long], partValues: Array[InternalRow],
-      partSchema: StructType): Array[Array[GpuColumnVector]] = {
+      partSchema: StructType): Seq[Seq[GpuColumnVector]] = {
     splitPartitionIntoBatches(partRows, partValues, partSchema)
       .map(buildPartitionsColumns(_, partSchema))
   }

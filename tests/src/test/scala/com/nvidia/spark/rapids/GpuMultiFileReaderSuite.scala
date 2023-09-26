@@ -89,47 +89,50 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
   }
 
   def writeAndReadParquet(df: DataFrame, spark: SparkSession, outputFile: File,
-      partCols:String*): Unit = {
+      partCols:String*): DataFrame = {
     spark.conf.set("spark.rapids.sql.enabled", "false")
     df.write.partitionBy(partCols:_*).parquet(outputFile.getCanonicalPath)
 
     spark.conf.set("spark.rapids.sql.enabled", "true")
-    val res = spark.read.parquet(outputFile.getCanonicalPath).collect()
-
-    print(res.length)
-    assert(res.length > 0)
+    spark.read.parquet(outputFile.getCanonicalPath)
   }
 
   test("WIP: test column size exceeding cudf limit" +
     " - single partition column, single partition value") {
+    val numRows = 10000
     withTempPath { file =>
       withGpuSparkSession(spark => {
-        val df = spark.range(10000)
+        val df = spark.range(numRows)
           .withColumn("partCol", lit(generateRandomString(10)))
-        writeAndReadParquet(df, spark, file, "partCol")
+        val resultDf = writeAndReadParquet(df, spark, file, "partCol")
+        assert(resultDf.collect().length == numRows)
       })
     }
   }
 
   test("WIP: test column size exceeding cudf limit" +
     " - single partition column, multiple partition values") {
+    val numRows = 10000
     withTempPath { file =>
       withGpuSparkSession(spark => {
-        val df = spark.range(10000)
-          .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 4)))
-        writeAndReadParquet(df, spark, file, "partCol")
+        val df = spark.range(numRows)
+          .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 10)))
+        val resultDf = writeAndReadParquet(df, spark, file, "partCol")
+        assert(resultDf.collect().length == numRows)
       })
     }
   }
 
   test("WIP: test column size exceeding cudf limit" +
     " - multiple partition columns, multiple partition values") {
+    val numRows = 10000
     withTempPath { file =>
       withGpuSparkSession(spark => {
-        val df = spark.range(10000)
-          .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 4)))
-          .withColumn("partCol2", expr(sqlExprToGenerateRandomString(20, 4)))
-        writeAndReadParquet(df, spark, file, "partCol", "partCol2")
+        val df = spark.range(numRows)
+          .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 10)))
+          .withColumn("partCol2", expr(sqlExprToGenerateRandomString(20, 10)))
+        val resultDf = writeAndReadParquet(df, spark, file, "partCol", "partCol2")
+        assert(resultDf.collect().length == numRows)
       })
     }
   }

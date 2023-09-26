@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
@@ -107,26 +107,30 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   private var leftValues: Array[InternalRow] = partValues
   private var leftRowNums: Array[Long] = partRowNums
-  private var outputIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
+  private var outputIter: Iterator[ColumnarBatch] = Iterator.empty
 
-  override def hasNext: Boolean = inputIter.hasNext || outputIter.hasNext
+  override def hasNext: Boolean = outputIter.hasNext || inputIter.hasNext
 
   override def next(): ColumnarBatch = {
-    if (!hasNext) throw new NoSuchElementException()
-    if (!outputIter.hasNext) {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    } else if (outputIter.hasNext) {
+      outputIter.next()
+    } else {
       val batch = inputIter.next()
-      outputIter = if (partSchema.nonEmpty) {
+      if (partSchema.nonEmpty) {
         val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
           computeValuesAndRowNumsForBatch(batch.numRows())
         }
-        MultiFileReaderUtils.addMultiplePartitionValuesAndCloseIter(batch,
+        outputIter = MultiFileReaderUtils.addAllPartitionValuesAndClose(batch,
           readPartValues, readPartRows, partSchema)
+        outputIter.next()
       } else {
-        new SingleGpuColumnarBatchIterator(batch)
+        batch
       }
     }
-    outputIter.next()
   }
+
 
   private[this] def computeValuesAndRowNumsForBatch(batchRowNum: Int):
       (Array[InternalRow], Array[Long]) = {
