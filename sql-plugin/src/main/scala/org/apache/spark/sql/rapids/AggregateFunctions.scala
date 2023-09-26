@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
@@ -2061,14 +2061,29 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
   }
 }
 
+case class GpuIdentity(child: Expression) extends GpuUnaryExpression {
+  override def prettyName: String = "identity"
+
+  override def dataType: DataType = child.dataType
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.incRefCount()
+
+  override def nullable: Boolean = child.nullable
+
+//      override def children: Seq[Expression] = Seq(child)
+
+  //override def canEqual(that: Any): Boolean = true
+
+}
+
 /**
  * Compute percentile of the input number(s).
  *
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-abstract class GpuPercentile(childExprs: Seq[Expression]) extends GpuAggregateFunction
-  with Serializable {
+abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
+  extends GpuAggregateFunction with Serializable {
   protected class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
     override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
       (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
@@ -2081,20 +2096,6 @@ abstract class GpuPercentile(childExprs: Seq[Expression]) extends GpuAggregateFu
       (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
     override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeHistogram()
     override val name: String = "CudfMergeHistogram"
-  }
-
-  case class GpuIdentity(child: Expression) extends GpuUnaryExpression {
-    override def prettyName: String = "identity"
-
-    override def dataType: DataType = child.dataType
-
-    override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.incRefCount()
-
-    override def nullable: Boolean = child.nullable
-
-    //    override def children: Seq[Expression] = Seq(child)
-
-    //override def canEqual(that: Any): Boolean = true
   }
 
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMergeHistogram(dataType))
@@ -2118,16 +2119,30 @@ abstract class GpuPercentile(childExprs: Seq[Expression]) extends GpuAggregateFu
   override def children: Seq[Expression] = childExprs
 }
 
-/**
- * Compute percentile of the input number(s).
- *
- * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
- * with the CPU version and automated checks.
- */
-case class GpuPercentileDefault(childExprs: Seq[Expression]) extends GpuPercentile(childExprs) {
+case class GpuGetListChild(child: Expression) extends GpuExpression {
 
-  override val inputProjection: Seq[Expression] = Seq(childExprs.head)
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfHistogram(dataType))
+
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    val dt = dataType
+    withResourceIfAllowed(child.columnarEvalAny(batch)) {
+      case cv: GpuColumnVector =>
+        withResource(cv.getBase.getChildColumnView(0)) { view =>
+          GpuColumnVector.from(view.copyToColumnVector(), dt)
+        }
+
+      case other =>
+        throw new IllegalArgumentException(s"Got an unexpected type out of columnarEvalAny $other")
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
+
+  override def nullable: Boolean = child.nullable
+
+  override def dataType: DataType = child.dataType
+
+  override def children: Seq[Expression] = Seq(child)
 }
 
 /**
@@ -2136,8 +2151,31 @@ case class GpuPercentileDefault(childExprs: Seq[Expression]) extends GpuPercenti
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-case class GpuPercentileWithFrequency(childExprs: Seq[Expression])
-  extends GpuPercentile(childExprs) {
+case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolean)
+  extends GpuPercentile(childExprs, isReduction) {
+
+  override val inputProjection: Seq[Expression] = Seq(childExprs.head)
+
+  private lazy val histogramUpdate = new CudfHistogram(dataType)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(histogramUpdate)
+
+  override lazy val postUpdate: Seq[Expression] = {
+    if (isReduction) {
+      val reductionResult = histogramUpdate.attr
+      Seq(GpuGetListChild(reductionResult))
+    } else {
+      Seq(histogramUpdate.attr)
+    }
+  }
+}
+  /**
+ * Compute percentile of the input number(s).
+ *
+ * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
+ * with the CPU version and automated checks.
+ */
+case class GpuPercentileWithFrequency(childExprs: Seq[Expression], isReduction: Boolean)
+  extends GpuPercentile(childExprs, isReduction) {
 
   override val inputProjection: Seq[Expression] = {
       val childrenWithNames = GpuLiteral("value", StringType) :: childExprs.head ::
@@ -2148,13 +2186,13 @@ case class GpuPercentileWithFrequency(childExprs: Seq[Expression])
 }
 
 object GpuPercentile{
-  def apply(childExprs: Seq[Expression]): GpuPercentile = {
+  def apply(childExprs: Seq[Expression], isReduction: Boolean): GpuPercentile = {
     val Seq(_, _, frequency) = childExprs
     frequency match {
       case GpuLiteral(freq, LongType) if freq == 1 =>
-        GpuPercentileDefault(childExprs)
+        GpuPercentileDefault(childExprs, isReduction)
       case _: Any =>
-        GpuPercentileWithFrequency(childExprs)
+        GpuPercentileWithFrequency(childExprs, isReduction)
     }
   }
 }

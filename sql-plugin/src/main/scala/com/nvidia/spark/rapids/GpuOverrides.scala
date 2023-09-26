@@ -3423,6 +3423,13 @@ object GpuOverrides extends Logging {
             TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val exprMeta = p.get.asInstanceOf[BaseExprMeta[_]]
+          val context = exprMeta.context
+          context match {
+            case ReductionAggExprContext => GpuPercentile(childExprs, isReduction = true)
+            case GroupByAggExprContext => GpuPercentile(childExprs, isReduction = false)
+            case _ => throw new IllegalStateException(s"Invalid aggregation context: $context")
+          }
 //          val Seq(value, percentage, frequency) = childExprs
 //          frequency match {
 //            case GpuLiteral(freq, LongType) if freq == 1 =>
@@ -3430,7 +3437,6 @@ object GpuOverrides extends Logging {
 //            case v : Any =>
 //              GpuPercentileWithFrequency(value, percentage, frequency)
 //          }
-          GpuPercentile(childExprs)
         }
         override def aggBufferAttribute: AttributeReference = {
           val aggBuffer = c.aggBufferAttributes.head
