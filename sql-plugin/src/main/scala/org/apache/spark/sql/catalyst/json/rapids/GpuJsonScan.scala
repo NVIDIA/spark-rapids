@@ -267,7 +267,14 @@ object JsonPartitionReader {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
         withResource(new NvtxWithMetrics(formatName + " decode",
           NvtxColor.DARK_GREEN, decodeTime)) { _ =>
-          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+          try {
+            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+          } catch {
+            case e: AssertionError if e.getMessage == "CudfColumns can't be null or empty" =>
+              // this happens when every row in a JSON file is invalid (or we are
+              // trying to read a non-JSON file format as JSON)
+              throw new IOException(s"Error when processing file [$partFile]", e)
+          }
         }
       }
     } catch {
