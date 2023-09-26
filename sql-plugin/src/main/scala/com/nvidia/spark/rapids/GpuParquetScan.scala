@@ -108,7 +108,7 @@ case class GpuParquetScan(
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false)
-  extends ScanWithMetrics with FileScan with Logging {
+  extends FileScan with GpuScan with Logging {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -146,6 +146,8 @@ case class GpuParquetScan(
   def withFilters(
       partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+
+  override def withInputFile(): GpuScan = copy(queryUsesInputFile = true)
 }
 
 object GpuParquetScan {

@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RunnableCommandRule, ShimLoader}
+import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RunnableCommandRule, ShimLoader, SparkPlanMeta}
 
 import org.apache.spark.sql.Strategy
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -39,6 +40,12 @@ trait DeltaProvider {
       RunnableCommandRule[_ <: RunnableCommand]]
 
   def getStrategyRules: Seq[Strategy]
+
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
+
+  def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
+
+  def getReadFileFormat(format: FileFormat): FileFormat
 }
 
 object DeltaProvider {
@@ -59,4 +66,12 @@ object NoDeltaProvider extends DeltaProvider {
       RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
 
   override def getStrategyRules: Seq[Strategy] = Nil
+
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = false
+
+  override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
+    throw new IllegalStateException("unsupported format")
+
+  override def getReadFileFormat(format: FileFormat): FileFormat =
+    throw new IllegalStateException("unsupported format")
 }

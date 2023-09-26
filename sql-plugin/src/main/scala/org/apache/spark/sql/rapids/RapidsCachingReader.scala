@@ -44,7 +44,7 @@ trait ShuffleMetricsUpdater {
     fetchWaitTimeInMs: Long,
     remoteBlocksFetched: Long,
     remoteBytesRead: Long,
-    rowsFetched: Long)
+    rowsFetched: Long): Unit
 }
 
 class RapidsCachingReader[K, C](

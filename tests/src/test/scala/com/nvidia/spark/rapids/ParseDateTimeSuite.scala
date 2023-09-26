@@ -39,11 +39,11 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     .set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "LEGACY")
     .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
 
-  override def beforeEach() {
+  override def beforeEach(): Unit = {
     GpuOverrides.removeAllListeners()
   }
 
-  override def afterEach() {
+  override def afterEach(): Unit = {
     GpuOverrides.removeAllListeners()
   }
 

@@ -581,6 +581,12 @@
                 <maven.compiler.target>17</maven.compiler.target>
             </properties>
         </profile>
+        <profile>
+            <id>arm64</id>
+            <properties>
+                <jni.classifier>${cuda.version}-arm64</jni.classifier>
+            </properties>
+        </profile>
     </profiles>
 
     <properties>
@@ -594,6 +600,7 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
+        <jni.classifier>${cuda.version}</jni.classifier>
         <spark-rapids-jni.version>23.10.0-SNAPSHOT</spark-rapids-jni.version>
         <spark-rapids-private.version>23.10.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -618,13 +625,6 @@
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <rapids.shim.jar.phase>none</rapids.shim.jar.phase>
         <rapids.shim.jar.test.phase>package</rapids.shim.jar.test.phase>
-
-        <!--
-            cuda-toolkit 11.5+ will install nvidia GDS package by default
-            if no compatible GDS device on test machine, the scala test would fail
-            so we exclude GdsTest tag as default
-        -->
-        <test.exclude.tags>GdsTest</test.exclude.tags>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -768,7 +768,7 @@
               <groupId>com.nvidia</groupId>
               <artifactId>spark-rapids-jni</artifactId>
               <version>${spark-rapids-jni.version}</version>
-              <classifier>${cuda.version}</classifier>
+              <classifier>${jni.classifier}</classifier>
             </dependency>
             <dependency>
                 <groupId>org.openucx</groupId>
@@ -1322,9 +1322,9 @@
                 </executions>
                 <dependencies>
                     <dependency>
-                        <groupId>org.scalastyle</groupId>
+                        <groupId>com.beautiful-scala</groupId>
                         <artifactId>scalastyle_${scala.binary.version}</artifactId>
-                        <version>1.0.0</version>
+                        <version>1.5.1</version>
                     </dependency>
                 </dependencies>
             </plugin>

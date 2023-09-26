@@ -695,7 +695,7 @@ def test_regexp_replace_word():
 def test_predefined_character_classes():
     gen = mk_str_gen('[a-zA-Z]{0,2}[\r\n!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]{0,2}[0-9]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
+        lambda spark: unary_op_df(spark, gen, length=4096).selectExpr(
             'regexp_replace(a, "\\\\p{Lower}", "x")',
             'regexp_replace(a, "\\\\p{Upper}", "x")',
             'regexp_replace(a, "\\\\p{ASCII}", "x")',
