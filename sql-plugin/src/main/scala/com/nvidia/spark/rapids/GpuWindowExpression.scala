@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, CollectSet, Count, Max, Min, Sum}
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -81,13 +82,25 @@ abstract class GpuWindowExpressionMetaBase(
               case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
-                if (lower > 0) {
-                  willNotWorkOnGpu(s"lower-bounds ahead of current row is not supported. " +
-                      s"Found $lower")
+                // Negative bounds are allowed, so long as lower does not exceed upper.
+                if (upper < lower) {
+                  willNotWorkOnGpu("upper-bounds must equal or exceed the lower bounds. " +
+                    s"Found lower=$lower, upper=$upper ")
                 }
-                if (upper < 0) {
-                  willNotWorkOnGpu(s"upper-bounds behind the current row is not supported. " +
-                      s"Found $upper")
+                // Also check for negative offsets.
+                if (upper < 0 || lower > 0) {
+                  windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
+                    case _: Average => // Supported
+                    case _: CollectList => // Supported
+                    case _: CollectSet => // Supported
+                    case _: Count => // Supported
+                    case _: Max => // Supported
+                    case _: Min => // Supported
+                    case _: Sum => // Supported
+                    case f: AggregateFunction =>
+                      willNotWorkOnGpu("negative row bounds unsupported for specified " +
+                        s"aggregation: ${f.prettyName}")
+                  }
                 }
             }
           case RangeFrame =>
@@ -649,7 +662,15 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression {
+  /**
+   * Get "min-periods" value, i.e. the minimum number of periods/rows
+   * above which a non-null value is returned for the function.
+   * Otherwise, null is returned.
+   * @return Non-negative value for min-periods.
+   */
+  def getMinPeriods: Int = 1
+}
 
 /**
  * This is a special window function that simply replaces itself with one or more
