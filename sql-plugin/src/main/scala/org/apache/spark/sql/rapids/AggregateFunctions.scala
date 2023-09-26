@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.TableDebug
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
@@ -2066,7 +2067,10 @@ case class GpuIdentity(child: Expression) extends GpuUnaryExpression {
 
   override def dataType: DataType = child.dataType
 
-  override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.incRefCount()
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    TableDebug.get().debug("Final histogram", input.getBase);
+    input.getBase.incRefCount()
+  }
 
   override def nullable: Boolean = child.nullable
 
@@ -2103,6 +2107,8 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
     // AggregationUtils.percentileFromHistogram()
     // TODO
     GpuIdentity(histogramBuff)
+    GpuLiteral(1.0, DoubleType)
+
   }
   private final lazy val histogramBuff: AttributeReference =
     AttributeReference("histogramBuff", dataType)()
