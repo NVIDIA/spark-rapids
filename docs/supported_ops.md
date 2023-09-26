@@ -6463,8 +6463,7 @@ are limited.
 <tr>
 <td rowSpan="3">FormatNumber</td>
 <td rowSpan="3">`format_number`</td>
-<td rowSpan="3">Formats numeric column x to a format like '#,###,###.##', rounded to d decimal places with HALF_EVEN round mode, and returns the result as a string column.
-If d is 0, the result has no decimal point or fractional part. If d is less than 0, the result will be null.</td>
+<td rowSpan="3">Formats the number x like '#,###,###.##', rounded to d decimal places.</td>
 <td rowSpan="3">None</td>
 <td rowSpan="3">project</td>
 <td>x</td>
@@ -6498,7 +6497,7 @@ If d is 0, the result has no decimal point or fractional part. If d is less than
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>

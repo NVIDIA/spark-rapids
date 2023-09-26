@@ -3090,7 +3090,7 @@ object GpuOverrides extends Logging {
       "Formats the number x like '#,###,###.##', rounded to d decimal places.",
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
         ("x", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+        ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT+TypeSig.STRING)),
       (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuFormatNumber(lhs, rhs)
