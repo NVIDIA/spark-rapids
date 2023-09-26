@@ -22,6 +22,7 @@ import ai.rapids.cudf.TableDebug
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.jni.AggregationUtils
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -2062,28 +2063,59 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
   }
 }
 
-case class GpuIdentity(child: Expression) extends GpuUnaryExpression {
-  override def prettyName: String = "identity"
+case class GpuPercentileEvaluation(value: Expression, percentage: Expression)
+  extends GpuBinaryExpression {
+  override def left: Expression = value
+  override def right: Expression = percentage
+  override def prettyName: String = "percentile_evaluation"
 
-  override def dataType: DataType = child.dataType
 
-  override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    TableDebug.get().debug("Final histogram", input.getBase);
+  override def dataType: DataType = percentage.dataType match {
+    case _: ArrayType => ArrayType(DoubleType, containsNull = false)
+    case _ => DoubleType
+  }
+
+  override def doColumnar(value: GpuColumnVector, percentage: GpuColumnVector): ColumnVector = {
+    TableDebug.get().debug("Final histogram", value.getBase);
     //input.getBase.incRefCount()
-    val sum = input.getBase.getChildColumnView(0).getChildColumnView(0)
-      .reduce(ReductionAggregation.sum(), DType.INT64)
-    withResource(sum) { sum =>
-      ColumnVector.fromScalar(sum, 1)
+//    val percentages = Array(0.1, 0.8)
+
+//    percentage.dataType match {
+//      case percentageCol: ArrayType =>
+//        AggregationUtils.percentileFromHistogram(input.getBase.getChildColumnView(0), percentage)
+//      case _ => DoubleType
+//    }
+
+//    val percentages = Array(0.1)
+    AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
+      percentage.getBase)
+  }
+
+  override def doColumnar(value: GpuScalar, percentage: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(value, percentage.getRowCount.toInt, value.dataType)) {
+      valueCol => doColumnar(valueCol, percentage)
     }
   }
 
+  override def doColumnar(value: GpuColumnVector, percentage: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(percentage, value.getRowCount.toInt, percentage.dataType)) {
+      percentageCol => doColumnar(value, percentageCol)
+    }
+  }
 
-  override def nullable: Boolean = child.nullable
+  override def doColumnar(numRows: Int, value: GpuScalar, percentage: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(value, numRows, value.dataType)) { valueCol =>
+      doColumnar(valueCol, percentage)
+    }
+  }
+
+  override def nullable: Boolean = true
 
 //      override def children: Seq[Expression] = Seq(child)
 
   //override def canEqual(that: Any): Boolean = true
 
+//  override def children: Seq[Expression] = Seq(value, percentage)
 }
 
 /**
@@ -2109,13 +2141,8 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
   }
 
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMergeHistogram(dataType))
-  override lazy val evaluateExpression: Expression = {
-    // AggregationUtils.percentileFromHistogram()
-    // TODO
-    GpuIdentity(histogramBuff)
-//    GpuLiteral(1.0, DoubleType)
-
-  }
+  override lazy val evaluateExpression: Expression =
+    GpuPercentileEvaluation(histogramBuff, childExprs(1))
   private final lazy val histogramBuff: AttributeReference =
     AttributeReference("histogramBuff", dataType)()
 
