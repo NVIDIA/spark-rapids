@@ -2063,7 +2063,7 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
   }
 }
 
-case class GpuPercentileEvaluation(value: Expression, percentage: Expression)
+case class GpuPercentileEvaluation(value: Expression, percentage: Expression, isReduction: Boolean)
   extends GpuBinaryExpression {
   override def left: Expression = value
   override def right: Expression = percentage
@@ -2077,18 +2077,12 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression)
 
   override def doColumnar(value: GpuColumnVector, percentage: GpuColumnVector): ColumnVector = {
     TableDebug.get().debug("Final histogram", value.getBase);
-    //input.getBase.incRefCount()
-//    val percentages = Array(0.1, 0.8)
-
-//    percentage.dataType match {
-//      case percentageCol: ArrayType =>
-//        AggregationUtils.percentileFromHistogram(input.getBase.getChildColumnView(0), percentage)
-//      case _ => DoubleType
-//    }
-
-//    val percentages = Array(0.1)
-    AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
-      percentage.getBase)
+    if (isReduction) {
+      AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
+        percentage.getBase)
+    } else {
+      AggregationUtils.percentileFromHistogram(value.getBase, percentage.getBase)
+    }
   }
 
   override def doColumnar(value: GpuScalar, percentage: GpuColumnVector): ColumnVector = {
@@ -2111,11 +2105,6 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression)
 
   override def nullable: Boolean = true
 
-//      override def children: Seq[Expression] = Seq(child)
-
-  //override def canEqual(that: Any): Boolean = true
-
-//  override def children: Seq[Expression] = Seq(value, percentage)
 }
 
 /**
@@ -2142,7 +2131,7 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
 
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMergeHistogram(dataType))
   override lazy val evaluateExpression: Expression =
-    GpuPercentileEvaluation(histogramBuff, childExprs(1))
+    GpuPercentileEvaluation(histogramBuff, childExprs(1), isReduction)
   private final lazy val histogramBuff: AttributeReference =
     AttributeReference("histogramBuff", dataType)()
 
@@ -2186,9 +2175,6 @@ case class GpuGetListChild(child: Expression) extends GpuExpression {
 
 /**
  * Compute percentile of the input number(s).
- *
- * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
- * with the CPU version and automated checks.
  */
 case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolean)
   extends GpuPercentile(childExprs, isReduction) {
@@ -2208,11 +2194,9 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
     }
   }
 }
-  /**
- * Compute percentile of the input number(s).
- *
- * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
- * with the CPU version and automated checks.
+
+/**
+ * Compute percentile of the input number(s) associated with frequencies.
  */
 case class GpuPercentileWithFrequency(childExprs: Seq[Expression], isReduction: Boolean)
   extends GpuPercentile(childExprs, isReduction) {
