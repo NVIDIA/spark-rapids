@@ -104,8 +104,8 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
       withGpuSparkSession(spark => {
         val df = spark.range(numRows)
           .withColumn("partCol", lit(generateRandomString(10)))
-        val resultDf = writeAndReadParquet(df, spark, file, "partCol")
-        assert(resultDf.collect().length == numRows)
+        val resultAns = writeAndReadParquet(df, spark, file, "partCol").collect()
+        assert(resultAns.length == numRows)
       })
     }
   }
@@ -117,8 +117,8 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
       withGpuSparkSession(spark => {
         val df = spark.range(numRows)
           .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 10)))
-        val resultDf = writeAndReadParquet(df, spark, file, "partCol")
-        assert(resultDf.collect().length == numRows)
+        val resultAns = writeAndReadParquet(df, spark, file, "partCol").collect()
+        assert(resultAns.length == numRows)
       })
     }
   }
@@ -131,8 +131,8 @@ class GpuMultiFileReaderSuite extends SparkQueryCompareTestSuite {
         val df = spark.range(numRows)
           .withColumn("partCol", expr(sqlExprToGenerateRandomString(20, 10)))
           .withColumn("partCol2", expr(sqlExprToGenerateRandomString(20, 10)))
-        val resultDf = writeAndReadParquet(df, spark, file, "partCol", "partCol2")
-        assert(resultDf.collect().length == numRows)
+        val resultAns = writeAndReadParquet(df, spark, file, "partCol", "partCol2").collect()
+        assert(resultAns.length == numRows)
       })
     }
   }

@@ -392,16 +392,15 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
  * need not.
  */
 class AlphabeticallyReorderingColumnPartitionReader(fileReader: PartitionReader[ColumnarBatch],
-                                                    partitionValues: Array[Scalar],
-                                                    partValueTypes: Array[DataType],
+                                                    partitionValues: InternalRow,
                                                     partitionSchema: StructType,
                                                     requestedAttributes: Seq[Attribute])
   extends ColumnarPartitionReaderWithPartitionValues(fileReader,
                                                      partitionValues,
-                                                     partValueTypes) {
+                                                     partitionSchema) {
   override def get(): ColumnarBatch = {
     val fileBatch: ColumnarBatch = super.get()
-    if (partitionValues.isEmpty) {
+    if (partitionValues.numFields == 0) {
       return fileBatch
     }
 
@@ -411,7 +410,7 @@ class AlphabeticallyReorderingColumnPartitionReader(fileReader: PartitionReader[
     // in the output projection. Must discard unused partition keys here.
     withResource(fileBatch) { fileBatch =>
       var dataColumnIndex = 0
-      val partitionColumnStartIndex = fileBatch.numCols() - partitionValues.length
+      val partitionColumnStartIndex = fileBatch.numCols() - partitionValues.numFields
       val partitionKeys = partitionSchema.map(_.name).toList
       val reorderedColumns = requestedAttributes.map { a =>
         val partIndex = partitionKeys.indexOf(a.name)
@@ -460,14 +459,8 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
                      conf, csvOptions, params, partFile, inputFileSchema,
                      requestedOutputDataSchema, maxReaderBatchSizeRows,
                      maxReaderBatchSizeBytes, metrics))
-
-    val partValueScalars = ColumnarPartitionReaderWithPartitionValues.createPartitionValues(
-      partFile.partitionValues.toSeq(partitionSchema),
-      partitionSchema
-    )
     new AlphabeticallyReorderingColumnPartitionReader(reader,
-                                                      partValueScalars,
-                                                      GpuColumnVector.extractTypes(partitionSchema),
+                                                      partFile.partitionValues,
                                                       partitionSchema,
                                                       requestedAttributes)
   }
