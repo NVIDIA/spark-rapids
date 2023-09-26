@@ -16,18 +16,21 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.RmmSpark
 
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId}
+import org.apache.spark.sql.rapids.GpuGreaterThan
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.{DoubleType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
   private val NUM_ROWS = 500
   private val RAND_SEED = 10
+  private val batchAttrs = Seq(AttributeReference("int", IntegerType)(ExprId(10)))
 
   private def buildBatch(ints: Seq[Int] = 0 until NUM_ROWS): ColumnarBatch = {
     new ColumnarBatch(
@@ -43,14 +46,14 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
         randCol1.copyToHost()
       }
       withResource(randHCol1) { _ =>
-        // store the state, and generate data again
+        assert(randHCol1.getRowCount.toInt == NUM_ROWS)
+        // Restore the state, and generate data again
         gpuRand.restore()
         val randHCol2 = withResource(gpuRand.columnarEval(inputCB)) { randCol2 =>
           randCol2.copyToHost()
         }
         withResource(randHCol2) { _ =>
           // check the two random columns are equal.
-          assert(randHCol1.getRowCount.toInt == NUM_ROWS)
           assert(randHCol1.getRowCount == randHCol2.getRowCount)
           (0 until randHCol1.getRowCount.toInt).foreach { pos =>
             assert(randHCol1.getDouble(pos) == randHCol2.getDouble(pos))
@@ -61,27 +64,86 @@ class NonDeterministicRetrySuite extends RmmSparkRetrySuiteBase {
   }
 
   test("GPU project retry with GPU rand") {
-    val childOutput = Seq(AttributeReference("int", IntegerType)(NamedExpression.newExprId))
-    val projectRandOnly = Seq(
-      GpuAlias(GpuRand(GpuLiteral(RAND_SEED)), "rand")(NamedExpression.newExprId))
-    val projectList = projectRandOnly ++ childOutput
+    def projectRand(): Seq[GpuExpression] = Seq(
+      GpuAlias(GpuRand(GpuLiteral(RAND_SEED)), "rand")())
+
     Seq(true, false).foreach { useTieredProject =>
       // expression should be retryable
-      val randOnlyProjectList = GpuBindReferences.bindGpuReferencesTiered(projectRandOnly,
-        childOutput, useTieredProject)
-      assert(randOnlyProjectList.areAllRetryable)
-      val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList,
-        childOutput, useTieredProject)
-      assert(boundProjectList.areAllRetryable)
+      val boundProjectRand = GpuBindReferences.bindGpuReferencesTiered(projectRand(),
+        batchAttrs, useTieredProject)
+      assert(boundProjectRand.areAllRetryable)
+      // project with and without retry
+      val batches = Seq(true, false).safeMap { forceRetry =>
+        val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(
+          projectRand() ++ batchAttrs, batchAttrs, useTieredProject)
+        assert(boundProjectList.areAllRetryable)
 
-      // project with retry
-      val sb = closeOnExcept(buildBatch()) { cb =>
-        SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        val sb = closeOnExcept(buildBatch()) { cb =>
+          SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        }
+        closeOnExcept(sb) { _ =>
+          if (forceRetry) {
+            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+          }
+        }
+        boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
       }
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
-      withResource(boundProjectList.projectAndCloseWithRetrySingleBatch(sb)) { outCB =>
-        // We can not verify the data, so only rows number here
-        assertResult(NUM_ROWS)(outCB.numRows())
+      // check the random columns
+      val randCols = withResource(batches) { case Seq(retriedBatch, batch) =>
+        assert(retriedBatch.numRows() == batch.numRows())
+        assert(retriedBatch.numCols() == batch.numCols())
+        batches.safeMap(_.column(0).asInstanceOf[GpuColumnVector].copyToHost())
+      }
+      withResource(randCols) { case Seq(retriedRand, rand) =>
+        (0 until rand.getRowCount.toInt).foreach { pos =>
+          assert(retriedRand.getDouble(pos) == rand.getDouble(pos))
+        }
+      }
+    }
+  }
+
+  test("GPU filter retry with GPU rand") {
+    def filterRand(): Seq[GpuExpression] = Seq(
+      GpuGreaterThan(
+        GpuRand(GpuLiteral.create(RAND_SEED, IntegerType)),
+        GpuLiteral.create(0.1d, DoubleType)))
+
+    Seq(true, false).foreach { useTieredProject =>
+      // filter with and without retry
+      val tables = Seq(true, false).safeMap { forceRetry =>
+        val boundCondition = GpuBindReferences.bindGpuReferencesTiered(filterRand(),
+          batchAttrs, useTieredProject)
+        assert(boundCondition.areAllRetryable)
+
+        val cb = buildBatch()
+        if (forceRetry) {
+          RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+        }
+        val batchSeq = GpuFilter.filterAndClose(cb, boundCondition,
+          NoopMetric, NoopMetric, NoopMetric).toSeq
+        withResource(batchSeq) { _ =>
+          val tables = batchSeq.safeMap(GpuColumnVector.from)
+          if (tables.size == 1) {
+            tables.head
+          } else {
+            withResource(tables) { _ =>
+              assert(tables.size > 1)
+              Table.concatenate(tables: _*)
+            }
+          }
+        }
+      }
+
+      // check the outputs
+      val cols = withResource(tables) { case Seq(retriedTable, table) =>
+        assert(retriedTable.getRowCount == table.getRowCount)
+        assert(retriedTable.getNumberOfColumns == table.getNumberOfColumns)
+        tables.safeMap(_.getColumn(0).copyToHost())
+      }
+      withResource(cols) { case Seq(retriedInts, ints) =>
+        (0 until ints.getRowCount.toInt).foreach { pos =>
+          assert(retriedInts.getInt(pos) == ints.getInt(pos))
+        }
       }
     }
   }

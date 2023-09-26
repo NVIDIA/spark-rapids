@@ -17,48 +17,33 @@
 package com.nvidia.spark;
 
 /**
- * An interface that can be used by Retry framework of RAPIDS Plugin to handle the GPU OOMs.
+ * An interface that can be used to retry the processing on non-deterministic
+ * expressions on the GPU.
  *
- * GPU memory is a limited resource, so OOM can happen if too many tasks run in parallel.
- * Retry framework is introduced to improve the stability by retrying the work when it
- * meets OOMs. The overall process of Retry framework is similar as the below.
- *    ```
- *      Retryable retryable
- *      retryable.checkpoint()
- *      boolean hasOOM = false
- *      do {
- *        try {
- *          runWorkOnGpu(retryable) // May lead to GPU OOM
- *          hasOOM = false
- *        } catch (OOMError oom) {
- *          hasOOM = true
- *          tryToReleaseSomeGpuMemoryFromLowPriorityTasks()
- *          retryable.restore()
- *        }
- *      } while(hasOOM)
- *    ```
- * In a retry, "checkpoint" will be called first and only once, which is used to save the
- * state for later loops. When OOM happens, "restore" will be called to restore the
- * state that saved by "checkpoint". After that, it will try the same work again. And
- * the whole process runs on Spark executors.
+ * GPU memory is a limited resource. When it runs out the RAPIDS Accelerator
+ * for Apache Spark will use several different strategies to try and free more
+ * GPU memory to let the query complete.
+ * One of these strategies is to roll back the processioning for one task, pause
+ * the task thread, then retry the task when more memory is available. This
+ * works transparently for any stateless deterministic processing. But technically
+ * an expression/UDF can be non-deterministic and/or keep state in between calls.
+ * This interface provides a checkpoint method to save any needed state, and a
+ * restore method to reset the state in the case of a retry.
  *
- * Retry framework expects the "runWorkOnGpu" always outputs the same result when running
- * it multiple times in a retry. So if "runWorkOnGpu" is non-deterministic, it can not be
- * used by Retry framework.
- * The "Retryable" is designed for this kind of cases. By implementing this interface,
- * "runWorkOnGpu" can become deterministic inside a retry process, making it usable for
- * Retry framework to improve the stability.
+ * Please note that a retry is not isolated to a single expression, so a restore can
+ * be called even after the expression returned one or more batches of results. And
+ * each time checkpoint it called any previously saved state can be overwritten.
  */
 public interface Retryable {
   /**
-   * Save the state, so it can be restored in case of an OOM Retry.
-   * This is called inside a Spark task context on executors.
+   * Save the state, so it can be restored in the case of a retry.
+   * (This is called inside a Spark task context on executors.)
    */
   void checkpoint();
 
   /**
    * Restore the state that was saved by calling to "checkpoint".
-   * This is called inside a Spark task context on executors.
+   * (This is called inside a Spark task context on executors.)
    */
   void restore();
 }
