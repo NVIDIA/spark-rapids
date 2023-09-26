@@ -236,7 +236,12 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
           "allowNumericLeadingZeros": allow_numeric_leading_zeros}),
         conf=updated_conf)
 
-@pytest.mark.parametrize('filename', ['malformed.json'])
+@pytest.mark.parametrize('filename', [
+    'malformed1.json',
+    pytest.param('malformed2.json', marks=pytest.mark.xfail(reason='TODO: file issue (throws exception)')),
+    pytest.param('malformed3.json', marks=pytest.mark.xfail(reason='TODO: file issue (wrong results)')),
+    pytest.param('malformed4.json', marks=pytest.mark.xfail(reason='TODO: file issue (wrong results)')),
+])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('schema', [_int_schema])
 def test_read_invalid_json(spark_tmp_table_factory, std_input_path, read_func, filename, schema):
