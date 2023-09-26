@@ -2070,19 +2070,38 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
   override def prettyName: String = "percentile_evaluation"
 
 
-  override def dataType: DataType = percentage.dataType match {
-    case _: ArrayType => ArrayType(DoubleType, containsNull = false)
+  override def dataType: DataType =
+  percentage.dataType match {
+    case _: ArrayType => {
+      ArrayType(DoubleType, containsNull = false)
+    }
     case _ => DoubleType
   }
 
   override def doColumnar(value: GpuColumnVector, percentage: GpuColumnVector): ColumnVector = {
     TableDebug.get().debug("Final histogram", value.getBase);
     TableDebug.get().debug("percentage", percentage.getBase);
+
+    System.err.println("percentage.dataType + " +percentage.dataType)
+
+    val outputAsList = dataType match {
+      case _: ArrayType => {
+        TableDebug.get().debug("percentage as array", percentage.getBase)
+        true
+      }
+      case _ => {
+        TableDebug.get().debug("percentage as double", percentage.getBase)
+        false
+      }
+    }
+
     if (isReduction) {
-      AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
-        percentage.getBase)
+      val tmp = AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
+        percentage.getBase, outputAsList)
+      TableDebug.get().debug("output ", tmp);
+      tmp
     } else {
-      AggregationUtils.percentileFromHistogram(value.getBase, percentage.getBase)
+      AggregationUtils.percentileFromHistogram(value.getBase, percentage.getBase, outputAsList)
     }
   }
 
@@ -2153,6 +2172,7 @@ case class GpuGetListChild(child: Expression) extends GpuExpression {
     withResourceIfAllowed(child.columnarEvalAny(batch)) {
       case cv: GpuColumnVector =>
         withResource(cv.getBase.getChildColumnView(0)) { child =>
+          System.err.println("get child list")
           GpuColumnVector.from(child.copyToColumnVector(), dataType)
         }
 
@@ -2187,8 +2207,10 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
   override lazy val postUpdate: Seq[Expression] = {
     if (isReduction) {
       val reductionResult = histogramUpdate.attr
+      System.err.println("line 2203")
       Seq(GpuGetListChild(reductionResult))
     } else {
+      System.err.println("line 2206")
       Seq(histogramUpdate.attr)
     }
   }
