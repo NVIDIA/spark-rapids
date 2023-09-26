@@ -19,129 +19,17 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import collection.JavaConverters._
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.shims.GpuToPrettyString
 import org.scalatest.exceptions.TestFailedException
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{BoundReference, Literal, NamedExpression, ToPrettyString}
-import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, NamedExpression, ToPrettyString}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 class ToPrettyStringSuite extends GpuUnitTests {
-
-  private def executeOnCpuAndReturn(dataType: DataType, value: Any): String = {
-    ToPrettyString(Literal(value, dataType), Some("UTC"))
-      .eval(null).asInstanceOf[UTF8String].toString()
-  }
-
-  test("test show() BinaryType") {
-    val dataType = DataTypes.BinaryType
-    val stringData = "this is a string"
-    // Execute on CPU
-    val cpuResult = executeOnCpuAndReturn(dataType, stringData.getBytes())
-
-    val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "binary_arg")
-    val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
-    withResource(
-      GpuColumnVector.from(ColumnVector.fromStrings(cpuResult),
-        DataTypes.StringType)) { expected0 =>
-      val dt = new HostColumnVector.ListType(true,
-        new HostColumnVector.BasicType(true, DType.UINT8))
-      withResource(GpuColumnVector.from(
-        ColumnVector.fromLists(
-          dt,
-          Array(stringData.getBytes("UTF-8").toList.asJava): _*),
-        DataTypes.BinaryType)) {
-        binaryCol =>
-          val batch = new ColumnarBatch(Array(binaryCol), 1)
-          checkEvaluation(gpuToPrettyStr, expected0, batch)
-      }
-    }
-  }
-
-  test("test show() Array") {
-    val dataType = ArrayType(DataTypes.IntegerType)
-    val v: Array[_] = Array(1, 2, 3, null)
-    // Execute on CPU
-    val cpuResult = executeOnCpuAndReturn(dataType, ArrayData.toArrayData(v))
-
-    val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "array_arg")
-    val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
-    withResource(
-      GpuColumnVector.from(ColumnVector.fromStrings(cpuResult),
-      DataTypes.StringType)) { expected0 =>
-      val dt = new HostColumnVector.ListType(true,
-        new HostColumnVector.BasicType(true, DType.INT32))
-      withResource(GpuColumnVector.from(ColumnVector.fromLists(dt,
-        v.toList.asJava),
-        ArrayType(DataTypes.IntegerType))) { input =>
-        val batch = new ColumnarBatch(List(input).toArray, 1)
-        checkEvaluation(gpuToPrettyStr, expected0, batch)
-      }
-    }
-  }
-
-  test("test show() Map") {
-    val dataType = MapType(DataTypes.IntegerType, DataTypes.IntegerType)
-    val map = Map(1 -> 2, 2 -> 3, 4 -> null)
-    val cpuResult = executeOnCpuAndReturn(dataType, ArrayBasedMapData(map))
-
-    val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "map_arg")
-    val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
-
-    withResource(
-      GpuColumnVector.from(
-        ColumnVector.fromStrings(cpuResult), DataTypes.StringType)) {
-      expected0 =>
-        val list1 = map.map {
-          case (k, v) =>
-            new HostColumnVector.StructData(Array[Integer](k, v.asInstanceOf[Integer]): _*)
-        }.toList.asJava
-        val structType = new HostColumnVector.StructType(true,
-          List[HostColumnVector.DataType](new HostColumnVector.BasicType(true, DType.INT32),
-              new HostColumnVector.BasicType(true, DType.INT32)).asJava)
-        withResource(GpuColumnVector.from(ColumnVector.fromLists(
-          new HostColumnVector.ListType(true, structType), list1),
-          MapType(DataTypes.IntegerType, DataTypes.IntegerType))) { input =>
-          val batch = new ColumnarBatch(List(input).toArray, 1)
-          checkEvaluation(gpuToPrettyStr, expected0, batch)
-        }
-    }
-  }
-
-  test("test show() Struct") {
-    val dataType = StructType(Seq(StructField("a", DataTypes.IntegerType),
-      StructField("b", DataTypes.IntegerType),
-      StructField("c", DataTypes.IntegerType)))
-    val v = Array(1, 2, 3)
-    val cpuResult = executeOnCpuAndReturn(dataType, InternalRow(v: _*))
-    val child = GpuBoundReference(0, dataType, true)(NamedExpression.newExprId, "struct_arg")
-    val gpuToPrettyStr = GpuToPrettyString(child, Some("UTC"))
-    val l =
-      List[HostColumnVector.DataType](
-        new HostColumnVector.BasicType(false, DType.INT32),
-        new HostColumnVector.BasicType(false, DType.INT32),
-        new HostColumnVector.BasicType(false, DType.INT32)
-      ).asJava
-    val structType = new HostColumnVector.StructType(false, l)
-    withResource(
-      GpuColumnVector.from(
-        ColumnVector.fromStrings(cpuResult), DataTypes.StringType)) { expected =>
-      withResource(GpuColumnVector.from(
-        ColumnVector.fromStructs(structType,
-          List(new HostColumnVector.StructData(v.map(Int.box): _*)).asJava
-        ), dataType)) { input =>
-        val batch = new ColumnarBatch(List(input).toArray, 1)
-        checkEvaluation(gpuToPrettyStr, expected, batch)
-      }
-    }
-  }
 
   private def testDataType(dataType: DataType): Unit = {
     val schema = (new StructType)
@@ -168,31 +56,61 @@ class ToPrettyStringSuite extends GpuUnitTests {
     }
   }
 
-  test("test strings") {
-    testDataType(DataTypes.StringType)
+  test("test show() on booleans") {
+    testDataType(DataTypes.BooleanType)
   }
 
-  test("test floats") {
+  test("test show() on bytes") {
+    testDataType(DataTypes.ByteType)
+  }
+
+  test("test show() on shorts") {
+    testDataType(DataTypes.ShortType)
+  }
+
+  test("test show() on ints") {
+    testDataType(DataTypes.IntegerType)
+  }
+
+  test("test show() on longs") {
+    testDataType(DataTypes.LongType)
+  }
+
+  test("test show() on floats") {
     // This test is expected to fail until https://github.com/NVIDIA/spark-rapids/issues/4204
     // is resolved
     assertThrows[TestFailedException](testDataType(DataTypes.FloatType))
   }
 
-  test("test doubles") {
+  test("test show() on doubles") {
     // This test is expected to fail until https://github.com/NVIDIA/spark-rapids/issues/4204
     // is resolved
     assertThrows[TestFailedException](testDataType(DataTypes.DoubleType))
   }
 
-  test("test ints") {
-    testDataType(DataTypes.IntegerType)
+  test("test show() on strings") {
+    testDataType(DataTypes.StringType)
   }
 
-  test("test longs") {
-    testDataType(DataTypes.LongType)
-  }
-
-  test("test decimals") {
+  test("test show() on decimals") {
     testDataType(DecimalType(8,2))
+  }
+
+  test("test show() on binary") {
+    testDataType(DataTypes.BinaryType)
+  }
+
+  test("test show() on array") {
+    testDataType(ArrayType(DataTypes.IntegerType))
+  }
+
+  test("test show() on map") {
+    testDataType(MapType(DataTypes.IntegerType, DataTypes.IntegerType))
+  }
+
+  test("test show() on struct") {
+    testDataType(StructType(Seq(StructField("a", DataTypes.IntegerType),
+      StructField("b", DataTypes.IntegerType),
+      StructField("c", DataTypes.IntegerType))))
   }
 }
