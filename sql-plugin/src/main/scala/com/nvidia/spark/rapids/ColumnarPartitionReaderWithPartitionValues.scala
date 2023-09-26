@@ -18,32 +18,93 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.Scalar
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.types.{DataType, StringType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 
 
+abstract class SplitInfo() {
+  val rowCount: Long
+  def buildPartitionColumns(): Seq[GpuColumnVector]
+}
+
+case class MultiPartSplitInfo(partRowNumsAndValues: Array[(Long, InternalRow)],
+      partSchema: StructType) extends SplitInfo {
+  val rowCount: Long = partRowNumsAndValues.map(_._1).sum
+
+  def buildPartitionColumns(): Seq[GpuColumnVector] = {
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
+      for ((field, colIndex) <- partSchema.zipWithIndex) {
+        val dataType = field.dataType
+        withResource(new Array[ColumnVector](partRowNumsAndValues.length)) {
+          onePartCols =>
+          partRowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
+            val singleValue = valueRow.get(colIndex, dataType)
+            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
+              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
+            }
+          }
+          val res = if (onePartCols.length > 1) {
+            ColumnVector.concatenate(onePartCols: _*)
+          } else {
+            onePartCols.head
+          }
+          partsCols(colIndex) = GpuColumnVector.from(res, field.dataType).incRefCount()
+        }
+      }
+      partsCols
+    }
+  }
+}
+
+case class SinglePartSplitInfo(numRows: Int, partitionValues: Array[Scalar],
+    sparkTypes: Array[DataType]) extends SplitInfo {
+  val rowCount: Long = numRows
+
+  def buildPartitionColumns(): Seq[GpuColumnVector] = {
+    var succeeded = false
+    val result = new Array[GpuColumnVector](partitionValues.length)
+    try {
+      for (i <- result.indices) {
+        val cv = GpuColumnVector.from(
+          ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
+        result(i) = cv.incRefCount()
+      }
+      succeeded = true
+      result
+    } finally {
+      if (!succeeded) {
+        result.filter(_ != null).safeClose()
+      }
+    }
+  }
+}
 
 case class SplitBatchReader(spillableBatch: SpillableColumnarBatch,
-                            partitionColumns: Seq[GpuColumnVector]) {
+                            splitInfoOp: Option[SplitInfo]) {
   def merge(): ColumnarBatch = {
     withResource(spillableBatch.getColumnarBatch()) { colBatch =>
-      if (partitionColumns.isEmpty) {
-        colBatch // No need to merge
-      } else {
-        val rowCounts = partitionColumns.head.getRowCount.toInt
-        val splitCols = (0 until colBatch.numCols).map(colBatch.column)
-        val resultCols: Seq[ColumnVector] = splitCols ++ partitionColumns
-        val resultBatch = new ColumnarBatch(resultCols.toArray, rowCounts)
-        resultCols.foreach {
-          case gpuCol: GpuColumnVector => gpuCol.incRefCount()
-        }
-        resultBatch
+      splitInfoOp match {
+        case Some(splitInfo) =>
+          val partitionColumns = splitInfo.buildPartitionColumns()
+          val rowCounts = partitionColumns.head.getRowCount.toInt
+          val splitCols = (0 until colBatch.numCols).map (colBatch.column)
+          val resultCols: Seq[SparkVector] = splitCols ++ partitionColumns
+          val resultBatch = new ColumnarBatch (resultCols.toArray, rowCounts)
+          resultCols.foreach {
+            case gpuCol: GpuColumnVector => gpuCol.incRefCount ()
+          }
+          resultBatch
+        case None =>
+          colBatch
       }
     }
   }
@@ -51,14 +112,14 @@ case class SplitBatchReader(spillableBatch: SpillableColumnarBatch,
 
 object SplitBatchReader {
   def from(batch: ColumnarBatch,
-           partitionColumns: Seq[GpuColumnVector]): SplitBatchReader = {
+           splitInfo: SplitInfo): SplitBatchReader = {
     val spillableBatch = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-    SplitBatchReader(spillableBatch, partitionColumns)
+    SplitBatchReader(spillableBatch, Some(splitInfo))
   }
 
   def from(batch: ColumnarBatch): SplitBatchReader = {
     val spillableBatch = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-    SplitBatchReader(spillableBatch, Seq.empty)
+    SplitBatchReader(spillableBatch, None)
   }
 }
 
@@ -164,8 +225,8 @@ object ColumnarPartitionReaderWithPartitionValues {
 
   def addGpuColumnVectorsToBatch(
       fileBatch: ColumnarBatch,
-      batchOfPartitionColumns: Seq[Seq[GpuColumnVector]]): SplitBatchReaderIterator = {
-    val rowCounts = batchOfPartitionColumns.map(_.headOption.map(_.getRowCount.toInt).getOrElse(0))
+      batchOfPartitionColumns: Seq[SplitInfo]): SplitBatchReaderIterator = {
+    val rowCounts = batchOfPartitionColumns.map(_.rowCount.toInt)
     val columnarBatchSeqs = makeSplits(fileBatch, rowCounts)
     // Combine the split GPU ColumnVectors with partition ColumnVectors.
     val splitBatches = columnarBatchSeqs.zip(batchOfPartitionColumns).map {
@@ -178,26 +239,26 @@ object ColumnarPartitionReaderWithPartitionValues {
     new SplitBatchReaderIterator(splitBatches)
   }
 
-  private def buildPartitionColumns(
-      numRows: Int,
-      partitionValues: Array[Scalar],
-      sparkTypes: Array[DataType]): Seq[GpuColumnVector] = {
-    var succeeded = false
-    val result = new Array[GpuColumnVector](partitionValues.length)
-    try {
-      for (i <- result.indices) {
-        val cv = GpuColumnVector.from(
-          ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
-        result(i) = cv.incRefCount()
-      }
-      succeeded = true
-      result
-    } finally {
-      if (!succeeded) {
-        result.filter(_ != null).safeClose()
-      }
-    }
-  }
+//  private def buildPartitionColumns(
+//      numRows: Int,
+//      partitionValues: Array[Scalar],
+//      sparkTypes: Array[DataType]): Seq[GpuColumnVector] = {
+//    var succeeded = false
+//    val result = new Array[GpuColumnVector](partitionValues.length)
+//    try {
+//      for (i <- result.indices) {
+//        val cv = GpuColumnVector.from(
+//          ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
+//        result(i) = cv.incRefCount()
+//      }
+//      succeeded = true
+//      result
+//    } finally {
+//      if (!succeeded) {
+//        result.filter(_ != null).safeClose()
+//      }
+//    }
+//  }
 
   /**
    * Splits the partition into smaller batches such that the batch size
@@ -259,8 +320,8 @@ object ColumnarPartitionReaderWithPartitionValues {
   }
 
   private def buildPartitionColumnsBatch(numRows: Int, partitionValues: Array[Scalar],
-      sparkTypes: Array[DataType]): Seq[Seq[GpuColumnVector]] = {
+      sparkTypes: Array[DataType]): Seq[SplitInfo] = {
     splitPartitionIntoBatchesScalar(numRows, partitionValues, sparkTypes)
-      .map(buildPartitionColumns(_, partitionValues, sparkTypes))
+      .map(SinglePartSplitInfo(_, partitionValues, sparkTypes))
   }
 }

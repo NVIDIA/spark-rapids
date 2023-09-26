@@ -26,7 +26,7 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.collection.mutable
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
@@ -242,10 +242,8 @@ object MultiFileReaderUtils extends Logging {
         ColumnarPartitionReaderWithPartitionValues.createPartitionValues(
           partitionValues.toSeq(partitionSchema), partitionSchema)
       }
-      withResource(partitionScalars) { _ =>
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch,
-          partitionScalars, GpuColumnVector.extractTypes(partitionSchema))
-      }
+      ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch,
+        partitionScalars, GpuColumnVector.extractTypes(partitionSchema))
     } else {
       new SplitBatchReaderIterator(Seq(SplitBatchReader.from(batch)))
     }
@@ -260,31 +258,31 @@ object MultiFileReaderUtils extends Logging {
     }
   }
 
-  private def buildPartitionsColumns(partRowNumsAndValues: Array[(Long, InternalRow)],
-      partSchema: StructType): Seq[GpuColumnVector] = {
-    // build the partitions vectors for all partitions within each column
-    // and concatenate those together then go to the next column
-    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
-      for ((field, colIndex) <- partSchema.zipWithIndex) {
-        val dataType = field.dataType
-        withResource(new Array[ColumnVector](partRowNumsAndValues.length)) { onePartCols =>
-          partRowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
-            val singleValue = valueRow.get(colIndex, dataType)
-            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
-              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
-            }
-          }
-          val res = if(onePartCols.length > 1) {
-            ColumnVector.concatenate(onePartCols: _*)
-          } else {
-            onePartCols.head
-          }
-          partsCols(colIndex) = GpuColumnVector.from(res, field.dataType)
-        }
-      }
-      partsCols
-    }
-  }
+//  private def buildPartitionsColumns(partRowNumsAndValues: Array[(Long, InternalRow)],
+//      partSchema: StructType): Seq[GpuColumnVector] = {
+//    // build the partitions vectors for all partitions within each column
+//    // and concatenate those together then go to the next column
+//    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
+//      for ((field, colIndex) <- partSchema.zipWithIndex) {
+//        val dataType = field.dataType
+//        withResource(new Array[ColumnVector](partRowNumsAndValues.length)) { onePartCols =>
+//          partRowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
+//            val singleValue = valueRow.get(colIndex, dataType)
+//            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
+//              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
+//            }
+//          }
+//          val res = if(onePartCols.length > 1) {
+//            ColumnVector.concatenate(onePartCols: _*)
+//          } else {
+//            onePartCols.head
+//          }
+//          partsCols(colIndex) = GpuColumnVector.from(res, field.dataType)
+//        }
+//      }
+//      partsCols
+//    }
+//  }
 
   /**
    * Splits partitions into smaller batches such that the batch size
@@ -370,9 +368,9 @@ object MultiFileReaderUtils extends Logging {
   }
 
   private def buildPartitionsColumnsBatch(partRows: Array[Long], partValues: Array[InternalRow],
-      partSchema: StructType): Seq[Seq[GpuColumnVector]] = {
+      partSchema: StructType): Seq[SplitInfo] = {
     splitPartitionIntoBatches(partRows, partValues, partSchema)
-      .map(buildPartitionsColumns(_, partSchema))
+      .map(MultiPartSplitInfo(_, partSchema))
   }
 }
 
