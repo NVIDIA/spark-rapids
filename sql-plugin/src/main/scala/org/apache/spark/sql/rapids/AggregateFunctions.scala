@@ -2069,8 +2069,14 @@ case class GpuIdentity(child: Expression) extends GpuUnaryExpression {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     TableDebug.get().debug("Final histogram", input.getBase);
-    input.getBase.incRefCount()
+    //input.getBase.incRefCount()
+    val sum = input.getBase.getChildColumnView(0).getChildColumnView(0)
+      .reduce(ReductionAggregation.sum(), DType.INT64)
+    withResource(sum) { sum =>
+      ColumnVector.fromScalar(sum, 1)
+    }
   }
+
 
   override def nullable: Boolean = child.nullable
 
@@ -2107,7 +2113,7 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
     // AggregationUtils.percentileFromHistogram()
     // TODO
     GpuIdentity(histogramBuff)
-    GpuLiteral(1.0, DoubleType)
+//    GpuLiteral(1.0, DoubleType)
 
   }
   private final lazy val histogramBuff: AttributeReference =
@@ -2165,6 +2171,7 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
   private lazy val histogramUpdate = new CudfHistogram(dataType)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(histogramUpdate)
 
+  // need the same for post merge
   override lazy val postUpdate: Seq[Expression] = {
     if (isReduction) {
       val reductionResult = histogramUpdate.attr
