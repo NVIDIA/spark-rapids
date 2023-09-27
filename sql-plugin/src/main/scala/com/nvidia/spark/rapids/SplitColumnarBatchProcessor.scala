@@ -119,7 +119,7 @@ class SplitBatchWithPartitionDataIterator(
 }
 
 object SplitColumnarBatchProcessor {
-  val cuDF_LIMIT = 13000 // (1L << 31) - 1
+  val cuDF_LIMIT: Long = (1L << 31) - 1
 
   /**
    * Splits partition data (values and row counts) into smaller batches, ensuring that

@@ -668,8 +668,8 @@ class GpuMultiFileCloudAvroPartitionReader(
         // we have to add partition values here for this batch, we already verified that
         // it's not different for all the blocks in this batch
         if (maybeBatch.isDefined) {
-          Some(SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(maybeBatch.get, partitionValues,
-            partitionSchema))
+          Some(SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(maybeBatch.get,
+            partitionValues, partitionSchema))
         } else {
           None
         }
