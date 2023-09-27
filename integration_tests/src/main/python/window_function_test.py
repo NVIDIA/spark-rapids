@@ -134,7 +134,7 @@ _grpkey_long_with_nulls_with_overflow = [
     ('a', IntegerGen()),
     ('b', LongGen(nullable=True))]
 
-part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+part_and_order_gens = [long_gen, DoubleGen(special_cases=[]),
         string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 
