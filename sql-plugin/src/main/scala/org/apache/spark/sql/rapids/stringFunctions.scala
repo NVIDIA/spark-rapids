@@ -2309,7 +2309,13 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         decPart.pad(d, PadSide.RIGHT, "0")
       }
     }
-    (intPartNoNeg, decPartPad)
+    // a workaround for cuDF float to string, e.g. 12.3 => "12.30000019" instead of "12.3"
+    val decPartSubstr = closeOnExcept(intPartNoNeg) { _ =>
+      withResource(decPartPad) { _ =>
+        decPartPad.substring(0, d)
+      }
+    }
+    (intPartNoNeg, decPartSubstr)
   }
 
   private def expDoubleSplit(cv: ColumnVector, d: Int): (ColumnVector, ColumnVector) = {
@@ -2328,6 +2334,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
           intDecExp.getColumn(2).incRefCount())
       }
     }
+    // sign will be handled later, use string-based solution instead abs to avoid overfolw
     val intPart = withResource(intPartSign) { _ =>
       removeNegSign(intPartSign)  
     }
@@ -2336,6 +2343,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         expPart.castTo(DType.INT32)
       }
     }
+    // handle positive and negative exp separately
     val (intPartPosExp, decPartPosExp) = closeOnExcept(intPart) { _ =>
       closeOnExcept(decPart) { _ =>
         closeOnExcept(exp) { _ =>
@@ -2355,6 +2363,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         exp.greaterOrEqualTo(zero)
       }
     }
+    // combine results
     withResource(expPos) { _ =>
       val intPartExp = withResource(intPartPosExp) { _ =>
         withResource(intPartNegExp) { _ =>
@@ -2436,7 +2445,10 @@ case class GpuFormatNumber(x: Expression, d: Expression)
 
   private def getPartsFromDecimal(cv: ColumnVector, d: Int, scale: Int): 
       (ColumnVector, ColumnVector) = {
+    // prevent d too large to fit in decimalType
     val roundingScale = scale.min(d)
+    // append zeros to the end of decPart, zerosNum = d - scale
+    // if d <= scale, no need to append zeros, if scale < 0, append d zeros
     val appendZeroNum = (d - scale).max(0).min(d)
     val (intPart, decTemp) = if (roundingScale <= 0) {
       withResource(ArrayBuffer.empty[ColumnVector]) { resource_array =>
@@ -2458,6 +2470,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
           }
         }
         resource_array += intPartZeroHandled
+        // a temp decPart is empty before appending zeros
         val decPart = withResource(Scalar.fromString("")) { emptyString =>
           ColumnVector.fromScalar(emptyString, cv.getRowCount.toInt)
         }
@@ -2474,6 +2487,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
     }
     closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resource_array =>
+      // remove negative sign from intPart, sign will be handled later
       val intPartPos = closeOnExcept(decTemp) { _ =>
         withResource(intPart) { _ =>
           withResource(Scalar.fromString("-")) { negativeSign =>

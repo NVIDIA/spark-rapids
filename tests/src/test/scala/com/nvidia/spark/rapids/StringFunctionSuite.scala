@@ -223,17 +223,29 @@ class RegExpUtilsSuite extends AnyFunSuite {
 class FormatNumberSuite extends SparkQueryCompareTestSuite {
   def testFormatNumberDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq[java.lang.Double](
-      -0.0000768381310900000,
-      -0.00009012345678900000,
-      -0.00000000000000000001
+    Seq[java.lang.Float](
+      -0.0f, 
+      0.0f,
+      Float.PositiveInfinity,
+      Float.NegativeInfinity,
+      Float.NaN,
+      1.0f,
+      1.2345f,
+      123456789.0f,
+      123456789.123456789f,
+      0.00123456789f,
+      0.0000000123456789f,
+      1.0000000123456789f
     ).toDF("doubles")
   }
 
-  testSparkResultsAreEqual("Test format_number", 
+  testSparkResultsAreEqual("Test format_number float", 
   testFormatNumberDf,
   conf = new SparkConf().set("spark.rapids.sql.formatNumberFloat.enabled", "true")) {
-    frame => frame.selectExpr("format_number(doubles, 8)")
+    frame => frame.selectExpr("format_number(doubles, -1)",
+                              "format_number(doubles, 0)",
+                              "format_number(doubles, 1)",
+                              "format_number(doubles, 5)")
   }
 }
 
