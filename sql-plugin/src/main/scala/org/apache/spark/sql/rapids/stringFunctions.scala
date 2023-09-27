@@ -2309,7 +2309,8 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   private def normalDoubleSplit(cv: ColumnVector, d: Int): (ColumnVector, ColumnVector) = {
-    val roundedStr = withResource(cv.round(d, RoundMode.HALF_EVEN)) { rounded =>
+    val roundingScale = d.min(10) // cuDF will keep at most 9 digits after decimal point
+    val roundedStr = withResource(cv.round(roundingScale, RoundMode.HALF_EVEN)) { rounded =>
       rounded.castTo(DType.STRING)
     }
     val (intPart, decPart) = withResource(roundedStr) { _ =>
@@ -2347,8 +2348,10 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val intPart = withResource(intPartSign) { _ =>
       removeNegSign(intPartSign)  
     }
-    val exp = withResource(expPart) { _ =>
-      expPart.castTo(DType.INT32)
+    val exp = closeOnExcept(intPart) { _ =>
+      withResource(expPart) { _ =>
+        expPart.castTo(DType.INT32)
+      }
     }
     val (intPartPosExp, decPartPosExp) = closeOnExcept(intPart) { _ =>
       closeOnExcept(decPart) { _ =>
@@ -2370,20 +2373,19 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
     }
     withResource(expPos) { _ =>
-      closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resource_array =>
-        val intPartExp = withResource(intPartPosExp) { _ =>
-          withResource(intPartNegExp) { _ =>
-            expPos.ifElse(intPartPosExp, intPartNegExp)
-          }
+      val intPartExp = withResource(intPartPosExp) { _ =>
+        withResource(intPartNegExp) { _ =>
+          expPos.ifElse(intPartPosExp, intPartNegExp)
         }
-        resource_array += intPartExp
-        val decPartExp = withResource(decPartPosExp) { _ =>
+      }
+      val decPartExp = closeOnExcept(intPartExp) { _ =>
+        withResource(decPartPosExp) { _ =>
           withResource(decPartNegExp) { _ =>
             expPos.ifElse(decPartPosExp, decPartNegExp)
           }
         }
-        (intPartExp, decPartExp)
       }
+      (intPartExp, decPartExp)
     }
   }
 
@@ -2462,7 +2464,9 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         // if intString starts with 0, it must be "00000...", replace it with "0"
         val (isZero, zeroCv) = withResource(Scalar.fromString("0")) { zero =>
           withResource(intPart.startsWith(zero)) { isZero =>
-            (isZero.incRefCount(), ColumnVector.fromScalar(zero, cv.getRowCount.toInt))
+            closeOnExcept(isZero) { _ =>
+              (isZero.incRefCount(), ColumnVector.fromScalar(zero, cv.getRowCount.toInt))
+            }
           }
         }
         val intPartZeroHandled = withResource(isZero) { isZero =>
@@ -2522,21 +2526,20 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         getPartsFromDecimal(cv, d, scale)
       }
       case IntegerType | LongType | ShortType | ByteType => {
-        closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resource_array =>
-          val intPartPos = withResource(cv.castTo(DType.STRING)) { intPart =>
-            withResource(Scalar.fromString("-")) { negativeSign =>
-              withResource(Scalar.fromString("")) { emptyString =>
-                intPart.stringReplace(negativeSign, emptyString)
-              }
+        val intPartPos = withResource(cv.castTo(DType.STRING)) { intPart =>
+          withResource(Scalar.fromString("-")) { negativeSign =>
+            withResource(Scalar.fromString("")) { emptyString =>
+              intPart.stringReplace(negativeSign, emptyString)
             }
           }
-          resource_array += intPartPos
-          val dzeros = "0" * d
-          val decPart = withResource(Scalar.fromString(dzeros)) { zeroString =>
+        }
+        val dzeros = "0" * d
+        val decPart = closeOnExcept(intPartPos) { _ =>
+          withResource(Scalar.fromString(dzeros)) { zeroString =>
             ColumnVector.fromScalar(zeroString, cv.getRowCount.toInt)
           }
-          (intPartPos, decPart)
         }
+        (intPartPos, decPart)
       }
       case _ => {
         throw new UnsupportedOperationException(s"format_number doesn't support type ${x.dataType}")
@@ -2567,12 +2570,13 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
       }
     }
-    val substrs = (0 until maxstrlen by 3).map { i =>
-      val endIndex = i + 3
-      str.substring(i, endIndex).asInstanceOf[ColumnView]
-    }.toArray
     val sepCol = withResource(Scalar.fromString(",")) { sep =>
       ColumnVector.fromScalar(sep, str.getRowCount.toInt)
+    }
+    val substrs = closeOnExcept(sepCol) { _ =>
+      (0 until maxstrlen by 3).map { i =>
+        str.substring(i, i + 3).asInstanceOf[ColumnView]
+      }.toArray
     }
     withResource(substrs) { _ =>
       withResource(sepCol) { _ =>
@@ -2584,43 +2588,48 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   private def handleInfAndNan(cv: ColumnVector, res: ColumnVector): ColumnVector = {
+    // replace inf and nan with infSymbol and nanSymbol in res according to cv
     val symbols = DecimalFormatSymbols.getInstance(Locale.US)
     val nanSymbol = symbols.getNaN
     val infSymbol = symbols.getInfinity
     val negInfSymbol = "-" + infSymbol
-    val isInf = x.dataType match {
-      case DoubleType => {
-        withResource(Scalar.fromDouble(Double.PositiveInfinity)) { inf =>
-          cv.equalTo(inf)
-        }
-      }
-      case FloatType => {
-        withResource(Scalar.fromFloat(Float.PositiveInfinity)) { inf =>
-          cv.equalTo(inf)
-        }
-      }
-    }
-    val isNegInf = x.dataType match {
-      case DoubleType => {
-        withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negInf =>
-          cv.equalTo(negInf)
-        }
-      }
-      case FloatType => {
-        withResource(Scalar.fromFloat(Float.NegativeInfinity)) { negInf =>
-          cv.equalTo(negInf)
-        }
-      }
-    }
     val handleNan = withResource(cv.isNan()) { isNan =>
       withResource(Scalar.fromString(nanSymbol)) { nan =>
         isNan.ifElse(nan, res)
       }
     }
+    val isInf = closeOnExcept(handleNan) { _ =>
+        x.dataType match {
+        case DoubleType => {
+          withResource(Scalar.fromDouble(Double.PositiveInfinity)) { inf =>
+            cv.equalTo(inf)
+          }
+        }
+        case FloatType => {
+          withResource(Scalar.fromFloat(Float.PositiveInfinity)) { inf =>
+            cv.equalTo(inf)
+          }
+        }
+      }
+    }
     val handleInf = withResource(isInf) { _ =>
-      withResource(Scalar.fromString(infSymbol)) { inf =>
-        withResource(handleNan) { _ =>
-          isInf.ifElse(inf, handleNan)
+      withResource(handleNan) { _ =>
+        withResource(Scalar.fromString(infSymbol)) { inf =>
+            isInf.ifElse(inf, handleNan)
+        }
+      }
+    }
+    val isNegInf = closeOnExcept(handleInf) { _ =>
+        x.dataType match {
+        case DoubleType => {
+          withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negInf =>
+            cv.equalTo(negInf)
+          }
+        }
+        case FloatType => {
+          withResource(Scalar.fromFloat(Float.NegativeInfinity)) { negInf =>
+            cv.equalTo(negInf)
+          }
         }
       }
     }
@@ -2640,32 +2649,30 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       return GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, StringType)
     }
     val d = rhs.getValue.asInstanceOf[Int]
-    val isNegative = negativeCheck(lhs.getBase)
     val (integerPart, decimalPart) = getParts(lhs.getBase, d)
     // reverse integer part for adding commas
-    val reversedIntegerPart = withResource(integerPart) { intPart =>
-      intPart.reverseStringsOrLists()
-    }
-    val res = withResource(reversedIntegerPart) { _ =>
-      addCommas(reversedIntegerPart)
-    }
-    // reverse result back
-    val reverseBack = withResource(res) { r =>
-      r.reverseStringsOrLists()
-    }
-    val resWithDecimalPart = d match {
-      case 0 => {
-        // d == 0, only return integer part
-        decimalPart.safeClose()
-        reverseBack
+    val resWithDecimalPart = withResource(decimalPart) { _ =>
+      val reversedIntegerPart = withResource(integerPart) { intPart =>
+        intPart.reverseStringsOrLists()
       }
-      case _ => {
-        // d > 0, append decimal part to result
-        val pointCv = withResource(Scalar.fromString(".")) { point =>
-          ColumnVector.fromScalar(point, lhs.getRowCount.toInt)
+      val reversedIntegerPartWithCommas = withResource(reversedIntegerPart) { _ =>
+        addCommas(reversedIntegerPart)
+      }
+      // reverse result back
+      val reverseBack = withResource(reversedIntegerPartWithCommas) { r =>
+        r.reverseStringsOrLists()
+      }
+      d match {
+        case 0 => {
+          // d == 0, only return integer part
+          reverseBack
         }
-        withResource(reverseBack) { _ =>
-          withResource(decimalPart) { _ =>
+        case _ => {
+          // d > 0, append decimal part to result
+          val pointCv = withResource(Scalar.fromString(".")) { point =>
+            ColumnVector.fromScalar(point, lhs.getRowCount.toInt)
+          }
+          withResource(reverseBack) { _ =>
             withResource(pointCv) { _ =>
               ColumnVector.stringConcatenate(Array(reverseBack, pointCv, decimalPart))
             }
@@ -2681,7 +2688,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       val resWithNeg = withResource(negCv) { _ =>
         ColumnVector.stringConcatenate(Array(negCv, resWithDecimalPart))
       }
-      withResource(isNegative) { _ =>
+      withResource(negativeCheck(lhs.getBase)) { isNegative =>
         withResource(resWithNeg) { _ =>
           isNegative.ifElse(resWithNeg, resWithDecimalPart)
         }
