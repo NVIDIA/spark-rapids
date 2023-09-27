@@ -2180,7 +2180,8 @@ class MultiFileCloudOrcPartitionReader(
           new GpuColumnarBatchWithPartitionValuesIterator(Iterator(batch), partValues,
             rowsPerPart, partitionSchema)
         }.getOrElse {
-          addPartitionValues(batch, meta.partitionedFile.partitionValues, partitionSchema)
+          SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(batch, meta.partitionedFile.partitionValues,
+            partitionSchema)
         }
 
       case buffer: HostMemoryBuffersWithMetaData =>
@@ -2195,8 +2196,8 @@ class MultiFileCloudOrcPartitionReader(
                 new GpuColumnarBatchWithPartitionValuesIterator(Iterator(batch), partValues,
                   rowsPerPart, partitionSchema)
               case None =>
-                addPartitionValues(batch, buffer.partitionedFile.partitionValues,
-                  partitionSchema)
+                SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(batch,
+                  buffer.partitionedFile.partitionValues, partitionSchema)
             }
           case _ =>
             EmptyGpuColumnarBatchIterator

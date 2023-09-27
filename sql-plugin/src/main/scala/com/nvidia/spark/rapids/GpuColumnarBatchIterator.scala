@@ -122,8 +122,8 @@ class GpuColumnarBatchWithPartitionValuesIterator(
         val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
           computeValuesAndRowNumsForBatch(batch.numRows())
         }
-        outputIter = MultiFileReaderUtils.addAllPartitionValuesAndClose(batch,
-          readPartValues, readPartRows, partSchema)
+        outputIter = SplitColumnarBatchProcessor.addPartitionValuesToBatch(batch, readPartRows,
+          readPartValues, partSchema)
         outputIter.next()
       } else {
         batch

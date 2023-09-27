@@ -2536,7 +2536,8 @@ class MultiFileCloudParquetPartitionReader(
         new GpuColumnarBatchWithPartitionValuesIterator(Iterator(origBatch), allPartInternalRows,
           rowsPerPartition, partitionSchema)
       } else {
-        addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
+        SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(origBatch,
+          meta.partitionedFile.partitionValues, partitionSchema)
       }
 
     case buffer: HostMemoryBuffersWithMetaData =>
@@ -2606,7 +2607,8 @@ class MultiFileCloudParquetPartitionReader(
         batchIter.flatMap { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
+          SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(batch,
+            partedFile.partitionValues, partitionSchema)
         }
       }
     }.flatten

@@ -661,13 +661,15 @@ class GpuMultiFileCloudAvroPartitionReader(
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val emptyBatch = new ColumnarBatch(Array.empty, bufAndSizeInfo.numRows.toInt)
-        Some(addPartitionValues(emptyBatch, partitionValues, partitionSchema))
+        Some(SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(emptyBatch, partitionValues,
+          partitionSchema))
       } else {
         val maybeBatch = sendToGpu(bufAndSizeInfo.hmb, bufAndSizeInfo.bytes, files)
         // we have to add partition values here for this batch, we already verified that
         // it's not different for all the blocks in this batch
         if (maybeBatch.isDefined) {
-          Some(addPartitionValues(maybeBatch.get, partitionValues, partitionSchema))
+          Some(SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(maybeBatch.get, partitionValues,
+            partitionSchema))
         } else {
           None
         }

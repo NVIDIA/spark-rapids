@@ -109,16 +109,6 @@ trait HostMemoryBuffersWithMetaDataBase {
 
 // This is a common trait for all kind of file formats
 trait MultiFileReaderFunctions {
-
-  // Add partitioned columns into the batch
-  protected def addPartitionValues(
-      batch: ColumnarBatch,
-      inPartitionValues: InternalRow,
-      partitionSchema: StructType): SplitBatchReaderIterator = {
-    MultiFileReaderUtils.addSinglePartitionValuesAndClose(batch, inPartitionValues,
-      partitionSchema)
-  }
-
   @scala.annotation.nowarn(
     "msg=method getAllStatistics in class FileSystem is deprecated"
   )
@@ -203,49 +193,6 @@ object MultiFileReaderUtils extends Logging {
       anyAlluxioPathsReplaced: Boolean = false): Boolean =
     !coalescingEnabled || (multiThreadEnabled &&
       (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
-
-  /**
-   * Add all partition values found to the batch. There could be more then one partition
-   * value in the batch so we have to build up columns with the correct number of rows
-   * for each partition value.
-   *
-   * @param batch           - input batch, will be closed after the call returns
-   * @param partitionValues - partition values collected from the batch
-   * @param partitionRows   - row numbers collected from the batch, and it should have
-   *                        the same size with "partitionValues"
-   * @param partitionSchema - the partition schema
-   * @return a new columnar batch iterator with partition values
-   */
-    // splitForCudfSizeLimit
-    // return a Case Class ->
-  def addAllPartitionValuesAndClose(batch: ColumnarBatch,
-      partitionValues: Array[InternalRow],
-      partitionRows: Array[Long],
-      partitionSchema: StructType): SplitBatchReaderIterator = {
-    if (partitionSchema.nonEmpty) {
-      if (partitionValues.length > 1) {
-        concatAndAddPartitionColsToBatchAndClose(batch, partitionRows, partitionValues,
-          partitionSchema)
-      } else {
-        // single partition, add like other readers
-        addSinglePartitionValuesAndClose(batch, partitionValues.head, partitionSchema)
-      }
-    } else {
-      new SplitBatchReaderIterator(Seq(SplitBatchReader.from(batch)))
-    }
-  }
-
-  def addSinglePartitionValuesAndClose(batch: ColumnarBatch, partValues: InternalRow,
-      partSchema: StructType): SplitBatchReaderIterator = {
-    ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch,
-        partValues, partSchema)
-  }
-
-  private def concatAndAddPartitionColsToBatchAndClose(batch: ColumnarBatch, partRows: Array[Long],
-      partValues: Array[InternalRow], partSchema: StructType): SplitBatchReaderIterator = {
-    ColumnarPartitionReaderWithPartitionValues.addMultiplePartitionValues(batch, partRows,
-      partValues, partSchema)
-  }
 }
 
 /**
