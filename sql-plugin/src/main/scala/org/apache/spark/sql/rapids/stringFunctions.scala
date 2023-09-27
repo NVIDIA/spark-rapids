@@ -2574,7 +2574,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       ColumnVector.fromScalar(sep, str.getRowCount.toInt)
     }
     val substrs = closeOnExcept(sepCol) { _ =>
-      (0 until maxstrlen by 3).map { i =>
+      (0 until maxstrlen by 3).safeMap { i =>
         str.substring(i, i + 3).asInstanceOf[ColumnView]
       }.toArray
     }
@@ -2695,7 +2695,10 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
     }
     // handle null case
-    val formatedWithNull = nullable match {
+    val anyNull = closeOnExcept(formated) { _ =>
+      lhs.getBase.getNullCount > 0
+    }
+    val formatedWithNull = anyNull match {
       case true => {
         withResource(formated) { _ =>
           withResource(lhs.getBase.isNull) { isNull =>
@@ -2705,9 +2708,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
           }
         }
       }
-      case false => {
-        formated
-      }
+      case false => formated
     }
     // handle inf and nan
     x.dataType match {
@@ -2716,9 +2717,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
           handleInfAndNan(lhs.getBase, formatedWithNull)
         }
       }
-      case _ => {
-        formatedWithNull
-      }
+      case _ => formatedWithNull
     }
   }
 
