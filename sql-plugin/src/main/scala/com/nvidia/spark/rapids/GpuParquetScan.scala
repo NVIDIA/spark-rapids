@@ -1607,7 +1607,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         localItem.close()
       }
     }
-    copyRemoteBlocksData(remoteItems.asInstanceOf[Seq[CopyRange]], filePath,
+    copyRemoteBlocksData(remoteItems.toSeq, filePath,
       filePathString, out, metrics)
     // fixup output pos after blocks were copied possibly out of order
     out.seek(startPos + totalBytesToCopy)
