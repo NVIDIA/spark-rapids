@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.Arm.{closeOnExcept}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
@@ -122,9 +122,10 @@ class GpuColumnarBatchWithPartitionValuesIterator(
         val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
           computeValuesAndRowNumsForBatch(batch.numRows())
         }
-        outputIter = SplitColumnarBatchProcessor.addPartitionValuesToBatch(batch, readPartRows,
+        outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
           readPartValues, partSchema)
-        outputIter.next()
+        val res = outputIter.next()
+        res
       } else {
         batch
       }

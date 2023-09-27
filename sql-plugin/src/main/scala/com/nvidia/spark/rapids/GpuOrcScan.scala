@@ -2175,13 +2175,14 @@ class MultiFileCloudOrcPartitionReader(
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
         }
-        meta.allPartValues.map { partRowsAndValues =>
-          val (rowsPerPart, partValues) = partRowsAndValues.unzip
-          new GpuColumnarBatchWithPartitionValuesIterator(Iterator(batch), partValues,
-            rowsPerPart, partitionSchema)
-        }.getOrElse {
-          SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(batch,
-            meta.partitionedFile.partitionValues, partitionSchema)
+        meta.allPartValues match {
+          case Some(partRowsAndValues) =>
+            val (rowsPerPart, partValues) = partRowsAndValues.unzip
+            BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, rowsPerPart,
+              partValues, partitionSchema)
+          case None =>
+            BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+              meta.partitionedFile.partitionValues, partitionSchema)
         }
 
       case buffer: HostMemoryBuffersWithMetaData =>
@@ -2193,10 +2194,10 @@ class MultiFileCloudOrcPartitionReader(
             buffer.allPartValues match {
               case Some(partRowsAndValues) =>
                 val (rowsPerPart, partValues) = partRowsAndValues.unzip
-                new GpuColumnarBatchWithPartitionValuesIterator(Iterator(batch), partValues,
-                  rowsPerPart, partitionSchema)
+                BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, rowsPerPart,
+                  partValues, partitionSchema)
               case None =>
-                SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(batch,
+                BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
                   buffer.partitionedFile.partitionValues, partitionSchema)
             }
           case _ =>

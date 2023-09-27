@@ -43,7 +43,7 @@ class ColumnarPartitionReaderWithPartitionValues(
       outputIter.next()
     } else {
       val fileBatch: ColumnarBatch = fileReader.get()
-      outputIter = SplitColumnarBatchProcessor.addPartitionValuesToBatch(fileBatch,
+      outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(fileBatch,
         Array(fileBatch.numRows), Array(partitionValues), partitionSchema)
       outputIter.next()
     }
@@ -51,8 +51,6 @@ class ColumnarPartitionReaderWithPartitionValues(
 
   override def close(): Unit = {
     fileReader.close()
-    // TODO: Do we need to close InternalRow?
-    // partitionValues.foreach(_.close())
   }
 }
 

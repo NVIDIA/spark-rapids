@@ -2530,14 +2530,14 @@ class MultiFileCloudParquetPartitionReader(
 
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      if (meta.allPartValues.isDefined) {
-        val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
-        val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
-        new GpuColumnarBatchWithPartitionValuesIterator(Iterator(origBatch), allPartInternalRows,
-          rowsPerPartition, partitionSchema)
-      } else {
-        SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(origBatch,
-          meta.partitionedFile.partitionValues, partitionSchema)
+      meta.allPartValues match {
+        case Some(partRowsAndValues) =>
+          val (rowsPerPart, partValues) = partRowsAndValues.unzip
+          BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
+            partValues, partitionSchema)
+        case None =>
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(origBatch,
+            meta.partitionedFile.partitionValues, partitionSchema)
       }
 
     case buffer: HostMemoryBuffersWithMetaData =>
@@ -2607,7 +2607,7 @@ class MultiFileCloudParquetPartitionReader(
         batchIter.flatMap { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          SplitColumnarBatchProcessor.addSinglePartitionValueToBatch(batch,
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
             partedFile.partitionValues, partitionSchema)
         }
       }
