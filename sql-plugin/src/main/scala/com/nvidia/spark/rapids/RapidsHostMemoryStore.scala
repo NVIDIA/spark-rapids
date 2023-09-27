@@ -22,12 +22,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, MemoryBuffer, NvtxColor, NvtxRange, PinnedMemoryPool}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, freeOnExcept, withResource}
 import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_SPILL_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -35,33 +36,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * A buffer store using host memory.
  * @param maxSize maximum size in bytes for all buffers in this store
- * @param pageableMemoryPoolSize maximum size in bytes for the internal pageable memory pool
  */
 class RapidsHostMemoryStore(
-    maxSize: Long)
+    maxSize: Option[Long])
     extends RapidsBufferStore(StorageTier.HOST) {
 
-  override def spillableOnAdd: Boolean = false
+  override protected def spillableOnAdd: Boolean = false
 
-  override protected def setSpillable(buffer: RapidsBufferBase, spillable: Boolean): Unit = {
-    doSetSpillable(buffer, spillable)
-  }
-
-  override def getMaxSize: Option[Long] = Some(maxSize)
-
-  private def allocateHostBuffer(
-      size: Long,
-      preferPinned: Boolean = true): HostMemoryBuffer = {
-    var buffer: HostMemoryBuffer = null
-    if (preferPinned) {
-      buffer = PinnedMemoryPool.tryAllocate(size)
-      if (buffer != null) {
-        return buffer
-      }
-    }
-
-    HostMemoryBuffer.allocate(size, false)
-  }
+  override def getMaxSize: Option[Long] = maxSize
 
   def addBuffer(
       id: RapidsBufferId,
@@ -101,47 +83,87 @@ class RapidsHostMemoryStore(
     }
   }
 
-  override protected def createBuffer(
-      other: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(other.getCopyIterator) { otherBufferIterator =>
-      val isChunked = otherBufferIterator.isChunked
-      val totalCopySize = otherBufferIterator.getTotalCopySize
-      closeOnExcept(allocateHostBuffer(totalCopySize)) { hostBuffer =>
-        withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
-          var hostOffset = 0L
-          val start = System.nanoTime()
-          while (otherBufferIterator.hasNext) {
-            val otherBuffer = otherBufferIterator.next()
-            withResource(otherBuffer) { _ =>
-              otherBuffer match {
-                case devBuffer: DeviceMemoryBuffer =>
-                  hostBuffer.copyFromMemoryBufferAsync(
-                    hostOffset, devBuffer, 0, otherBuffer.getLength, stream)
-                  hostOffset += otherBuffer.getLength
-                case _ =>
-                  throw new IllegalStateException("copying from buffer without device memory")
-              }
-            }
-          }
-          stream.sync()
-          val end = System.nanoTime()
-          val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
-          val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
-          logDebug(s"Spill to host (chunked=$isChunked) " +
-              s"size=$szMB MiB bandwidth=$bw MiB/sec")
+  override protected def trySpillToMaximumSize(
+      buffer: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream): Boolean = {
+    maxSize.forall { ms =>
+      // this spillStore has a maximum size requirement (host only). We need to spill from it
+      // in order to make room for `buffer`.
+      val targetTotalSize = ms - buffer.memoryUsedBytes
+      if (targetTotalSize < 0) {
+        // lets not spill to host when the buffer we are about
+        // to spill is larger than our limit
+        false
+      } else {
+        val amountSpilled = synchronousSpill(targetTotalSize, catalog, stream)
+        if (amountSpilled != 0) {
+          logDebug(s"Spilled $amountSpilled bytes from ${name} to make room for ${buffer.id}")
+          TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
         }
-        new RapidsHostMemoryBuffer(
-          other.id,
-          totalCopySize,
-          other.meta,
-          applyPriorityOffset(other.getSpillPriority, HOST_MEMORY_BUFFER_SPILL_OFFSET),
-          hostBuffer)
+        // if after spill we can fit the new buffer, return true
+        buffer.memoryUsedBytes <= (ms - currentSize)
       }
     }
   }
 
-  def numBytesFree: Long = maxSize - currentSize
+  override protected def createBuffer(
+      other: RapidsBuffer,
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+    val wouldFit = trySpillToMaximumSize(other, catalog, stream)
+    if (!wouldFit) {
+      // skip host
+      logWarning(s"Buffer $other with size ${other.memoryUsedBytes} does not fit " +
+          s"in the host store, skipping tier.")
+      None
+    } else {
+      withResource(other.getCopyIterator) { otherBufferIterator =>
+        val isChunked = otherBufferIterator.isChunked
+        val totalCopySize = otherBufferIterator.getTotalCopySize
+        closeOnExcept(HostAlloc.allocHighPriority(totalCopySize)) { hb =>
+          hb.map { hostBuffer =>
+            withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
+              var hostOffset = 0L
+              val start = System.nanoTime()
+              while (otherBufferIterator.hasNext) {
+                val otherBuffer = otherBufferIterator.next()
+                withResource(otherBuffer) { _ =>
+                  otherBuffer match {
+                    case devBuffer: DeviceMemoryBuffer =>
+                      hostBuffer.copyFromMemoryBufferAsync(
+                        hostOffset, devBuffer, 0, otherBuffer.getLength, stream)
+                      hostOffset += otherBuffer.getLength
+                    case _ =>
+                      throw new IllegalStateException("copying from buffer without device memory")
+                  }
+                }
+              }
+              stream.sync()
+              val end = System.nanoTime()
+              val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
+              val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
+              logDebug(s"Spill to host (chunked=$isChunked) " +
+                  s"size=$szMB MiB bandwidth=$bw MiB/sec")
+            }
+            new RapidsHostMemoryBuffer(
+              other.id,
+              totalCopySize,
+              other.meta,
+              applyPriorityOffset(other.getSpillPriority, HOST_MEMORY_BUFFER_SPILL_OFFSET),
+              hostBuffer)
+          }.orElse {
+            // skip host
+            logWarning(s"Buffer $other with size ${other.memoryUsedBytes} does not fit " +
+                s"in the host store, skipping tier.")
+            None
+          }
+        }
+      }
+    }
+  }
+
+  def numBytesFree: Option[Long] = maxSize.map(_ - currentSize)
 
   class RapidsHostMemoryBuffer(
       id: RapidsBufferId,
@@ -162,7 +184,7 @@ class RapidsHostMemoryStore(
       }
     }
 
-    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+    override def writeToChannel(outputChannel: WritableByteChannel, ignored: Cuda.Stream): Long = {
       var written: Long = 0L
       val iter = new HostByteBufferIterator(buffer)
       iter.foreach { bb =>
@@ -188,16 +210,13 @@ class RapidsHostMemoryStore(
     }
 
     /** The size of this buffer in bytes. */
-    override def getMemoryUsedBytes: Long = size
+    override val memoryUsedBytes: Long = size
 
     // If this require triggers, we are re-adding a `HostMemoryBuffer` outside of
     // the catalog lock, which should not possible. The event handler is set to null
     // when we free the `RapidsHostMemoryBuffer` and if the buffer is not free, we
     // take out another handle (in the catalog).
-    // TODO: This is not robust (to rely on outside locking and addReference/free)
-    //  and should be revisited.
-    require(buffer.setEventHandler(this) == null,
-      "HostMemoryBuffer with non-null event handler failed to add!!")
+    HostAlloc.addEventHandler(buffer, this)
 
     /**
      * Override from the MemoryBuffer.EventHandler interface.
@@ -227,7 +246,7 @@ class RapidsHostMemoryStore(
     override def free(): Unit = synchronized {
       if (isValid) {
         // it is going to be invalid when calling super.free()
-        buffer.setEventHandler(null)
+        HostAlloc.removeEventHandler(buffer, this)
       }
       super.free()
     }
@@ -311,10 +330,6 @@ class RapidsHostMemoryStore(
 
     override val storageTier: StorageTier = StorageTier.HOST
 
-    // This is the current size in batch form. It is to be used while this
-    // batch hasn't migrated to another store.
-    private val hostSizeInByes: Long = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
-
     // By default all columns are NOT spillable since we are not the only owners of
     // the columns (the caller is holding onto a ColumnarBatch that will be closed
     // after instantiation, triggering onClosed callbacks)
@@ -336,7 +351,9 @@ class RapidsHostMemoryStore(
       null
     }
 
-    override def getMemoryUsedBytes: Long = hostSizeInByes
+    // This is the current size in batch form. It is to be used while this
+    // batch hasn't migrated to another store.
+    override val memoryUsedBytes: Long = RapidsHostColumnVector.getTotalHostMemoryUsed(hostCb)
 
     /**
      * Mark a column as spillable
@@ -359,7 +376,7 @@ class RapidsHostMemoryStore(
      * all columns are spillable.
      */
     override def updateSpillability(): Unit = {
-      doSetSpillable(this, columnSpillability.size == numDistinctColumns)
+      setSpillable(this, columnSpillability.size == numDistinctColumns)
     }
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
@@ -369,7 +386,7 @@ class RapidsHostMemoryStore(
 
     override def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       columnSpillability.clear()
-      doSetSpillable(this, false)
+      setSpillable(this, false)
       RapidsHostColumnVector.incRefCounts(hostCb)
     }
 
@@ -383,7 +400,7 @@ class RapidsHostMemoryStore(
         "RapidsHostColumnarBatch does not support getCopyIterator")
     }
 
-    override def writeToChannel(outputChannel: WritableByteChannel): Long = {
+    override def writeToChannel(outputChannel: WritableByteChannel, ignored: Cuda.Stream): Long = {
       withResource(Channels.newOutputStream(outputChannel)) { outputStream =>
         withResource(new DataOutputStream(outputStream)) { dos =>
           val columns = RapidsHostColumnVector.extractBases(hostCb)

@@ -52,13 +52,14 @@ Default value: `true`
 
 Configuration key: [`spark.rapids.memory.gpu.allocFraction`](configs.md#memory.gpu.allocFraction)
 
-Default value: `0.9`
+Default value: `1.0`
 
 Allocating memory on a GPU can be an expensive operation. RAPIDS uses a pooling allocator
 called [RMM](https://github.com/rapidsai/rmm) to mitigate this overhead. By default, on startup
-the plugin will allocate `90%` (`0.9`) of the _available_ memory on the GPU and keep it as a pool
-that can be allocated from. If the pool is exhausted more memory will be allocated and added to
-the pool.
+the plugin will allocate almost `100%` (`1.0`) of the _available_ memory on the GPU and keep it as a pool
+that can be allocated from. We reserve 640 MiB by default for system use such as memory needed for kernels
+and kernel launches. If the pool is exhausted more memory will be allocated and added to the pool.
+
 Most of the time this is a huge win, but if you need to share the GPU with other 
 [libraries](additional-functionality/ml-integration.md) that are not aware of RMM this can lead
 to memory issues, and you may need to disable pooling.
@@ -101,9 +102,13 @@ the spill storage, so it can use pinned memory too.
 
 Configuration key: [`spark.rapids.memory.host.spillStorageSize`](configs.md#memory.host.spillStorageSize)
 
-Default value: `1g`
+Default value: `-1`
 
 This is the amount of host memory that is used to cache spilled data before it is flushed to disk.
+The default value is '-1', it is the combined size of [pinned](configs.md#memory.pinnedPool.size) 
+and [pageable](additional-functionality/advanced_configs.md#memory.host.pageablePool.size) memory pools.
+If there is no spilling, the default value for the spill storage is fine. But it is recommended to
+use a few gigabytes pinned memory in both spilling and no-spilling cases.
 The GPU Accelerator employs different algorithms that allow it to process more data than can fit in
 the GPU's memory. We do not support this for all operations, and are constantly trying to add more.
 The way that this can work is by spilling parts of the data to host memory or to disk, and then
@@ -130,7 +135,7 @@ will be faster to not wait when you can get the data across the network fast eno
 ## Number of Concurrent Tasks per GPU
 Configuration key: [`spark.rapids.sql.concurrentGpuTasks`](configs.md#sql.concurrentGpuTasks)
 
-Default value: `1`
+Default value: `2`
 
 The RAPIDS Accelerator can further limit the number of tasks that are actively sharing the GPU.
 It does this using a semaphore. When metrics or documentation refers to the GPU semaphore it
@@ -205,7 +210,9 @@ provides work for all GPUs.
 GPUs process data much more efficiently when they have a large amount of data to process in
 parallel.  Loading data from fewer, large input files will perform better than loading data
 from many small input files.  Ideally input files should be on the order of a few gigabytes
-rather than megabytes or smaller.
+rather than megabytes or smaller. The `spark.sql.files.openCostInBytes` config can be tuned to
+a larger value than the default (4 MB) to reduce the number of tasks in a data scan stage
+to improve performance if there are many small files in a table.
 
 Note that the GPU can encode Parquet and ORC data much faster than the CPU, so the costs of
 writing large files can be significantly lower.
@@ -267,7 +274,7 @@ for details.
 ## Columnar Batch Size
 Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#sql.batchSizeBytes)
 
-Default value: `2147483647` (just under 2 GiB)
+Default value: `1073741824` (just under 1 GiB)
 
 The RAPIDS Accelerator plugin processes data on the GPU in a columnar format.  Data is processed
 in a series of columnar batches. During processing multiple batches may be concatenated

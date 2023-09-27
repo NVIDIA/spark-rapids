@@ -54,7 +54,7 @@
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
-            <classifier>${cuda.version}</classifier>
+            <classifier>${jni.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -66,6 +66,12 @@
             <!-- for hive udf test cases -->
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-hive_${scala.binary.version}</artifactId>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/com.github.scopt/scopt -->
+        <dependency>
+            <groupId>com.github.scopt</groupId>
+            <artifactId>scopt_2.12</artifactId>
+            <version>4.1.0</version>
         </dependency>
     </dependencies>
 
@@ -80,53 +86,11 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark321cdh.version}</version>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>org.apache.arrow</groupId>
-                            <artifactId>arrow-vector</artifactId>
-                        </exclusion>
-                    </exclusions>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
                     <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark321cdh.version}</version>
-                    <exclusions>
-                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
-                        <exclusion>
-                            <groupId>org.apache.spark</groupId>
-                            <artifactId>spark-core_${scala.binary.version}</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.apache.arrow</groupId>
-                            <artifactId>arrow-vector</artifactId>
-                        </exclusion>
-                    </exclusions>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.arrow</groupId>
-                    <artifactId>arrow-vector</artifactId>
-                    <version>${arrow.cdh.version}</version>
-                    <scope>provided</scope>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>com.fasterxml.jackson.core</groupId>
-                            <artifactId>jackson-core</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>com.fasterxml.jackson.core</groupId>
-                            <artifactId>jackson-annotations</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>io.netty</groupId>
-                            <artifactId>netty-common</artifactId>
-                        </exclusion>
-                    </exclusions>
                 </dependency>
             </dependencies>
         </profile>
@@ -140,53 +104,11 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark330cdh.version}</version>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>org.apache.arrow</groupId>
-                            <artifactId>arrow-vector</artifactId>
-                        </exclusion>
-                    </exclusions>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
                     <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark330cdh.version}</version>
-                    <exclusions>
-                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
-                        <exclusion>
-                            <groupId>org.apache.spark</groupId>
-                            <artifactId>spark-core_${scala.binary.version}</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>org.apache.arrow</groupId>
-                            <artifactId>arrow-vector</artifactId>
-                        </exclusion>
-                    </exclusions>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.arrow</groupId>
-                    <artifactId>arrow-vector</artifactId>
-                    <version>${arrow.cdh.version}</version>
-                    <scope>provided</scope>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>com.fasterxml.jackson.core</groupId>
-                            <artifactId>jackson-core</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>com.fasterxml.jackson.core</groupId>
-                            <artifactId>jackson-annotations</artifactId>
-                        </exclusion>
-                        <exclusion>
-                            <groupId>io.netty</groupId>
-                            <artifactId>netty-common</artifactId>
-                        </exclusion>
-                    </exclusions>
                 </dependency>
             </dependencies>
         </profile>
@@ -205,93 +127,10 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.scala-lang</groupId>
-                    <artifactId>scala-reflect</artifactId>
-                    <version>${scala.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>com.esotericsoftware.kryo</groupId>
-                    <artifactId>kryo-shaded-db</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.arrow</groupId>
-                    <artifactId>arrow-format</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.arrow</groupId>
-                    <artifactId>arrow-memory</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.arrow</groupId>
-                    <artifactId>arrow-vector</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-                <dependency>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-annotations</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.hive</groupId>
-                    <artifactId>hive-exec</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.hive</groupId>
-                    <artifactId>hive-serde</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-io</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.hadoop</groupId>
-                    <artifactId>hadoop-client</artifactId>
-                    <version>${hadoop.client.version}</version>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-db-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>

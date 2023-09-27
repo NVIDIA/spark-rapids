@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution
+package com.nvidia.spark.rapids.delta.delta20x
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat
 
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.delta.DeltaColumnMappingMode
+import org.apache.spark.sql.types.StructType
 
-class GpuShuffleMeta(
-    shuffle: ShuffleExchangeExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)
+case class GpuDelta20xParquetFileFormat(
+    override val columnMappingMode: DeltaColumnMappingMode,
+    override val referenceSchema: StructType) extends GpuDeltaParquetFileFormat {
+}

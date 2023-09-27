@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
@@ -324,24 +324,23 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
 
     val spark = SparkSession.active
-
-    fileFormat = cmd.fileFormat match {
-      case _: CSVFileFormat =>
-        willNotWorkOnGpu("CSV output is not supported")
-        None
-      case _: JsonFileFormat =>
-        willNotWorkOnGpu("JSON output is not supported")
-        None
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: TextFileFormat =>
-        willNotWorkOnGpu("text output is not supported")
-        None
-      case f =>
-        willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
-        None
+    val formatCls = cmd.fileFormat.getClass
+    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+      willNotWorkOnGpu("CSV output is not supported")
+      None
+    } else if (formatCls == classOf[JsonFileFormat]) {
+      willNotWorkOnGpu("JSON output is not supported")
+      None
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(formatCls)) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[TextFileFormat]) {
+      willNotWorkOnGpu("text output is not supported")
+      None
+    } else {
+      willNotWorkOnGpu(s"unknown file format: ${formatCls.getCanonicalName}")
+      None
     }
   }
 
@@ -393,7 +392,7 @@ trait GpuOverridesListener {
   def optimizedPlan(
       plan: SparkPlanMeta[SparkPlan],
       sparkPlan: SparkPlan,
-      costOptimizations: Seq[Optimization])
+      costOptimizations: Seq[Optimization]): Unit
 }
 
 sealed trait FileFormatType
@@ -695,6 +694,28 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
+  def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
+    def findRootProcessingNode(plan: SparkPlan): SparkPlan = plan match {
+      case p: AdaptiveSparkPlanExec => findRootProcessingNode(p.executedPlan)
+      case p: QueryStageExec => findRootProcessingNode(p.plan)
+      case p: ReusedSubqueryExec => findRootProcessingNode(p.child)
+      case p: ReusedExchangeExec => findRootProcessingNode(p.child)
+      case p => p
+    }
+
+    val aqeSubPlan = findRootProcessingNode(adaptivePlan.executedPlan)
+    aqeSubPlan match {
+      case _: GpuExec =>
+        // plan is already on the GPU
+        true
+      case p =>
+        // see if the root processing node of the current subplan will translate to the GPU
+        val meta = GpuOverrides.wrapAndTagPlan(p, conf)
+        meta.canThisBeReplaced
+    }
+  }
 
   def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_,_]): Unit = {
     if (!conf.isFloatAggEnabled && isOrContainsFloatingPoint(dataType)) {
@@ -3597,7 +3618,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuCSVScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3614,7 +3635,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[JsonScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuJsonScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuJsonScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,

@@ -70,6 +70,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
+                    <shadedArtifactAttached>true</shadedArtifactAttached>
+                    <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
                     <artifactSet>
                         <excludes>
                             <exclude>org.slf4j:*</exclude>
@@ -90,7 +92,7 @@
                     </relocations>
                     <filters>
                         <filter>
-                            <artifact>com.nvidia:rapids-4-spark-aggregator_2.12</artifact>
+                            <artifact>com.nvidia:rapids-4-spark-aggregator_${scala.binary.version}</artifact>
                             <includes>
                                 <include>META-INF/**</include>
                             </includes>
@@ -131,32 +133,6 @@
                     <execution>
                         <id>default-test</id>
                         <phase>none</phase>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <!-- WORKAROUND: default-jar does not contain classes by design.
-                             there seems to be a race between shade and empty default-jar
-                             So attaching here manually because maven complains when we try
-                             to disable default-jar to resolve the conflict.-->
-                        <id>attach-shaded-with-spark-version</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>attach-artifact</goal>
-                        </goals>
-                        <configuration>
-                            <artifacts>
-                                <artifact>
-                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
-                                    <type>jar</type>
-                                    <classifier>${spark.version.classifier}</classifier>
-                                </artifact>
-                            </artifacts>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -558,7 +534,7 @@
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-delta-stub_${scala.binary.version}</artifactId>
+                    <artifactId>rapids-4-spark-delta-24x_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <classifier>${spark.version.classifier}</classifier>
                 </dependency>

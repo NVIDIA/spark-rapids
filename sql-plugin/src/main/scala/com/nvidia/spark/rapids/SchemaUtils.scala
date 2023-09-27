@@ -35,7 +35,7 @@ import org.apache.spark.sql.types._
 
 object SchemaUtils {
   // Parquet field ID metadata key
-  val FIELD_ID_METADATA_KEY = "parquet.field.id"
+  private val FIELD_ID_METADATA_KEY = "parquet.field.id"
 
   /**
    * Convert a TypeDescription to a Catalyst StructType.
@@ -283,6 +283,7 @@ object SchemaUtils {
         builder.withMapColumn(
           mapColumn(name,
             writerOptionsFromField(
+              // This nullable is useless because we use the child of struct column
               structBuilder(name, nullable),
               m.keyType,
               "key",
@@ -295,7 +296,12 @@ object SchemaUtils {
               m.valueContainsNull,
               writeInt96,
               fieldMeta,
-              parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)))
+              parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
+            // set the nullable for this map
+            // if `m` is a key of another map, this `nullable` should be false
+            // e.g.: map1(map2(int,int), int), the map2 is the map
+            // key of map1, map2 should be non-nullable
+            nullable))
       case BinaryType =>
         if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withBinaryColumn(name, nullable, parquetFieldId.get)

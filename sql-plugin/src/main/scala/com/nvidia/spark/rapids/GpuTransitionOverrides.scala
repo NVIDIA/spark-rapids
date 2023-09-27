@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv, GpuTaskMetrics}
+import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
@@ -362,20 +362,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       disableUntilInput: Boolean = false): SparkPlan = {
     plan match {
       case batchScan: GpuBatchScanExec =>
-        if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
-          batchScan.scan.isInstanceOf[GpuOrcScan] ||
-          ExternalSource.isSupportedScan(batchScan.scan)) &&
-          (disableUntilInput || disableScanUntilInput(batchScan))) {
-          val scanCopy = batchScan.scan match {
-            case parquetScan: GpuParquetScan =>
-              parquetScan.copy(queryUsesInputFile = true)
-            case orcScan: GpuOrcScan =>
-              orcScan.copy(queryUsesInputFile = true)
-            case eScan if ExternalSource.isSupportedScan(eScan) =>
-              ExternalSource.copyScanWithInputFileTrue(eScan)
-            case _ => throw new RuntimeException("Wrong format") // never reach here
+        if (disableUntilInput || disableScanUntilInput(batchScan)) {
+          val newScan = batchScan.scan.withInputFile()
+          if (newScan ne batchScan.scan) {
+            batchScan.copy(scan = newScan)
+          } else {
+            batchScan
           }
-          batchScan.copy(scan = scanCopy)
         } else {
           batchScan
         }
@@ -522,12 +515,21 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  /** Returns true if the plan is a host columnar plan */
+  private def isHostColumnar(plan: SparkPlan): Boolean = {
+    def isGpuAdaptivePlan(plan: SparkPlan): Boolean = plan match {
+      case ap: AdaptiveSparkPlanExec => GpuOverrides.probablyGpuPlan(ap, rapidsConf)
+      case _ => false
+    }
+    plan.supportsColumnar && !plan.isInstanceOf[GpuExec] && !isGpuAdaptivePlan(plan)
+  }
+
   /**
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
     val nonQueryStagePlan = GpuTransitionOverrides.getNonQueryStagePlan(plan)
-    if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec]) {
+    if (isHostColumnar(nonQueryStagePlan)) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))

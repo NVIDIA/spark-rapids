@@ -21,7 +21,7 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -32,12 +32,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
-    extends RapidsBufferStore(StorageTier.DISK) {
+    extends RapidsBufferStoreWithoutSpill(StorageTier.DISK) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override protected def createBuffer(
       incoming: RapidsBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
+      catalog: RapidsBufferCatalog,
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
     // assuming that the disk store gets contiguous buffers
     val id = incoming.id
     val path = if (id.canShareDiskPaths) {
@@ -49,14 +50,14 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     val (fileOffset, diskLength) = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
       path.synchronized {
-        writeToFile(incoming, path, append = true)
+        writeToFile(incoming, path, append = true, stream)
       }
     } else {
-      writeToFile(incoming, path, append = false)
+      writeToFile(incoming, path, append = false, stream)
     }
 
     logDebug(s"Spilled to $path $fileOffset:$diskLength")
-    incoming match {
+    val buff = incoming match {
       case _: RapidsHostBatchBuffer =>
         new RapidsDiskColumnarBatch(
           id,
@@ -73,19 +74,26 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           incoming.meta,
           incoming.getSpillPriority)
     }
+    Some(buff)
   }
 
   /** Copy a host buffer to a file, returning the file offset at which the data was written. */
   private def writeToFile(
       incoming: RapidsBuffer,
       path: File,
-      append: Boolean): (Long, Long) = {
+      append: Boolean,
+      stream: Cuda.Stream): (Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
         withResource(new FileOutputStream(path, append)) { fos =>
           withResource(fos.getChannel) { outputChannel =>
             val startOffset = outputChannel.position()
-            val writtenBytes = fileWritable.writeToChannel(outputChannel)
+            val writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
+            if (writtenBytes == 0) {
+              throw new IllegalStateException(
+                s"Buffer ${fileWritable} wrote 0 bytes disk on spill. This is not supported!"
+              )
+            }
             (startOffset, writtenBytes)
           }
         }
@@ -109,16 +117,17 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         id, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
-    override def getMemoryUsedBytes(): Long = size
+    override val memoryUsedBytes: Long = size
 
     override val storageTier: StorageTier = StorageTier.DISK
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
+        require(size > 0,
+          s"$this attempted an invalid 0-byte mmap of a file")
         val path = id.getDiskPath(diskBlockManager)
         val mappedBuffer = HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE,
           fileOffset, size)
-        logDebug(s"Created mmap buffer for $path $fileOffset:$size")
         hostBuffer = Some(mappedBuffer)
       }
       hostBuffer.foreach(_.incRefCount())
@@ -183,7 +192,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       val path = id.getDiskPath(diskBlockManager)
       withResource(new FileInputStream(path)) { fis =>
         val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(fis)
-        val hostCols = closeOnExcept(hostBuffer) { _ =>
+        val hostCols = withResource(hostBuffer) { _ =>
           SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
         }
         new ColumnarBatch(hostCols.toArray, header.getNumRows)

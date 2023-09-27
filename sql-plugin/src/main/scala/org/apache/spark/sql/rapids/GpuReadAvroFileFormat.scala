@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,11 @@ import com.nvidia.spark.rapids.{GpuMetric, GpuReadFileFormatWithMetrics, Partiti
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.avro.{AvroFileFormat, AvroOptions}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
@@ -63,6 +65,25 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       metrics,
       options)
     PartitionReaderIterator.buildReader(factory)
+  }
+
+  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = conf.isAvroPerFileReadEnabled
+
+  override def createMultiFileReaderFactory(
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    GpuAvroMultiFilePartitionReaderFactory(
+      fileScan.relation.sparkSession.sessionState.conf,
+      fileScan.rapidsConf,
+      broadcastedConf,
+      fileScan.relation.dataSchema,
+      fileScan.requiredSchema,
+      fileScan.readPartitionSchema,
+      new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
+      fileScan.allMetrics,
+      pushedFilters,
+      fileScan.queryUsesInputFile)
   }
 }
 

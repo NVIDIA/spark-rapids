@@ -87,11 +87,25 @@ object ScalableTaskCompletion {
   private class TopLevelTaskCompletion extends Function[TaskContext, Unit] {
     private val pending = new util.HashSet[UserTaskCompletion]()
     private var callbacksDone = false
+    private var invokingACallback: Boolean = false
+
+    private def throwIfInCallback(): Unit = {
+      if (invokingACallback) {
+        throw new IllegalStateException(
+          s"Detected a task completion callback attempting " +
+          "to add/remove callbacks. This is not supported.")
+      }
+    }
 
     private def callAllCallbacks(tc: TaskContext): Throwable = synchronized {
+      throwIfInCallback()
       var error: Throwable = null
       pending.forEach { utc =>
         try {
+          // this is true while we invoke the callback
+          // so we can throw a bette error/stack trace
+          // instead of a ConcurrentModificationException
+          invokingACallback = true
           if (tc == null) {
             utc(utc.tc)
           } else {
@@ -104,6 +118,8 @@ object ScalableTaskCompletion {
             } else {
               error.addSuppressed(t)
             }
+        } finally {
+          invokingACallback = false
         }
       }
       pending.clear()
@@ -129,6 +145,7 @@ object ScalableTaskCompletion {
     }
 
     def add(u: UserTaskCompletion): Unit = synchronized {
+      throwIfInCallback()
       if (callbacksDone) {
         // Added a callback after it was done calling them back already
         u(u.tc)
@@ -138,6 +155,7 @@ object ScalableTaskCompletion {
     }
 
     def remove(u: UserTaskCompletion): Unit = synchronized {
+      throwIfInCallback()
       pending.remove(u)
     }
 
