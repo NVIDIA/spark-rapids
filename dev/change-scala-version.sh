@@ -15,6 +15,8 @@
 # limitations under the License.
 #
 
+# This script is partially copied from Spark 3.3:
+#   https://github.com/apache/spark/blob/v3.3.0/dev/change-scala-version.sh
 
 set -e
 
