@@ -2073,14 +2073,18 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
   override def dataType: DataType =
   percentage.dataType match {
     case _: ArrayType => {
+      System.err.println("eval output array")
       ArrayType(DoubleType, containsNull = false)
     }
-    case _ => DoubleType
+    case _ => {
+      System.err.println("eval output double")
+      DoubleType
+    }
   }
 
   override def doColumnar(value: GpuColumnVector, percentage: GpuColumnVector): ColumnVector = {
     TableDebug.get().debug("Final histogram", value.getBase);
-    TableDebug.get().debug("percentage", percentage.getBase);
+    TableDebug.get().debug("eval, percentage", percentage.getBase);
 
     System.err.println("percentage.dataType + " +percentage.dataType)
 
@@ -2106,18 +2110,21 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
   }
 
   override def doColumnar(value: GpuScalar, percentage: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(value, percentage.getRowCount.toInt, value.dataType)) {
+    System.err.println("doColumnar S-C value = " + value + ", percentage = " + percentage)
+    withResource(GpuColumnVector.from(value, 1, value.dataType)) {
       valueCol => doColumnar(valueCol, percentage)
     }
   }
 
   override def doColumnar(value: GpuColumnVector, percentage: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(percentage, value.getRowCount.toInt, percentage.dataType)) {
+    System.err.println("doColumnar C-S value = " + value + ", percentage = " + percentage)
+    withResource(GpuColumnVector.from(percentage, 1, percentage.dataType)) {
       percentageCol => doColumnar(value, percentageCol)
     }
   }
 
   override def doColumnar(numRows: Int, value: GpuScalar, percentage: GpuScalar): ColumnVector = {
+    System.err.println("doColumnar S-S value = " + value + ", percentage = " + percentage)
     withResource(GpuColumnVector.from(value, numRows, value.dataType)) { valueCol =>
       doColumnar(valueCol, percentage)
     }
@@ -2135,6 +2142,8 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
  */
 abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
   extends GpuAggregateFunction with Serializable {
+  private val valueExpr = childExprs.head
+  private val percentageExpr = childExprs(1)
   protected class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
     override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
       (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
@@ -2151,25 +2160,31 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
 
   // Output type of the aggregations.
   protected val aggregationOutputType: DataType = ArrayType(StructType(Seq(
-    StructField("value", childExprs.head.dataType),
+    StructField("value", valueExpr.dataType),
     StructField("frequency", LongType))), containsNull = false)
 
   protected lazy val mergeHistogram = new CudfMergeHistogram(aggregationOutputType)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeHistogram)
   override lazy val evaluateExpression: Expression =
-    GpuPercentileEvaluation(histogramBuff, childExprs(1), isReduction)
+    GpuPercentileEvaluation(histogramBuff, percentageExpr, isReduction)
 
   // Type of data stored in the buffer after postUpdate.
   private val histogramBufferType: DataType = StructType(Seq(
-    StructField("value", childExprs.head.dataType),
+    StructField("value", valueExpr.dataType),
     StructField("frequency", LongType)))
   private final lazy val histogramBuff: AttributeReference =
     AttributeReference("histogramBuff", histogramBufferType)()
 
   // Output type of percentile.
-  override def dataType: DataType = childExprs(1).dataType match {
-    case _: ArrayType => ArrayType(DoubleType, containsNull = false)
-    case _ => DoubleType
+  override def dataType: DataType = percentageExpr.dataType match {
+    case _: ArrayType => {
+      System.err.println("output array")
+      ArrayType(DoubleType, containsNull = false)
+    }
+    case _ => {
+      System.err.println("output double")
+      DoubleType
+    }
   }
   override def aggBufferAttributes: Seq[AttributeReference] = histogramBuff :: Nil
   override def prettyName: String = "percentile"
@@ -2179,13 +2194,19 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
   override def children: Seq[Expression] = childExprs
 }
 
-case class GpuGetListChild(child: Expression) extends GpuExpression {
+case class GpuGetListChild(child: Expression, msg: String) extends GpuExpression {
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    System.err.print(msg)
+    System.err.print("get list child, child type = "+ child.dataType)
     withResourceIfAllowed(child.columnarEvalAny(batch)) {
       case cv: GpuColumnVector =>
         withResource(cv.getBase.getChildColumnView(0)) { listChild =>
-          System.err.println("get child list")
-          GpuColumnVector.from(listChild.copyToColumnVector(), dataType)
+//          System.err.println("get child list, date type = " + dataType)
+          TableDebug.get().debug("get child list, size: " + listChild.getRowCount, listChild);
+          val tmp = GpuColumnVector.from(listChild.copyToColumnVector(), dataType)
+
+          TableDebug.get().debug(msg + " out = ", tmp.getBase)
+          tmp
         }
 
       case other =>
@@ -2218,21 +2239,23 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
   override lazy val postUpdate: Seq[Expression] = {
     if (isReduction) {
       val reductionResult = updateHistogram.attr
-      System.err.println("line 2203")
-      Seq(GpuGetListChild(reductionResult))
+      //System.err.println("post update, get struct from list")
+      Seq(GpuGetListChild(reductionResult, "get list child postUpdate"))
     } else {
-      System.err.println("line 2206")
+      //System.err.println("post update no change")
       Seq(updateHistogram.attr)
     }
   }
 
+
+
   override lazy val postMerge: Seq[Expression] = {
     if (isReduction) {
       val reductionResult = mergeHistogram.attr
-      System.err.println("line 2232")
-      Seq(GpuGetListChild(reductionResult))
+      //System.err.println("post merge, get struct from list")
+      Seq(GpuGetListChild(reductionResult, "get list child postMerge"))
     } else {
-      System.err.println("line 2236")
+      //System.err.println("post merge no change")
       Seq(mergeHistogram.attr)
     }
   }
@@ -2254,7 +2277,9 @@ case class GpuPercentileWithFrequency(childExprs: Seq[Expression], isReduction: 
 
 object GpuPercentile{
   def apply(childExprs: Seq[Expression], isReduction: Boolean): GpuPercentile = {
-    val Seq(_, _, frequency) = childExprs
+    val Seq(_, percentage, frequency) = childExprs
+    System.err.println("percentage input type = " + percentage.dataType)
+    System.err.println("percentage input = " + percentage)
     frequency match {
       case GpuLiteral(freq, LongType) if freq == 1 =>
         GpuPercentileDefault(childExprs, isReduction)
