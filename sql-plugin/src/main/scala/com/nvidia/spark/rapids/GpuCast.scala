@@ -1370,7 +1370,7 @@ object GpuCast {
   private def castBinToString(input: ColumnView, options: CastOptions): ColumnVector = {
     if (options.useHexFormatForBinary) {
       withResource(input.getChildColumnView(0)) { dataCol =>
-        withResource(CastStrings.fromIntegersWithBase(dataCol, 16)) { stringCol =>
+        withResource(dataCol.toHex()) { stringCol =>
           withResource(input.replaceListChild(stringCol)) { cv =>
             castArrayToString(cv, DataTypes.StringType, options, true)
           }
