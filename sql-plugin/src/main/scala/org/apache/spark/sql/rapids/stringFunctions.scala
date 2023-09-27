@@ -2490,14 +2490,11 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       // remove negative sign from intPart, sign will be handled later
       val intPartPos = closeOnExcept(decTemp) { _ =>
         withResource(intPart) { _ =>
-          withResource(Scalar.fromString("-")) { negativeSign =>
-            withResource(Scalar.fromString("")) { emptyString =>
-              intPart.stringReplace(negativeSign, emptyString)
-            }
-          }
+          removeNegSign(intPart)
         }
       }
       resource_array += intPartPos
+      // append zeros
       val appendZeros = "0" * appendZeroNum
       val appendZerosCv = closeOnExcept(decTemp) { _ =>
         withResource(Scalar.fromString(appendZeros)) { zeroString =>
@@ -2524,12 +2521,9 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
       case IntegerType | LongType | ShortType | ByteType => {
         val intPartPos = withResource(cv.castTo(DType.STRING)) { intPart =>
-          withResource(Scalar.fromString("-")) { negativeSign =>
-            withResource(Scalar.fromString("")) { emptyString =>
-              intPart.stringReplace(negativeSign, emptyString)
-            }
-          }
+          removeNegSign(intPart)
         }
+        // dec part is all zeros
         val dzeros = "0" * d
         val decPart = closeOnExcept(intPartPos) { _ =>
           withResource(Scalar.fromString(dzeros)) { zeroString =>
