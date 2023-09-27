@@ -2096,8 +2096,8 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
     }
 
     if (isReduction) {
-      val tmp = AggregationUtils.percentileFromHistogram(value.getBase.getChildColumnView(0),
-        percentage.getBase, outputAsList)
+      val tmp = AggregationUtils.percentileFromHistogram(value.getBase, percentage.getBase,
+        outputAsList)
       TableDebug.get().debug("output ", tmp);
       tmp
     } else {
@@ -2149,12 +2149,24 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
     override val name: String = "CudfMergeHistogram"
   }
 
-  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfMergeHistogram(dataType))
+  // Output type of the aggregations.
+  protected val aggregationOutputType: DataType = ArrayType(StructType(Seq(
+    StructField("value", childExprs.head.dataType),
+    StructField("frequency", LongType))), containsNull = false)
+
+  protected lazy val mergeHistogram = new CudfMergeHistogram(aggregationOutputType)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeHistogram)
   override lazy val evaluateExpression: Expression =
     GpuPercentileEvaluation(histogramBuff, childExprs(1), isReduction)
-  private final lazy val histogramBuff: AttributeReference =
-    AttributeReference("histogramBuff", dataType)()
 
+  // Type of data stored in the buffer after postUpdate.
+  private val histogramBufferType: DataType = StructType(Seq(
+    StructField("value", childExprs.head.dataType),
+    StructField("frequency", LongType)))
+  private final lazy val histogramBuff: AttributeReference =
+    AttributeReference("histogramBuff", histogramBufferType)()
+
+  // Output type of percentile.
   override def dataType: DataType = childExprs(1).dataType match {
     case _: ArrayType => ArrayType(DoubleType, containsNull = false)
     case _ => DoubleType
@@ -2171,9 +2183,9 @@ case class GpuGetListChild(child: Expression) extends GpuExpression {
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     withResourceIfAllowed(child.columnarEvalAny(batch)) {
       case cv: GpuColumnVector =>
-        withResource(cv.getBase.getChildColumnView(0)) { child =>
+        withResource(cv.getBase.getChildColumnView(0)) { listChild =>
           System.err.println("get child list")
-          GpuColumnVector.from(child.copyToColumnVector(), dataType)
+          GpuColumnVector.from(listChild.copyToColumnVector(), dataType)
         }
 
       case other =>
@@ -2186,8 +2198,8 @@ case class GpuGetListChild(child: Expression) extends GpuExpression {
 
   override def nullable: Boolean = child.nullable
 
-  override def dataType: DataType = child.dataType
-  //.asInstanceOf[ArrayType].elementType
+  // Output type should be the element type of the input array.
+  override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
 
   override def children: Seq[Expression] = Seq(child)
 }
@@ -2200,18 +2212,28 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
 
   override val inputProjection: Seq[Expression] = Seq(childExprs.head)
 
-  private lazy val histogramUpdate = new CudfHistogram(dataType)
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(histogramUpdate)
+  private lazy val updateHistogram = new CudfHistogram(aggregationOutputType)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateHistogram)
 
-  // need the same for post merge
   override lazy val postUpdate: Seq[Expression] = {
     if (isReduction) {
-      val reductionResult = histogramUpdate.attr
+      val reductionResult = updateHistogram.attr
       System.err.println("line 2203")
       Seq(GpuGetListChild(reductionResult))
     } else {
       System.err.println("line 2206")
-      Seq(histogramUpdate.attr)
+      Seq(updateHistogram.attr)
+    }
+  }
+
+  override lazy val postMerge: Seq[Expression] = {
+    if (isReduction) {
+      val reductionResult = mergeHistogram.attr
+      System.err.println("line 2232")
+      Seq(GpuGetListChild(reductionResult))
+    } else {
+      System.err.println("line 2236")
+      Seq(mergeHistogram.attr)
     }
   }
 }
