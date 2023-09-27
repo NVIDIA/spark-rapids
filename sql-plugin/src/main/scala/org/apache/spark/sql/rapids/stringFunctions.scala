@@ -2578,6 +2578,23 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         str.substring(i, i + 3).asInstanceOf[ColumnView]
       }.toArray
     }
+    // TODO: test Liangcai's solution here
+    // val substrs = closeOnExcept(sepCol) { _ =>
+    //   var curEndsCol: ColumnVector = str.getCharLengths()
+    //   withResource(curEndsCol) { _ =>
+    //     (0 until maxstrlen by 3).safeMap { _ =>
+    //       val startCol = withResource(Scalar.fromInt(3)) { scalar3 =>
+    //         curEndsCol.sub(scalar3)
+    //       }
+    //       val sub = closeOnExcept(startCol) { _ =>
+    //         str.substring(startCol, curEndsCol).asInstanceOf[ColumnView]
+    //       }
+    //       curEndsCol.safeClose()
+    //       curEndsCol = startCol
+    //       sub
+    //     }.toArray
+    //   }
+    // }
     withResource(substrs) { _ =>
       withResource(sepCol) { _ =>
         withResource(ColumnVector.stringConcatenate(substrs, sepCol)) { res =>
