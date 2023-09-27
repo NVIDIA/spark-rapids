@@ -817,10 +817,10 @@ def test_format_number_supported(data_gen):
     )
 
 float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
-format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=-32), DoubleGen(min_exp=-13, max_exp=15)]
+format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=15)]
 
 @pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
-def test_format_number_float(data_gen):
+def test_format_number_float_limited(data_gen):
     gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(

@@ -220,6 +220,23 @@ class RegExpUtilsSuite extends AnyFunSuite {
   }
 }
 
+class FormatNumberSuite extends SparkQueryCompareTestSuite {
+  def testFormatNumberDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Double](
+      -0.0000768381310900000,
+      -0.00009012345678900000,
+      -0.00000000000000000001
+    ).toDF("doubles")
+  }
+
+  testSparkResultsAreEqual("Test format_number", 
+  testFormatNumberDf,
+  conf = new SparkConf().set("spark.rapids.sql.formatNumberFloat.enabled", "true")) {
+    frame => frame.selectExpr("format_number(doubles, 8)")
+  }
+}
+
 /*
 * This isn't actually a test.  It's just useful to help visualize what's going on when there are
 * differences present.

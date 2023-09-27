@@ -2250,7 +2250,6 @@ case class GpuFormatNumber(x: Expression, d: Expression)
             }
           }
         }
-        // add zeros before (intPat + decPart)
         val leadingZeros = withResource(zerosNumRounding) { _ =>
           withResource(getZeroCv(cv.getRowCount.toInt)) { zeroCv =>
             zeroCv.repeatStrings(zerosNumRounding)
@@ -2269,6 +2268,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         val numberToRound = withResource(numberToRoundStr) { _ =>
           numberToRoundStr.castTo(decimalTypeRounding)
         }
+        // rounding 10 digits
         val rounded = withResource(numberToRound) { _ =>
           numberToRound.round(10, RoundMode.HALF_EVEN)
         }
@@ -2279,32 +2279,15 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         val roundedDecPart = withResource(roundedStr) { _ =>
           roundedStr.substring(2)
         }
-        val stripZerosDecPart = withResource(roundedDecPart) { _ =>
+        val decPartStriped = withResource(roundedDecPart) { _ =>
           withResource(Scalar.fromString("0")) { zero =>
             roundedDecPart.lstrip(zero)
           }
         }
-        // rounding 10 digits
-        val negExp = withResource(Scalar.fromInt(-1)) { negOne =>
-          negOne.sub(exp)
+        val decPartNegExp = withResource(decPartStriped) { _ =>
+          decPartStriped.pad(d, PadSide.LEFT, "0")
         }
-        val zerosRemaining = withResource(negExp) { _ =>
-          withResource(getZeroCv(cv.getRowCount.toInt)) { zeroCv =>
-            zeroCv.repeatStrings(negExp)
-          }
-        }
-        val decPartNegExp = withResource(zerosRemaining) { _ =>
-          withResource(stripZerosDecPart) { _ =>
-            ColumnVector.stringConcatenate(Array(zerosRemaining, stripZerosDecPart))
-          }
-        }
-        val decPartPad = withResource(decPartNegExp) { _ =>
-          decPartNegExp.pad(d, PadSide.RIGHT, "0")
-        }
-        val decPartNegSubstr = withResource(decPartPad) { _ =>
-          decPartPad.substring(0, d)
-        }
-        (getZeroCv(cv.getRowCount.toInt), decPartNegSubstr)
+        (getZeroCv(cv.getRowCount.toInt), decPartNegExp)
     }
   }
 
@@ -2686,12 +2669,11 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
         case _ => {
           // d > 0, append decimal part to result
-          val pointCv = withResource(Scalar.fromString(".")) { point =>
-            ColumnVector.fromScalar(point, lhs.getRowCount.toInt)
-          }
           withResource(reverseBack) { _ =>
-            withResource(pointCv) { _ =>
-              ColumnVector.stringConcatenate(Array(reverseBack, pointCv, decimalPart))
+            withResource(Scalar.fromString(".")) { point =>
+              withResource(Scalar.fromString("")) { empty =>
+                ColumnVector.stringConcatenate(point, empty, Array(reverseBack, decimalPart))
+              }
             }
           }
         }
