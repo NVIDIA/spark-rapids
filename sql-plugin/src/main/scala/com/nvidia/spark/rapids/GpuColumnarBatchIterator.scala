@@ -124,8 +124,7 @@ class GpuColumnarBatchWithPartitionValuesIterator(
         }
         outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
           readPartValues, partSchema)
-        val res = outputIter.next()
-        res
+        outputIter.next()
       } else {
         batch
       }

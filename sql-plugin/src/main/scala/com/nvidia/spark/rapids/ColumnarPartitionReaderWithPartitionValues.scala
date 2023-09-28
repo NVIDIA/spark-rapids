@@ -37,7 +37,7 @@ class ColumnarPartitionReaderWithPartitionValues(
 
 
   override def get(): ColumnarBatch = {
-    if (partitionValues.numFields == 0) {
+    if (partitionSchema.isEmpty) {
       fileReader.get()
     } else if (outputIter.hasNext) {
       outputIter.next()

@@ -400,7 +400,7 @@ class AlphabeticallyReorderingColumnPartitionReader(fileReader: PartitionReader[
                                                      partitionSchema) {
   override def get(): ColumnarBatch = {
     val fileBatch: ColumnarBatch = super.get()
-    if (partitionValues.numFields == 0) {
+    if (partitionSchema.isEmpty) {
       return fileBatch
     }
 

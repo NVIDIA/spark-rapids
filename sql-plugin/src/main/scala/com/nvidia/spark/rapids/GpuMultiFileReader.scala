@@ -984,12 +984,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     new BatchContext(chunkedBlocks, clippedSchema)
   }
 
-  private def assertRefCounts(batch: ColumnarBatch): Unit = {
-    GpuColumnVector.extractBases(batch).foreach { cv =>
-      assert(cv.getRefCount == 1)
-    }
-  }
-
   /**
    * A callback to finalize the output batch. The batch returned will be the final
    * output batch of the reader's "get" method.
@@ -1002,7 +996,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       batch: ColumnarBatch,
       extraInfo: ExtraInfo): ColumnarBatch = {
     // Equivalent to returning the input batch directly.
-    assertRefCounts(batch)
     GpuColumnVector.incRefCounts(batch)
   }
 
