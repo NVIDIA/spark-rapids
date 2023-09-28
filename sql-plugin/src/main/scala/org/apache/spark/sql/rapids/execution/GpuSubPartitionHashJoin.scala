@@ -138,7 +138,12 @@ class GpuBatchSubPartitioner(
    */
   def getBatchesByPartition(partId: Int): Seq[SpillableColumnarBatch] = {
     initPartitions()
-    pendingParts(partId).toSeq
+    val ret = pendingParts(partId)
+    if (ret != null) {
+      ret.toSeq
+    } else {
+      null
+    }
   }
 
   /**
@@ -155,8 +160,10 @@ class GpuBatchSubPartitioner(
     if (ret != null) {
       numCurBatches -= ret.length
       pendingParts(partId) = null
+      ret.toSeq
+    } else {
+      null
     }
-    ret.toSeq
   }
 
   override def close(): Unit = {
