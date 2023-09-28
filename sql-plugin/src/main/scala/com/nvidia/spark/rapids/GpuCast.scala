@@ -50,15 +50,11 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     // We do not want to create a shim class for this small change
     stringToAnsiDate: Boolean,
     toTypeOverride: Option[DataType] = None)
-  extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
+  extends CastExprMetaBase(cast, conf, parent, rule, doFloatToIntCheck) {
 
-  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
-    new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
-      doFloatToIntCheck, stringToAnsiDate, Some(newToType))
-
-  val fromType: DataType = cast.child.dataType
-  val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
-  val legacyCastToString: Boolean = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  val legacyCastComplexTypesToString: Boolean =
+    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  override val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
 
   override def tagExprForGpu(): Unit = {
     if (evalMode == GpuEvalMode.TRY) {
@@ -67,7 +63,33 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     recursiveTagExprForGpuCheck()
   }
 
-  private def recursiveTagExprForGpuCheck(
+  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
+    new CastExprMeta[INPUT](cast, evalMode, conf, parent, rule,
+      doFloatToIntCheck, stringToAnsiDate, Some(newToType))
+
+  override def convertToGpu(child: Expression): GpuExpression =
+    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId,
+      legacyCastComplexTypesToString, stringToAnsiDate)
+
+}
+
+/** Meta-data for cast, ansi_cast and ToPrettyString */
+abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpression](
+    cast: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule,
+    doFloatToIntCheck: Boolean = false)
+  extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
+
+  val fromType: DataType = cast.child.dataType
+  val toType: DataType = cast.dataType
+
+  override def tagExprForGpu(): Unit = {
+    recursiveTagExprForGpuCheck()
+  }
+
+  protected def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,
       toDataType: DataType = toType,
       depth: Int = 0): Unit = {
@@ -155,10 +177,6 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
   }
 
-  override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, evalMode == GpuEvalMode.ANSI, cast.timeZoneId, legacyCastToString,
-      stringToAnsiDate)
-
   // timezone tagging in type checks is good enough, so always false
   override protected val needTimezoneTagging: Boolean = false
 }
@@ -166,9 +184,22 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
 object CastOptions {
   val DEFAULT_CAST_OPTIONS = new CastOptions(false, false, false)
   val ARITH_ANSI_OPTIONS = new CastOptions(false, true, false)
+  val TO_PRETTY_STRING_OPTIONS = ToPrettyStringOptions
 
   def getArithmeticCastOptions(failOnError: Boolean): CastOptions = 
     if (failOnError) ARITH_ANSI_OPTIONS else DEFAULT_CAST_OPTIONS
+
+  object ToPrettyStringOptions extends CastOptions(false, false, false) {
+    override val leftBracket: String = "{"
+
+    override val rightBracket: String = "}"
+
+    override val nullString: String = "NULL"
+
+    override val useDecimalPlainString: Boolean = true
+
+    override val useHexFormatForBinary: Boolean = true
+  }
 }
 
 /**
@@ -281,8 +312,12 @@ object GpuCast {
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, toDataType)
-      case (DateType, StringType) =>
-        input.asStrings("%Y-%m-%d")
+
+      // Cast to String
+      case (DateType | TimestampType | FloatType | DoubleType | BinaryType |
+            _: DecimalType | _: ArrayType | _: MapType | _: StructType, StringType) =>
+        castToString(input, fromDataType, options)
+
 
       case (TimestampType, FloatType | DoubleType) =>
         withResource(input.castTo(DType.INT64)) { asLongs =>
@@ -301,13 +336,13 @@ object GpuCast {
                 toDataType match {
                   case IntegerType =>
                     assertValuesInRange[Long](cv, Int.MinValue.toLong,
-                      Int.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                      Int.MaxValue.toLong, errorMsg = OVERFLOW_MESSAGE)
                   case ShortType =>
                     assertValuesInRange[Long](cv, Short.MinValue.toLong,
-                      Short.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                      Short.MaxValue.toLong, errorMsg = OVERFLOW_MESSAGE)
                   case ByteType =>
                     assertValuesInRange[Long](cv, Byte.MinValue.toLong,
-                      Byte.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                      Byte.MaxValue.toLong, errorMsg = OVERFLOW_MESSAGE)
                 }
               }
               cv.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -320,12 +355,6 @@ object GpuCast {
             asLongs.floorDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
-      case (TimestampType, StringType) =>
-        castTimestampToString(input)
-
-      case (StructType(fields), StringType) =>
-        castStructToString(input, fields, options)
-
       // ansi cast from larger-than-long integral-like types, to long
       case (dt: DecimalType, LongType) if ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
@@ -338,7 +367,7 @@ object GpuCast {
           withResource(input.max()) { maxInput =>
             if (minInput.isValid && minInput.getBigDecimal().compareTo(min) == -1 ||
                 maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
-              throw new ArithmeticException(GpuCast.OVERFLOW_MESSAGE)
+              throw new ArithmeticException(OVERFLOW_MESSAGE)
             }
           }
         }
@@ -501,9 +530,7 @@ object GpuCast {
         withResource(FloatUtils.nanToZero(input)) { inputWithNansToZero =>
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
-      case (FloatType | DoubleType, StringType) =>
-        castFloatingTypeToString(input)
-      case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
+      case (StringType, ByteType | ShortType | IntegerType | LongType) =>
         CastStrings.toInteger(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, FloatType | DoubleType) =>
@@ -533,12 +560,6 @@ object GpuCast {
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
 
-      case (BinaryType, StringType) =>
-        castBinToString(input)
-
-      case (_: DecimalType, StringType) =>
-        GpuCastShims.CastDecimalToString(input, ansiMode)
-
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
           withResource(doCast(childView, nestedFrom, nestedTo, options)) { childColumnVector =>
@@ -546,17 +567,11 @@ object GpuCast {
           }
         }
 
-      case (ArrayType(elementType, _), StringType) =>
-        castArrayToString(input, elementType, options)
-
       case (from: StructType, to: StructType) =>
         castStructToStruct(from, to, input, options)
 
       case (from: MapType, to: MapType) =>
         castMapToMap(from, to, input, options)
-
-      case (from: MapType, _: StringType) =>
-        castMapToString(input, from, options)
 
       case (dayTime: DataType, _: StringType) if GpuTypeShims.isSupportedDayTimeType(dayTime) =>
         GpuIntervalUtils.toDayTimeIntervalString(input, dayTime)
@@ -618,7 +633,7 @@ object GpuCast {
       maxValue: T,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
-      errorMsg:String = GpuCast.OVERFLOW_MESSAGE)
+      errorMsg: String = OVERFLOW_MESSAGE)
       (implicit ord: Ordering[T]): Unit = {
 
     def throwIfAnyNan(): Unit = {
@@ -703,6 +718,25 @@ object GpuCast {
         }
       }
     }
+  }
+
+  def castToString(
+      input: ColumnView,
+      fromDataType: DataType, options: CastOptions): ColumnVector = fromDataType match {
+    case StringType => input.copyToColumnVector()
+    case DateType => input.asStrings("%Y-%m-%d")
+    case TimestampType => castTimestampToString(input)
+    case FloatType | DoubleType => castFloatingTypeToString(input)
+    case BinaryType => castBinToString(input, options)
+    case _: DecimalType => GpuCastShims.CastDecimalToString(input, options.useDecimalPlainString)
+    case StructType(fields) => castStructToString(input, fields, options)
+
+    case ArrayType(elementType, _) =>
+      castArrayToString(input, elementType, options)
+    case from: MapType =>
+      castMapToString(input, from, options)
+    case _ =>
+      input.castTo(GpuColumnVector.getNonNestedRapidsType(StringType))
   }
 
   private def castTimestampToString(input: ColumnView): ColumnVector = {
@@ -816,8 +850,8 @@ object GpuCast {
 
   private def castArrayToString(input: ColumnView,
       elementType: DataType,
-      options: CastOptions): ColumnVector = {
-
+      options: CastOptions,
+      castingBinaryData: Boolean = false): ColumnVector = {
     // We use square brackets for arrays regardless 
     val (leftStr, rightStr) = ("[", "]")
     val emptyStr = ""
@@ -833,7 +867,7 @@ object GpuCast {
 
       val concatenated = withResource(strChildContainsNull) { _ =>
         withResource(input.replaceListChild(strChildContainsNull)) {
-          concatenateStringArrayElements(_, options)
+          concatenateStringArrayElements(_, options, castingBinaryData)
         }
       }
 
@@ -863,13 +897,11 @@ object GpuCast {
     // cast the key column and value column to string columns
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        doCast(
-          keyColumn, from.keyType, StringType, options)
+        castToString(keyColumn, from.keyType, options)
       }
-      val strValue = closeOnExcept(strKey) {_ =>
+      val strValue = closeOnExcept(strKey) { _ =>
         withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          doCast(
-            valueColumn, from.valueType, StringType, options)
+          castToString(valueColumn, from.valueType, options)
         }
       }
       (strKey, strValue)
@@ -950,7 +982,7 @@ object GpuCast {
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += doCast(firstColumnView, inputSchema.head.dataType, StringType, options)
+          columns += castToString(firstColumnView, inputSchema.head.dataType, options)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
           withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
@@ -1024,7 +1056,7 @@ object GpuCast {
           if (ansiEnabled) {
             withResource(validBools.all()) { isAllBool =>
               if (isAllBool.isValid && !isAllBool.getBoolean) {
-                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+                throw new IllegalStateException(INVALID_INPUT_MESSAGE)
               }
             }
           }
@@ -1065,8 +1097,8 @@ object GpuCast {
     }
   }
 
-    /** This method does not close the `input` ColumnVector. */
-    def convertDateOr(
+  /** This method does not close the `input` ColumnVector. */
+  def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -1335,17 +1367,27 @@ object GpuCast {
     }
   }
 
-  private def castBinToString(input: ColumnView): ColumnVector = {
-    // Spark interprets the binary as UTF-8 bytes. So the layout of the
-    // binary and the layout of the string are the same. We just need to play some games with
-    // the CPU side metadata to make CUDF think it is a String.
-    // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
-    // it back together again
-    withResource(input.getChildColumnView(0)) { dataCol =>
-      withResource(new ColumnView(DType.STRING, input.getRowCount,
-        Optional.of[java.lang.Long](input.getNullCount),
-        dataCol.getData, input.getValid, input.getOffsets)) { cv =>
-        cv.copyToColumnVector()
+  private def castBinToString(input: ColumnView, options: CastOptions): ColumnVector = {
+    if (options.useHexFormatForBinary) {
+      withResource(input.getChildColumnView(0)) { dataCol =>
+        withResource(dataCol.toHex()) { stringCol =>
+          withResource(input.replaceListChild(stringCol)) { cv =>
+            castArrayToString(cv, DataTypes.StringType, options, true)
+          }
+        }
+      }
+    } else {
+      // Spark interprets the binary as UTF-8 bytes. So the layout of the
+      // binary and the layout of the string are the same. We just need to play some games with
+      // the CPU side metadata to make CUDF think it is a String.
+      // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
+      // it back together again
+      withResource(input.getChildColumnView(0)) { dataCol =>
+        withResource(new ColumnView(DType.STRING, input.getRowCount,
+          Optional.of[java.lang.Long](input.getNullCount),
+          dataCol.getData, input.getValid, input.getOffsets)) { cv =>
+          cv.copyToColumnVector()
+        }
       }
     }
   }
@@ -1433,7 +1475,7 @@ object GpuCast {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(GpuCast.OVERFLOW_MESSAGE)
+          throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
         }
       }
       input.copyToColumnVector()
@@ -1534,7 +1576,7 @@ object GpuCast {
     val cv = withResource(updatedMaxRet) { updatedMax =>
       withResource(Seq(minSeconds, Long.MinValue).safeMap(Scalar.fromLong)) {
         case Seq(minSecondsS, longMinS) =>
-          withResource(longInput.lessThan(minSecondsS)){
+          withResource(longInput.lessThan(minSecondsS)) {
             _.ifElse(longMinS, updatedMax)
           }
       }
