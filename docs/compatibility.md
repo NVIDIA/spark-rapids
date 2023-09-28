@@ -36,7 +36,7 @@ task/partition. The RAPIDS Accelerator does an unstable
 simply means that the sort algorithm allows for spilling parts of the data if it is larger than
 can fit in the GPU's memory, but it does not guarantee ordering of rows when the ordering of the
 keys is ambiguous. If you do rely on a stable sort in your processing you can request this by
-setting [spark.rapids.sql.stableSort.enabled](configs.md#sql.stableSort.enabled) to `true` and
+setting [spark.rapids.sql.stableSort.enabled](additional-functionality/advanced_configs.md#sql.stableSort.enabled) to `true` and
 RAPIDS will try to sort all the data for a given task/partition at once on the GPU. This may change
 in the future to allow for a spillable stable sort.
 
@@ -67,7 +67,7 @@ joins on a floating point value, which is not wise to do anyways, and the value 
 floating point aggregation then the join may fail to work properly with the plugin but would have
 worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with
 the config
-[`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
+[`spark.rapids.sql.variableFloatAgg.enabled`](additional-functionality/advanced_configs.md#sql.variableFloatAgg.enabled).
 
 ### `0.0` vs `-0.0`
 
@@ -513,13 +513,13 @@ GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19
 ```
 
 To enable byte-range windowing on the GPU, set
-[`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
+[`spark.rapids.sql.window.range.byte.enabled`](additional-functionality/advanced_configs.md#sql.window.range.byte.enabled) to true.
 
 We also provide configurations for other integral range types:
 
-- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled)
-- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled)
-- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.short.enabled`](additional-functionality/advanced_configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.int.enabled`](additional-functionality/advanced_configs.md#sql.window.range.int.enabled)
+- [`spark.rapids.sql.window.range.long.enabled`](additional-functionality/advanced_configs.md#sql.window.range.short.enabled)
 
 The reason why we default the configurations to false for byte/short and to true for int/long is that
 we think the most real-world queries are based on int or long.
@@ -563,7 +563,7 @@ extensively tested and may produce different results compared to the CPU. Known 
   values on GPU where Spark would treat the data as invalid and return null
 
 To attempt to use other formats on the GPU, set
-[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](additional-functionality/advanced_configs.md#sql.incompatibleDateFormats.enabled)
 to `true`.
 
 Formats that contain any of the following characters are unsupported and will fall back to CPU:
@@ -585,7 +585,7 @@ Formats that contain any of the following words are unsupported and will fall ba
 ### LEGACY timeParserPolicy
 
 With timeParserPolicy set to `LEGACY` and
-[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](additional-functionality/advanced_configs.md#sql.incompatibleDateFormats.enabled)
 set to `true`, and `spark.sql.ansi.enabled` set to `false`, the following formats are supported but not
 guaranteed to produce the same results as the CPU:
 
@@ -642,7 +642,7 @@ leads to restrictions:
 
 Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or
 later, set
-[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
+[`spark.rapids.sql.castFloatToDecimal.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToDecimal.enabled) to `false`
 
 ### Float to Integral Types
 
@@ -653,7 +653,7 @@ starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this 
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
 Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
-[`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
+[`spark.rapids.sql.castFloatToIntegralTypes.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
 
 This configuration setting is ignored when using Spark versions prior to 3.1.0.
@@ -665,7 +665,7 @@ types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spar
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
 Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
+[`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
 
@@ -679,7 +679,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 Also, the GPU does not support casting from strings containing hex values.
 
 Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
+[`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
 
@@ -703,7 +703,7 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 ### String to Timestamp
 
 To allow casts from string to timestamp on the GPU, enable the configuration property
-[`spark.rapids.sql.castStringToTimestamp.enabled`](configs.md#sql.castStringToTimestamp.enabled).
+[`spark.rapids.sql.castStringToTimestamp.enabled`](additional-functionality/advanced_configs.md#sql.castStringToTimestamp.enabled).
 
 Casting from string to timestamp currently has the following limitations.
 

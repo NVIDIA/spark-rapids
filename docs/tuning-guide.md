@@ -46,11 +46,11 @@ If there are too many tasks this can increase the memory pressure on the GPU and
 spilling.
 
 ## Pooled Memory
-Configuration key: [`spark.rapids.memory.gpu.pooling.enabled`](configs.md#memory.gpu.pooling.enabled)
+Configuration key: [`spark.rapids.memory.gpu.pooling.enabled`](additional-functionality/advanced_configs.md#memory.gpu.pooling.enabled)
 
 Default value: `true`
 
-Configuration key: [`spark.rapids.memory.gpu.allocFraction`](configs.md#memory.gpu.allocFraction)
+Configuration key: [`spark.rapids.memory.gpu.allocFraction`](additional-functionality/advanced_configs.md#memory.gpu.allocFraction)
 
 Default value: `1.0`
 
