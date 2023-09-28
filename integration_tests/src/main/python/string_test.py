@@ -828,11 +828,13 @@ def test_format_number_float_limited(data_gen):
         conf = float_format_number_conf
     )
 
+# format_number for float/double is disabled by default due to compatibility issue
+# GPU will generate result with less precision than CPU
 @allow_non_gpu('ProjectExec')
-def test_format_number_float_fallback():
-    gen = DoubleGen()
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_format_number_float_fallback(data_gen):
     assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
             'format_number(a, 5)'),
         'FormatNumber'
     )
