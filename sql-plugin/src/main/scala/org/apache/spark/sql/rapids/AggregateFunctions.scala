@@ -2167,7 +2167,7 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
   override def prettyName: String = "percentile"
   override def nullable: Boolean = true
 
-  override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null, dataType))
+  override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null, aggregationOutputType))
   override def children: Seq[Expression] = childExprs
 }
 
@@ -2205,7 +2205,7 @@ case class GpuGetListChild(child: Expression, msg: String) extends GpuExpression
 }
 */
 
-/*
+
 case class GpuNothing(child: Expression, msg: String) extends GpuExpression {
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     System.err.println(msg)
@@ -2237,7 +2237,7 @@ case class GpuNothing(child: Expression, msg: String) extends GpuExpression {
 
   override def children: Seq[Expression] = Seq(child)
 }
-*/
+
 
 /**
  * Compute percentile of the input number(s).
@@ -2250,39 +2250,13 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
   private lazy val updateHistogram = new CudfHistogram(aggregationOutputType)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateHistogram)
 
-//  override lazy val postUpdate: Seq[Expression] = {
-//    if (isReduction) {
-//      val reductionResult = updateHistogram.attr
-//      //System.err.println("post update, get struct from list")
-//      Seq(GpuGetListChild(reductionResult, "get list child postUpdate"))
-//    } else {
-//      //System.err.println("post update no change")
-//      Seq(updateHistogram.attr)
-//    }
-//  }
+  override lazy val postUpdate: Seq[Expression] =
+    Seq(GpuNothing(updateHistogram.attr, "postUpdate"))
+  override lazy val preMerge: Seq[Expression] =
+    Seq(GpuNothing(histogramBuff, "preMerge"))
+  override lazy val postMerge: Seq[Expression] =
+    Seq(GpuNothing(mergeHistogram.attr, "postMerge"))
 
-
-
-//  override lazy val preMerge: Seq[Expression] = {
-//    if (isReduction) {
-////      val reductionResult = histogramBuff
-//      //System.err.println("post merge, get struct from list")
-//      Seq(GpuNothing(histogramBuff, "preMerge"))
-//
-//      Seq(GpuGetListChild(histogramBuff, "get list child preMerge"))
-//    } else {
-//      //System.err.println("post merge no change")
-//      Seq(histogramBuff)
-//    }
-//  }
-
-//  override lazy val postMerge: Seq[Expression] = {
-//          Seq(GpuNothing(mergeHistogram.attr, "postMerge"))
-//  }
-//
-//  override lazy val postUpdate: Seq[Expression] = {
-//    Seq(GpuNothing(updateHistogram.attr, "postUpdate"))
-//  }
 }
 
 /**
