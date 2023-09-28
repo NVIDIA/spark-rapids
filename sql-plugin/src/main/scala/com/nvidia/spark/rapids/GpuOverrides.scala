@@ -3102,6 +3102,12 @@ object GpuOverrides extends Logging {
                   s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
               }
             }
+            case dt: DecimalType => {
+              if (dt.scale > 32) {
+                willNotWorkOnGpu("format_number will generate results mismatched from Spark " +
+                  "when the scale is large.")
+              }
+            }
             case _ =>
           }
         }

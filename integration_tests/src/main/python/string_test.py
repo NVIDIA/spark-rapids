@@ -801,7 +801,9 @@ def test_conv_dec_to_from_hex(from_base, to_base, pattern):
 format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0), 
                                       DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5), 
                                       DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10), 
-                                      DecimalGen(precision=38, scale=-10)]
+                                      DecimalGen(precision=38, scale=-10), 
+                                      DecimalGen(precision=38, scale=30, special_cases=[Decimal('0.000125')]),
+                                      DecimalGen(precision=38, scale=32, special_cases=[Decimal('0.000125')])]
 
 @pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
 def test_format_number_supported(data_gen):
@@ -833,6 +835,17 @@ def test_format_number_float_limited(data_gen):
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_format_number_float_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'format_number(a, 5)'),
+        'FormatNumber'
+    )
+
+# fallback due to https://github.com/NVIDIA/spark-rapids/issues/9309
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_format_number_decimal_big_scale_fallback(data_gen):
+    data_gen = DecimalGen(precision=38, scale=37) 
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(
             'format_number(a, 5)'),
