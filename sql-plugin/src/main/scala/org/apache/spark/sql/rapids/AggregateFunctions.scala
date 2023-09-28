@@ -2063,15 +2063,15 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
   }
 }
 
-case class GpuPercentileEvaluation(value: Expression, percentage: Expression, isReduction: Boolean)
-  extends GpuBinaryExpression {
-  override def left: Expression = value
-  override def right: Expression = percentage
+case class GpuPercentileEvaluation(valueExpr: Expression, percentageExpr: Expression,
+                                   isReduction: Boolean)
+  extends GpuExpression {
   override def prettyName: String = "percentile_evaluation"
 
 
+
   override def dataType: DataType =
-  percentage.dataType match {
+  percentageExpr.dataType match {
     case _: ArrayType => {
       System.err.println("eval output array")
       ArrayType(DoubleType, containsNull = false)
@@ -2082,56 +2082,39 @@ case class GpuPercentileEvaluation(value: Expression, percentage: Expression, is
     }
   }
 
-  override def doColumnar(value: GpuColumnVector, percentage: GpuColumnVector): ColumnVector = {
-    TableDebug.get().debug("Final histogram", value.getBase);
-    TableDebug.get().debug("eval, percentage", percentage.getBase);
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(valueExpr.columnarEval(batch)) { value =>
+      withResourceIfAllowed(percentageExpr.columnarEvalAny(batch)) { percentageAny =>
+        val percentage = percentageAny match {
+          case cv: GpuColumnVector => cv
+          case s : GpuScalar => GpuColumnVector.from(s, 1, dataType)
+        }
+        TableDebug.get().debug("Final histogram", value.getBase);
+        TableDebug.get().debug("eval, percentage", percentage.getBase);
 
-    System.err.println("percentage.dataType + " +percentage.dataType)
+        System.err.println("percentage.dataType + " + percentage.dataType)
 
-    val outputAsList = dataType match {
-      case _: ArrayType => {
-        TableDebug.get().debug("percentage as array", percentage.getBase)
-        true
+        val outputAsList = dataType match {
+          case _: ArrayType => {
+            TableDebug.get().debug("percentage as array", percentage.getBase)
+            true
+          }
+          case _ => {
+            TableDebug.get().debug("percentage as double", percentage.getBase)
+            false
+          }
+        }
+
+        val percentiles = AggregationUtils.percentileFromHistogram(
+          value.getBase.getChildColumnView(0), percentage.getBase, outputAsList)
+        GpuColumnVector.from(percentiles, dataType)
       }
-      case _ => {
-        TableDebug.get().debug("percentage as double", percentage.getBase)
-        false
-      }
-    }
-
-    if (isReduction) {
-      val tmp = AggregationUtils.percentileFromHistogram(value.getBase, percentage.getBase,
-        outputAsList)
-      TableDebug.get().debug("output ", tmp);
-      tmp
-    } else {
-      AggregationUtils.percentileFromHistogram(value.getBase, percentage.getBase, outputAsList)
-    }
-  }
-
-  override def doColumnar(value: GpuScalar, percentage: GpuColumnVector): ColumnVector = {
-    System.err.println("doColumnar S-C value = " + value + ", percentage = " + percentage)
-    withResource(GpuColumnVector.from(value, 1, value.dataType)) {
-      valueCol => doColumnar(valueCol, percentage)
-    }
-  }
-
-  override def doColumnar(value: GpuColumnVector, percentage: GpuScalar): ColumnVector = {
-    System.err.println("doColumnar C-S value = " + value + ", percentage = " + percentage)
-    withResource(GpuColumnVector.from(percentage, 1, percentage.dataType)) {
-      percentageCol => doColumnar(value, percentageCol)
-    }
-  }
-
-  override def doColumnar(numRows: Int, value: GpuScalar, percentage: GpuScalar): ColumnVector = {
-    System.err.println("doColumnar S-S value = " + value + ", percentage = " + percentage)
-    withResource(GpuColumnVector.from(value, numRows, value.dataType)) { valueCol =>
-      doColumnar(valueCol, percentage)
     }
   }
 
   override def nullable: Boolean = true
 
+  override def children: Seq[Expression] = Seq(valueExpr)
 }
 
 /**
@@ -2153,7 +2136,12 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
 
   protected class CudfMergeHistogram(override val dataType: DataType) extends CudfAggregate {
     override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-      (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+      (col: cudf.ColumnVector) => {
+        System.err.println("merge histogram, col size: " + col.getRowCount + ", NC: "+
+          col.getNullCount)
+        TableDebug.get().debug("merge his", col);
+        col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+      }
     override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeHistogram()
     override val name: String = "CudfMergeHistogram"
   }
@@ -2169,14 +2157,16 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
     GpuPercentileEvaluation(histogramBuff, percentageExpr, isReduction)
 
   // Type of data stored in the buffer after postUpdate.
-  private val histogramBufferType: DataType = StructType(Seq(
-    StructField("value", valueExpr.dataType),
-    StructField("frequency", LongType)))
-  private final lazy val histogramBuff: AttributeReference =
-    AttributeReference("histogramBuff", histogramBufferType)()
+//  private val histogramBufferType: DataType = StructType(Seq(
+//    StructField("value", valueExpr.dataType),
+//    StructField("frequency", LongType)))
+  protected final lazy val histogramBuff: AttributeReference =
+    AttributeReference("histogramBuff", aggregationOutputType)()
 
   // Output type of percentile.
-  override def dataType: DataType = percentageExpr.dataType match {
+  override def dataType: DataType = aggregationOutputType
+  /*
+  percentageExpr.dataType match {
     case _: ArrayType => {
       System.err.println("output array")
       ArrayType(DoubleType, containsNull = false)
@@ -2186,6 +2176,8 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
       DoubleType
     }
   }
+  */
+
   override def aggBufferAttributes: Seq[AttributeReference] = histogramBuff :: Nil
   override def prettyName: String = "percentile"
   override def nullable: Boolean = false
@@ -2236,27 +2228,27 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
   private lazy val updateHistogram = new CudfHistogram(aggregationOutputType)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateHistogram)
 
-  override lazy val postUpdate: Seq[Expression] = {
+//  override lazy val postUpdate: Seq[Expression] = {
+//    if (isReduction) {
+//      val reductionResult = updateHistogram.attr
+//      //System.err.println("post update, get struct from list")
+//      Seq(GpuGetListChild(reductionResult, "get list child postUpdate"))
+//    } else {
+//      //System.err.println("post update no change")
+//      Seq(updateHistogram.attr)
+//    }
+//  }
+
+
+
+  override lazy val preMerge: Seq[Expression] = {
     if (isReduction) {
-      val reductionResult = updateHistogram.attr
-      //System.err.println("post update, get struct from list")
-      Seq(GpuGetListChild(reductionResult, "get list child postUpdate"))
-    } else {
-      //System.err.println("post update no change")
-      Seq(updateHistogram.attr)
-    }
-  }
-
-
-
-  override lazy val postMerge: Seq[Expression] = {
-    if (isReduction) {
-      val reductionResult = mergeHistogram.attr
+//      val reductionResult = histogramBuff
       //System.err.println("post merge, get struct from list")
-      Seq(GpuGetListChild(reductionResult, "get list child postMerge"))
+      Seq(GpuGetListChild(histogramBuff, "get list child preMerge"))
     } else {
       //System.err.println("post merge no change")
-      Seq(mergeHistogram.attr)
+      Seq(histogramBuff)
     }
   }
 }
@@ -2289,6 +2281,7 @@ object GpuPercentile{
   }
 }
 
+/*
 class CpuToGpuPercentileBufferConverter(elementType: DataType)
   extends CpuToGpuAggregateBufferConverter {
   def createExpression(child: Expression): CpuToGpuBufferTransition = {
@@ -2338,6 +2331,7 @@ case class GpuToCpuPercentileBufferTransition(override val child: Expression)
     projection.apply(InternalRow.apply(arrayData)).getBytes
   }
 }
+*/
 
 /**
  * Base class for overriding standard deviation and variance aggregations.

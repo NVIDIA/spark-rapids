@@ -3442,11 +3442,11 @@ object GpuOverrides extends Logging {
           val aggBuffer = c.aggBufferAttributes.head
           aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
-        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
-          new CpuToGpuPercentileBufferConverter(c.child.dataType)
-        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
-          new GpuToCpuPercentileBufferConverter()
-        override val supportBufferConversion: Boolean = true
+//        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+//          new CpuToGpuPercentileBufferConverter(c.child.dataType)
+//        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+//          new GpuToCpuPercentileBufferConverter()
+        override val supportBufferConversion: Boolean = false
         override val needsAnsiCheck: Boolean = false
       }),
     expr[ApproximatePercentile](
