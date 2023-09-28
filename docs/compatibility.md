@@ -519,7 +519,7 @@ We also provide configurations for other integral range types:
 
 - [`spark.rapids.sql.window.range.short.enabled`](additional-functionality/advanced_configs.md#sql.window.range.short.enabled)
 - [`spark.rapids.sql.window.range.int.enabled`](additional-functionality/advanced_configs.md#sql.window.range.int.enabled)
-- [`spark.rapids.sql.window.range.long.enabled`](additional-functionality/advanced_configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.long.enabled`](additional-functionality/advanced_configs.md#sql.window.range.long.enabled)
 
 The reason why we default the configurations to false for byte/short and to true for int/long is that
 we think the most real-world queries are based on int or long.
