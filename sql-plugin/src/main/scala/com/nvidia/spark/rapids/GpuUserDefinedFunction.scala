@@ -45,6 +45,7 @@ trait GpuUserDefinedFunction extends GpuExpression
   override def hasSideEffects: Boolean = true
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
+  override val selfNonDeterministic: Boolean = !udfDeterministic
 
   private[this] val nvtxRangeName = s"UDF: $name"
   private[this] lazy val funcCls = TrampolineUtil.getSimpleName(function.getClass)
@@ -107,6 +108,7 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   private[this] lazy val outputType = dataType.catalogString
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
+  override val selfNonDeterministic: Boolean = !udfDeterministic
   override def hasSideEffects: Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
