@@ -2126,29 +2126,29 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       ColumnVector.stringConcatenate(Array(intPart, decPart, zeros))
     }
     // split intAndDecParts to intPart and decPart with substrings, start = len(intAndDecParts) - d
-    closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resource_array =>
+    closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
       val (intPartPosExp, decPartPosExpTemp) = withResource(intAndDecParts) { _ =>
         val (start, end) = withResource(intAndDecParts.getCharLengths) { partsLength =>
           (withResource(Scalar.fromInt(d)) { d =>
             partsLength.sub(d)
           }, partsLength.incRefCount())
         }
-        val zeroCv = withResource(Scalar.fromInt(0)) { zero =>
-          ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
-        }
         withResource(start) { _ =>
-          val intPart = withResource(zeroCv) { _ =>
-            intAndDecParts.substring(zeroCv, start)
-          }
-          val decPart = closeOnExcept(intPart) { _ =>
-            withResource(end) { _ =>
+          withResource(end) { _ =>
+            val zeroIntCv = withResource(Scalar.fromInt(0)) { zero =>
+              ColumnVector.fromScalar(zero, cv.getRowCount.toInt)
+            }
+            val intPart = withResource(zeroIntCv) { _ =>
+              intAndDecParts.substring(zeroIntCv, start)
+            }
+            val decPart = closeOnExcept(intPart) { _ =>
               intAndDecParts.substring(start, end)
             }
+            (intPart, decPart)
           }
-          (intPart, decPart)
         }
       }
-      resource_array += intPartPosExp
+      resourceArray += intPartPosExp
       // if decLen - exp > d, convert to float/double, round, convert back to string
       // decLen's max value is 9, abs(expPart)'s min value is 7, so it is possible only when d < 2
       // because d is small, we can use double to do the rounding
@@ -2192,12 +2192,14 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val cond1 = withResource(Scalar.fromInt(-1 - d)) { negOneSubD =>
       exp.greaterOrEqualTo(negOneSubD)
     }
-    val decLenSubExp = withResource(decPart.getCharLengths) { decLen =>
-      decLen.sub(exp)
-    }
-    val cond2 = withResource(decLenSubExp) { _ =>
-      withResource(Scalar.fromInt(d)) { d =>
-        decLenSubExp.greaterThan(d)
+    val cond2 = closeOnExcept(cond1) { _ =>
+      val decLenSubExp = withResource(decPart.getCharLengths) { decLen =>
+        decLen.sub(exp)
+      }
+      withResource(decLenSubExp) { _ =>
+        withResource(Scalar.fromInt(d)) { d =>
+          decLenSubExp.greaterThan(d)
+        }
       }
     }
     val needRounding = withResource(cond1) { _ =>
@@ -2238,8 +2240,8 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         // To do a dataframe operation, add some zeros before 
         // (intPat + decPart) and round them to 10
         // zerosNumRounding = (10 - (d + exp + 1)) . max(0)
-        val tenSubDExpOne = withResource(Scalar.fromInt(10)) { ten =>
-          withResource(dExpOne) { _ =>
+        val tenSubDExpOne = withResource(dExpOne) { _ => 
+          withResource(Scalar.fromInt(10)) { ten =>
             ten.sub(dExpOne)
           }
         }
@@ -2255,11 +2257,11 @@ case class GpuFormatNumber(x: Expression, d: Expression)
             zeroCv.repeatStrings(zerosNumRounding)
           }
         }
-        val zeroPointCv = withResource(Scalar.fromString("0.")) { point =>
-          ColumnVector.fromScalar(point, cv.getRowCount.toInt)
-        }
-        val numberToRoundStr = withResource(zeroPointCv) { _ =>
-          withResource(leadingZeros) { _ =>
+        val numberToRoundStr = withResource(leadingZeros) { _ =>
+          val zeroPointCv = withResource(Scalar.fromString("0.")) { point =>
+            ColumnVector.fromScalar(point, cv.getRowCount.toInt)
+          }
+          withResource(zeroPointCv) { _ =>
             ColumnVector.stringConcatenate(Array(zeroPointCv, leadingZeros, intPart, decPart))
           }
         }
@@ -2287,7 +2289,9 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         val decPartNegExp = withResource(decPartStriped) { _ =>
           decPartStriped.pad(d, PadSide.LEFT, "0")
         }
-        (getZeroCv(cv.getRowCount.toInt), decPartNegExp)
+        closeOnExcept(decPartNegExp) { _ =>
+          (getZeroCv(cv.getRowCount.toInt), decPartNegExp)
+        }
     }
   }
 
@@ -2301,8 +2305,10 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         (intAndDec.getColumn(0).incRefCount(), intAndDec.getColumn(1).incRefCount())
       }
     }
-    val intPartNoNeg = withResource(intPart) { _ =>
-      removeNegSign(intPart)
+    val intPartNoNeg = closeOnExcept(decPart) { _ =>
+      withResource(intPart) { _ =>
+        removeNegSign(intPart)
+      }
     }
     val decPartPad = closeOnExcept(intPartNoNeg) { _ =>
       withResource(decPart) { _ =>
@@ -2335,12 +2341,18 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
     }
     // sign will be handled later, use string-based solution instead abs to avoid overfolw
-    val intPart = withResource(intPartSign) { _ =>
-      removeNegSign(intPartSign)  
+    val intPart = closeOnExcept(decPart) { _ =>
+      closeOnExcept(expPart) { _ =>
+        withResource(intPartSign) { _ =>
+          removeNegSign(intPartSign)  
+        }
+      }
     }
-    val exp = closeOnExcept(intPart) { _ =>
-      withResource(expPart) { _ =>
-        expPart.castTo(DType.INT32)
+    val exp = closeOnExcept(decPart) { _ =>
+      closeOnExcept(intPart) { _ =>
+        withResource(expPart) { _ =>
+          expPart.castTo(DType.INT32)
+        }
       }
     }
     // handle positive and negative exp separately
@@ -2351,42 +2363,42 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
       }
     }
-    val (intPartNegExp, decPartNegExp) = withResource(intPart) { _ =>
-      withResource(decPart) { _ =>
-        closeOnExcept(exp) { _ =>
-          handleDoubleNegExp(cv, intPart, decPart, exp, d)
-        }
-      }
-    }
-    val expPos = withResource(exp) { _ =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        exp.greaterOrEqualTo(zero)
-      }
-    }
-    // combine results
-    withResource(expPos) { _ =>
-      val intPartExp = withResource(intPartPosExp) { _ =>
-        withResource(intPartNegExp) { _ =>
-          expPos.ifElse(intPartPosExp, intPartNegExp)
-        }
-      }
-      val decPartExp = closeOnExcept(intPartExp) { _ =>
-        withResource(decPartPosExp) { _ =>
-          withResource(decPartNegExp) { _ =>
-            expPos.ifElse(decPartPosExp, decPartNegExp)
+    withResource(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
+      val (intPartNegExp, decPartNegExp) = withResource(intPart) { _ =>
+        withResource(decPart) { _ =>
+          closeOnExcept(exp) { _ =>
+            handleDoubleNegExp(cv, intPart, decPart, exp, d)
           }
         }
       }
-      (intPartExp, decPartExp)
+      resourceArray += intPartNegExp
+      resourceArray += decPartNegExp
+      val expPos = withResource(exp) { _ =>
+        withResource(Scalar.fromInt(0)) { zero =>
+          exp.greaterOrEqualTo(zero)
+        }
+      }
+      // combine results
+      withResource(expPos) { _ =>
+        val intPartExp = withResource(intPartPosExp) { _ =>
+          expPos.ifElse(intPartPosExp, intPartNegExp)
+        }
+        val decPartExp = closeOnExcept(intPartExp) { _ =>
+          withResource(decPartPosExp) { _ =>
+            expPos.ifElse(decPartPosExp, decPartNegExp)
+          }
+        }
+        (intPartExp, decPartExp)
+      }
     }
   }
 
   private def getPartsFromDouble(cv: ColumnVector, d: Int): (ColumnVector, ColumnVector) = {
     // handle normal case: 1234.567
-    closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resource_array =>
+    closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
       val (normalInt, normalDec) = normalDoubleSplit(cv, d)
-      resource_array += normalInt
-      resource_array += normalDec
+      resourceArray += normalInt
+      resourceArray += normalDec
       // first check special case
       val cvStr = withResource(cv.castTo(DType.STRING)) { cvStr =>
         cvStr.incRefCount()
@@ -2420,8 +2432,8 @@ case class GpuFormatNumber(x: Expression, d: Expression)
               expDoubleSplit(noEReplaced, d)
             }
             // combine results
-            // remove normalInt from resource_array
-            resource_array.remove(0)
+            // remove normalInt from resourceArray
+            resourceArray.remove(0)
             val intPart = closeOnExcept(expDec) { _ =>
               withResource(expInt) { _ =>
                 withResource(normalInt) { _ =>
@@ -2429,8 +2441,8 @@ case class GpuFormatNumber(x: Expression, d: Expression)
                 }
               }
             }
-            resource_array.clear()
-            resource_array += intPart
+            resourceArray.clear()
+            resourceArray += intPart
             val decPart = withResource(expDec) { _ =>
               withResource(normalDec) { _ =>
                 containsE.ifElse(expDec, normalDec)
@@ -2451,17 +2463,15 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     // if d <= scale, no need to append zeros, if scale < 0, append d zeros
     val appendZeroNum = (d - scale).max(0).min(d)
     val (intPart, decTemp) = if (roundingScale <= 0) {
-      withResource(ArrayBuffer.empty[ColumnVector]) { resource_array =>
+      withResource(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
         val intPart = withResource(cv.round(roundingScale, RoundMode.HALF_EVEN)) { rounded =>
           rounded.castTo(DType.STRING)
         }
-        resource_array += intPart
+        resourceArray += intPart
         // if intString starts with 0, it must be "00000...", replace it with "0"
         val (isZero, zeroCv) = withResource(Scalar.fromString("0")) { zero =>
           withResource(intPart.startsWith(zero)) { isZero =>
-            closeOnExcept(isZero) { _ =>
               (isZero.incRefCount(), ColumnVector.fromScalar(zero, cv.getRowCount.toInt))
-            }
           }
         }
         val intPartZeroHandled = withResource(isZero) { isZero =>
@@ -2469,12 +2479,12 @@ case class GpuFormatNumber(x: Expression, d: Expression)
             isZero.ifElse(zeroCv, intPart)
           }
         }
-        resource_array += intPartZeroHandled
+        resourceArray += intPartZeroHandled
         // a temp decPart is empty before appending zeros
         val decPart = withResource(Scalar.fromString("")) { emptyString =>
           ColumnVector.fromScalar(emptyString, cv.getRowCount.toInt)
         }
-        resource_array += decPart
+        resourceArray += decPart
         (intPartZeroHandled.incRefCount(), decPart.incRefCount())
       }
     } else {
@@ -2486,14 +2496,14 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
       }
     }
-    closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resource_array =>
+    closeOnExcept(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
       // remove negative sign from intPart, sign will be handled later
       val intPartPos = closeOnExcept(decTemp) { _ =>
         withResource(intPart) { _ =>
           removeNegSign(intPart)
         }
       }
-      resource_array += intPartPos
+      resourceArray += intPartPos
       // append zeros
       val appendZeros = "0" * appendZeroNum
       val appendZerosCv = closeOnExcept(decTemp) { _ =>
@@ -2569,23 +2579,6 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         str.substring(i, i + 3).asInstanceOf[ColumnView]
       }.toArray
     }
-    // TODO: test Liangcai's solution here
-    // val substrs = closeOnExcept(sepCol) { _ =>
-    //   var curEndsCol: ColumnVector = str.getCharLengths()
-    //   withResource(curEndsCol) { _ =>
-    //     (0 until maxstrlen by 3).safeMap { _ =>
-    //       val startCol = withResource(Scalar.fromInt(3)) { scalar3 =>
-    //         curEndsCol.sub(scalar3)
-    //       }
-    //       val sub = closeOnExcept(startCol) { _ =>
-    //         str.substring(startCol, curEndsCol).asInstanceOf[ColumnView]
-    //       }
-    //       curEndsCol.safeClose()
-    //       curEndsCol = startCol
-    //       sub
-    //     }.toArray
-    //   }
-    // }
     withResource(substrs) { _ =>
       withResource(sepCol) { _ =>
         withResource(ColumnVector.stringConcatenate(substrs, sepCol)) { res =>
