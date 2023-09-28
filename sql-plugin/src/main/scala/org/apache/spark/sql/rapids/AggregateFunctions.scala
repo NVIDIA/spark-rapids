@@ -2063,6 +2063,25 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
   }
 }
 
+case class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.histogram()
+  override val name: String = "CudfHistogram"
+}
+
+case class CudfMergeHistogram(override val dataType: DataType) extends CudfAggregate {
+  override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => {
+      System.err.println("merge histogram, col size: " + col.getRowCount + ", NC: " +
+        col.getNullCount)
+      TableDebug.get().debug("merge his", col);
+      col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+    }
+  override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeHistogram()
+  override val name: String = "CudfMergeHistogram"
+}
+
 case class GpuPercentileEvaluation(histogramArrayExpr: Expression, percentageExpr: Expression,
                                    isReduction: Boolean)
   extends GpuExpression {
@@ -2133,24 +2152,6 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
   extends GpuAggregateFunction with Serializable {
   private val valueExpr = childExprs.head
   private val percentageExpr = childExprs(1)
-  protected class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
-    override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-      (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
-    override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.histogram()
-    override val name: String = "CudfHistogram"
-  }
-
-  protected class CudfMergeHistogram(override val dataType: DataType) extends CudfAggregate {
-    override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-      (col: cudf.ColumnVector) => {
-        System.err.println("merge histogram, col size: " + col.getRowCount + ", NC: "+
-          col.getNullCount)
-        TableDebug.get().debug("merge his", col);
-        col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
-      }
-    override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeHistogram()
-    override val name: String = "CudfMergeHistogram"
-  }
 
   // Output type of the aggregations.
   protected val aggregationOutputType: DataType = ArrayType(StructType(Seq(
