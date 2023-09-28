@@ -175,6 +175,8 @@ _init_list = [
     _grpkey_dbls_with_nulls,
     _grpkey_floats_with_nulls,
     _grpkey_strings_with_nulls,
+    _grpkey_strings_with_extra_nulls,
+    _grpkey_nulls,
     _grpkey_floats_with_nulls_and_nans]
 
 # grouping decimals with nulls
