@@ -68,7 +68,7 @@ jobs:
       YanxuanLiu,\
       cindyyuanjiang,\
       thirtiseven,\
-      winningsixnv,\
+      winningsix,\
       viadea,\
       ', format('{0},', github.actor)) && github.event.comment.body == 'build'
     steps:
