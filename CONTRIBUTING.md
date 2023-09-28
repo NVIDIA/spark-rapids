@@ -145,7 +145,8 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 ### Building against different CUDA Toolkit versions
 
 You can build against different versions of the CUDA Toolkit by modifying the variable `cuda.version`:
-* `-Dcuda.version=cuda11` (CUDA 11.0/11.1/11.2, default)
+* `-Dcuda.version=cuda11` (CUDA 11.x, default)
+* `-Dcuda.version=cuda12` (CUDA 12.x)
 
 ### Building a Distribution for a Single Spark Release
 
