@@ -123,9 +123,9 @@ Only a limited set of formats are supported when parsing dates.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
-despite the format asking for a `XXX` or `[XXX]`. As such it is off by default and you can enable it
-by setting [`spark.rapids.sql.csvTimestamps.enabled`](configs.md#sql.csvTimestamps.enabled) to
-`true`.
+despite the format asking for a `XXX` or `[XXX]`. The CSV parser does not support the `TimestampNTZ`
+type and will fall back to CPU if `spark.sql.timestampType` is set to `TIMESTAMP_NTZ` or if an 
+explicit schema is provided that contains the `TimestampNTZ` type.
 
 The formats supported for timestamps are limited similar to dates.  The first part of the format
 must be a supported date format.  The second part must start with a `'T'` to separate the time
@@ -349,6 +349,9 @@ Another limitation of the GPU JSON reader is that it will parse strings containi
 Spark will treat them as invalid inputs and will just return `null`.
 
 ### JSON Timestamps
+
+The JSON parser does not support the `TimestampNTZ` type and will fall back to CPU if `spark.sql.timestampType` is 
+set to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `TimestampNTZ` type.
 
 There is currently no support for reading numeric values as timestamps and null values are returned instead
 ([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast
