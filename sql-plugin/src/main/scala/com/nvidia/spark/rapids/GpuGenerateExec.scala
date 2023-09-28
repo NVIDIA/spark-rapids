@@ -735,17 +735,7 @@ case class GpuStack(children: Seq[Expression]) extends GpuGenerator with ShimExp
       outer: Boolean): ColumnarBatch = {
 
     val schema = children.tail.take(numFields).map(_.dataType).toArray
-    
-
-    withResource(GpuColumnVector.from(inputBatch)) { table =>
-      val cv = table.getColumn(generatorOffset)
-      val ress = withResource(cv) { _ =>
-        cv.split(numFields until numFields * numRows by numFields: _*)
-      }
-      withResource(new Table(ress: _*)) { split =>
-        GpuColumnVector.from(split, schema)
-      }
-    }
+    // build a Seq[Seq[Expression]] from the input batch
   }
 
 }
