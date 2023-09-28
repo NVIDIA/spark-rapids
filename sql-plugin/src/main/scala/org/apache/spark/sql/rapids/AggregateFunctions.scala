@@ -2063,7 +2063,7 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
   }
 }
 
-case class GpuPercentileEvaluation(valueExpr: Expression, percentageExpr: Expression,
+case class GpuPercentileEvaluation(histogramArrayExpr: Expression, percentageExpr: Expression,
                                    isReduction: Boolean)
   extends GpuExpression {
   override def prettyName: String = "percentile_evaluation"
@@ -2083,13 +2083,14 @@ case class GpuPercentileEvaluation(valueExpr: Expression, percentageExpr: Expres
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    withResourceIfAllowed(valueExpr.columnarEval(batch)) { value =>
+    withResourceIfAllowed(histogramArrayExpr.columnarEval(batch)) { histogramArray =>
       withResourceIfAllowed(percentageExpr.columnarEvalAny(batch)) { percentageAny =>
-        val percentage = percentageAny match {
-          case cv: GpuColumnVector => cv
-          case s : GpuScalar => GpuColumnVector.from(s, 1, dataType)
+        val (percentage, needClosePercentage) = percentageAny match {
+          case cv: GpuColumnVector => (cv, false)
+          // memory leak:
+          case s : GpuScalar => (GpuColumnVector.from(s, 1, dataType), true)
         }
-        TableDebug.get().debug("Final histogram", value.getBase);
+        TableDebug.get().debug("Final histogram", histogramArray.getBase);
         TableDebug.get().debug("eval, percentage", percentage.getBase);
 
         System.err.println("percentage.dataType + " + percentage.dataType)
@@ -2105,16 +2106,21 @@ case class GpuPercentileEvaluation(valueExpr: Expression, percentageExpr: Expres
           }
         }
 
-        val percentiles = AggregationUtils.percentileFromHistogram(
-          value.getBase.getChildColumnView(0), percentage.getBase, outputAsList)
-        GpuColumnVector.from(percentiles, dataType)
+        withResource(histogramArray.getBase.getChildColumnView(0)) { histogram =>
+          val percentiles = AggregationUtils.percentileFromHistogram(
+            histogram, percentage.getBase, outputAsList)
+          if(needClosePercentage) {
+            percentage.close()
+          }
+          GpuColumnVector.from(percentiles, dataType)
+        }
       }
     }
   }
 
   override def nullable: Boolean = true
 
-  override def children: Seq[Expression] = Seq(valueExpr)
+  override def children: Seq[Expression] = Seq(histogramArrayExpr)
 }
 
 /**

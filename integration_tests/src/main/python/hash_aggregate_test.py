@@ -917,7 +917,7 @@ exact_percentile_gen = [DoubleGen(),
 @pytest.mark.parametrize('data_gen', exact_percentile_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).repartition(1).selectExpr(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
             'percentile(a, array(0.1))'
         ))
 
