@@ -3105,7 +3105,7 @@ object GpuOverrides extends Logging {
             case dt: DecimalType => {
               if (dt.scale > 32) {
                 willNotWorkOnGpu("format_number will generate results mismatched from Spark " +
-                  "when the scale is large.")
+                  "when the scale is larger than 32.")
               }
             }
             case _ =>
