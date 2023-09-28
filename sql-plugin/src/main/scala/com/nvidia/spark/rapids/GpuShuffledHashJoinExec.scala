@@ -165,11 +165,11 @@ case class GpuShuffledHashJoinExec(
     // iterators, setting as noop certain metrics that the coalesce iterators
     // normally update, but that in the case of the join they would produce
     // the wrong statistics (since there are conflicts)
-    val coalesceMetrics = allMetrics +
-      (GpuMetric.NUM_INPUT_ROWS -> NoopMetric,
-       GpuMetric.NUM_INPUT_BATCHES -> NoopMetric,
-       GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
-       GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
+    val coalesceMetrics = allMetrics ++
+      Map(GpuMetric.NUM_INPUT_ROWS -> NoopMetric,
+          GpuMetric.NUM_INPUT_BATCHES -> NoopMetric,
+          GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
+          GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
     val realTarget = realTargetBatchSize()
 
