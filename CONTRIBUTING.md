@@ -184,8 +184,8 @@ mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
 
 ### Building and Testing with ARM
 
-To build our project on ARM platform, please add `-Parm64` to your maven commands.
-NOTE: Build process does not require arm machine, so if you want to build the artifacts only
+To build our project on ARM platform, please add `-Parm64` to your Maven commands.
+NOTE: Build process does not require an ARM machine, so if you want to build the artifacts only
 on X86 machine, please also add `-DskipTests` in commands.
 
 ```bash

@@ -28,7 +28,7 @@ ARG CUDA_VER=11.8.0
 ARG UBUNTU_VER=20.04
 ARG UCX_VER=1.15.0-rc6
 # multi-platform build with: docker buildx build --platform linux/arm64,linux/amd64 <ARGS> on either amd64 or arm64 host
-# check available offcial arm-based docker images at https://hub.docker.com/r/nvidia/cuda/tags (OS/ARCH)
+# check available official arm-based docker images at https://hub.docker.com/r/nvidia/cuda/tags (OS/ARCH)
 FROM --platform=$TARGETPLATFORM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG UBUNTU_VER
@@ -52,6 +52,8 @@ RUN wget https://bootstrap.pypa.io/get-pip.py && python3.9 get-pip.py
 
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-${ARCH}
+# export JAVA_HOME for mvn option 'source-javadoc'
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-${ARCH}
 
 RUN ln -sfn /usr/bin/python3.9 /usr/bin/python
 RUN ln -sfn /usr/bin/python3.9 /usr/bin/python3
@@ -65,9 +67,6 @@ RUN UCX_CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f1` && \
     wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}-${UCX_ARCH}.tar.bz2 && \
     tar -xvf *.bz2 && dpkg -i *.deb && \
     rm -rf /tmp/ucx
-
-# export JAVA_HOME for mvn option 'source-javadoc'
-ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-${ARCH}
 
 # install locale and generate UTF-8, but don't set it as default, the test cases should specify it somehow
 RUN apt-get install -y locales
