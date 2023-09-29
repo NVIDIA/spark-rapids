@@ -3085,6 +3085,35 @@ object GpuOverrides extends Logging {
          |For instance decimal strings not longer than 18 characters / hexadecimal strings
          |not longer than 15 characters disregarding the sign cannot cause an overflow.
          """.stripMargin.replaceAll("\n", " ")),
+    expr[FormatNumber](
+      "Formats the number x like '#,###,###.##', rounded to d decimal places.",
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
+        ("x", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT+TypeSig.STRING)),
+      (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          in.children.head.dataType match {
+            case _: FloatType | DoubleType => {
+              if (!conf.isFloatFormatNumberEnabled) {
+                willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
+                  "results that have a different precision than the default results of Spark. " +
+                  "To enable this operation on the GPU, set" +
+                  s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
+              }
+            }
+            case dt: DecimalType => {
+              if (dt.scale > 32) {
+                willNotWorkOnGpu("format_number will generate results mismatched from Spark " +
+                  "when the scale is larger than 32.")
+              }
+            }
+            case _ =>
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuFormatNumber(lhs, rhs)
+      }
+    ),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
