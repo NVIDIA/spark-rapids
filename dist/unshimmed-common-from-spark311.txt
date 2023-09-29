@@ -5,6 +5,7 @@ com/nvidia/spark/ExclusiveModeGpuDiscoveryPlugin*
 com/nvidia/spark/GpuCachedBatchSerializer*
 com/nvidia/spark/ParquetCachedBatchSerializer*
 com/nvidia/spark/RapidsUDF*
+com/nvidia/spark/Retryable*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/GpuColumnVectorUtils*
