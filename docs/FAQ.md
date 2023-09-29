@@ -458,7 +458,7 @@ files.  Spark tends to prefer sort based joins, and in some cases sort based agg
 the GPU versions are all hash based. This means that the resulting data can come out in a different
 order for the CPU and the GPU. This is not wrong, but can make the size of the output data
 different because of compression. Users can turn on
-[spark.rapids.sql.hashOptimizeSort.enabled](configs.md#sql.hashOptimizeSort.enabled) to have
+[spark.rapids.sql.hashOptimizeSort.enabled](additional-functionality/advanced_configs.md#sql.hashOptimizeSort.enabled) to have
 the GPU try to replicate more closely what the output ordering would have been if sort were used,
 like on the CPU.
 
