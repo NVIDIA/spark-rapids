@@ -3447,7 +3447,7 @@ object GpuOverrides extends Logging {
         override def aggBufferAttribute: AttributeReference = {
           val aggBuffer = c.aggBufferAttributes.head
           val dataType: DataType = ArrayType(StructType(Seq(
-            StructField("value", DoubleType),
+            StructField("value", childExprs.head.dataType),
             StructField("frequency", LongType))), containsNull = false)
           aggBuffer.copy(dataType = dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
