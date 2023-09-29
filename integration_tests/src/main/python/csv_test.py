@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330, is_spark_340_or_later, is_before_spark_340
+from spark_session import with_cpu_session, is_before_spark_330, is_spark_350_or_later, is_before_spark_340
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -561,11 +561,12 @@ def test_csv_read_count(spark_tmp_path):
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9325")
 @pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
-@pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@pytest.mark.parametrize("timestamp_type", [
+    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.skipif(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
+    "TIMESTAMP_NTZ"])
 def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
 
@@ -574,7 +575,9 @@ def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part,
 @pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
-@pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@pytest.mark.parametrize("timestamp_type", [
+    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.skipif(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
+    "TIMESTAMP_NTZ"])
 def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
 
