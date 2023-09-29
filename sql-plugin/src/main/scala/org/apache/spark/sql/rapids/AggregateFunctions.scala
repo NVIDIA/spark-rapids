@@ -2150,17 +2150,17 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
     AttributeReference("histogramBuff", aggregationOutputType)()
 
   // Output type of percentile.
-  override def dataType: DataType = //aggregationOutputType
-    percentageExpr.dataType match {
-    case _: ArrayType => {
-      System.err.println("output array")
-      ArrayType(DoubleType, containsNull = false)
-    }
-    case _ => {
-      System.err.println("output double")
-      DoubleType
-    }
-  }
+  override def dataType: DataType = aggregationOutputType
+//    percentageExpr.dataType match {
+//    case _: ArrayType => {
+//      System.err.println("output array")
+//      ArrayType(DoubleType, containsNull = false)
+//    }
+//    case _ => {
+//      System.err.println("output double")
+//      DoubleType
+//    }
+//  }
 
 
   override def aggBufferAttributes: Seq[AttributeReference] = histogramBuff :: Nil
@@ -2250,12 +2250,12 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
   private lazy val updateHistogram = new CudfHistogram(aggregationOutputType)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateHistogram)
 
-  override lazy val postUpdate: Seq[Expression] =
-    Seq(GpuNothing(updateHistogram.attr, "postUpdate"))
-  override lazy val preMerge: Seq[Expression] =
-    Seq(GpuNothing(histogramBuff, "preMerge"))
-  override lazy val postMerge: Seq[Expression] =
-    Seq(GpuNothing(mergeHistogram.attr, "postMerge"))
+//  override lazy val postUpdate: Seq[Expression] =
+//    Seq(GpuNothing(updateHistogram.attr, "postUpdate"))
+//  override lazy val preMerge: Seq[Expression] =
+//    Seq(GpuNothing(histogramBuff, "preMerge"))
+//  override lazy val postMerge: Seq[Expression] =
+//    Seq(GpuNothing(mergeHistogram.attr, "postMerge"))
 
 }
 
