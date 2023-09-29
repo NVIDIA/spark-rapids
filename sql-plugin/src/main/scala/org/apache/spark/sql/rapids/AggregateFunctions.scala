@@ -2103,13 +2103,17 @@ case class GpuPercentileEvaluation(child: Expression,
           case _ => false
         }
 
-        withResource(histogramArray.getBase.getChildColumnView(0)) { histogram =>
-          System.err.println("evaluation, input size  = " + histogram.getRowCount)
 
+//      withResource(histogramArray.getBase.getChildColumnView(0)) { histogram =>
+//        System.err.println("evaluation, input size  = " + histogram.getRowCount)
+//
+//        val percentiles = AggregationUtils.percentileFromHistogram(
+//          histogram, percentageArray, outputAsList)
+//        GpuColumnVector.from(percentiles, dataType)
+//      }
           val percentiles = AggregationUtils.percentileFromHistogram(
-            histogram, percentageArray, outputAsList)
+            histogramArray.getBase, percentageArray, outputAsList)
           GpuColumnVector.from(percentiles, dataType)
-        }
 
     }
   }
