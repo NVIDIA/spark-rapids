@@ -2081,22 +2081,22 @@ case class CudfMergeHistogram(override val dataType: DataType) extends CudfAggre
   override val name: String = "CudfMergeHistogram"
 }
 
-case class GpuPercentileEvaluation(histogramArrayExpr: Expression, percentageExpr: Expression,
+case class GpuPercentileEvaluation(child: Expression,
+                                   percentage: Either[Double, Array[Double]],
+                                   dataType: DataType,
                                    isReduction: Boolean)
-  extends GpuExpression {
+  extends GpuExpression with ShimExpression {
   override def prettyName: String = "percentile_evaluation"
 
-  override def dataType: DataType = percentageExpr.dataType match {
-    case _: ArrayType => ArrayType(DoubleType, containsNull = false)
-    case _ => DoubleType
-  }
+
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
-    withResourceIfAllowed(histogramArrayExpr.columnarEval(batch)) { histogramArray =>
-      withResourceIfAllowed(percentageExpr.columnarEvalAny(batch)) { percentageAny =>
-        val (percentage, needClosePercentage) = percentageAny match {
-          case cv: GpuColumnVector => (cv, false)
-          case s : GpuScalar => (GpuColumnVector.from(s, 1, dataType), true)
+    withResourceIfAllowed(child.columnarEval(batch)) { histogramArray =>
+
+
+        val percentageArray = percentage match {
+          case Left(p) => Array(p)
+          case Right(p) => p
         }
         val outputAsList = dataType match {
           case _: ArrayType => true
@@ -2107,18 +2107,15 @@ case class GpuPercentileEvaluation(histogramArrayExpr: Expression, percentageExp
           System.err.println("evaluation, input size  = " + histogram.getRowCount)
 
           val percentiles = AggregationUtils.percentileFromHistogram(
-            histogram, percentage.getBase, outputAsList)
-          if(needClosePercentage) {
-            percentage.close()
-          }
+            histogram, percentageArray, outputAsList)
           GpuColumnVector.from(percentiles, dataType)
         }
-      }
+
     }
   }
 
   override def nullable: Boolean = true
-  override def children: Seq[Expression] = Seq(histogramArrayExpr)
+  override def children: Seq[Expression] = Seq(child)
 }
 
 /**
@@ -2127,20 +2124,20 @@ case class GpuPercentileEvaluation(histogramArrayExpr: Expression, percentageExp
  * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
  * with the CPU version and automated checks.
  */
-abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
+abstract class GpuPercentile(childExpr: Expression,
+                             percentageLit: GpuLiteral, isReduction: Boolean)
   extends GpuAggregateFunction with Serializable {
-  private val valueExpr = childExprs.head
-  private val percentageExpr = childExprs(1)
+  private val valueExpr = childExpr
 
   // Output type of the aggregations.
-  protected val aggregationOutputType: DataType = ArrayType(StructType(Seq(
+  val aggregationOutputType: DataType = ArrayType(StructType(Seq(
     StructField("value", valueExpr.dataType),
     StructField("frequency", LongType))), containsNull = false)
 
   protected lazy val mergeHistogram = new CudfMergeHistogram(aggregationOutputType)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeHistogram)
   override lazy val evaluateExpression: Expression =
-    GpuPercentileEvaluation(histogramBuff, percentageExpr, isReduction)
+    GpuPercentileEvaluation(histogramBuff, percentage, finalDataType, isReduction)
 
   // Type of data stored in the buffer after postUpdate.
 //  private val histogramBufferType: DataType = StructType(Seq(
@@ -2161,14 +2158,30 @@ abstract class GpuPercentile(childExprs: Seq[Expression], isReduction: Boolean)
 //      DoubleType
 //    }
 //  }
+private def makeArray(v: Any): (Boolean, Either[Double, Array[Double]]) = v match {
+  // Rule ImplicitTypeCasts can cast other numeric types to double
+  case null => (false, Right(Array()))
+  case num: Double => (false, Left(num))
+  case arrayData: ArrayData => (true, Right(arrayData.toDoubleArray()))
+  case other => throw new IllegalStateException(s"Invalid percentile expression $other")
+}
 
+
+  private lazy val (returnPercentileArray, percentage) = makeArray(percentageLit.value)
+
+  lazy val finalDataType: DataType =
+    if (returnPercentileArray) {
+      ArrayType(DoubleType, containsNull = false)
+    } else {
+      DoubleType
+    }
 
   override def aggBufferAttributes: Seq[AttributeReference] = histogramBuff :: Nil
   override def prettyName: String = "percentile"
   override def nullable: Boolean = true
 
   override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null, aggregationOutputType))
-  override def children: Seq[Expression] = childExprs
+  override def children: Seq[Expression] = Seq(childExpr, percentageLit)
 }
 
 /*
@@ -2242,10 +2255,11 @@ case class GpuNothing(child: Expression, msg: String) extends GpuExpression {
 /**
  * Compute percentile of the input number(s).
  */
-case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolean)
-  extends GpuPercentile(childExprs, isReduction) {
+case class GpuPercentileDefault(childExpr: Expression,
+                                percentage: GpuLiteral, isReduction: Boolean)
+  extends GpuPercentile(childExpr, percentage, isReduction) {
 
-  override val inputProjection: Seq[Expression] = Seq(childExprs.head)
+  override val inputProjection: Seq[Expression] = Seq(childExpr)
 
   private lazy val updateHistogram = new CudfHistogram(aggregationOutputType)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateHistogram)
@@ -2262,27 +2276,28 @@ case class GpuPercentileDefault(childExprs: Seq[Expression], isReduction: Boolea
 /**
  * Compute percentile of the input number(s) associated with frequencies.
  */
-case class GpuPercentileWithFrequency(childExprs: Seq[Expression], isReduction: Boolean)
-  extends GpuPercentile(childExprs, isReduction) {
+case class GpuPercentileWithFrequency(childExpr: Expression,
+                                      percentage: GpuLiteral, isReduction: Boolean)
+  extends GpuPercentile(childExpr, percentage, isReduction) {
 
   override val inputProjection: Seq[Expression] = {
-      val childrenWithNames = GpuLiteral("value", StringType) :: childExprs.head ::
-        GpuLiteral("frequency", StringType) :: childExprs(2) :: Nil
+      val childrenWithNames = GpuLiteral("value", StringType) :: childExpr ::
+        GpuLiteral("frequency", StringType) :: childExpr :: Nil
       GpuCreateNamedStruct(childrenWithNames) :: Nil
   }
   override lazy val updateAggregates: Seq[CudfAggregate] =  Seq(new CudfMergeHistogram(dataType))
 }
 
 object GpuPercentile{
-  def apply(childExprs: Seq[Expression], isReduction: Boolean): GpuPercentile = {
-    val Seq(_, percentage, frequency) = childExprs
-    System.err.println("percentage input type = " + percentage.dataType)
-    System.err.println("percentage input = " + percentage)
-    frequency match {
+  def apply(childExpr: Expression,
+            percentageLit: GpuLiteral,
+            frequencyExpr: Expression,
+            isReduction: Boolean): GpuPercentile = {
+    frequencyExpr match {
       case GpuLiteral(freq, LongType) if freq == 1 =>
-        GpuPercentileDefault(childExprs, isReduction)
+        GpuPercentileDefault(childExpr, percentageLit, isReduction)
       case _: Any =>
-        GpuPercentileWithFrequency(childExprs, isReduction)
+        GpuPercentileWithFrequency(childExpr, percentageLit, isReduction)
     }
   }
 }
