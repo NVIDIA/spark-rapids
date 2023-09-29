@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, \
     assert_gpu_sql_fallback_collect
+from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -25,6 +26,11 @@ import pyspark.sql.functions as f
 from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version, with_cpu_session
 import warnings
 import fastparquet as fastpak
+
+rebase_write_corrected_conf = {
+    'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED'
+}
 
 
 def read_parquet(data_path):
@@ -48,6 +54,7 @@ def read_parquet(data_path):
     return read_with_fastparquet_or_plugin
 
 
+@pytest.mark.parametrize('corrected_conf', [rebase_write_corrected_conf])
 @pytest.mark.parametrize('data_gen', [
     ByteGen(nullable=False),
     ShortGen(nullable=False),
@@ -63,30 +70,26 @@ def read_parquet(data_path):
     pytest.param(DecimalGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
                                                 "https://fastparquet.readthedocs.io/en/latest/details.html#data-types")),
-], ids=idfn)
-def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
-    data_path = spark_tmp_path + "/FASTPARQUET_SINGLE_COLUMN_INPUT"
-    gen = StructGen([('a', data_gen)], nullable=False)
-    # Write data with CPU session.
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen, 4096).repartition(1).write.mode('overwrite').parquet(data_path)
-    )
-    # Read Parquet with CPU (fastparquet) and GPU (plugin), and compare records.
-    assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
-
-
-@pytest.mark.parametrize('corrected_conf', [{'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED'}])
-@pytest.mark.parametrize('data_gen', [
+    pytest.param(DateGen(nullable=False,
+                         start=date(year=2020, month=1, day=1),
+                         end=date(year=2020, month=12, day=31)),
+                 marks=pytest.mark.xfail(reason="fastparquet reads dates as timestamps.")),
     pytest.param(DateGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads far future dates (e.g. year=8705) incorrectly.")),
-    pytest.param(DateGen(nullable=False, start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31)),
-                         marks=pytest.mark.xfail(reason="fastparquet reads dates as datetime."))
+    TimestampGen(nullable=False,
+                 start=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                 end=datetime(2200, 12, 31, tzinfo=timezone.utc)),  # Vanilla case.
+    pytest.param(TimestampGen(nullable=False,
+                              start=datetime(1, 1, 1, tzinfo=timezone.utc),
+                              end=datetime(1899, 12, 31, tzinfo=timezone.utc)),
+                 marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
 ], ids=idfn)
-def test_read_fastparquet_single_date_column_tables(data_gen, spark_tmp_path, corrected_conf):
+def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path, corrected_conf):
     data_path = spark_tmp_path + "/FASTPARQUET_SINGLE_COLUMN_INPUT"
     gen = StructGen([('a', data_gen)], nullable=False)
     # Write data with CPU session.
     with_cpu_session(
+        # Single output file, to avoid differences in order of file reads.
         lambda spark: gen_df(spark, gen, 2048).repartition(1).write.mode('overwrite').parquet(data_path),
         conf=corrected_conf
     )
