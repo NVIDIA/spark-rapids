@@ -3093,20 +3093,11 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           in.children.head.dataType match {
-            case _: FloatType | DoubleType => {
-              if (!conf.isFloatFormatNumberEnabled) {
-                willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
+            case FloatType | DoubleType if !conf.isFloatFormatNumberEnabled =>
+              willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
                   "results that have a different precision than the default results of Spark. " +
                   "To enable this operation on the GPU, set" +
                   s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
-              }
-            }
-            case dt: DecimalType => {
-              if (dt.scale > 32) {
-                willNotWorkOnGpu("format_number will generate results mismatched from Spark " +
-                  "when the scale is larger than 32.")
-              }
-            }
             case _ =>
           }
         }
