@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_sql_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, \
+    assert_gpu_sql_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -34,13 +35,16 @@ def read_parquet(data_path):
     :param data_path: Location of the (single) Parquet input file.
     :return: A function that reads Parquet, via the plugin or `fastparquet`.
     """
+
     def read_with_fastparquet_or_plugin(spark):
         plugin_enabled = spark.conf.get("spark.rapids.sql.enabled", "false") == "true"
         if plugin_enabled:
             return spark.read.parquet(data_path)
         else:
+            # return spark.read.parquet(data_path)
             df = fastpak.ParquetFile(data_path).to_pandas()
             return spark.createDataFrame(df)
+
     return read_with_fastparquet_or_plugin
 
 
@@ -48,22 +52,43 @@ def read_parquet(data_path):
     ByteGen(nullable=False),
     ShortGen(nullable=False),
     IntegerGen(nullable=False),
-    # pytest.param(IntegerGen(nullable=True),
-    #              marks=pytest.mark.xfail(reason="Nullable Integers are promoted to bigint by fastparquet")),
+    pytest.param(IntegerGen(nullable=True),
+                 marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
     LongGen(nullable=False),
-    # pytest.param(LongGen(nullable=True),
-    #              marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
+    pytest.param(LongGen(nullable=True),
+                 marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
     FloatGen(nullable=False),
     DoubleGen(nullable=False),
     StringGen(nullable=False),
+    pytest.param(DecimalGen(nullable=False),
+                 marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
+                                                "https://fastparquet.readthedocs.io/en/latest/details.html#data-types")),
 ], ids=idfn)
 def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
     data_path = spark_tmp_path + "/FASTPARQUET_SINGLE_COLUMN_INPUT"
     gen = StructGen([('a', data_gen)], nullable=False)
     # Write data with CPU session.
     with_cpu_session(
-        lambda spark: gen_df(spark, gen, 100).repartition(1).write.mode('overwrite').parquet(data_path)
+        lambda spark: gen_df(spark, gen, 4096).repartition(1).write.mode('overwrite').parquet(data_path)
     )
     # Read Parquet with CPU (fastparquet) and GPU (plugin), and compare records.
     assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
 
+
+@pytest.mark.parametrize('corrected_conf', [{'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED'}])
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(DateGen(nullable=False),
+                 marks=pytest.mark.xfail(reason="fastparquet reads far future dates (e.g. year=8705) incorrectly.")),
+    pytest.param(DateGen(nullable=False, start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31)),
+                         marks=pytest.mark.xfail(reason="fastparquet reads dates as datetime."))
+], ids=idfn)
+def test_read_fastparquet_single_date_column_tables(data_gen, spark_tmp_path, corrected_conf):
+    data_path = spark_tmp_path + "/FASTPARQUET_SINGLE_COLUMN_INPUT"
+    gen = StructGen([('a', data_gen)], nullable=False)
+    # Write data with CPU session.
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen, 2048).repartition(1).write.mode('overwrite').parquet(data_path),
+        conf=corrected_conf
+    )
+    # Read Parquet with CPU (fastparquet) and GPU (plugin), and compare records.
+    assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path), conf=corrected_conf)
