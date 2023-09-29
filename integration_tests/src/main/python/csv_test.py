@@ -565,7 +565,7 @@ def test_csv_read_count(spark_tmp_path):
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize("timestamp_type", [
-    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.skipif(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
+    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.xfail(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
     "TIMESTAMP_NTZ"])
 def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
@@ -576,7 +576,7 @@ def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part,
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize("timestamp_type", [
-    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.skipif(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
+    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.xfail(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
     "TIMESTAMP_NTZ"])
 def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
