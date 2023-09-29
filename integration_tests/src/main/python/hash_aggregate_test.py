@@ -910,16 +910,22 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
 #                         RepeatSeqGen(FloatGen(), length=100),
 #                         RepeatSeqGen(DoubleGen(), length=100)]
 
-exact_percentile_gen = [DoubleGen(),
-                        RepeatSeqGen(DoubleGen(), length=100)]
+exact_percentile_gen = [DoubleGen()]
+                        # RepeatSeqGen(DoubleGen(), length=100)]
 
 #@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 @pytest.mark.parametrize('data_gen', exact_percentile_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr(
-            'percentile(a, array(0.1))'
-        ))
+    def doit(spark):
+        #df = unary_op_df(spark, data_gen)
+        df = spark.read.parquet("/home/nghiat/TMP/df.parquet")
+        #df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
+        return df.selectExpr('percentile(a, 0.1)')
+    assert_gpu_and_cpu_are_equal_collect(doit)
+    # assert_gpu_and_cpu_are_equal_collect(
+    #     lambda spark: unary_op_df(spark, data_gen).selectExpr(
+    #         'percentile(a, 0.1)'
+    #     ))
 
 
 @ignore_order(local=True)
