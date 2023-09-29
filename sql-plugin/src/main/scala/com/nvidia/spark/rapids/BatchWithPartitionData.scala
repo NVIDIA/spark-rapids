@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -134,7 +135,7 @@ class BatchWithPartitionDataIterator(
 }
 
 object BatchWithPartitionDataUtils {
-  private val cuDF_LIMIT: Long = (1L << 31) - 1
+  private val CUDF_COLUMN_SIZE_LIMIT: Long = new RapidsConf(SQLConf.get).cudfColumnSizeLimit
 
   /**
    * Splits partition data (values and row counts) into smaller batches, ensuring that
@@ -230,17 +231,17 @@ object BatchWithPartitionDataUtils {
     val currentBatch = ArrayBuffer[PartitionRowData]()
     // Initialize an array to store the size of the current batch for each column
     val sizeOfBatch = Array.fill(partSchema.length)(0L)
-    var partIndex = -1
+    var partIndex = 0
     // Variables to keep track of split occurrence and processed rows
     // Note: These variables can be replaced by an Option. Keep them explicit for more clarity.
     var (splitOccurred, processedRows) = (false, 0)
+    var rowsInPartition = 0
     while (partIndex < partRows.length) {
-      val rowsToProcess = if(splitOccurred) {
+      rowsInPartition = if(splitOccurred) {
         // If there has been a split, there are rows remaining in current partition for processing
-        partRows(partIndex).toInt - processedRows
+        rowsInPartition - processedRows
       } else {
-        // Get next partition for processing
-        partIndex += 1
+        // Else get next partition
         partRows(partIndex).toInt
       }
       splitOccurred = false
@@ -254,12 +255,13 @@ object BatchWithPartitionDataUtils {
         if(field.dataType == StringType) {
           val singleValue = valuesInPartition.getString(colIndex)
           val sizeOfSingleValue = singleValue.getBytes("UTF-8").length.toLong
-          val sizeOfPartition = rowsToProcess * sizeOfSingleValue
+          val sizeOfPartition = rowsInPartition * sizeOfSingleValue
           // Check if adding the partition to the current batch exceeds cuDF limit
-          splitOccurred = sizeOfBatch(colIndex) + sizeOfPartition > cuDF_LIMIT
+          splitOccurred = sizeOfBatch(colIndex) + sizeOfPartition > CUDF_COLUMN_SIZE_LIMIT
           if (splitOccurred) {
             // Calculate max row counts that can fit.
-            processedRows = ((cuDF_LIMIT - sizeOfBatch(colIndex)) / sizeOfSingleValue).toInt
+            processedRows =
+              ((CUDF_COLUMN_SIZE_LIMIT - sizeOfBatch(colIndex)) / sizeOfSingleValue).toInt
             currentBatch.append(PartitionRowData(valuesInPartition, processedRows))
             // Add current batch to result batches and reset current batch.
             resultBatches.append(currentBatch.toArray)
@@ -271,9 +273,11 @@ object BatchWithPartitionDataUtils {
         }
         colIndex += 1
       }
-      // If there was no split, all remaining rows can be added in current batch
+      // If there was no split, all rows can be added in current batch and increment partIndex
+      // to process next partition.
       if(!splitOccurred) {
-        currentBatch.append(PartitionRowData(valuesInPartition, rowsToProcess))
+        currentBatch.append(PartitionRowData(valuesInPartition, rowsInPartition))
+        partIndex += 1
       }
     }
     // Add the last remaining batch to resultBatches
