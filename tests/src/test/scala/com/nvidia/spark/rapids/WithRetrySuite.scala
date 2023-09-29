@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
@@ -297,7 +298,7 @@ class WithRetrySuite
       false
     }
   }
-  private class SimpleCheckpointRestore(var value:Int) extends CheckpointRestore {
+  private class SimpleCheckpointRestore(var value:Int) extends Retryable {
     private var lastValue:Int = value
     def setValue(newVal: Int) = {
       value = newVal

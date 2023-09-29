@@ -716,6 +716,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_FLOAT_FORMAT_NUMBER = conf("spark.rapids.sql.formatNumberFloat.enabled")
+    .doc("format_number with floating point types on the GPU returns results that have " +
+      "a different precision than the default results of Spark.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
       .doc("Casting from floating point types to integral types on the GPU supports a " +
@@ -2331,6 +2337,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
+
+  lazy val isFloatFormatNumberEnabled: Boolean = get(ENABLE_FLOAT_FORMAT_NUMBER)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 

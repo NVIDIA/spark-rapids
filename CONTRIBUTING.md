@@ -144,8 +144,9 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 
 ### Building against different CUDA Toolkit versions
 
-You can build against different versions of the CUDA Toolkit by using one of the following profiles:
-* `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
+You can build against different versions of the CUDA Toolkit by modifying the variable `cuda.version`:
+* `-Dcuda.version=cuda11` (CUDA 11.x, default)
+* `-Dcuda.version=cuda12` (CUDA 12.x)
 
 ### Building a Distribution for a Single Spark Release
 
@@ -180,6 +181,16 @@ flag if cross-compilation is required.
 
 ```bash
 mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
+```
+
+### Building and Testing with ARM
+
+To build our project on ARM platform, please add `-Parm64` to your Maven commands.
+NOTE: Build process does not require an ARM machine, so if you want to build the artifacts only
+on X86 machine, please also add `-DskipTests` in commands.
+
+```bash
+mvn clean verify -Dbuildver=311 -Parm64
 ```
 
 ### Iterative development during local testing

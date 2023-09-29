@@ -25,6 +25,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, GenericRow}
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -207,7 +208,12 @@ object GpuBatchUtilsSuite {
     externalRows.toArray
   }
 
-  private def createValueForType(i: Int, r: Random, dt: DataType, nullable: Boolean): Any = {
+  private def createValueForType(
+      i: Int,
+      r: Random,
+      dt: DataType,
+      nullable: Boolean,
+      isInternal: Boolean = true): Any = {
     dt match {
       case DataTypes.BooleanType => maybeNull(nullable, i, r.nextBoolean())
       case DataTypes.ByteType => maybeNull(nullable, i, r.nextInt().toByte)
@@ -225,30 +231,43 @@ object GpuBatchUtilsSuite {
       case dataType: DecimalType =>
         val upperBound = (0 until dataType.precision).foldLeft(1L)((x, _) => x * 10)
         val unScaledValue = r.nextLong() % upperBound
-        maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
+        val d = maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
+        if (d != null && !isInternal) {
+          d.asInstanceOf[Decimal].toJavaBigDecimal
+        } else {
+          d
+        }
       case dataType@DataTypes.StringType =>
+        val length = if (nullable) dataType.defaultSize * 2 else dataType.defaultSize
+        val utf8String = createUTF8String(length)
+        val string = if (!isInternal) utf8String.toString() else utf8String
+
         if (nullable) {
           // since we want a deterministic test that compares the estimate with actual
           // usage we need to make sure the average length of strings is `dataType.defaultSize`
           if (i % 2 == 0) {
             null
           } else {
-            createUTF8String(dataType.defaultSize * 2)
+            string
           }
         } else {
-          createUTF8String(dataType.defaultSize)
+          string
         }
       case dataType@DataTypes.BinaryType =>
+        val length = if (nullable) dataType.defaultSize * 2 else dataType.defaultSize
+        val bytes = r.nextString(length).getBytes
+        val binary = if (!isInternal) bytes.toSeq else bytes
+
         if (nullable) {
           // since we want a deterministic test that compares the estimate with actual usage we
           // need to make sure the average length of binary values is `dataType.defaultSize`
           if (i % 2 == 0) {
             null
           } else {
-            r.nextString(dataType.defaultSize * 2).getBytes
+            binary
           }
         } else {
-          r.nextString(dataType.defaultSize).getBytes
+          binary
         }
       case ArrayType(elementType, containsNull) =>
         if (nullable && i % 2 == 0) {
@@ -256,32 +275,47 @@ object GpuBatchUtilsSuite {
         } else {
           val arrayValues = new mutable.ArrayBuffer[Any]()
           for (_ <- 0 to r.nextInt(10)) {
-            arrayValues.append(createValueForType(i, r, elementType, containsNull))
+            arrayValues.append(createValueForType(i, r, elementType, containsNull, isInternal))
           }
-          arrayValues.toArray.toSeq
+          val array = ArrayData.toArrayData(arrayValues)
+          if (!isInternal && array != null) {
+            array.toSeq(elementType)
+          } else {
+            array
+          }
         }
-      case MapType(_, _, valueContainsNull) =>
+      case MapType(keyType, valueType, valueContainsNull) =>
         if (nullable && i % 2 == 0) {
           null
         } else {
-          // TODO: add other types
-          val map = mutable.Map[String, String]()
-          for ( j <- 0 until 10) {
+          val map = mutable.Map[Any, Any]()
+          for (j <- 0 until 10) {
             if (valueContainsNull && j % 2 == 0) {
-              map += (createUTF8String(10).toString -> null)
+              map += (createValueForType(i, r, keyType, nullable = false, isInternal) -> null)
             } else {
-              map += (createUTF8String(10).toString -> createUTF8String(10).toString)
+              map += (createValueForType(i, r, keyType, nullable = false, isInternal) ->
+                createValueForType(i, r, valueType, nullable = false, isInternal))
             }
           }
-          map
+          val mapData = ArrayBasedMapData(map)
+          if (mapData != null && !isInternal) {
+            ArrayBasedMapData.toScalaMap(mapData)
+          } else {
+            mapData
+          }
         }
       case StructType(fields) =>
-        new GenericRow(fields.map(f => createValueForType(i, r, f.dataType, nullable)))
-      case unknown =>  throw new UnsupportedOperationException(
+        if (!isInternal) {
+          new GenericRow(fields.map(f =>
+            createValueForType(i, r, f.dataType, nullable = f.nullable, isInternal = false)))
+        } else {
+          InternalRow(fields.map(f => createValueForType(i, r, f.dataType, nullable)): _*)
+        }
+
+      case unknown => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
   }
-
 
   private def createRowValues(i: Int, r: Random, fields: Array[StructField]) = {
     val values: Array[Any] = fields.map(field => {
@@ -291,34 +325,9 @@ object GpuBatchUtilsSuite {
   }
 
   private def createExternalRowValues(i: Int, r: Random, fields: Array[StructField]): Array[Any] = {
-    val values: Array[Any] = fields.map(field => {
-      field.dataType match {
-        // Since it's using the createUTF8String method for InternalRow case, need to convert to
-        // String for Row case.
-        case StringType =>
-          val utf8StringOrNull = createValueForType(i, r, field.dataType, field.nullable)
-          if (utf8StringOrNull != null) {
-            utf8StringOrNull.asInstanceOf[UTF8String].toString
-          } else {
-            utf8StringOrNull
-          }
-        case BinaryType =>
-          val b = createValueForType(i, r, field.dataType, field.nullable)
-          if (b != null) {
-            b.asInstanceOf[Array[Byte]].toSeq
-          } else {
-            b
-          }
-        case DecimalType() =>
-          val d = createValueForType(i, r, field.dataType, field.nullable)
-          if (d != null) {
-            d.asInstanceOf[Decimal].toJavaBigDecimal
-          } else {
-            d
-          }
-        case _ => createValueForType(i, r, field.dataType, field.nullable)
-      }
-    })
+    val values: Array[Any] = fields.map { field => 
+        createValueForType(i, r, field.dataType, field.nullable, isInternal = false)
+    }
     values
   }
 

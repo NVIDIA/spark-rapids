@@ -595,8 +595,7 @@ _full_gen_data_for_collect_op = _gen_data_for_collect_op + [[
 _repeat_agg_column_for_collect_list_op = [
         RepeatSeqGen(ArrayGen(int_gen), length=15),
         RepeatSeqGen(all_basic_struct_gen, length=15),
-        RepeatSeqGen(StructGen([['c0', all_basic_struct_gen]]), length=15),
-        RepeatSeqGen(simple_string_to_string_map_gen, length=15)]
+        RepeatSeqGen(StructGen([['c0', all_basic_struct_gen]]), length=15)]
 
 _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
@@ -666,19 +665,43 @@ def test_min_max_group_by(data_gen):
             .groupby('a')
             .agg(f.min('b'), f.max('b')))
 
-# to avoid ordering issues with collect_list we do it all in a single task
+# To avoid ordering issues with collect_list, sorting the arrays that are returned.
+# Note, using sort_array() on the CPU, because sort_array() does not yet
+# support sorting certain nested/arbitrary types on the GPU
+# See https://github.com/NVIDIA/spark-rapids/issues/3715
+# and https://github.com/rapidsai/cudf/issues/11222
+@allow_non_gpu("ProjectExec", "SortArray")
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
+    def doit(spark):
+        df = gen_df(spark, data_gen, length=100)\
+            .groupby('a')\
+            .agg(f.collect_list('b').alias("blist"))
+        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
+        # to ObjectHashAggregateExec
+        return spark.createDataFrame(df.rdd, schema=df.schema).select("a", f.sort_array("blist"))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100, num_slices=1)
-            .groupby('a')
-            .agg(f.collect_list('b')),
-        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower(),
-            # Disable RADIX sort as the CPU sort is not stable if it is
-            'spark.sql.sort.enableRadixSort': False,
-            'spark.sql.shuffle.partitions': '1'})
+        doit,
+        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
+def test_hash_groupby_collect_list_of_maps(use_obj_hash_agg):
+    gens = [("a", RepeatSeqGen(LongGen(), length=20)), ("b", simple_string_to_string_map_gen)]
+    def doit(spark):
+        df = gen_df(spark, gens, length=100) \
+            .groupby('a') \
+            .agg(f.collect_list('b').alias("blist"))
+        # Spark cannot sort maps, so explode the list back into rows. Yes, this is essentially
+        # testing whether after a collect_list we can get back to the original dataframe with
+        # an explode.
+        return spark.createDataFrame(df.rdd, schema=df.schema).select("a", f.explode("blist"))
+    assert_gpu_and_cpu_are_equal_collect(
+        doit,
+        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)

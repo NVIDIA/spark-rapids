@@ -13,32 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "321db"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.jni.CastStrings
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
 
-object GpuCastShims {
-  def CastDecimalToString(decimalInput: ColumnView, usePlainString: Boolean): ColumnVector = {
-    CastStrings.fromDecimal(decimalInput)
+object KeyGroupedPartitioningShim {
+  def getUniquePartitions(p: KeyGroupedPartitioning): Seq[InternalRow] = {
+    p.uniquePartitionValues
   }
 }
