@@ -914,18 +914,31 @@ exact_percentile_data_gen = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), Flo
     DoubleGen().with_special_case(math.nan, 500.0)
                .with_special_case(math.inf, 500.0)]
 
+exact_percentile_reduction_data_gen = [
+    [('value', data_gen),
+     ('freq', LongGen(min_val=1, max_val=1000000, nullable=False))]
+    for data_gen in exact_percentile_data_gen
+]
+
 @approximate_float
-@pytest.mark.parametrize('data_gen', exact_percentile_data_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr(
-            'percentile(a, 0.1)',
-            'percentile(a, 0)',
-            'percentile(a, 1)',
-            'percentile(a, array(0.1))',
-            'percentile(a, array())',
-            'percentile(a, array(0.1, 0.5, 0.9))',
-            'percentile(a, array(0, 0.0001, 0.5, 0.9999, 1))'
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'percentile(value, 0.1)',
+            'percentile(value, 0)',
+            'percentile(value, 1)',
+            'percentile(value, array(0.1))',
+            'percentile(value, array())',
+            'percentile(value, array(0.1, 0.5, 0.9))',
+            'percentile(value, array(0, 0.0001, 0.5, 0.9999, 1))',
+            'percentile(value, 0.1, freq)',
+            'percentile(value, 0, freq)',
+            'percentile(value, 1, freq)',
+            'percentile(value, array(0.1), freq)',
+            'percentile(value, array(), freq)',
+            'percentile(value, array(0.1, 0.5, 0.9), freq)',
+            'percentile(value, array(0, 0.0001, 0.5, 0.9999, 1), freq)'
         )
     )
 
