@@ -57,6 +57,13 @@ configuration can be independently changed for writers and readers using:
 `spark.rapids.shuffle.multiThreaded.[writer|reader].threads`. An appropriate value for these
 pools is the number of cores in the system divided by the number of executors per machine.
 
+On the reader side, when blocks are received from the network, they are queued onto these threads 
+for decompression and decode. The amount of bytes we allow in flight per Spark task is 
+controlled by: `spark.rapids.shuffle.multiThreaded.maxBytesInFlight`, and it is set to 
+128MB-per-task as a default. Note that this memory comes from the Netty off-heap pool, and this
+is sized at startup automatically by Netty, but this limit can be controlled by setting
+`-Dio.netty.maxDirectMemory=[amount in Bytes]` under `spark.executor.extraJavaOptions`.
+
 ## UCX Mode
 
 ---
