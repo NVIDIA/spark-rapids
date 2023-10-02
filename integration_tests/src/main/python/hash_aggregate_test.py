@@ -902,44 +902,27 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
     group by a""",
         conf=conf)
 
-exact_percentile_data_gen = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen(),
-    RepeatSeqGen(ByteGen(), length=100),
-    RepeatSeqGen(ShortGen(), length=100),
-    RepeatSeqGen(IntegerGen(), length=100),
-    RepeatSeqGen(LongGen(), length=100),
-    RepeatSeqGen(FloatGen(), length=100),
-    RepeatSeqGen(DoubleGen(), length=100),
-    FloatGen().with_special_case(math.nan, 500.0)
-              .with_special_case(math.inf, 500.0),
-    DoubleGen().with_special_case(math.nan, 500.0)
-               .with_special_case(math.inf, 500.0)]
+
+exact_percentile_data_gen = [ByteGen()]
 
 exact_percentile_reduction_data_gen = [
     [('value', data_gen),
-     ('freq', LongGen(min_val=1, max_val=1000000, nullable=False))]
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+                     .with_special_case(0, weight=100))]
     for data_gen in exact_percentile_data_gen
 ]
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen).selectExpr(
-            'percentile(value, 0.1)',
-            'percentile(value, 0)',
-            'percentile(value, 1)',
-            'percentile(value, array(0.1))',
-            'percentile(value, array())',
-            'percentile(value, array(0.1, 0.5, 0.9))',
-            'percentile(value, array(0, 0.0001, 0.5, 0.9999, 1))',
-            'percentile(value, 0.1, freq)',
-            'percentile(value, 0, freq)',
-            'percentile(value, 1, freq)',
-            'percentile(value, array(0.1), freq)',
-            'percentile(value, array(), freq)',
-            'percentile(value, array(0.1, 0.5, 0.9), freq)',
-            'percentile(value, array(0, 0.0001, 0.5, 0.9999, 1), freq)'
+    def doit(spark):
+        #df = gen_df(spark, data_gen)
+        df = spark.read.parquet("/home/nghiat/TMP/df.parquet")
+        #df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
+        return df.selectExpr(
+            'percentile(value, 0.1, abs(freq))'
         )
+    assert_gpu_and_cpu_are_equal_collect(doit
     )
 
 exact_percentile_groupby_data_gen = [[

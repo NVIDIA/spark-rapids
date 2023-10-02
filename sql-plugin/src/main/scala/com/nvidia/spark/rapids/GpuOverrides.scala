@@ -3407,14 +3407,12 @@ object GpuOverrides extends Logging {
       ExprChecks.reductionAndGroupByAgg(
         // The output can be a single number or array depending on whether percentiles param
         // is a single number or an array.
-        TypeSig.gpuNumeric +
-          TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
-        TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
-          TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+        TypeSig.gpuNumeric + TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.cpuNumeric + TypeSig.ARRAY.nested(TypeSig.cpuNumeric),
         Seq(
           ParamCheck("input",
             TypeSig.gpuNumeric,
-            TypeSig.cpuNumeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+            TypeSig.cpuNumeric),
           ParamCheck("percentage",
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
@@ -3436,14 +3434,9 @@ object GpuOverrides extends Logging {
               isReduction = false)
             case _ => throw new IllegalStateException(s"Invalid aggregation context: $context")
           }
-//          val Seq(value, percentage, frequency) = childExprs
-//          frequency match {
-//            case GpuLiteral(freq, LongType) if freq == 1 =>
-//              GpuPercentileDefault(value, percentage)
-//            case v : Any =>
-//              GpuPercentileWithFrequency(value, percentage, frequency)
-//          }
         }
+        // Declare the data type of the internal buffer so it can be serialized and
+        // deserialized correctly during shuffling.
         override def aggBufferAttribute: AttributeReference = {
           val aggBuffer = c.aggBufferAttributes.head
           val dataType: DataType = ArrayType(StructType(Seq(
@@ -3451,10 +3444,8 @@ object GpuOverrides extends Logging {
             StructField("frequency", LongType))), containsNull = false)
           aggBuffer.copy(dataType = dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
-//        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
-//          new CpuToGpuPercentileBufferConverter(c.child.dataType)
-//        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
-//          new GpuToCpuPercentileBufferConverter()
+
+        // Does not support fallback to CPU in the meantime.
         override val supportBufferConversion: Boolean = false
         override val needsAnsiCheck: Boolean = false
       }),
