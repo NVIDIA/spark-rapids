@@ -217,7 +217,7 @@ To run the tests separate from the build go to the `integration_tests` directory
 `pytest-xdist` you will need to submit it as a regular python application and have `findspark`
 installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
 `spark-submit` or with the cluster when it is
-[setup](../docs/get-started/getting-started-on-prem.md).
+[setup](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/on-premise.html).
 The command line arguments to `runtests.py` are the same as for
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
