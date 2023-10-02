@@ -182,7 +182,7 @@ object BatchWithPartitionDataUtils {
 
   /**
    * Splits partitions into smaller batches, ensuring that the batch size
-   * for each column does not exceed the specified cuDF limit.
+   * for each column does not exceed the specified limit.
    *
    * Data structures:
    *  - sizeOfBatch:   Array that stores the size of batches for each column.
@@ -192,28 +192,26 @@ object BatchWithPartitionDataUtils {
    * Algorithm:
    *  - Initialize `sizeOfBatch` and `resultBatches`.
    *  - Iterate through `partRows`:
-   *    - Get rowsToProcess - This can either be rows from new partition or
+   *    - Get rowsInPartition - This can either be rows from new partition or
    *      rows remaining to be processed if there was a split.
-   *    - Iterator through each column:
-   *      - Calculate the size of the current partition for the column.
-   *      - Check if adding this partition to the current batch would exceed cuDF limit.
-   *        - If it does, split the partition:
-   *          - Calculate max num of rows we can add to current batch.
-   *          - Append entry (InternalRow, Row counts that fit) to the current batch.
-   *          - Append current batch to the result batches.
-   *          - Exit inner loop, as we cannot add more partitions to current batch
-   *            and process remaining rows.
-   *        - Otherwise, increase the `sizeOfBatch` for the column.
-   *    - If there was no split, append entry (InternalRow, rowsToProcess) to the current batch.
-   *      This implies all remaining rows can be added in current batch without exceeding cuDF
-   *      limit.
+   *    - For each column, calculate the size of the partition.
+   *    - Check if adding any partition to the current batch would exceed batch size limit.
+   *    - If it does, split the partition:
+   *      - Calculate max num of rows we can add to current batch.
+   *      - Append entry (InternalRow, max rows that fit) to the current batch.
+   *      - Append current batch to the result batches.
+   *      - Reset variables.
+   *    - If there was no split,
+   *      - Append entry (InternalRow, rowsInPartition) to the current batch.
+   *      - Update sizeOfBatch with size of partition for each column.
+   *      - This implies all remaining rows can be added in current batch without exceeding limit.
    *
    * Example:
    * {{{
    * Input:
    *    partition rows:   [10, 40, 70, 10, 11]
    *    partition values: [ [abc, ab], [bc, ab], [abc, bc], [aa, cc], [ade, fd] ]
-   *    cuDF limit:  300 bytes
+   *    limit:  300 bytes
    *
    * Result:
    * [
@@ -223,60 +221,48 @@ object BatchWithPartitionDataUtils {
    * }}}
    *
    * @return An array of batches, containing (row counts, partition values) pairs,
-   *         such that each batch's size is less than cuDF limit.
+   *         such that each batch's size is less than batch size limit.
    */
-  private def splitPartitionDataIntoGroups(partRows: Array[Long], partValues: Array[InternalRow],
-      partSchema: StructType): Array[Array[PartitionRowData]] = {
+  private def splitPartitionDataIntoGroups(
+      partitionRowData: Array[PartitionRowData],
+      partSchema: StructType,
+      maxSizeOfBatch: Long = CUDF_COLUMN_SIZE_LIMIT): Array[Array[PartitionRowData]] = {
+    val allowedMaxSizeOfBatch = Math.min(CUDF_COLUMN_SIZE_LIMIT, maxSizeOfBatch)
     val resultBatches = ArrayBuffer[Array[PartitionRowData]]()
     val currentBatch = ArrayBuffer[PartitionRowData]()
-    // Initialize an array to store the size of the current batch for each column
     val sizeOfBatch = Array.fill(partSchema.length)(0L)
     var partIndex = 0
-    // Variables to keep track of split occurrence and processed rows
-    // Note: These variables can be replaced by an Option. Keep them explicit for more clarity.
-    var (splitOccurred, processedRows) = (false, 0)
+    var splitOccurred = false
     var rowsInPartition = 0
-    while (partIndex < partRows.length) {
-      rowsInPartition = if(splitOccurred) {
-        // If there has been a split, there are rows remaining in current partition for processing
-        rowsInPartition - processedRows
-      } else {
-        // Else get next partition
-        partRows(partIndex).toInt
+    while (partIndex < partitionRowData.length) {
+      // If there was no split, get next partition else process remaining rows in current partition.
+      if (!splitOccurred) {
+        rowsInPartition = partitionRowData(partIndex).rowNum
       }
-      splitOccurred = false
-      processedRows = 0
-      val valuesInPartition = partValues(partIndex)
-      // Loop through all columns or until split condition is reached
-      var colIndex = 0
-      while(colIndex < partSchema.length && !splitOccurred) {
-        val field = partSchema(colIndex)
-        // Assumption: Columns of other data type would not have fit already. Do nothing.
-        if(field.dataType == StringType) {
+      val valuesInPartition = partitionRowData(partIndex).rowValue
+      val sizeOfPartition = partSchema.zipWithIndex.map {
+        case (field, colIndex) if field.dataType == StringType =>
+          // Assumption: Columns of other data type would not have fit already. Do nothing.
           val singleValue = valuesInPartition.getString(colIndex)
           val sizeOfSingleValue = singleValue.getBytes("UTF-8").length.toLong
-          val sizeOfPartition = rowsInPartition * sizeOfSingleValue
-          // Check if adding the partition to the current batch exceeds cuDF limit
-          splitOccurred = sizeOfBatch(colIndex) + sizeOfPartition > CUDF_COLUMN_SIZE_LIMIT
-          if (splitOccurred) {
-            // Calculate max row counts that can fit.
-            processedRows =
-              ((CUDF_COLUMN_SIZE_LIMIT - sizeOfBatch(colIndex)) / sizeOfSingleValue).toInt
-            currentBatch.append(PartitionRowData(valuesInPartition, processedRows))
-            // Add current batch to result batches and reset current batch.
-            resultBatches.append(currentBatch.toArray)
-            currentBatch.clear()
-            sizeOfBatch.indices.foreach(i => sizeOfBatch(i) = 0)
-          } else {
-            sizeOfBatch(colIndex) += sizeOfPartition
-          }
-        }
-        colIndex += 1
+          rowsInPartition * sizeOfSingleValue
+        case _ => 0
       }
-      // If there was no split, all rows can be added in current batch and increment partIndex
-      // to process next partition.
-      if(!splitOccurred) {
+      splitOccurred = sizeOfBatch.zip(sizeOfPartition).exists {
+        case (batchSize, partitionSize) => batchSize + partitionSize > allowedMaxSizeOfBatch
+      }
+      if (splitOccurred) {
+        // Calculate max rows that can fit.
+        val maxRows = calculateMaxRows(sizeOfBatch, valuesInPartition, allowedMaxSizeOfBatch)
+        currentBatch.append(PartitionRowData(valuesInPartition, maxRows))
+        resultBatches.append(currentBatch.toArray)
+        currentBatch.clear()
+        sizeOfBatch.indices.foreach(i => sizeOfBatch(i) = 0)
+        rowsInPartition -= maxRows
+      } else {
+        // If there was no split, add all rows in current batch and process next partition.
         currentBatch.append(PartitionRowData(valuesInPartition, rowsInPartition))
+        sizeOfBatch.indices.foreach(i => sizeOfBatch(i) += sizeOfPartition(i))
         partIndex += 1
       }
     }
@@ -286,6 +272,23 @@ object BatchWithPartitionDataUtils {
     }
     resultBatches.toArray
   }
+
+  /**
+   * From the given batch size, calculate the max number of rows that can fit without exceeding the
+   * limit.
+   */
+  private def calculateMaxRows(sizeOfBatch: Array[Long], valuesInPartition: InternalRow,
+                               maxSizeOfBatch: Long): Int = {
+    val colWithMaxSize = sizeOfBatch.zipWithIndex.max._2
+    val singleValue = valuesInPartition.getString(colWithMaxSize)
+    val sizeOfSingleValue = singleValue.getBytes("UTF-8").length.toLong
+    // Calculate max partition size that can fit.
+    val maxPartitionSize = maxSizeOfBatch - sizeOfBatch(colWithMaxSize)
+    // Calculated max row numbers that can fit.
+    val maxRows = (maxPartitionSize / sizeOfSingleValue).toInt
+    maxRows
+  }
+
 
   /**
    * Splits the input ColumnarBatch into smaller batches, wraps these batches with partition
