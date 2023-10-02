@@ -492,6 +492,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(e) if containsCudaFatalException(e) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
+            GpuCoreDumpHandler.waitForDump(timeoutSecs = 60)
             logGpuDebugInfoAndExit(systemExitCode = 20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +

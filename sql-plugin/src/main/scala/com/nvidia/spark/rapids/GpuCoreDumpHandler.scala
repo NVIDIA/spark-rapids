@@ -42,6 +42,7 @@ object GpuCoreDumpHandler extends Logging {
   private var executor: Option[ExecutorService] = None
   private var dumpedPath: Option[String] = None
   private var namedPipeFile: File = _
+  private var isDumping: Boolean = false
 
   /**
    * Configures the executor launch environment for GPU core dumps, if applicable.
@@ -93,6 +94,19 @@ object GpuCoreDumpHandler extends Logging {
     }
   }
 
+  /**
+   * Wait for a GPU dump in progress, if any, to complete
+   * @param timeoutSecs maximum amount of time to wait before returning
+   * @return true if the wait timedout, false otherwise
+   */
+  def waitForDump(timeoutSecs: Int): Boolean = {
+    val endTime = System.nanoTime + TimeUnit.SECONDS.toNanos(timeoutSecs)
+    while (isDumping && System.nanoTime < endTime) {
+      Thread.sleep(10)
+    }
+    System.nanoTime < endTime
+  }
+
   def shutdown(): Unit = {
     executor.foreach { exec =>
       exec.shutdownNow()
@@ -137,6 +151,7 @@ object GpuCoreDumpHandler extends Logging {
     try {
       logInfo(s"Monitoring ${namedPipe.getAbsolutePath} for GPU core dumps")
       withResource(new java.io.FileInputStream(namedPipe)) { in =>
+        isDumping = true
         val appId = pluginCtx.conf.get("spark.app.id")
         val executorId = pluginCtx.executorID()
         val dumpPath = new Path(dumpDirPath,
@@ -161,6 +176,8 @@ object GpuCoreDumpHandler extends Logging {
     } catch {
       case e: Exception =>
         logError("Error copying GPU dump", e)
+    } finally {
+      isDumping = false
     }
     // Always drain the pipe to avoid blocking the thread that triggers the coredump
     while (namedPipe.exists()) {
