@@ -901,8 +901,7 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
     group by a""",
         conf=conf)
 
-
-exact_percentile_gen_data = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen(),
+exact_percentile_data_gen = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen(),
                         RepeatSeqGen(ByteGen(), length=100),
                         RepeatSeqGen(ShortGen(), length=100),
                         RepeatSeqGen(IntegerGen(), length=100),
@@ -910,45 +909,31 @@ exact_percentile_gen_data = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), Flo
                         RepeatSeqGen(FloatGen(), length=100),
                         RepeatSeqGen(DoubleGen(), length=100)]
 
-# exact_percentile_gen_data = [ByteGen()]
-
-exact_percentile_gen = [[
-    ('a', RepeatSeqGen(IntegerGen(), length=100)),
-    ('b', gen)] for gen in exact_percentile_gen_data]
-
-
-
 @approximate_float
-@pytest.mark.parametrize('data_gen', exact_percentile_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', exact_percentile_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
-    def doit(spark):
-        df = gen_df(spark, data_gen)
-        # df = spark.read.parquet("/home/nghiat/TMP/df.parquet")
-        #df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
-        return df.selectExpr(
-            'percentile(b, 0.1)',
-            'percentile(b, 0)',
-            'percentile(b, 1)',
-            'percentile(b, array(0.1))',
-            'percentile(b, array())',
-            'percentile(b, array(0.1, 0.5, 0.9))',
-            'percentile(b, array(0, 0.0001, 0.5, 0.9999, 1))'
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'percentile(a, 0.1)',
+            'percentile(a, 0)',
+            'percentile(a, 1)',
+            'percentile(a, array(0.1))',
+            'percentile(a, array())',
+            'percentile(a, array(0.1, 0.5, 0.9))',
+            'percentile(a, array(0, 0.0001, 0.5, 0.9999, 1))'
         )
-    assert_gpu_and_cpu_are_equal_collect(doit)
-    # assert_gpu_and_cpu_are_equal_collect(
-    #     lambda spark: unary_op_df(spark, data_gen).selectExpr(
-    #         'percentile(a, 0.1)'
-    #     ))
+    )
 
-@shuffle_test
+exact_percentile_groupby_data_gen = [[
+    ('a', RepeatSeqGen(IntegerGen(), length=100)),
+    ('b', gen)] for gen in exact_percentile_data_gen]
+
 @approximate_float
 @ignore_order
-@pytest.mark.parametrize('data_gen', exact_percentile_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 def test_exact_percentile_groupby(data_gen):
-    def doit(spark):
-        df = gen_df(spark, data_gen)
-        #df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
-        return df.groupby('a').agg(
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen).groupby('a').agg(
             f.expr('percentile(b, 0.1)'),
             f.expr('percentile(b, 0)'),
             f.expr('percentile(b, 1)'),
@@ -957,7 +942,7 @@ def test_exact_percentile_groupby(data_gen):
             f.expr('percentile(b, array(0.1, 0.5, 0.9))'),
             f.expr('percentile(b, array(0, 0.0001, 0.5, 0.9999, 1))')
         )
-    assert_gpu_and_cpu_are_equal_collect(doit)
+    )
 
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
