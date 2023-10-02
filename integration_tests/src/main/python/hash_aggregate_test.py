@@ -910,10 +910,10 @@ exact_percentile_gen_data = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), Flo
                         RepeatSeqGen(FloatGen(), length=100),
                         RepeatSeqGen(DoubleGen(), length=100)]
 
-# exact_percentile_gen_data = [IntegerGen()]
+# exact_percentile_gen_data = [ByteGen()]
 
 exact_percentile_gen = [[
-    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('a', RepeatSeqGen(IntegerGen(), length=100)),
     ('b', gen)] for gen in exact_percentile_gen_data]
 
 
@@ -927,9 +927,12 @@ def test_exact_percentile_reduction(data_gen):
         #df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
         return df.selectExpr(
             'percentile(b, 0.1)',
+            'percentile(b, 0)',
+            'percentile(b, 1)',
             'percentile(b, array(0.1))',
             'percentile(b, array())',
-            'percentile(b, array(0.1, 0.5, 0.9))'
+            'percentile(b, array(0.1, 0.5, 0.9))',
+            'percentile(b, array(0, 0.0001, 0.5, 0.9999, 1))'
         )
     assert_gpu_and_cpu_are_equal_collect(doit)
     # assert_gpu_and_cpu_are_equal_collect(
@@ -937,15 +940,24 @@ def test_exact_percentile_reduction(data_gen):
     #         'percentile(a, 0.1)'
     #     ))
 
+@shuffle_test
 @approximate_float
+@ignore_order
 @pytest.mark.parametrize('data_gen', exact_percentile_gen, ids=idfn)
 def test_exact_percentile_groupby(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen)
-            .groupby('a')
-            .agg(f.expr('percentile(b, 0.1)')
-            )
-    )
+    def doit(spark):
+        df = gen_df(spark, data_gen)
+        #df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
+        return df.groupby('a').agg(
+            f.expr('percentile(b, 0.1)'),
+            f.expr('percentile(b, 0)'),
+            f.expr('percentile(b, 1)'),
+            f.expr('percentile(b, array(0.1))'),
+            f.expr('percentile(b, array())'),
+            f.expr('percentile(b, array(0.1, 0.5, 0.9))'),
+            f.expr('percentile(b, array(0, 0.0001, 0.5, 0.9999, 1))')
+        )
+    assert_gpu_and_cpu_are_equal_collect(doit)
 
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
