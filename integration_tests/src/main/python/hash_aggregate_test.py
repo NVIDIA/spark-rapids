@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,\
@@ -902,12 +903,16 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
         conf=conf)
 
 exact_percentile_data_gen = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen(),
-                        RepeatSeqGen(ByteGen(), length=100),
-                        RepeatSeqGen(ShortGen(), length=100),
-                        RepeatSeqGen(IntegerGen(), length=100),
-                        RepeatSeqGen(LongGen(), length=100),
-                        RepeatSeqGen(FloatGen(), length=100),
-                        RepeatSeqGen(DoubleGen(), length=100)]
+    RepeatSeqGen(ByteGen(), length=100),
+    RepeatSeqGen(ShortGen(), length=100),
+    RepeatSeqGen(IntegerGen(), length=100),
+    RepeatSeqGen(LongGen(), length=100),
+    RepeatSeqGen(FloatGen(), length=100),
+    RepeatSeqGen(DoubleGen(), length=100),
+    FloatGen().with_special_case(math.nan, 500.0)
+              .with_special_case(math.inf, 500.0),
+    DoubleGen().with_special_case(math.nan, 500.0)
+               .with_special_case(math.inf, 500.0)]
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', exact_percentile_data_gen, ids=idfn)
