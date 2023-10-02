@@ -202,8 +202,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def withCpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
-      // temp work around to unsupported timestamp type
-      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
     withSparkSession(c, f)
   }
 

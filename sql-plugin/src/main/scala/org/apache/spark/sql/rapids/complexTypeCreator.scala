@@ -145,6 +145,7 @@ object GpuCreateMap {
 
   def createMapFromKeysValuesAsStructs(dataType: MapType,
                                        listsOfKeyValueStructs : ColumnView): GpuColumnVector = {
+    GpuMapUtils.assertNoNullKeys(listsOfKeyValueStructs)
     withResource(listsOfKeyValueStructs.dropListDuplicatesWithKeysValues()) { deduped =>
       if (exceptionOnDupKeys) {
         // Compare child data row count before and after removing duplicates to determine

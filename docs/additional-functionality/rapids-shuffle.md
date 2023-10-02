@@ -31,6 +31,7 @@ in our plugin:
 | 3.3.3           | com.nvidia.spark.rapids.spark333.RapidsShuffleManager    |
 | 3.4.0           | com.nvidia.spark.rapids.spark340.RapidsShuffleManager    |
 | 3.4.1           | com.nvidia.spark.rapids.spark341.RapidsShuffleManager    |
+| 3.5.0           | com.nvidia.spark.rapids.spark350.RapidsShuffleManager    |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 | Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
 | Databricks 12.2 | com.nvidia.spark.rapids.spark332db.RapidsShuffleManager  |
@@ -55,6 +56,13 @@ By default, a thread pool of 20 threads is used for shuffle writes and reads. Th
 configuration can be independently changed for writers and readers using:
 `spark.rapids.shuffle.multiThreaded.[writer|reader].threads`. An appropriate value for these
 pools is the number of cores in the system divided by the number of executors per machine.
+
+On the reader side, when blocks are received from the network, they are queued onto these threads 
+for decompression and decode. The amount of bytes we allow in flight per Spark task is 
+controlled by: `spark.rapids.shuffle.multiThreaded.maxBytesInFlight`, and it is set to 
+128MB-per-task as a default. Note that this memory comes from the Netty off-heap pool, and this
+is sized at startup automatically by Netty, but this limit can be controlled by setting
+`-Dio.netty.maxDirectMemory=[amount in Bytes]` under `spark.executor.extraJavaOptions`.
 
 ## UCX Mode
 

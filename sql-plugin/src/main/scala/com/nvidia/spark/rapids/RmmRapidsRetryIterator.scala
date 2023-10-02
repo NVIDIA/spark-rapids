@@ -20,6 +20,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 import ai.rapids.cudf.CudfColumnSizeOverflowException
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -223,7 +224,7 @@ object RmmRapidsRetryIterator extends Logging {
   }
 
   /**
-   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * withRestoreOnRetry for Retryable. This helper function calls `fn` with no input and
    * returns the result. In the event of an OOM Retry exception, it calls the restore() method
    * of the input and then throws the oom exception.  This is intended to be used within the `fn`
    * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
@@ -231,11 +232,11 @@ object RmmRapidsRetryIterator extends Logging {
    *
    * @param r  a single item T
    * @param fn the work to perform. Takes no input and produces K
-   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam T element type that must be a `Retryable` subclass
    * @tparam K `fn` result type
    * @return a single item of type K
    */
-  def withRestoreOnRetry[T <: CheckpointRestore, K](r: T)(fn: => K): K = {
+  def withRestoreOnRetry[T <: Retryable, K](r: T)(fn: => K): K = {
     try {
       fn
     } catch {
@@ -250,7 +251,7 @@ object RmmRapidsRetryIterator extends Logging {
   }
 
   /**
-   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * withRestoreOnRetry for Retryable. This helper function calls `fn` with no input and
    * returns the result. In the event of an OOM Retry exception, it calls the restore() method
    * of the input and then throws the oom exception.  This is intended to be used within the `fn`
    * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
@@ -258,11 +259,11 @@ object RmmRapidsRetryIterator extends Logging {
    *
    * @param r  a Seq of item T
    * @param fn the work to perform. Takes no input and produces K
-   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam T element type that must be a `Retryable` subclass
    * @tparam K `fn` result type
    * @return a single item of type K
    */
-  def withRestoreOnRetry[T <: CheckpointRestore, K](r: Seq[T])(fn: => K): K = {
+  def withRestoreOnRetry[T <: Retryable, K](r: Seq[T])(fn: => K): K = {
     try {
       fn
     } catch {
@@ -671,18 +672,6 @@ object RmmRapidsRetryIterator extends Logging {
         Seq(AutoCloseableTargetSize(newTarget, target.minSize))
       }
   }
-}
-
-trait CheckpointRestore {
-  /**
-   * Save state so it can be restored in case of an OOM Retry.
-   */
-  def checkpoint(): Unit
-
-  /**
-   * Restore state that was checkpointed.
-   */
-  def restore(): Unit
 }
 
 /**

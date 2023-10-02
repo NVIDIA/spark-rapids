@@ -186,6 +186,7 @@ run_delta_lake_tests() {
   echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
   SPARK_32X_PATTERN="(3\.2\.[0-9])"
   SPARK_33X_PATTERN="(3\.3\.[0-9])"
+  SPARK_34X_PATTERN="(3\.4\.[0-9])"
 
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
@@ -195,6 +196,10 @@ run_delta_lake_tests() {
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
     DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
+  fi
+
+  if [[ $SPARK_VER =~ $SPARK_34X_PATTERN ]]; then
+    DELTA_LAKE_VERSIONS="2.4.0"
   fi
 
   if [ -z "$DELTA_LAKE_VERSIONS" ]; then

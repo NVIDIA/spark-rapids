@@ -324,24 +324,23 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
 
     val spark = SparkSession.active
-
-    fileFormat = cmd.fileFormat match {
-      case _: CSVFileFormat =>
-        willNotWorkOnGpu("CSV output is not supported")
-        None
-      case _: JsonFileFormat =>
-        willNotWorkOnGpu("JSON output is not supported")
-        None
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: TextFileFormat =>
-        willNotWorkOnGpu("text output is not supported")
-        None
-      case f =>
-        willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
-        None
+    val formatCls = cmd.fileFormat.getClass
+    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+      willNotWorkOnGpu("CSV output is not supported")
+      None
+    } else if (formatCls == classOf[JsonFileFormat]) {
+      willNotWorkOnGpu("JSON output is not supported")
+      None
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(formatCls)) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[TextFileFormat]) {
+      willNotWorkOnGpu("text output is not supported")
+      None
+    } else {
+      willNotWorkOnGpu(s"unknown file format: ${formatCls.getCanonicalName}")
+      None
     }
   }
 
@@ -393,7 +392,7 @@ trait GpuOverridesListener {
   def optimizedPlan(
       plan: SparkPlanMeta[SparkPlan],
       sparkPlan: SparkPlan,
-      costOptimizations: Seq[Optimization])
+      costOptimizations: Seq[Optimization]): Unit
 }
 
 sealed trait FileFormatType
@@ -3086,6 +3085,35 @@ object GpuOverrides extends Logging {
          |For instance decimal strings not longer than 18 characters / hexadecimal strings
          |not longer than 15 characters disregarding the sign cannot cause an overflow.
          """.stripMargin.replaceAll("\n", " ")),
+    expr[FormatNumber](
+      "Formats the number x like '#,###,###.##', rounded to d decimal places.",
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
+        ("x", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT+TypeSig.STRING)),
+      (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          in.children.head.dataType match {
+            case _: FloatType | DoubleType => {
+              if (!conf.isFloatFormatNumberEnabled) {
+                willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
+                  "results that have a different precision than the default results of Spark. " +
+                  "To enable this operation on the GPU, set" +
+                  s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
+              }
+            }
+            case dt: DecimalType => {
+              if (dt.scale > 32) {
+                willNotWorkOnGpu("format_number will generate results mismatched from Spark " +
+                  "when the scale is larger than 32.")
+              }
+            }
+            case _ =>
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuFormatNumber(lhs, rhs)
+      }
+    ),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3619,7 +3647,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuCSVScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3636,7 +3664,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[JsonScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuJsonScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuJsonScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,

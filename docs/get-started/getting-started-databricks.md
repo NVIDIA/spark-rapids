@@ -107,7 +107,7 @@ cluster meets the prerequisites above by configuring it as follows:
     of python for Databricks. On Databricks, the python runtime requires different parameters than the
     Spark one, so a dedicated python deamon module `rapids.daemon_databricks` is created and should
     be specified here. Set the config
-    [`spark.rapids.sql.python.gpu.enabled`](../configs.md#sql.python.gpu.enabled) to `true` to
+    [`spark.rapids.sql.python.gpu.enabled`](../additional-functionality/advanced_configs.md#sql.python.gpu.enabled) to `true` to
     enable GPU support for python. Add the path of the plugin jar (supposing it is placed under
     `/databricks/jars/`) to the `spark.executorEnv.PYTHONPATH` option. For more details please go to
     [GPU Scheduling For Pandas UDF](../additional-functionality/rapids-udfs.md#gpu-support-for-pandas-udf)

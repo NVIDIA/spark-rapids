@@ -1476,7 +1476,7 @@ class CastChecks extends ExprChecks {
     }
   }
 
-  private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+  protected def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
     val from = cast.child.dataType
     val to = cast.dataType
@@ -1503,6 +1503,21 @@ class CastChecks extends ExprChecks {
   def gpuCanCast(from: DataType, to: DataType): Boolean = {
     val (checks, _) = getChecksAndSigs(from)
     checks.isSupportedByPlugin(to)
+  }
+}
+
+/** 
+ * This class is just restricting the 'to' dataType to a StringType in the CastChecks class
+ */ 
+class ToPrettyStringChecks extends CastChecks {
+
+  override protected def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+    val cast = meta.wrapped.asInstanceOf[UnaryExpression]
+    val from = cast.child.dataType
+    val to = StringType
+    if (!gpuCanCast(from, to)) {
+      willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
+    }
   }
 }
 
@@ -2235,7 +2250,7 @@ object SupportedOpsForTools {
     }
   }
 
-  private def outputSupportIO() {
+  private def outputSupportIO(): Unit = {
     // Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
     val conf = new RapidsConf(Map.empty[String, String])

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 import ai.rapids.cudf.Scalar;
+import com.nvidia.spark.rapids.CastOptions$;
 import com.nvidia.spark.rapids.GpuCast;
 import com.nvidia.spark.rapids.GpuColumnVector;
 import com.nvidia.spark.rapids.GpuScalar;
@@ -158,7 +159,7 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
         GpuColumnVector oldColumn = columns[i];
         columns[i] = GpuColumnVector.from(
             GpuCast.doCast(oldColumn.getBase(), oldColumn.dataType(), expectedSparkType,
-            false, false, false), expectedSparkType);
+            CastOptions$.MODULE$.DEFAULT_CAST_OPTIONS()), expectedSparkType);
       }
       ColumnarBatch newBatch = new ColumnarBatch(columns, batch.numRows());
       columns = null;

@@ -16,11 +16,14 @@
 
 package com.nvidia.spark.rapids.delta.delta20x
 
-import com.nvidia.spark.rapids.{GpuOverrides, RunnableCommandRule}
+import com.nvidia.spark.rapids.{GpuOverrides, GpuReadParquetFileFormat, RunnableCommandRule, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
+import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
+import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
+import org.apache.spark.sql.execution.datasources.FileFormat
 
 object Delta20xProvider extends DeltaIOProvider {
 
@@ -40,5 +43,19 @@ object Delta20xProvider extends DeltaIOProvider {
         (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r))
           .disabledByDefault("Delta Lake update support is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
+  }
+
+  override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    val format = meta.wrapped.relation.fileFormat
+    if (format.getClass == classOf[DeltaParquetFileFormat]) {
+      GpuReadParquetFileFormat.tagSupport(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
+    }
+  }
+
+  override def getReadFileFormat(format: FileFormat): FileFormat = {
+    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
+    GpuDelta20xParquetFileFormat(cpuFormat.columnMappingMode, cpuFormat.referenceSchema)
   }
 }

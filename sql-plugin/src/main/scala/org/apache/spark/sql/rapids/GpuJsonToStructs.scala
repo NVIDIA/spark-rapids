@@ -197,7 +197,7 @@ case class GpuJsonToStructs(
               } else {
                 val col = rawTable.getColumn(i)
                 // getSparkType is only used to get the from type for cast
-                doCast(col, getSparkType(col), dtype, false, false, false)
+                doCast(col, getSparkType(col), dtype)
               }
             }
 

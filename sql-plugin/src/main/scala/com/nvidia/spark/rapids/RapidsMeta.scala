@@ -503,7 +503,7 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends RapidsMeta[INPUT, Scan, Scan](scan, conf, parent, rule) {
+  extends RapidsMeta[INPUT, Scan, GpuScan](scan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
@@ -529,7 +529,7 @@ final class RuleNotFoundScanMeta[INPUT <: Scan](
     willNotWorkOnGpu(s"GPU does not currently support the operator ${scan.getClass}")
   }
 
-  override def convertToGpu(): Scan =
+  override def convertToGpu(): GpuScan =
     throw new IllegalStateException("Cannot be converted to GPU")
 }
 

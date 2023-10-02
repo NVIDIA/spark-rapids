@@ -21,7 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuBatchScanExecMetrics, ScanWithMetrics}
+import com.nvidia.spark.rapids.{GpuBatchScanExecMetrics, GpuScan}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -33,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
-    @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
+    @transient scan: GpuScan) extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
   @transient override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
@@ -41,11 +41,7 @@ case class GpuBatchScanExec(
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   override lazy val inputRDD: RDD[InternalRow] = {
-    scan match {
-      case s: ScanWithMetrics => s.metrics = allMetrics
-      case _ =>
-    }
-
+    scan.metrics = allMetrics
     new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
   }
 

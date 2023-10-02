@@ -513,25 +513,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
-    .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
-      "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
-      "experimental feature. For more information on GDS, see " +
-      "https://docs.nvidia.com/gpudirect-storage/.")
-    .startupOnly()
-    .booleanConf
-    .createWithDefault(false)
-
-  val GDS_SPILL_BATCH_WRITE_BUFFER_SIZE =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size")
-    .doc("The size of the GPU memory buffer used to batch small buffers when spilling to GDS. " +
-        "Note that this buffer is mapped to the PCI Base Address Register (BAR) space, which may " +
-        "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and it is also used " +
-        "by UCX bounce buffers.")
-    .startupOnly()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.MiB.toBytes(8))
-
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -770,6 +751,12 @@ object RapidsConf {
       "a different precision than the default results of Spark.")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_FLOAT_FORMAT_NUMBER = conf("spark.rapids.sql.formatNumberFloat.enabled")
+    .doc("format_number with floating point types on the GPU returns results that have " +
+      "a different precision than the default results of Spark.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
@@ -1660,14 +1647,17 @@ object RapidsConf {
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
-      .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-          "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
-        "also the maximum amount of memory that will be used per task. This should ideally be " +
-        "at least the same size as the batch size so we don't have to wait to process a " +
-        "single batch.")
+      .doc(
+        "The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
+        "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
+        "also the maximum amount of memory that will be used per task. This should be set larger " +
+        "than Spark's default maxBytesInFlight (48MB). The larger this setting is, the " +
+        "more compressed shuffle chunks are processed concurrently. In practice, " +
+        "care needs to be taken to not go over the amount of off-heap memory that Netty has " +
+        "available. See https://github.com/NVIDIA/spark-rapids/issues/9153.")
       .startupOnly()
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(Integer.MAX_VALUE)
+      .createWithDefault(128 * 1024 * 1024)
 
   val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
@@ -2031,6 +2021,16 @@ object RapidsConf {
         "The chunked pack bounce buffer must be at least 1MB in size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val SPILL_TO_DISK_BOUNCE_BUFFER_SIZE =
+    conf("spark.rapids.memory.host.spillToDiskBounceBufferSize")
+      .doc("Amount of host memory (in bytes) to set aside at startup for the " +
+          "bounce buffer used for gpu to disk spill that bypasses the host store.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v >= 1,
+        "The gpu to disk spill bounce buffer must have a positive size")
+      .createWithDefault(128L * 1024 * 1024)
+
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
       .internal()
@@ -2325,10 +2325,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 
-  lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
-
-  lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
-
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
@@ -2390,6 +2386,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
+
+  lazy val isFloatFormatNumberEnabled: Boolean = get(ENABLE_FLOAT_FORMAT_NUMBER)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 
@@ -2724,6 +2722,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
 
