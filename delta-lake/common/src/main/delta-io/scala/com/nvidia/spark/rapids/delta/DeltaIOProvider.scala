@@ -16,15 +16,20 @@
 
 package com.nvidia.spark.rapids.delta
 
+import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
-import org.apache.spark.sql.delta.sources.DeltaDataSource
+import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSourceUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -47,6 +52,28 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
     format == classOf[DeltaParquetFileFormat]
+  }
+
+  override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {
+    catalogClass == classOf[DeltaCatalog]
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    require(isSupportedCatalog(cpuExec.catalog.getClass))
+    if (!meta.conf.isDeltaWriteEnabled) {
+      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    val properties = cpuExec.properties
+    val provider = properties.getOrElse("provider",
+      cpuExec.conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
+    if (!DeltaSourceUtils.isDeltaDataSourceName(provider)) {
+      meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
+    }
+    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
   }
 }
 
@@ -71,8 +98,8 @@ class DeltaCreatableRelationProviderMeta(
     val path = saveCmd.options.get("path")
     if (path.isDefined) {
       val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
-      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, deltaLog, saveCmd.options,
-        SparkSession.active)
+      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
+        saveCmd.options, SparkSession.active)
     } else {
       willNotWorkOnGpu("no path specified for Delta Lake table")
     }

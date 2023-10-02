@@ -45,7 +45,7 @@ class DeleteCommandMeta(
       // https://github.com/NVIDIA/spark-rapids/issues/8554
       willNotWorkOnGpu("Deletion vectors are not supported on GPU")
     }
-    RapidsDeltaUtils.tagForDeltaWrite(this, deleteCmd.target.schema, deleteCmd.deltaLog,
+    RapidsDeltaUtils.tagForDeltaWrite(this, deleteCmd.target.schema, Some(deleteCmd.deltaLog),
       Map.empty, SparkSession.active)
   }
 

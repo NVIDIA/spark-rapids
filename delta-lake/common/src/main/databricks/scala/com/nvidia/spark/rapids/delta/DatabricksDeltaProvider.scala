@@ -16,22 +16,31 @@
 
 package com.nvidia.spark.rapids.delta
 
+import scala.collection.JavaConverters.mapAsScalaMapConverter
+
+import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
+import com.databricks.sql.transaction.tahoe.catalog.DeltaCatalog
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge}
-import com.databricks.sql.transaction.tahoe.sources.DeltaDataSource
+import com.databricks.sql.transaction.tahoe.rapids.GpuDeltaCatalog
+import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /**
- * Implements the DeltaProvider interface for Databricks Delta Lake.
+ * Common implementation of the DeltaProvider interface for all Databricks versions.
  */
-object DeltaProviderImpl extends DeltaProviderImplBase {
+object DatabricksDeltaProvider extends DeltaProviderImplBase {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
     Seq(
@@ -92,6 +101,43 @@ object DeltaProviderImpl extends DeltaProviderImplBase {
     val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
     GpuDeltaParquetFileFormat.convertToGpu(cpuFormat)
   }
+
+  override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = {
+    catalogClass == classOf[DeltaCatalog] || catalogClass == classOf[UnityCatalogV2Proxy]
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    require(isSupportedCatalog(cpuExec.catalog.getClass))
+    if (!meta.conf.isDeltaWriteEnabled) {
+      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    val properties = cpuExec.properties
+    val provider = properties.getOrElse("provider",
+      cpuExec.conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
+    if (!DeltaSourceUtils.isDeltaDataSourceName(provider)) {
+      meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
+    }
+    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    GpuAtomicCreateTableAsSelectExec(
+      cpuExec.output,
+      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.plan,
+      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.ifNotExists)
+  }
 }
 
 class DeltaCreatableRelationProviderMeta(
@@ -115,8 +161,8 @@ class DeltaCreatableRelationProviderMeta(
     val path = saveCmd.options.get("path")
     if (path.isDefined) {
       val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
-      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, deltaLog, saveCmd.options,
-        SparkSession.active)
+      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, Some(deltaLog),
+        saveCmd.options, SparkSession.active)
     } else {
       willNotWorkOnGpu("no path specified for Delta Lake table")
     }
@@ -131,5 +177,5 @@ class DeltaCreatableRelationProviderMeta(
  */
 class DeltaProbeImpl extends DeltaProbe {
   // Delta Lake is built-in for Databricks instances, so no probing is necessary.
-  override def getDeltaProvider: DeltaProvider = DeltaProviderImpl
+  override def getDeltaProvider: DeltaProvider = DatabricksDeltaProvider
 }
