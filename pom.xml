@@ -584,7 +584,7 @@
         <profile>
             <id>scala-2.12</id>
             <properties>
-                <scala.version>2.13.8</scala.version>
+                <scala.version>2.12.15</scala.version>
             </properties>
             <build>
                 <pluginManagement>
@@ -597,7 +597,7 @@
             <id>scala-2.13</id>
             <properties>
                 <scala.version>2.13.8</scala.version>
-                <scala.binary.version>2.12</scala.binary.version>
+                <scala.binary.version>2.13</scala.binary.version>
             </properties>
             <build>
                 <pluginManagement>
