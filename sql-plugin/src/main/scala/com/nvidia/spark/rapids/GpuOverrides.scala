@@ -3506,8 +3506,7 @@ object GpuOverrides extends Logging {
         override def tagExprForGpu(): Unit =
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
-            case _: StructType =>
-              // TODO add specific checks here based on what we can actually support
+            case _: StructType => ()
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
