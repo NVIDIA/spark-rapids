@@ -65,6 +65,7 @@ limits which may interfere with successful collection of large GPU core dump fil
 
 The following Spark configuration settings will enable GPU lightweight core dumps and have the
 core dump files placed in the container log directory:
+
 ```text
 spark.executorEnv.CUDA_ENABLE_COREDUMP_ON_EXCEPTION=1
 spark.executorEnv.CUDA_ENABLE_LIGHTWEIGHT_COREDUMP=1

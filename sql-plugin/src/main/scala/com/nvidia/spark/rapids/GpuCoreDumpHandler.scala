@@ -45,6 +45,10 @@ object GpuCoreDumpHandler extends Logging {
    * Should only be called from the driver on driver startup.
    */
   def driverInit(sc: SparkContext, conf: RapidsConf): Unit = {
+    // This only works in practice on Spark standalone clusters. It's too late to influence the
+    // executor environment for Spark-on-YARN or Spark-on-k8s.
+    // TODO: Leverage CUDA 12.1 core dump APIs in the executor to programmatically set this up
+    //       on executor startup. https://github.com/NVIDIA/spark-rapids/issues/9370
     conf.gpuCoreDumpDir.foreach { _ =>
       TrampolineUtil.setExecutorEnv(sc, "CUDA_ENABLE_COREDUMP_ON_EXCEPTION", "1")
       TrampolineUtil.setExecutorEnv(sc, "CUDA_ENABLE_CPU_COREDUMP_ON_EXCEPTION", "0")
