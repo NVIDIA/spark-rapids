@@ -1611,14 +1611,17 @@ object RapidsConf {
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
-      .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-          "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
-        "also the maximum amount of memory that will be used per task. This should ideally be " +
-        "at least the same size as the batch size so we don't have to wait to process a " +
-        "single batch.")
+      .doc(
+        "The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
+        "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
+        "also the maximum amount of memory that will be used per task. This should be set larger " +
+        "than Spark's default maxBytesInFlight (48MB). The larger this setting is, the " +
+        "more compressed shuffle chunks are processed concurrently. In practice, " +
+        "care needs to be taken to not go over the amount of off-heap memory that Netty has " +
+        "available. See https://github.com/NVIDIA/spark-rapids/issues/9153.")
       .startupOnly()
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(Integer.MAX_VALUE)
+      .createWithDefault(128 * 1024 * 1024)
 
   val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
