@@ -2070,29 +2070,41 @@ case class CudfHistogram(override val dataType: DataType) extends CudfAggregate 
   override val name: String = "CudfHistogram"
 }
 
-case class CudfMergeHistogram(override val dataType: DataType) extends CudfAggregate {
+case class CudfMergeHistogram(override val dataType: DataType)
+  extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
-      withResource(col.getChildColumnView(0)) { listChild =>
-        listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
-      }
-//      col.getType match {
-//        // This is called from updateAggregate in GpuPercentileWithFrequency.
-//        case DType.STRUCT => {
-//          // Check the input frequencies to make sure they are non-negative to comply with Spark.
-////          col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
-//          withResource(col.getChildColumnView(0)) { listChild =>
-//            listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
-//          }
-//        }
-//
-//        // This is always called from mergeAggregate.
-//        case DType.LIST => withResource(col.getChildColumnView(0)) { listChild =>
-//          listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
-//        }
-//
-//        case _ => throw new IllegalStateException("Unexpected DType for histogram input")
+//      withResource(col.getChildColumnView(0)) { listChild =>
+//        listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
 //      }
+      col.getType match {
+        // This is called from updateAggregate in GpuPercentileWithFrequency.
+        case DType.STRUCT => {
+          // Check the input frequencies to make sure they are non-negative to comply with Spark.
+//          col.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+          withResource(col.getChildColumnView(0)) { values =>
+//            TableDebug.get().debug("value: ", values);
+
+            withResource(col.getChildColumnView(1)) { frequencies =>
+//              TableDebug.get().debug("frequencies: ", frequencies);
+
+              withResource(AggregationUtils.createHistogramsIfValid(values,
+                frequencies, false)) {
+                histograms =>
+                  histograms.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+
+              }
+            }
+          }
+        }
+
+        // This is always called from mergeAggregate.
+        case DType.LIST => withResource(col.getChildColumnView(0)) { listChild =>
+          listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
+        }
+
+        case _ => throw new IllegalStateException("Unexpected DType for histogram input")
+      }
     }
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.mergeHistogram()
   override val name: String = "CudfMergeHistogram"
@@ -2248,9 +2260,8 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
       case valuesCV: GpuColumnVector =>
       withResourceIfAllowed(frequenciesExpr.columnarEvalAny(batch)) {
         case frequenciesCV: GpuColumnVector => {
-          val outputSize = if (isReduction) 1 else valuesCV.getRowCount.asInstanceOf[Int]
           val histograms = AggregationUtils.createHistogramsIfValid(valuesCV.getBase,
-            frequenciesCV.getBase, outputSize)
+            frequenciesCV.getBase, !isReduction)
           GpuColumnVector.from(histograms, dataType)
         }
 
@@ -2303,8 +2314,13 @@ case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLite
                                       frequencyExpr: Expression, isReduction: Boolean)
   extends GpuPercentile(childExpr, percentage, isReduction) {
   override val inputProjection: Seq[Expression] = {
-
-    Seq(GpuCreateHistogramIfValid(childExpr, frequencyExpr, isReduction, aggregationOutputType))
+    if(isReduction) {
+      val childrenWithNames = GpuLiteral("value", StringType) :: childExpr ::
+        GpuLiteral("frequency", StringType) :: frequencyExpr :: Nil
+      GpuCreateNamedStruct(childrenWithNames) :: Nil
+    } else {
+      Seq(GpuCreateHistogramIfValid(childExpr, frequencyExpr, isReduction, aggregationOutputType))
+    }
   }
   override lazy val updateAggregates: Seq[CudfAggregate] =  Seq(new CudfMergeHistogram(dataType))
 }
