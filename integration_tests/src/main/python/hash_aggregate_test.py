@@ -920,36 +920,55 @@ exact_percentile_reduction_data_gen = [
     [('val', data_gen),
      ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
                      .with_special_case(0, weight=100))]
-  for data_gen in exact_percentile_data_gen]
+    for data_gen in exact_percentile_data_gen]
+
+def exact_percentile_reduction(df):
+    # df = spark.read.parquet("/home/nghiat/TMP/df.parquet")
+    # df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
+    return df.selectExpr(
+        'percentile(val, 0.1)',
+        'percentile(val, 0)',
+        'percentile(val, 1)',
+        'percentile(val, array(0.1))',
+        'percentile(val, array())',
+        'percentile(val, array(0.1, 0.5, 0.9))',
+        'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))',
+        # There is issue with python data generation that still produces negative values for freq.
+        # Thus, freq needs to be wrapped in abs.
+        'percentile(val, 0.1, abs(freq))',
+        'percentile(val, 0, abs(freq))',
+        'percentile(val, 1, abs(freq))',
+        'percentile(val, array(0.1), abs(freq))',
+        'percentile(val, array(), abs(freq))',
+        'percentile(val, array(0.1, 0.5, 0.9), abs(freq))',
+        'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'
+    )
 
 @approximate_float
-@ignore_order
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
+    )
 
-    def doit(spark):
-        df = gen_df(spark, data_gen)
-        # df = spark.read.parquet("/home/nghiat/TMP/df.parquet")
-        # df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
-        return df.selectExpr(
-            'percentile(val, 0.1)',
-            'percentile(val, 0)',
-            'percentile(val, 1)',
-            'percentile(val, array(0.1))',
-            'percentile(val, array())',
-            'percentile(val, array(0.1, 0.5, 0.9))',
-            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))',
-            # There is issue with python data generation that still produces negative values for freq.
-            # Thus, freq needs to be wrapped in abs.
-            'percentile(val, 0.1, abs(freq))',
-            'percentile(val, 0, abs(freq))',
-            'percentile(val, 1, abs(freq))',
-            'percentile(val, array(0.1), abs(freq))',
-            'percentile(val, array(), abs(freq))',
-            'percentile(val, array(0.1, 0.5, 0.9), abs(freq))',
-            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'
-        )
-    assert_gpu_and_cpu_are_equal_collect(doit)
+@approximate_float
+@pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
+def test_exact_percentile_reduction(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
+    )
+
+@approximate_float
+@allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
+               'Percentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
+@pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
+def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_mode):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_reduction(gen_df(spark, data_gen)),
+        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode}
+    )
+
 
 exact_percentile_groupby_data_gen = [
     [('key', RepeatSeqGen(IntegerGen(), length=100)),
@@ -958,45 +977,62 @@ exact_percentile_groupby_data_gen = [
                      .with_special_case(0, weight=100))]
     for gen in exact_percentile_data_gen]
 
+def exact_percentile_groupby(df):
+    return df.groupby('key').agg(
+        f.expr('percentile(val, 0.1)'),
+        f.expr('percentile(val, 0)'),
+        f.expr('percentile(val, 1)'),
+        f.expr('percentile(val, array(0.1))'),
+        f.expr('percentile(val, array())'),
+        f.expr('percentile(val, array(0.1, 0.5, 0.9))'),
+        f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
+        # There is issue with python data generation that still produces negative values for freq.
+        # Thus, freq needs to be wrapped in abs.
+        f.expr('percentile(val, 0.1, abs(freq))'),
+        f.expr('percentile(val, 0, abs(freq))'),
+        f.expr('percentile(val, 1, abs(freq))'),
+        f.expr('percentile(val, array(0.1), abs(freq))'),
+        f.expr('percentile(val, array(), abs(freq))'),
+        f.expr('percentile(val, array(0.1, 0.5, 0.9), abs(freq))'),
+        f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')
+    )
+
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 def test_exact_percentile_groupby(data_gen):
-    def doit(spark):
-        df = gen_df(spark, data_gen)
-        return df.groupby('key').agg(
-            f.expr('percentile(val, 0.1)'),
-            f.expr('percentile(val, 0)'),
-            f.expr('percentile(val, 1)'),
-            f.expr('percentile(val, array(0.1))'),
-            f.expr('percentile(val, array())'),
-            f.expr('percentile(val, array(0.1, 0.5, 0.9))'),
-            f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
-            # There is issue with python data generation that still produces negative values for freq.
-            # Thus, freq needs to be wrapped in abs.
-            f.expr('percentile(val, 0.1, abs(freq))'),
-            f.expr('percentile(val, 0, abs(freq))'),
-            f.expr('percentile(val, 1, abs(freq))'),
-            f.expr('percentile(val, array(0.1), abs(freq))'),
-            f.expr('percentile(val, array(), abs(freq))'),
-            f.expr('percentile(val, array(0.1, 0.5, 0.9), abs(freq))'),
-            f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')
-        )
-    assert_gpu_and_cpu_are_equal_collect(doit)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_groupby(gen_df(spark, data_gen))
+    )
+
+@approximate_float
+@ignore_order
+@allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
+               'Percentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
+@pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
+def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_groupby(gen_df(spark, data_gen)),
+        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode}
+    )
+
 
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
                'HashAggregateExec', 'HashPartitioning',
-               'ApproximatePercentile', 'Alias', 'Literal', 'AggregateExpression')
+               'ApproximatePercentile', 'Percentile',
+               'Alias', 'Literal', 'AggregateExpression')
 def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', UniqueLongGen())], length=100),
-        exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
-        non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
+        exist_classes='ApproximatePercentile,Percentile,ObjectHashAggregateExec',
+        non_exist_classes='GpuApproximatePercentile,GpuPercentile,GpuObjectHashAggregateExec',
         table_name='table',
         sql="""select k,
-        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
+        approx_percentile(v, array(0.25, 0.5, 0.75)),
+        percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
 
 @approximate_float
 @ignore_order
