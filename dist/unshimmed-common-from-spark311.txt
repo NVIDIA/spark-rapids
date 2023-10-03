@@ -8,11 +8,10 @@ com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/Retryable*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
+com/nvidia/spark/rapids/GpuColumnVectorUtils*
 com/nvidia/spark/rapids/ExplainPlan.class
 com/nvidia/spark/rapids/ExplainPlan$.class
 com/nvidia/spark/rapids/ExplainPlanBase.class
-com/nvidia/spark/rapids/GpuColumnVectorUtils*
-com/nvidia/spark/rapids/GpuCoreDumpMsg*
 com/nvidia/spark/rapids/GpuKryoRegistrator*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*

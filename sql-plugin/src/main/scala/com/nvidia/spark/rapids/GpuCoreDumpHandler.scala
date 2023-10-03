@@ -34,10 +34,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.util.SerializableConfiguration
 
-trait GpuCoreDumpMsg
-case class GpuCoreDumpMsgStart(executorId: String, dumpPath: String) extends GpuCoreDumpMsg
-case class GpuCoreDumpMsgCompleted(executorId: String, dumpPath: String) extends GpuCoreDumpMsg
-
 object GpuCoreDumpHandler extends Logging {
   private var executor: Option[ExecutorService] = None
   private var dumpedPath: Option[String] = None
