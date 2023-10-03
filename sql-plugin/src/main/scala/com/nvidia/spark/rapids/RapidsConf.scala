@@ -1793,7 +1793,7 @@ object RapidsConf {
 
   val CUDF_COLUMN_SIZE_LIMIT = conf("spark.rapids.cudfColumnSizeLimit")
     .internal()
-    .doc("Value for cuDF column size limit set to 2^31 - 1")
+    .doc("Maximum size for cuDF column vector set to 2^31 - 1")
     .longConf
     .createWithDefault((1L << 31) - 1)
 
