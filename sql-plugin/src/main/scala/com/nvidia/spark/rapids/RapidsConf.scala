@@ -413,8 +413,9 @@ object RapidsConf {
 
   val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
     .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
-      "an exception. The filename will be of the form gpucore-<appID>-<executorID>.nvcudmp, " +
-      "where <appID> is the Spark application ID and <executorID> is the executor ID.")
+      "an exception. The URI can reference a distributed filesystem. The filename will be of the " +
+      "form gpucore-<appID>-<executorID>.nvcudmp, where <appID> is the Spark application ID and " +
+      "<executorID> is the executor ID.")
     .internal()
     .stringConf
     .createOptional
