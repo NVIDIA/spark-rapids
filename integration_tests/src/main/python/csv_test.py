@@ -594,20 +594,20 @@ def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, date_format, ts_part,
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_350(), reason='TBD')
-@pytest.mark.xfail()
+@pytest.mark.xfail(reason = "https://github.com/NVIDIA/spark-rapids/issues/9325")
 @pytest.mark.parametrize('formats', unsupported_csv_schema_inference_formats)
 @pytest.mark.parametrize("timestamp_type", ['TIMESTAMP_LTZ', 'TIMESTAMP_NTZ'])
-def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, formats, timestamp_type):
+def test_csv_infer_schema_timestamp_ntz_v1_350(spark_tmp_path, formats, timestamp_type):
        ts_part = formats[0]
        date_format = formats[1]
        csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
 
 @allow_non_gpu('BatchScanExec', 'FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.skipif(is_before_spark_350(), reason='TBD')
-@pytest.mark.xfail()
+@pytest.mark.skipif(is_before_spark_350(), reason='https://github.com/NVIDIA/spark-rapids/issues/9325')
+@pytest.mark.xfail(reason = "https://github.com/NVIDIA/spark-rapids/issues/9325")
 @pytest.mark.parametrize('formats', unsupported_csv_schema_inference_formats)
 @pytest.mark.parametrize("timestamp_type", ['TIMESTAMP_LTZ', 'TIMESTAMP_NTZ'])
-def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, formats, timestamp_type):
+def test_csv_infer_schema_timestamp_ntz_v2_350(spark_tmp_path, formats, timestamp_type):
     ts_part = formats[0]
     date_format = formats[1]
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
