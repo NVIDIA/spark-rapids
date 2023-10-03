@@ -37,7 +37,7 @@ case class GpuJsonToStructs(
   private def constructEmptyRow(schema: DataType): String = {
     schema match {
       case struct: StructType if struct.fields.nonEmpty =>
-        s"{${escapeFieldName(struct.head.name)}:null}"
+        s"{\"${escapeFieldName(struct.head.name)}\":null}"
       case other =>
         throw new IllegalArgumentException(s"$other is not supported as a top level type")    }
   }
