@@ -22,3 +22,6 @@ case class GpuCoreDumpMsgStart(executorId: String, dumpPath: String) extends Gpu
 
 /** Serialized message sent from executor to driver when a GPU core dump completes */
 case class GpuCoreDumpMsgCompleted(executorId: String, dumpPath: String) extends GpuCoreDumpMsg
+
+/** Serialized message sent from executor to driver when a GPU core dump fails */
+case class GpuCoreDumpMsgFailed(executorId: String, error: String) extends GpuCoreDumpMsg

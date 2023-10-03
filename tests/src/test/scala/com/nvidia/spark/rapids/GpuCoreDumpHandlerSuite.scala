@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{BufferedOutputStream, File, FileInputStream, FileOutputStream, InputStream}
+import java.io.{BufferedOutputStream, File, FileInputStream, FileOutputStream, InputStream, IOException}
 import java.util.concurrent.TimeUnit
 
 import com.nvidia.spark.rapids.Arm.withResource
@@ -112,6 +112,30 @@ class GpuCoreDumpHandlerSuite extends AnyFunSuite {
       } finally {
         dumpFile.delete()
       }
+    } finally {
+      GpuCoreDumpHandler.shutdown()
+    }
+    assert(waitForIt(WAIT_MSECS)(() => !namedPipeFile.exists()))
+  }
+
+  test("test dump handler failure") {
+    val sparkConf = buildSparkConf()
+      .set(RapidsConf.GPU_COREDUMP_DIR.key, "thiswillfail://foo/bar")
+      .set(RapidsConf.GPU_COREDUMP_COMPRESS.key, "false")
+    val mockCtx = buildMockCtx(sparkConf)
+    val rapidsConf = new RapidsConf(sparkConf)
+    GpuCoreDumpHandler.executorInit(rapidsConf, mockCtx)
+    val namedPipeFile = GpuCoreDumpHandler.getNamedPipeFile
+    try {
+      assert(waitForIt(WAIT_MSECS)(() => namedPipeFile.exists()))
+      try {
+        fakeDump(namedPipeFile)
+      } catch {
+        case e: IOException if e.getMessage.contains("Broken pipe") =>
+          // broken pipe is expected when reader crashes
+      }
+      verify(mockCtx, timeout(WAIT_MSECS).times(1)).ask(any[GpuCoreDumpMsgStart]())
+      verify(mockCtx, timeout(WAIT_MSECS).times(1)).send(any[GpuCoreDumpMsgFailed]())
     } finally {
       GpuCoreDumpHandler.shutdown()
     }

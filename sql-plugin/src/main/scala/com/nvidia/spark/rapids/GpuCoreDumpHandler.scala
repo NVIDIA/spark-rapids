@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{File, PrintWriter}
 import java.lang.management.ManagementFactory
 import java.nio.file.Files
 import java.util.concurrent.{Executors, ExecutorService, TimeUnit}
@@ -23,6 +23,7 @@ import java.util.concurrent.{Executors, ExecutorService, TimeUnit}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.NullOutputStreamShim
 import org.apache.commons.io.IOUtils
+import org.apache.commons.io.output.StringBuilderWriter
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.fs.permission.{FsAction, FsPermission}
 
@@ -124,6 +125,9 @@ object GpuCoreDumpHandler extends Logging {
     case GpuCoreDumpMsgCompleted(executorId, dumpPath) =>
       logError(s"Executor $executorId wrote a GPU core dump to $dumpPath")
       null
+    case GpuCoreDumpMsgFailed(executorId, error) =>
+      logError(s"Executor $executorId failed to write a GPU core dump: $error")
+      null
     case m =>
       throw new IllegalStateException(s"Unexpected GPU core dump msg: $m")
   }
@@ -148,12 +152,12 @@ object GpuCoreDumpHandler extends Logging {
       dumpDirPath: Path,
       codec: Option[CompressionCodec],
       suffix: String): Unit = {
+    val executorId = pluginCtx.executorID()
     try {
       logInfo(s"Monitoring ${namedPipe.getAbsolutePath} for GPU core dumps")
       withResource(new java.io.FileInputStream(namedPipe)) { in =>
         isDumping = true
         val appId = pluginCtx.conf.get("spark.app.id")
-        val executorId = pluginCtx.executorID()
         val dumpPath = new Path(dumpDirPath,
           s"gpucore-$appId-$executorId.nvcudmp$suffix")
         logError(s"Generating GPU core dump at $dumpPath")
@@ -176,6 +180,9 @@ object GpuCoreDumpHandler extends Logging {
     } catch {
       case e: Exception =>
         logError("Error copying GPU dump", e)
+        val writer = new StringBuilderWriter()
+        e.printStackTrace(new PrintWriter(writer))
+        pluginCtx.send(GpuCoreDumpMsgFailed(executorId, s"$e\n${writer.toString}"))
     } finally {
       isDumping = false
     }
