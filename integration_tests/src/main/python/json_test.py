@@ -434,7 +434,6 @@ def test_from_json_map_fallback():
         'JsonToStructs',
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<a:string>',
                                     'struct<d:string>',
                                     'struct<a:string,b:string>',
