@@ -944,6 +944,7 @@ def exact_percentile_reduction(df):
         'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'
     )
 
+@incompat
 @approximate_float
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
@@ -951,13 +952,7 @@ def test_exact_percentile_reduction(data_gen):
         lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
     )
 
-@approximate_float
-@pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
-def test_exact_percentile_reduction(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
-    )
-
+@incompat
 @approximate_float
 @allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
                'Percentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
@@ -997,6 +992,7 @@ def exact_percentile_groupby(df):
         f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')
     )
 
+@incompat
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
@@ -1005,13 +1001,14 @@ def test_exact_percentile_groupby(data_gen):
         lambda spark: exact_percentile_groupby(gen_df(spark, data_gen))
     )
 
+@incompat
 @approximate_float
 @ignore_order
 @allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
                'Percentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 @pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
-def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen):
+def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: exact_percentile_groupby(gen_df(spark, data_gen)),
         conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode}
