@@ -35,14 +35,18 @@ class RapidsCsvScanMeta(
     // we are being overly cautious and that Csv does not support this yet
     TagScanForRuntimeFiltering.tagScanForRuntimeFiltering(this, cScan)
 
-    val timestampFormat = cScan.options.get("timestampFormat")
-    timestampFormat match {
-      case "yyyy-MM-dd" | "yyyy-MM" | "yyyy-MM-dd'T'HH:mm" | "yyyy-MM-dd'T'HH:mm:ss" =>
-        // https://github.com/NVIDIA/spark-rapids/issues/9325
-        willNotWorkOnGpu(s"$timestampFormat '$timestampFormat' is not compatible with Spark >= 3.5.0")
-      case other =>
+    val inferSchema = cScan.options.get("inferSchema")
+    if ("true".equalsIgnoreCase(inferSchema)) {
+      val timestampFormat = cScan.options.get("timestampFormat")
+      println(s"ANDY RapidsCsvScanMeta.tagSelfForGpu() $timestampFormat")
+      timestampFormat match {
+        case "yyyy-MM-dd" | "yyyy-MM" | "yyyy-MM-dd'T'HH:mm" | "yyyy-MM-dd'T'HH:mm:ss" =>
+          // https://github.com/NVIDIA/spark-rapids/issues/9325
+          willNotWorkOnGpu(s"timestampFormat '$timestampFormat' is not compatible with " +
+            s"Spark >= 3.5.0 when schema inference is enabled")
+        case _ =>
+      }
     }
-
   }
 
   override def convertToGpu(): GpuScan =

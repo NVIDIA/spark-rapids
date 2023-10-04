@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 
 class BatchScanExecMeta(p: BatchScanExec,
     conf: RapidsConf,
@@ -68,6 +69,15 @@ class BatchScanExecMeta(p: BatchScanExec,
   override def tagPlanForGpu(): Unit = {
     if (!p.runtimeFilters.isEmpty && !childScans.head.supportsRuntimeFilters) {
       willNotWorkOnGpu("runtime filtering (DPP) is not supported for this scan")
+    }
+
+    println(s"ANDY BatchScanExecMeta.tagSelfForGpu()")
+
+    p.scan match {
+      case _: CSVScan =>
+        println("ANDY CSV")
+      case _ =>
+        println("ANDY NOT CSV")
     }
   }
 
