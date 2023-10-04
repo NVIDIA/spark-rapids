@@ -3466,10 +3466,15 @@ object GpuOverrides extends Logging {
           aggBuffer.copy(dataType = dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
 
-        // Does not support fallback to CPU in the meantime.
-        override val supportBufferConversion: Boolean = false
         override val needsAnsiCheck: Boolean = false
-      }),
+        override val supportBufferConversion: Boolean = true
+
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+          new CpuToGpuPercentileBufferConverter(c.child.dataType)
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+          new GpuToCpuPercentileBufferConverter()
+      }).incompat("the GPU implementation of percentile is not bit-for-bit " +
+          s"compatible with Apache Spark"),
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.reductionAndGroupByAgg(
