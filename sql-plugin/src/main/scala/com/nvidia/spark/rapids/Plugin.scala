@@ -300,6 +300,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
         }
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
+      case m: GpuCoreDumpMsg => GpuCoreDumpHandler.handleMsg(m)
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
   }
@@ -310,6 +311,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
     RapidsPluginUtils.logPluginMode(conf)
+    GpuCoreDumpHandler.driverInit(sc, conf)
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
@@ -381,6 +383,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
               s"$executorTimezone. Set executor timezone to $driverTimezone.")
         }
       }
+
+      GpuCoreDumpHandler.executorInit(conf, pluginContext)
 
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
       // on executor startup.
@@ -506,6 +510,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
+    GpuCoreDumpHandler.shutdown()
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
@@ -518,6 +523,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(e) if containsCudaFatalException(e) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
+            GpuCoreDumpHandler.waitForDump(timeoutSecs = 60)
             logGpuDebugInfoAndExit(systemExitCode = 20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
