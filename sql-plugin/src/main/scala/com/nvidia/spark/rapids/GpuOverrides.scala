@@ -3420,6 +3420,27 @@ object GpuOverrides extends Logging {
             TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG),
             TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          // Check if the percentage input can be supported on GPU.
+          childExprs(1).wrapped match {
+            case lit: Literal => lit.value match {
+              case null =>
+                willNotWorkOnGpu(
+                  "percentile on GPU only supports non-null literal percentages")
+              case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
+                willNotWorkOnGpu(
+                  "percentile on GPU does not support percentage arrays containing nulls")
+              case a: ArrayData if a.toDoubleArray()
+                .exists(percentage => percentage < 0.0 || percentage > 1.0) =>
+                willNotWorkOnGpu(
+                  "percentile requires the input percentages given in the range [0, 1]")
+              case _ => // This is fine.
+            }
+            case _ =>
+              willNotWorkOnGpu("percentile on GPU only supports literal percentages")
+          }
+        }
+
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
           val exprMeta = p.get.asInstanceOf[BaseExprMeta[_]]
           val context = exprMeta.context
