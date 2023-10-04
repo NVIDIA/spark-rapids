@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, PythonUDAF, ToPret
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
 
-object SparkShimImpl extends Spark340PlusShims {
+object SparkShimImpl extends Spark350PlusShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
