@@ -2306,6 +2306,9 @@ class CpuToGpuPercentileBufferConverter(elementType: DataType)
 
 case class CpuToGpuPercentileBufferTransition(override val child: Expression, elementType: DataType)
   extends CpuToGpuBufferTransition {
+  override def dataType: DataType = ArrayType(StructType(Seq(
+    StructField("value", child.dataType),
+    StructField("frequency", LongType))), containsNull = false)
   override protected def nullSafeEval(input: Any): ArrayData = {
     // Deserialization from the input byte stream into the internal buffer format.
     val bytes = input.asInstanceOf[Array[Byte]]
@@ -2348,7 +2351,7 @@ class GpuToCpuPercentileBufferConverter(elementType: DataType)
   }
 }
 
-case class GpuToCpuPercentileBufferTransition(private val child: Expression, elementType: DataType)
+case class GpuToCpuPercentileBufferTransition(override val child: Expression, elementType: DataType)
   extends GpuToCpuBufferTransition {
 
   override protected def nullSafeEval(input: Any): Array[Array[Byte]] = {
