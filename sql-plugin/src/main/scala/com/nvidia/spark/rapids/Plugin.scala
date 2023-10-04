@@ -70,7 +70,6 @@ object RapidsPluginUtils extends Logging {
   private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
   private val SPARK_MASTER = "spark.master"
 
-
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
@@ -134,16 +133,16 @@ object RapidsPluginUtils extends Logging {
           case _ =>
             val coresToUse = executorCoreConfOption.map(_.toInt).getOrElse(1)
             logWarning(s"Master: ${masterOption.getOrElse("None")} is unknown, number of " +
-              s"cores set to $coresToUse")
+              s"cores is set to $coresToUse")
             coresToUse
         }
       case None =>
         // master not set
         val coresToUse = executorCoreConfOption.map(_.toInt).getOrElse(1)
-        logWarning(s"Master is not set, number of cores set to $coresToUse")
+        logWarning(s"Master is not set, number of cores is set to $coresToUse")
         coresToUse
     }
-    logWarning(s"Estimated number of cores is $res")
+    logInfo(s"Estimated number of cores is $res")
     res
   }
 
