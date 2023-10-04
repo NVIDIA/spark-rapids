@@ -68,6 +68,8 @@ object RapidsPluginUtils extends Logging {
   private val EXECUTOR_CORES_KEY = "spark.executor.cores"
   private val TASK_GPU_AMOUNT_KEY = "spark.task.resource.gpu.amount"
   private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
+  private val SPARK_MASTER = "spark.master"
+
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -110,10 +112,39 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
+  // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
+  // to handle.
   def estimateCoresOnExec(conf: SparkConf): Int = {
-    conf.getOption(RapidsPluginUtils.EXECUTOR_CORES_KEY)
-        .map(_.toInt)
-        .getOrElse(Runtime.getRuntime.availableProcessors)
+    val executorCoreConfOption = conf.getOption(RapidsPluginUtils.EXECUTOR_CORES_KEY)
+    val masterOption = conf.getOption(RapidsPluginUtils.SPARK_MASTER)
+    val res = masterOption match {
+      case Some(m) =>
+        m match {
+          case "yarn" =>
+            executorCoreConfOption.map(_.toInt).getOrElse(1)
+          case m if m.startsWith("k8s") =>
+            executorCoreConfOption.map(_.toInt).getOrElse(1)
+          case m if m.startsWith("spark") =>
+            // STANDALONE
+            executorCoreConfOption.map(_.toInt).getOrElse(Runtime.getRuntime.availableProcessors)
+          case m if m.startsWith("local-cluster") =>
+            TrampolineUtil.getCoresInLocalMode(m, conf)
+          case m if m.startsWith("local") =>
+            TrampolineUtil.getCoresInLocalMode(m, conf)
+          case _ =>
+            val coresToUse = executorCoreConfOption.map(_.toInt).getOrElse(1)
+            logWarning(s"Master: ${masterOption.getOrElse("None")} is unknown, number of " +
+              s"cores set to $coresToUse")
+            coresToUse
+        }
+      case None =>
+        // master not set
+        val coresToUse = executorCoreConfOption.map(_.toInt).getOrElse(1)
+        logWarning(s"Master is not set, number of cores set to $coresToUse")
+        coresToUse
+    }
+    logWarning(s"Estimated number of cores is $res")
+    res
   }
 
   def fixupConfigsOnDriver(conf: SparkConf): Unit = {
