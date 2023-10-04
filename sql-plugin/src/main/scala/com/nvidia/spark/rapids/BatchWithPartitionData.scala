@@ -465,16 +465,14 @@ object BatchWithPartitionDataUtils {
   def splitBatchInHalf: BatchWithPartitionData => Seq[BatchWithPartitionData] = {
     (batchWithPartData: BatchWithPartitionData) => {
       closeOnExcept(batchWithPartData) { _ =>
-        batchWithPartData match {
-          case BatchWithPartitionData(inputBatch, partitionedRowsData, partitionSchema) =>
-            // Split partition rows data into two halves
-            val splitPartitionData = splitPartitionDataInHalf(partitionedRowsData)
-            // Split the batch into two halves
-            val splitBatches = withResource(inputBatch.getColumnarBatch()) { batch =>
-              splitAndCombineBatchWithPartitionData(batch, splitPartitionData, partitionSchema)
-            }
-            splitBatches
+        // Split partition rows data into two halves
+        val splitPartitionData = splitPartitionDataInHalf(batchWithPartData.partitionedRowsData)
+        // Split the batch into two halves
+        val splitBatches = withResource(batchWithPartData.inputBatch.getColumnarBatch()) { batch =>
+          splitAndCombineBatchWithPartitionData(batch, splitPartitionData,
+            batchWithPartData.partitionSchema)
         }
+        splitBatches
       }
     }
   }
