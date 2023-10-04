@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 
+import org.apache.commons.text.StringEscapeUtils
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 
@@ -37,12 +38,10 @@ case class GpuJsonToStructs(
   private def constructEmptyRow(schema: DataType): String = {
     schema match {
       case struct: StructType if struct.fields.nonEmpty =>
-        s"""{"${escapeFieldName(struct.head.name)}":null}"""
+        s"""{"${StringEscapeUtils.escapeJson(struct.head.name)}":null}"""
       case other =>
         throw new IllegalArgumentException(s"$other is not supported as a top level type")    }
   }
-
-  private def escapeFieldName(fieldName: String): String = fieldName.replace("\"", "\\\"")
 
   lazy val emptyRowStr = constructEmptyRow(schema)
   
