@@ -16,8 +16,14 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
+
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+//import org.apache.spark.sql.catalyst.expressions.UnsafeArrayData
+
 //import ai.rapids.cudf.TableDebug
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
@@ -2217,41 +2223,6 @@ private def makeArray(v: Any): (Boolean, Either[Double, Array[Double]]) = v matc
   override def children: Seq[Expression] = Seq(childExpr, percentageLit)
 }
 
-/*
-case class GpuGetListChild(child: Expression, msg: String) extends GpuExpression {
-  override def columnarEvalAny(batch: ColumnarBatch): Any = {
-    System.err.println(msg)
-    System.err.println("get list child, child type = "+ child.dataType)
-    withResourceIfAllowed(child.columnarEvalAny(batch)) {
-      case cv: GpuColumnVector =>
-        withResource(cv.getBase.getChildColumnView(0)) { listChild =>
-          //          System.err.println("get child list, date type = " + dataType)
-          // TableDebug.get().debug("get child list, size: " + listChild.getRowCount, listChild);
-          val tmp = GpuColumnVector.from(listChild.copyToColumnVector(), dataType)
-
-          //          TableDebug.get().debug(msg + " out = ", tmp.getBase)
-          tmp
-        }
-
-      case other =>
-        throw new IllegalArgumentException(s"Got an unexpected type out of columnarEvalAny $other")
-    }
-  }
-
-
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
-    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
-
-  override def nullable: Boolean = child.nullable
-
-  // Output type should be the element type of the input array.
-  override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
-
-  override def children: Seq[Expression] = Seq(child)
-}
-*/
-
-
 case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Expression,
                                     isReduction: Boolean, dataType: DataType)
   extends GpuExpression {
@@ -2277,11 +2248,7 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
-
-
   override def nullable: Boolean = false
-
-
   override def children: Seq[Expression] = Seq(valuesExpr, frequenciesExpr)
 }
 
@@ -2292,19 +2259,9 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
 case class GpuPercentileDefault(childExpr: Expression,
                                 percentage: GpuLiteral, isReduction: Boolean)
   extends GpuPercentile(childExpr, percentage, isReduction) {
-
   override val inputProjection: Seq[Expression] = Seq(childExpr)
-
   override lazy val updateAggregates: Seq[CudfAggregate] =
     Seq(new CudfHistogram(aggregationOutputType))
-
-//  override lazy val postUpdate: Seq[Expression] =
-//    Seq(GpuNothing(updateHistogram.attr, "postUpdate"))
-//  override lazy val preMerge: Seq[Expression] =
-//    Seq(GpuNothing(histogramBuff, "preMerge"))
-//  override lazy val postMerge: Seq[Expression] =
-//    Seq(GpuNothing(mergeHistogram.attr, "postMerge"))
-
 }
 
 /**
@@ -2339,7 +2296,7 @@ object GpuPercentile{
   }
 }
 
-/*
+
 class CpuToGpuPercentileBufferConverter(elementType: DataType)
   extends CpuToGpuAggregateBufferConverter {
   def createExpression(child: Expression): CpuToGpuBufferTransition = {
@@ -2347,49 +2304,80 @@ class CpuToGpuPercentileBufferConverter(elementType: DataType)
   }
 }
 
-case class CpuToGpuPercentileBufferTransition(override val child: Expression,
-                                              private val elementType: DataType)
+case class CpuToGpuPercentileBufferTransition(override val child: Expression, elementType: DataType)
   extends CpuToGpuBufferTransition {
-
-  private lazy val row = new UnsafeRow(1)
-
-  override def dataType: DataType = ArrayType(elementType, containsNull = false)
-
   override protected def nullSafeEval(input: Any): ArrayData = {
-    // Converts binary buffer into UnSafeArrayData, according to the deserialize method of Collect.
-    // The input binary buffer is the binary view of a UnsafeRow, which only contains single field
-    // with ArrayType of elementType. Since array of elements exactly matches the GPU format, we
-    // don't need to do any conversion in memory level. Instead, we simply bind the binary data to
-    // a reused UnsafeRow. Then, fetch the only field as ArrayData.
+    // Deserialization from the input byte stream into the internal buffer format.
     val bytes = input.asInstanceOf[Array[Byte]]
-    row.pointTo(bytes, bytes.length)
-    row.getArray(0).copy()
+    val bis = new ByteArrayInputStream(bytes)
+    val ins = new DataInputStream(bis)
+
+    try {
+      // Store LIST<STRUCT<element, count>>
+      val histogramList = ArrayBuffer[InternalRow]()
+      val row = new UnsafeRow(2)
+
+      while(ins.available() > 0) {
+        // Read each histogram.
+        val histogram = ArrayBuffer[InternalRow]()
+        var sizeOfNextRow = ins.readInt()
+        while (sizeOfNextRow >= 0) {
+          val bs = new Array[Byte](sizeOfNextRow)
+          ins.readFully(bs)
+          row.pointTo(bs, sizeOfNextRow)
+          val element = row.get(0, elementType)
+          val count = row.get(1, LongType).asInstanceOf[Long]
+          histogram.append(InternalRow.apply(element, count))
+          sizeOfNextRow = ins.readInt()
+        }
+        histogramList.append(InternalRow.apply(histogram))
+      }
+
+      ArrayData.toArrayData(histogramList)
+    } finally {
+      ins.close()
+      bis.close()
+    }
   }
 }
 
-class GpuToCpuPercentileBufferConverter extends GpuToCpuAggregateBufferConverter {
+class GpuToCpuPercentileBufferConverter(elementType: DataType)
+  extends GpuToCpuAggregateBufferConverter {
   def createExpression(child: Expression): GpuToCpuBufferTransition = {
-    GpuToCpuPercentileBufferTransition(child)
+    GpuToCpuPercentileBufferTransition(child, elementType)
   }
 }
 
-case class GpuToCpuPercentileBufferTransition(override val child: Expression)
+case class GpuToCpuPercentileBufferTransition(private val child: Expression, elementType: DataType)
   extends GpuToCpuBufferTransition {
 
-  private lazy val projection = UnsafeProjection.create(Array(child.dataType))
+  override protected def nullSafeEval(input: Any): Array[Array[Byte]] = {
+    val buffer = new Array[Byte](4 << 10) // 4K
+    val bos = new ByteArrayOutputStream()
+    val out = new DataOutputStream(bos)
 
-  override protected def nullSafeEval(input: Any): Array[Byte] = {
-    // Converts UnSafeArrayData into binary buffer, according to the serialize method of Collect.
-    // The binary buffer is the binary view of a UnsafeRow, which only contains single field
-    // with ArrayType of elementType. As Collect.serialize, we create an UnsafeProjection to
-    // transform ArrayData to binary view of the single field UnsafeRow. Unlike Collect.serialize,
-    // we don't have to build ArrayData from on-heap array, since the input is already formatted
-    // in ArrayData(UnsafeArrayData).
-    val arrayData = input.asInstanceOf[ArrayData]
-    projection.apply(InternalRow.apply(arrayData)).getBytes
+    try {
+      val output = ArrayBuffer[Array[Byte]]()
+      val projection = UnsafeProjection.create(Array[DataType](elementType, LongType))
+      val arrayData = input.asInstanceOf[Array[InternalRow]]
+      arrayData.foreach { histogram =>
+        histogram.asInstanceOf[Array[InternalRow]].foreach { row =>
+          val unsafeRow = projection.apply(row)
+          out.writeInt(unsafeRow.getSizeInBytes)
+          unsafeRow.writeToStream(out, buffer)
+        }
+        out.writeInt(-1)
+        out.flush()
+        output.append(bos.toByteArray)
+      }
+      output.toArray[Array[Byte]]
+    } finally {
+      out.close()
+      bos.close()
+    }
   }
 }
-*/
+
 
 /**
  * Base class for overriding standard deviation and variance aggregations.
