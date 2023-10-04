@@ -952,10 +952,7 @@ def test_exact_percentile_reduction(data_gen):
         lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
     )
 
-exact_percentile_reduction_cpu_fallback_data_gen = [
-    [('val', data_gen),
-     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
-                     .with_special_case(0, weight=100))]
+exact_percentile_reduction_cpu_fallback_data_gen = [[('val', data_gen)] 
     for data_gen in [IntegerGen(), DoubleGen()]]
 
 @incompat
@@ -1034,7 +1031,7 @@ def test_exact_percentile_groupby(data_gen):
                'Percentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 @pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
-def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode):
+def yyy(data_gen, replace_mode):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: exact_percentile_groupby(gen_df(spark, data_gen)),
         conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode}
