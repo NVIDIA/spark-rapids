@@ -68,29 +68,10 @@ done
 # Update <scala.version> in parent POM
 # First find the right full version from the profile's build
 SCALA_VERSION=`mvn help:evaluate -Pscala-${TO_VERSION} -Dexpression=scala.version -q -DforceStdout`
-sed_i '1,/<scala\.version>[0-9]*\.[0-9]*\.[0-9]*</s/<scala\.version>[0-9]*\.[0-9]*\.[0-9]*</<scala.version>'$SCALA_VERSION'</' \
+sed_i '/<spark-rapids-private\.version>/,/<spark\.version>[0-9]*\.[0-9]*\.[0-9]*</s/<scala\.version>[0-9]*\.[0-9]*\.[0-9]*</<scala.version>'$SCALA_VERSION'</' \
   "$BASEDIR/pom.xml"
 
 # Also update <scala.binary.version> in parent POM
 # Match any scala binary version to ensure idempotency
-sed_i '1,/<scala\.binary\.version>[0-9]*\.[0-9]*</s/<scala\.binary\.version>[0-9]*\.[0-9]*</<scala.binary.version>'$TO_VERSION'</' \
+sed_i '/<spark-rapids-private\.version>/,/<scala\.binary\.version>[0-9]*\.[0-9]*</s/<scala\.binary\.version>[0-9]*\.[0-9]*</<scala.binary.version>'$TO_VERSION'</' \
   "$BASEDIR/pom.xml"
-
-# Update source of scaladocs
-# echo "$BASEDIR/docs/_plugins/copy_api_dirs.rb"
-# if [ $TO_VERSION = "2.13" ]; then
-#   sed_i '/\-Pscala-'$TO_VERSION'/!s:build/sbt:build/sbt \-Pscala\-'$TO_VERSION':' "$BASEDIR/docs/_plugins/copy_api_dirs.rb"
-# else
-#   sed_i 's:build/sbt \-Pscala\-'$FROM_VERSION':build/sbt:' "$BASEDIR/docs/_plugins/copy_api_dirs.rb"
-# fi
-# sed_i 's/scala\-'$FROM_VERSION'/scala\-'$TO_VERSION'/' "$BASEDIR/docs/_plugins/copy_api_dirs.rb"
-
-# echo "$BASEDIR/dev/mima"
-# if [ $TO_VERSION = "2.13" ]; then
-#   sed_i '/\-Pscala-'$TO_VERSION'/!s:build/sbt:build/sbt \-Pscala\-'$TO_VERSION':' "$BASEDIR/dev/mima"
-#   sed_i '/\-Pscala-'$TO_VERSION'/!s;SPARK_PROFILES=\${1:\-";SPARK_PROFILES=\${1:\-"\-Pscala\-'$TO_VERSION' ;' \
-#     "$BASEDIR/dev/mima"
-# else
-#   sed_i 's/\-Pscala\-'$FROM_VERSION' //' "$BASEDIR/dev/mima"
-# fi
-# chmod 775 "$BASEDIR/dev/mima"

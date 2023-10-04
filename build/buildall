@@ -21,6 +21,7 @@ shopt -s extglob
 
 SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
+SCALA213=0
 
 function print_usage() {
   echo "Usage: buildall [OPTION]"
@@ -35,10 +36,10 @@ function print_usage() {
   echo "        generate projects for Bloop clients: IDE (Scala Metals, IntelliJ) or Bloop CLI"
   echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
   echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
-  echo "        snapshotsWithDatabricks, and noSnapshotsWithDatabricks. NOTE: the Databricks-related spark3XYdb shims"
-  echo "        are not built locally, the jars are fetched prebuilt from a remote Maven repo."
-  echo "        You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will build only"
-  echo "        the distribution jar only for 3.2.0 and 3.3.0"
+  echo "        snapshotsWithDatabricks, noSnapshotsWithDatabricks, noSnapshotsScala213, snapshotsScala213, allScala213."
+  echo "        NOTE: the Databricks-related spark3XYdb shims are not built locally, the jars are fetched prebuilt from a"
+  echo " .      remote Maven repo. You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will"
+  echo "        build only the distribution jar only for 3.2.0 and 3.3.0"
   echo "   -m=MODULE, --module=MODULE"
   echo "        after finishing parallel builds, resume from dist and build up to and including module MODULE."
   echo "        E.g., --module=integration_tests"
@@ -135,6 +136,10 @@ case "$1" in
   FINAL_OP="install"
   ;;
 
+--scala213)
+  SCALA213=1
+  ;;
+
 --rebuild-dist-only)
   SKIP_DIST_DEPS="1"
   MODULE="dist"
@@ -157,13 +162,39 @@ shift
 
 done
 
-# include options to mvn command
-export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
+if [[ "$DIST_PROFILE" == *Scala213 ]]; then
+  SCALA213=1
+fi
 
-DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+if [[ $SCALA213 == 1 ]]; then
+  MVN="mvn -Pscala-2.13"
+else
+  MVN="mvn"
+fi
+
+
+# include options to mvn command
+export MVN="$MVN -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
+
+if [[ "$SCALA213" == "1" ]]; then
+  DIST_PROFILE=${DIST_PROFILE:-"noSnapshotsScala213"}
+else
+  DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+fi
+
+[[ "$SCALA213" == "1" ]] && SCALA_VER_OPT="-Dscala.binary.version=2.13" || SCALA_VER_OPT=""
+
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 case $DIST_PROFILE in
+
+  snapshotsScala213)
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshotsScala213"))
+    ;;
+
+  noSnapshotsScala213)
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshotsScala213"))
+    ;;
 
   snapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshots"))
@@ -265,7 +296,11 @@ time (
     # avoid repeating this work in parallel
     # Initialize sql-plugin-api only to avoid dealing with missing submodule dependencies
     #
-    $MVN initialize -pl sql-plugin-api -am
+    if [[ "$SCALA213" == "1" ]]; then
+      $MVN initialize -Dbuildver=$BASE_VER -pl sql-plugin-api -am
+    else
+      $MVN initialize -pl sql-plugin-api -am
+    fi
 
     printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
       xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
@@ -278,7 +313,10 @@ time (
   # a negligible increase of the build time by ~2 seconds.
   joinShimBuildFrom="aggregator"
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
-  $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+  echo "$MVN $FINAL_OP -rf $joinShimBuildFrom $SCALA_VER_OPT $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+    -Dbuildver=\"$BASE_VER\" \
+    -DskipTests -Dskip"
+  $MVN $FINAL_OP -rf $joinShimBuildFrom $SCALA_VER_OPT $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests -Dskip
 )
