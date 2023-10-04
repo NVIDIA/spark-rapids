@@ -41,8 +41,8 @@ gen_list_dict = {
     ],
     'multiple_partition_multiple_value_narrow_first_col': [
         ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=False), length=2)),
-        ('k1', RepeatSeqGen(StringGen(pattern='b{60,80}', nullable=False), length=2)),
+        ('k0', RepeatSeqGen(StringGen(pattern='a{30,50}', nullable=False), length=2)),
+        ('k1', RepeatSeqGen(StringGen(pattern='b{80,100}', nullable=False), length=2)),
     ]
 }
 
