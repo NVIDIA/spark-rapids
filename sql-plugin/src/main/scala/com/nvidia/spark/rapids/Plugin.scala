@@ -116,7 +116,7 @@ object RapidsPluginUtils extends Logging {
   def estimateCoresOnExec(conf: SparkConf): Int = {
     val executorCoreConfOption = conf.getOption(RapidsPluginUtils.EXECUTOR_CORES_KEY)
     val masterOption = conf.getOption(RapidsPluginUtils.SPARK_MASTER)
-    val res = masterOption match {
+    val numCores = masterOption match {
       case Some(m) =>
         m match {
           case "yarn" =>
@@ -142,8 +142,8 @@ object RapidsPluginUtils extends Logging {
         logWarning(s"Master is not set, number of cores is set to $coresToUse")
         coresToUse
     }
-    logInfo(s"Estimated number of cores is $res")
-    res
+    logInfo(s"Estimated number of cores is $numCores")
+    numCores
   }
 
   def fixupConfigsOnDriver(conf: SparkConf): Unit = {
