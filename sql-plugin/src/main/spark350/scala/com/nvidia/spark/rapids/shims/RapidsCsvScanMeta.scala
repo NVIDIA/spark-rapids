@@ -35,11 +35,12 @@ class RapidsCsvScanMeta(
     // we are being overly cautious and that Csv does not support this yet
     TagScanForRuntimeFiltering.tagScanForRuntimeFiltering(this, cScan)
 
-    cScan.options.get("timestampFormat") match {
+    val timestampFormat = cScan.options.get("timestampFormat")
+    timestampFormat match {
       case "yyyy-MM-dd" | "yyyy-MM" | "yyyy-MM-dd'T'HH:mm" | "yyyy-MM-dd'T'HH:mm:ss" =>
         // https://github.com/NVIDIA/spark-rapids/issues/9325
         willNotWorkOnGpu(s"$timestampFormat '$timestampFormat' is not compatible with Spark >= 3.5.0")
-      case _ =>
+      case other =>
     }
 
   }

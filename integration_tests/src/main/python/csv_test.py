@@ -561,7 +561,7 @@ def test_csv_read_count(spark_tmp_path):
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
 
-# these combinations fail in Spark 3.5.0
+# these combinations fail in Spark 3.5.0 (on CPU)
 unsupported_csv_schema_inference_formats = [
     ["", "yyyy-MM-dd"],
     ["", "yyyy-MM"],
@@ -592,24 +592,22 @@ def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, date_format, ts_part,
         csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.skipif(is_before_spark_350(), reason='TBD')
-@pytest.mark.xfail(reason = "https://github.com/NVIDIA/spark-rapids/issues/9325")
+@pytest.mark.skipif(is_before_spark_350(), reason='https://github.com/NVIDIA/spark-rapids/issues/9325')
 @pytest.mark.parametrize('formats', unsupported_csv_schema_inference_formats)
 @pytest.mark.parametrize("timestamp_type", ['TIMESTAMP_LTZ', 'TIMESTAMP_NTZ'])
 def test_csv_infer_schema_timestamp_ntz_v1_350(spark_tmp_path, formats, timestamp_type):
        ts_part = formats[0]
        date_format = formats[1]
-       csv_infer_schema_fallback_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
+       csv_infer_schema_error_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
 
 @allow_non_gpu('BatchScanExec', 'FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_350(), reason='https://github.com/NVIDIA/spark-rapids/issues/9325')
-@pytest.mark.xfail(reason = "https://github.com/NVIDIA/spark-rapids/issues/9325")
 @pytest.mark.parametrize('formats', unsupported_csv_schema_inference_formats)
 @pytest.mark.parametrize("timestamp_type", ['TIMESTAMP_LTZ', 'TIMESTAMP_NTZ'])
 def test_csv_infer_schema_timestamp_ntz_v2_350(spark_tmp_path, formats, timestamp_type):
     ts_part = formats[0]
     date_format = formats[1]
-    csv_infer_schema_fallback_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
+    csv_infer_schema_error_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
 
 def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
     full_format = date_format + ts_part
@@ -647,7 +645,7 @@ def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timesta
             non_exist_classes = cpu_scan_class,
             conf = conf)
 
-def csv_infer_schema_fallback_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
+def csv_infer_schema_error_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
     full_format = date_format + ts_part
     # specify to use no timezone rather than defaulting to UTC
     data_gen = TimestampGen(tzinfo=None)
@@ -664,13 +662,24 @@ def csv_infer_schema_fallback_ntz(spark_tmp_path, date_format, ts_part, timestam
             .csv(data_path)
 
     conf = { 'spark.sql.timestampType': timestamp_type,
-             'spark.sql.sources.useV1SourceList': v1_enabled_list }
+             'spark.sql.sources.useV1SourceList': v1_enabled_list,
+             'spark.rapids.sql.explain': 'ALL' }
 
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: do_read(spark),
-        exist_classes = 'Gpu' + cpu_scan_class,
-        non_exist_classes = cpu_scan_class,
-        conf = conf)
+    # determine whether Spark CPU infers TimestampType or TimestampNtzType
+    inferred_type = with_cpu_session(
+        lambda spark : do_read(spark).schema["_c0"].dataType.typeName(), conf=conf)
+
+    if inferred_type == "timestamp_ntz":
+        # we fall back to CPU due to "unsupported data types in output: TimestampNTZType"
+        assert_gpu_fallback_collect(
+            lambda spark: do_read(spark),
+            cpu_fallback_class_name = cpu_scan_class,
+            conf = conf)
+    else:
+        assert_gpu_and_cpu_error(
+            lambda spark: do_read(spark).collect(),
+            conf = conf,
+            error_message='unparsed text found')
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
