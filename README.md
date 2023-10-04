@@ -7,7 +7,7 @@ via the [RAPIDS](https://rapids.ai) libraries.
 
 Documentation on the current release can be found [here](https://nvidia.github.io/spark-rapids/).
 
-To get started and try the plugin out use the [getting started guide](./docs/get-started/getting-started.md).
+To get started and try the plugin out use the [getting started guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html).
 
 ## Compatibility
 
@@ -17,7 +17,7 @@ Operator compatibility is documented [here](./docs/compatibility.md)
 ## Tuning
 
 To get started tuning your job and get the most performance out of it please start with the
-[tuning guide](./docs/tuning-guide.md).
+[tuning guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/tuning-guide.html).
 
 ## Configuration
 
@@ -46,7 +46,7 @@ Tests are described [here](tests/README.md).
 ## Integration
 The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero copy data
 transfer into other GPU enabled applications.  It is described
-[here](docs/additional-functionality/ml-integration.md).
+[here](https://docs.nvidia.com/spark-rapids/user-guide/latest/additional-functionality/ml-integration.html).
 
 Currently, we are working with XGBoost to try to provide this integration out of the box.
 
@@ -59,8 +59,8 @@ access to any of the memory that RMM is holding.
 The Qualification and Profiling tools have been moved to
 [nvidia/spark-rapids-tools](https://github.com/NVIDIA/spark-rapids-tools) repo.
 
-Please refer to [Qualification tool documentation](docs/spark-qualification-tool.md)
-and [Profiling tool documentation](docs/spark-profiling-tool.md)
+Please refer to [Qualification tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/spark-qualification-tool.html)
+and [Profiling tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/spark-profiling-tool.html)
 for more details on how to use the tools.
 
 ## Dependency for External Projects

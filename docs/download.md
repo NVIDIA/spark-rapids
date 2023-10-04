@@ -59,7 +59,7 @@ The plugin is tested on the following architectures:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v23.08.1
 * Download the [RAPIDS
@@ -98,4 +98,4 @@ For a detailed list of changes, please refer to the
 
 ## Archived releases
 
-As new releases come out, previous ones will still be available in [archived releases](./archive.md). 
+As new releases come out, previous ones will still be available in [archived releases](./archive.md).

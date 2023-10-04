@@ -19976,4 +19976,4 @@ dates or timestamps, or for a lack of type coercion support.
 
 ### Apache Iceberg Support
 Support for Apache Iceberg has additional limitations. See the
-[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.
+[Apache Iceberg Support](https://docs.nvidia.com/spark-rapids/user-guide/latest/additional-functionality/iceberg-support.html) document.
