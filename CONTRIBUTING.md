@@ -183,6 +183,16 @@ flag if cross-compilation is required.
 mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
 ```
 
+### Building and Testing with ARM
+
+To build our project on ARM platform, please add `-Parm64` to your Maven commands.
+NOTE: Build process does not require an ARM machine, so if you want to build the artifacts only
+on X86 machine, please also add `-DskipTests` in commands.
+
+```bash
+mvn clean verify -Dbuildver=311 -Parm64
+```
+
 ### Iterative development during local testing
 
 When iterating on changes impacting the `dist` module artifact directly or via

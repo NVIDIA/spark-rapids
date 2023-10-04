@@ -411,6 +411,43 @@ object RapidsConf {
       .integerConf
       .createWithDefault(2)
 
+  val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
+    .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
+      "an exception. The URI can reference a distributed filesystem. The filename will be of the " +
+      "form gpucore-<appID>-<executorID>.nvcudmp, where <appID> is the Spark application ID and " +
+      "<executorID> is the executor ID.")
+    .internal()
+    .stringConf
+    .createOptional
+
+  val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
+    .doc("The pattern to use to generate the named pipe path. Occurrences of %p in the pattern " +
+      "will be replaced with the process ID of the executor.")
+    .internal
+    .stringConf
+    .createWithDefault("gpucorepipe.%p")
+
+  val GPU_COREDUMP_FULL = conf("spark.rapids.gpu.coreDump.full")
+    .doc("If true, GPU coredumps will be a full coredump (i.e.: with local, shared, and global " +
+      "memory).")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
+    .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
+      "lz4, lzf, snappy, and zstd.")
+    .internal()
+    .stringConf
+    .createWithDefault("zstd")
+
+  val GPU_COREDUMP_COMPRESS = conf("spark.rapids.gpu.coreDump.compress")
+    .doc("If true, GPU coredumps will be compressed using the compression codec specified " +
+      s"in $GPU_COREDUMP_COMPRESSION_CODEC")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
@@ -1435,7 +1472,8 @@ object RapidsConf {
 
   val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
     .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
-      "The [RAPIDS Shuffle Manager](rapids-shuffle.md) must " +
+      "The [RAPIDS Shuffle Manager](https://docs.nvidia.com/spark-rapids/user-guide/latest" +
+      "/additional-functionality/rapids-shuffle.html) must " +
       "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
     .booleanConf
     .createWithDefault(true)
@@ -2246,6 +2284,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
   lazy val gpuOomMaxRetries: Int = get(GPU_OOM_MAX_RETRIES)
+
+  lazy val gpuCoreDumpDir: Option[String] = get(GPU_COREDUMP_DIR)
+
+  lazy val gpuCoreDumpPipePattern: String = get(GPU_COREDUMP_PIPE_PATTERN)
+
+  lazy val isGpuCoreDumpFull: Boolean = get(GPU_COREDUMP_FULL)
+
+  lazy val isGpuCoreDumpCompressed: Boolean = get(GPU_COREDUMP_COMPRESS)
+
+  lazy val gpuCoreDumpCompressionCodec: String = get(GPU_COREDUMP_COMPRESSION_CODEC)
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
