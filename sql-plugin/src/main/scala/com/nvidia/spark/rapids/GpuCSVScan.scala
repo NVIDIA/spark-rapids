@@ -195,6 +195,20 @@ object GpuCSVScan {
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
     }
 
+    // TODO move this check to 350 shim
+    if (parsedOptions.inferSchemaFlag) {
+      parsedOptions.timestampFormatInRead match {
+        case Some(fmt) => fmt match {
+          case "yyyy-MM-dd" | "yyyy-MM" | "yyyy-MM-dd'T'HH:mm" | "yyyy-MM-dd'T'HH:mm:ss" =>
+            // https://github.com/NVIDIA/spark-rapids/issues/9325
+            meta.willNotWorkOnGpu(s"timestampFormat '$fmt' is not compatible with " +
+              s"Spark >= 3.5.0 when schema inference is enabled")
+          case _ =>
+        }
+        case _ =>
+      }
+    }
+
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
 }
