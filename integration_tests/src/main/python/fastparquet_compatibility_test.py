@@ -182,10 +182,11 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
         marks=pytest.mark.xfail(reason="spark_df.toPandas() problem: Timestamps in Spark can't be "
                                        "converted to pandas, because of type errors. The error states: "
                                        "\"TypeError: Casting to unit-less dtype 'datetime64' is not supported. "
-                                       "Pass e.g. 'datetime64[ns]' instead.\"")),
+                                       "Pass e.g. 'datetime64[ns]' instead.\" This test setup has a workaround in "
+                                       "test_reading_file_written_with_workaround_fastparquet")),
     pytest.param(
         ArrayGen(IntegerGen(nullable=False), nullable=False),
-        marks.pytest.mark.xfail(reason="spark.toPandas() problem: toPandas() converts Array columns into String. "
+        marks=pytest.mark.xfail(reason="spark.toPandas() problem: toPandas() converts Array columns into String. "
                                        "The test then fails with the same problem as with String columns. "
                                        "See https://github.com/NVIDIA/spark-rapids/issues/9387.")),
 ], ids=idfn)
@@ -209,3 +210,58 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
         rebase_write_corrected_conf)
+
+
+@pytest.mark.parametrize('column_gen, time_format', [
+    pytest.param(
+        TimestampGen(nullable=False,
+            start=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2200, 12, 31, tzinfo=timezone.utc)), 'int64',
+        marks=pytest.mark.xfail(reason="Apache Spark and the plugin both have problems reading timestamps written via "
+                                       "fastparquet, if written in int64: "
+                                       "\"Illegal Parquet type: INT64 (TIMESTAMP(NANOS,false)).\"")),
+    (TimestampGen(nullable=False,
+                 start=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                 end=datetime(2200, 12, 31, tzinfo=timezone.utc)), 'int96'),
+    (TimestampGen(nullable=True,
+                  start=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                  end=datetime(2200, 12, 31, tzinfo=timezone.utc)), 'int96'),
+    pytest.param(
+        TimestampGen(nullable=False), 'int96',
+        marks=pytest.mark.xfail(reason="fastparquet does not support int96RebaseModeInWrite, for dates before "
+                                       "1582-10-15 or timestamps before 1900-01-01T00:00:00Z. "
+                                       "This messes up reads from Apache Spark and the plugin.")),
+], ids=idfn)
+def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_tmp_path):
+    """
+    This test is a workaround to test data-types that have problems being converted
+    from Spark dataframes to Pandas dataframes.
+    For instance, sparkDF.toPandas() incorrectly converts ARRAY<INT> columns into
+    STRING columns.
+    This test writes the Spark dataframe into a temporary file, and then uses
+    `fastparquet` to read and write the file again, to the final destination.
+    The final file should be in the correct format, with the right datatypes.
+    This is then checked for read-accuracy, via CPU and GPU.
+    """
+    data_path = spark_tmp_path + "/FASTPARQUET_WRITE_PATH"
+    data_path = "/tmp/FASTPARQUET_WRITE_PATH"
+
+    def rewrite_with_fastparquet(spark, data_gen):
+        import fastparquet
+        tmp_data_path = data_path + "_tmp"
+        spark_df = gen_df(spark, data_gen, 2048)
+        spark_df.repartition(1).write.mode("overwrite").parquet(tmp_data_path)
+        pandas_df = fastparquet.ParquetFile(tmp_data_path).to_pandas()
+        fastparquet.write(data_path, pandas_df, times=time_format)
+
+    gen = StructGen([('a', column_gen),
+                     ('part', IntegerGen(nullable=False))], nullable=False)
+    # Write data with CPU session.
+    with_cpu_session(
+        lambda spark: rewrite_with_fastparquet(spark, gen)
+    )
+    # Read Parquet with CPU (Apache Spark) and GPU (plugin), and compare records.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        rebase_write_corrected_conf)
+
