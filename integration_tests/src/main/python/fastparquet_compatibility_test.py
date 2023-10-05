@@ -15,9 +15,8 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from datetime import date, datetime, timezone
 from data_gen import *
-from pyspark.sql.types import *
+import fastparquet
 from spark_session import with_cpu_session, with_gpu_session
 
 rebase_write_corrected_conf = {
@@ -40,14 +39,12 @@ def read_parquet(data_path):
         if plugin_enabled:
             return spark.read.parquet(data_path)
         else:
-            import fastparquet
             df = fastparquet.ParquetFile(data_path).to_pandas()
             return spark.createDataFrame(df)
 
     return read_with_fastparquet_or_plugin
 
 
-@pytest.mark.parametrize('corrected_conf', [rebase_write_corrected_conf])
 @pytest.mark.parametrize('data_gen', [
     ByteGen(nullable=False),
     ShortGen(nullable=False),
@@ -82,17 +79,17 @@ def read_parquet(data_path):
     # StructGen(children=[("first", IntegerGen(nullable=False)),
     #                     ("second", FloatGen(nullable=False))], nullable=False)
 ], ids=idfn)
-def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path, corrected_conf):
+def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
     data_path = spark_tmp_path + "/FASTPARQUET_SINGLE_COLUMN_INPUT"
     gen = StructGen([('a', data_gen)], nullable=False)
     # Write data with CPU session.
     with_cpu_session(
         # Single output file, to avoid differences in order of file reads.
-        lambda spark: gen_df(spark, gen, 3).repartition(1).write.mode('overwrite').parquet(data_path),
-        conf=corrected_conf
+        lambda spark: gen_df(spark, gen, 2048).repartition(1).write.mode('overwrite').parquet(data_path),
+        conf=rebase_write_corrected_conf
     )
     # Read Parquet with CPU (fastparquet) and GPU (plugin), and compare records.
-    assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path), conf=corrected_conf)
+    assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
 
 
 @pytest.mark.parametrize('column_gen', [
@@ -175,7 +172,10 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
                                        "This test has a workaround in test_reading_file_rewritten_with_fastparquet.")),
     pytest.param(
         TimestampGen(nullable=False),
-        marks=pytest.mark.xfail(reason="Timestamps exceeding year=2300 are out of bounds for Pandas.")),
+        marks=pytest.mark.xfail(reason="Old timestamps are out of bounds for Pandas. E.g.:  "
+                                       "\"pandas._libs.tslibs.np_datetime.OutOfBoundsDatetime: Out of bounds "
+                                       "nanosecond timestamp: 740-07-19 18:09:56\"."
+                                       "This test has a workaround in test_reading_file_rewritten_with_fastparquet.")),
     pytest.param(
         TimestampGen(nullable=False,
                      start=datetime(2000, 1, 1, tzinfo=timezone.utc),
@@ -183,7 +183,7 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
         marks=pytest.mark.xfail(reason="spark_df.toPandas() problem: Timestamps in Spark can't be "
                                        "converted to pandas, because of type errors. The error states: "
                                        "\"TypeError: Casting to unit-less dtype 'datetime64' is not supported. "
-                                       "Pass e.g. 'datetime64[ns]' instead.\" This test setup has a workaround in "
+                                       "Pass e.g. 'datetime64[ns]' instead.\" This test has a workaround in "
                                        "test_reading_file_rewritten_with_fastparquet.")),
     pytest.param(
         ArrayGen(IntegerGen(nullable=False), nullable=False),
@@ -196,7 +196,6 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
 
     def write_with_fastparquet(spark, data_gen):
         #  TODO: (future) Compression settings?
-        import fastparquet
         dataframe = gen_df(spark, data_gen, 2048)
         fastparquet.write(data_path, dataframe.toPandas())
 
@@ -266,7 +265,6 @@ def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_
     data_path = "/tmp/FASTPARQUET_WRITE_PATH"
 
     def rewrite_with_fastparquet(spark, data_gen):
-        import fastparquet
         tmp_data_path = data_path + "_tmp"
         spark_df = gen_df(spark, data_gen, 2048)
         spark_df.repartition(1).write.mode("overwrite").parquet(tmp_data_path)
