@@ -13,6 +13,7 @@ following topics:
   * [How Spark Executes the Physical Plan](#how-spark-executes-the-physical-plan)
 * [How the Plugin Works](#how-the-rapids-plugin-works)
   * [Plugin Replacement Rules](#plugin-replacement-rules)
+  * [Working with Data Sources](#working-with-data-sources)
 * [Guidelines for Replacing Catalyst Executors and Expressions](#guidelines-for-replacing-catalyst-executors-and-expressions)
   * [Setting Up the Class](#setting-up-the-class)
   * [Expressions](#expressions)
@@ -130,6 +131,11 @@ executor, expression, etc.), and applying the rule that matches.  See the
 
 There is a separate guide for working with
 [Adaptive Query Execution](adaptive-query.md).
+
+### Working with Data Sources
+
+The plugin supports v1 and v2 data sources for file formats such as CSV,
+Orc, JSON, and Parquet. See the [data source guide](data-sources.md) for more information.
 
 ## Guidelines for Replacing Catalyst Executors and Expressions
 Most development work in the plugin involves translating various Catalyst
