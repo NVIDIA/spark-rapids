@@ -1,3 +1,10 @@
+---
+layout: page
+title: Working with Spark Data Sources
+nav_order: 2
+parent: Developer Overview
+---
+
 # Working with Spark Data Sources
 
 ## Data Source API Versions
