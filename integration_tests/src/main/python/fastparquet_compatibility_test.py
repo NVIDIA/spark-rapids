@@ -171,7 +171,8 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
                 start=date(year=2000, month=1, day=1),
                 end=date(year=2020, month=12, day=31)),
         marks=pytest.mark.xfail(reason="spark_df.toPandas() problem: Dates generated in Spark can't be written "
-                                       "with fastparquet, because the dtype/encoding cannot be deduced.")),
+                                       "with fastparquet, because the dtype/encoding cannot be deduced. "
+                                       "This test has a workaround in test_reading_file_rewritten_with_fastparquet.")),
     pytest.param(
         TimestampGen(nullable=False),
         marks=pytest.mark.xfail(reason="Timestamps exceeding year=2300 are out of bounds for Pandas.")),
@@ -183,7 +184,7 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
                                        "converted to pandas, because of type errors. The error states: "
                                        "\"TypeError: Casting to unit-less dtype 'datetime64' is not supported. "
                                        "Pass e.g. 'datetime64[ns]' instead.\" This test setup has a workaround in "
-                                       "test_reading_file_written_with_workaround_fastparquet")),
+                                       "test_reading_file_rewritten_with_fastparquet.")),
     pytest.param(
         ArrayGen(IntegerGen(nullable=False), nullable=False),
         marks=pytest.mark.xfail(reason="spark.toPandas() problem: toPandas() converts Array columns into String. "
@@ -213,6 +214,24 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
 
 
 @pytest.mark.parametrize('column_gen, time_format', [
+    pytest.param(
+        DateGen(nullable=False,
+                 start=date(year=2000, month=1, day=1),
+                 end=date(year=2020, month=12, day=31)), 'int64',
+        marks=pytest.mark.xfail(reason="Apache Spark and the plugin both have problems reading dates written via "
+                                       "fastparquet, if written in int64: "
+                                       "\"Illegal Parquet type: INT64 (TIMESTAMP(NANOS,false)).\"")),
+    pytest.param(
+        DateGen(nullable=False), 'int96',
+        marks=pytest.mark.xfail(reason="fastparquet does not support int96RebaseModeInWrite, for dates before "
+                                       "1582-10-15 or timestamps before 1900-01-01T00:00:00Z. "
+                                       "This messes up reads from Apache Spark and the plugin.")),
+    (DateGen(nullable=False,
+             start=date(year=2000, month=1, day=1),
+             end=date(year=2020, month=12, day=31)), 'int96'),
+    (DateGen(nullable=True,
+            start=date(year=2000, month=1, day=1),
+            end=date(year=2020, month=12, day=31)), 'int96'),
     pytest.param(
         TimestampGen(nullable=False,
             start=datetime(2000, 1, 1, tzinfo=timezone.utc),
@@ -264,4 +283,3 @@ def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
         rebase_write_corrected_conf)
-
