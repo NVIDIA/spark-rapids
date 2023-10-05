@@ -53,7 +53,7 @@ The classes `GpuCSVScan`, `GpuParquetScan`, `GpuOrcScan`, and `GpuJsonScan` are 
 from the v2 API, so this is a good place to put code that is not specific to either API
 version. These scan classes also call into `FileFormatChecks.tag`.
 
-## v2 API
+## V2 API
 
 When using the v2 API, the physical plan will contain a `BatchScanExec`, which wraps a scan that implements
 the `org.apache.spark.sql.connector.read.Scan` trait. The scan implementations include `CsvScan`, `ParquetScan`,
