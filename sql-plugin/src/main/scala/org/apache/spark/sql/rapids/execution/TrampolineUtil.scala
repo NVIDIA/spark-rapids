@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
 
-import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
+import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
@@ -184,4 +184,17 @@ object TrampolineUtil {
   }
 
   def getCodecShortName(codecName: String): String = CompressionCodec.getShortName(codecName)
+
+  // If the master is a local mode (local or local-cluster), return the number
+  // of cores per executor it is going to use, otherwise return 1.
+  def getCoresInLocalMode(master: String, conf: SparkConf): Int = {
+    master match {
+      case SparkMasterRegex.LOCAL_CLUSTER_REGEX(_, coresPerWorker, _) =>
+        coresPerWorker.toInt
+      case master if master.startsWith("local") =>
+        SparkContext.numDriverCores(master, conf)
+      case _ =>
+        1
+    }
+  }
 }
