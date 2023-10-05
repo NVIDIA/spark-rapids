@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, Shim
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnsafeArrayData, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
@@ -2316,27 +2316,21 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
     val ins = new DataInputStream(bis)
 
     try {
-      // Store LIST<STRUCT<element, count>>
-      val histogramList = ArrayBuffer[InternalRow]()
+      // Store a column of STRUCT<element, count>
+      val histogram = ArrayBuffer[InternalRow]()
       val row = new UnsafeRow(2)
-
-      while(ins.available() > 0) {
-        // Read each histogram.
-        val histogram = ArrayBuffer[InternalRow]()
-        var sizeOfNextRow = ins.readInt()
-        while (sizeOfNextRow >= 0) {
-          val bs = new Array[Byte](sizeOfNextRow)
-          ins.readFully(bs)
-          row.pointTo(bs, sizeOfNextRow)
-          val element = row.get(0, elementType)
-          val count = row.get(1, LongType).asInstanceOf[Long]
-          histogram.append(InternalRow.apply(element, count))
-          sizeOfNextRow = ins.readInt()
-        }
-        histogramList.append(InternalRow.apply(histogram))
+      var sizeOfNextRow = ins.readInt()
+      while (sizeOfNextRow >= 0) {
+        val bs = new Array[Byte](sizeOfNextRow)
+        ins.readFully(bs)
+        row.pointTo(bs, sizeOfNextRow)
+        val element = row.get(0, elementType)
+        val count = row.get(1, LongType).asInstanceOf[Long]
+        histogram.append(InternalRow.apply(element, count))
+        sizeOfNextRow = ins.readInt()
       }
-
-      ArrayData.toArrayData(histogramList)
+      ArrayData.toArrayData(histogram)
+//      InternalRow.apply(histogram)
     } finally {
       ins.close()
       bis.close()
@@ -2354,38 +2348,30 @@ class GpuToCpuPercentileBufferConverter(elementType: DataType)
 case class GpuToCpuPercentileBufferTransition(override val child: Expression, elementType: DataType)
   extends GpuToCpuBufferTransition {
 
-  override protected def nullSafeEval(input: Any): Array[Array[Byte]] = {
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
     val buffer = new Array[Byte](4 << 10) // 4K
+    val bos = new ByteArrayOutputStream()
+    val out = new DataOutputStream(bos)
 
-    System.err.println("input type : " + input.getClass.toString)
+//    System.err.println("input type : " + input.getClass.toString)
 
 
-      val output = ArrayBuffer[Array[Byte]]()
+    try {
+      val histogram = input.asInstanceOf[UnsafeArrayData]
       val projection = UnsafeProjection.create(Array[DataType](elementType, LongType))
-      val arrayData = input.asInstanceOf[ArrayData]
-      (0 until arrayData.numElements()).foreach { i =>
-        val histogram = arrayData.getArray(i)
-
-        System.err.println("histogram type : " + histogram.getClass.toString)
-
-        val bos = new ByteArrayOutputStream()
-        val out = new DataOutputStream(bos)
-        try {
-          (0 until histogram.numElements()).foreach { j =>
-            val row = histogram.getStruct(j, 2)
-            val unsafeRow = projection.apply(row)
-            out.writeInt(unsafeRow.getSizeInBytes)
-            unsafeRow.writeToStream(out, buffer)
-          }
-          out.writeInt(-1)
-          out.flush()
-          output.append(bos.toByteArray)
-        } finally {
-          out.close()
-          bos.close()
-        }
+      (0 until histogram.numElements()).foreach { i =>
+        val row = histogram.getStruct(i, 2)
+        val unsafeRow = projection.apply(row)
+        out.writeInt(unsafeRow.getSizeInBytes)
+        unsafeRow.writeToStream(out, buffer)
       }
-    output.toArray[Array[Byte]]
+      out.writeInt(-1)
+      out.flush()
+      bos.toByteArray
+    } finally {
+      out.close()
+      bos.close()
+    }
   }
 }
 
