@@ -132,7 +132,7 @@ object RapidsPluginUtils extends Logging {
             TrampolineUtil.getCoresInLocalMode(m, conf)
           case _ =>
             val coresToUse = executorCoreConfOption.map(_.toInt).getOrElse(1)
-            logWarning(s"Master: ${masterOption.getOrElse("None")} is unknown, number of " +
+            logWarning(s"Master: $m is unknown, number of " +
               s"cores is set to $coresToUse")
             coresToUse
         }
