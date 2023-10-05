@@ -22,10 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.08.1</version>
+        <version>23.08.2-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>23.08.1</version>
+    <version>23.08.2-SNAPSHOT</version>
     <properties>
         <target.classifier/>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
