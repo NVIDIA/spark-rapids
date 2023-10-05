@@ -126,9 +126,7 @@ class BatchWithPartitionDataIterator(batchesWithPartitionData: Seq[BatchWithPart
 
   override def doClose(): Unit = {
     // Close the batches that have not been iterated.
-    while(retryIter.hasNext) {
-      retryIter.next().close()
-    }
+    retryIter.foreach(_.close())
   }
 }
 
@@ -231,26 +229,28 @@ object BatchWithPartitionDataUtils {
     var partIndex = 0
     var splitOccurred = false
     var rowsInPartition = 0
+    var currentPartition: PartitionRowData = null
     while (partIndex < partitionRowData.length) {
       // If there was no split, get next partition else process remaining rows in current partition.
       if (!splitOccurred) {
-        rowsInPartition = partitionRowData(partIndex).rowNum
+        currentPartition = partitionRowData(partIndex)
+        rowsInPartition = currentPartition.rowNum
       }
-      val valuesInPartition = partitionRowData(partIndex).rowValue
       // Calculate the maximum number of rows that can fit in current batch.
-      val maxRows = calculateMaxRows(valuesInPartition, partSchema, sizeOfBatch, maxColumnSize)
+      val maxRows = calculateMaxRows(currentPartition, partSchema, sizeOfBatch, maxColumnSize)
       // Splitting occurs if for any column, maximum rows we can fit is less than rows in partition.
       splitOccurred = maxRows < rowsInPartition
       if (splitOccurred) {
-        currentBatch.append(PartitionRowData(valuesInPartition, maxRows))
+        val newPartition = PartitionRowData(currentPartition.rowValue, maxRows)
+        currentBatch.append(newPartition)
         resultBatches.append(currentBatch.toArray)
         currentBatch.clear()
         java.util.Arrays.fill(sizeOfBatch, 0)
         rowsInPartition -= maxRows
       } else {
         // If there was no split, all rows can fit in current batch.
-        currentBatch.append(PartitionRowData(valuesInPartition, rowsInPartition))
-        val partitionSizes = calculatePartitionSizes(rowsInPartition, valuesInPartition, partSchema)
+        currentBatch.append(currentPartition)
+        val partitionSizes = calculatePartitionSizes(currentPartition, partSchema)
         sizeOfBatch.indices.foreach(i => sizeOfBatch(i) += partitionSizes(i))
         // Process next partition
         partIndex += 1
@@ -273,31 +273,32 @@ object BatchWithPartitionDataUtils {
   /**
    * Calculates the partition size for each column as 'size of single value * number of rows'
    */
-  private def calculatePartitionSizes(rowNum: Int, values: InternalRow,
+  private def calculatePartitionSizes(partitionRowData: PartitionRowData,
       partSchema: StructType): Seq[Long] = {
     partSchema.zipWithIndex.map {
-      case (field, colIndex) if field.dataType == StringType =>
-        // Assumption: Columns of other data type would not have fit already. Do nothing.\
-        val sizeOfSingleValue = values.getUTF8String(colIndex).numBytes
-        rowNum * sizeOfSingleValue
+      case (field, colIndex) if !partitionRowData.rowValue.isNullAt(colIndex)
+        && field.dataType == StringType =>
+        // Assumption: Columns of other data type would not have fit already. Do nothing.
+        val sizeOfSingleValue = partitionRowData.rowValue.getUTF8String(colIndex).numBytes
+        partitionRowData.rowNum * sizeOfSingleValue
       case _ => 0L
      }
   }
 
   /**
-   * For each column, calculate the maximum number of rows that can fit into a batch
-   * without exceeding limit.
+   * Calculate the maximum number of rows that can fit into a batch without exceeding limit.
    */
-  private def calculateMaxRows(valuesInPartition: InternalRow, partSchema: StructType,
+  private def calculateMaxRows(partitionRowData: PartitionRowData, partSchema: StructType,
       sizeOfBatch: Array[Long], maxColumnSize: Long): Int = {
     partSchema.zipWithIndex.map {
-      case (field, colIndex) if field.dataType == StringType =>
-        val sizeOfSingleValue = valuesInPartition.getUTF8String(colIndex).numBytes
+      case (field, colIndex) if !partitionRowData.rowValue.isNullAt(colIndex)
+        && field.dataType == StringType =>
+        val sizeOfSingleValue = partitionRowData.rowValue.getUTF8String(colIndex).numBytes
         val availableSpace = maxColumnSize - sizeOfBatch(colIndex)
         // Calculated max row numbers that can fit.
         val maxRows = (availableSpace / sizeOfSingleValue).toInt
         maxRows
-      case _ => 0
+      case _ => partitionRowData.rowNum
     }.min
   }
 
@@ -392,11 +393,6 @@ object BatchWithPartitionDataUtils {
   }
 
   /**
-   * Minimum number of rows required in a partition for retry operation.
-   */
-  private val MIN_ROWS_IN_PARTITION: Int = 10
-
-  /**
    * Splits an array of `PartitionRowData` into two halves of equal size.
    *
    * Example 1,
@@ -426,16 +422,15 @@ object BatchWithPartitionDataUtils {
    * }}}
    *
    * @note This function ensures that splitting is possible even in cases where there is a single
-   * large partition until there are rows less than [[MIN_ROWS_IN_PARTITION]].
+   * large partition until there is only one row.
    */
   private def splitPartitionDataInHalf(
       partitionedRowsData: Array[PartitionRowData]): Array[Array[PartitionRowData]] = {
     val totalRows = partitionedRowsData.map(_.rowNum).sum
-    var remainingRows = totalRows / 2
-    if (remainingRows < MIN_ROWS_IN_PARTITION) {
-      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
-        s"target number of rows to less than $MIN_ROWS_IN_PARTITION")
+    if (totalRows <= 1) {
+      throw new SplitAndRetryOOM("GPU OutOfMemory: cannot not split input with one row")
     }
+    var remainingRows = totalRows / 2
     val leftHalf = ArrayBuffer[PartitionRowData]()
     val rightHalf = ArrayBuffer[PartitionRowData]()
     partitionedRowsData.foreach { partitionRow: PartitionRowData =>
@@ -464,14 +459,13 @@ object BatchWithPartitionDataUtils {
    */
   def splitBatchInHalf: BatchWithPartitionData => Seq[BatchWithPartitionData] = {
     (batchWithPartData: BatchWithPartitionData) => {
-      closeOnExcept(batchWithPartData) { _ =>
+      withResource(batchWithPartData) { _ =>
         // Split partition rows data into two halves
         val splitPartitionData = splitPartitionDataInHalf(batchWithPartData.partitionedRowsData)
         // Split the batch into two halves
-        val splitBatches = withResource(batchWithPartData.inputBatch.getColumnarBatch()) { batch =>
-          splitAndCombineBatchWithPartitionData(batch, splitPartitionData,
+        val cb = batchWithPartData.inputBatch.getColumnarBatch()
+        val splitBatches = splitAndCombineBatchWithPartitionData(cb, splitPartitionData,
             batchWithPartData.partitionSchema)
-        }
         splitBatches
       }
     }

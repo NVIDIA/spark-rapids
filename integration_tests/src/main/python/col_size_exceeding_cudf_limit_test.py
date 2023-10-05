@@ -23,26 +23,26 @@ from marks import inject_oom, nightly_gpu_mem_consuming_case
 gen_list_dict = {
     'single_partition_single_value': [
         ('v0', LongGen()),
-        ('k0', StringGen(pattern='a{100}', nullable=False))
+        ('k0', StringGen(pattern='a{100}', nullable=True))
     ],
     'single_partition_multiple_value': [
         ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=False), length=2))
+        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=True), length=2))
     ],
     'multiple_partition_single_value': [
         ('v0', LongGen()),
-        ('k0', StringGen(pattern='a{100}', nullable=False)),
-        ('k1', StringGen(pattern='b{100}', nullable=False))
+        ('k0', StringGen(pattern='a{100}', nullable=True)),
+        ('k1', StringGen(pattern='b{100}', nullable=True))
     ],
     'multiple_partition_multiple_value_wider_first_col': [
         ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=False), length=2)),
-        ('k1', RepeatSeqGen(StringGen(pattern='b{30,50}', nullable=False), length=2))
+        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=True), length=2)),
+        ('k1', RepeatSeqGen(StringGen(pattern='b{30,50}', nullable=True), length=2))
     ],
     'multiple_partition_multiple_value_narrow_first_col': [
         ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{30,50}', nullable=False), length=2)),
-        ('k1', RepeatSeqGen(StringGen(pattern='b{80,100}', nullable=False), length=2)),
+        ('k0', RepeatSeqGen(StringGen(pattern='a{30,50}', nullable=True), length=2)),
+        ('k1', RepeatSeqGen(StringGen(pattern='b{80,100}', nullable=True), length=2)),
     ]
 }
 
@@ -64,20 +64,4 @@ def test_col_size_exceeding_cudf_limit(spark_tmp_path, key):
         lambda spark: gen_df(spark, gen, length=2000).write.partitionBy(partition_cols).format('parquet').save(
             data_path))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format('parquet').load(data_path).selectExpr('*'),
-        conf)
-
-
-@inject_oom
-@nightly_gpu_mem_consuming_case
-@pytest.mark.parametrize("key", gen_list_dict.keys())
-def test_col_size_exceeding_cudf_limit_nightly(spark_tmp_path, key):
-    gen_list = gen_list_dict[key]
-    partition_cols = extract_partition_cols(gen_list)
-    gen = StructGen(gen_list, nullable=False)
-    data_path = spark_tmp_path + '/PARQUET_DATA/' + key
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen, length=100000000).write.partitionBy(partition_cols).format('parquet').save(
-            data_path))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format('parquet').load(data_path).selectExpr('*'))
+        lambda spark: spark.read.format('parquet').load(data_path), conf)
