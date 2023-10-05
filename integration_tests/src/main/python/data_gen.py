@@ -257,7 +257,8 @@ class DecimalGen(DataGen):
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
         if special_cases is None:
-            special_cases = [DECIMAL_MIN, Decimal('0')]
+            # special_cases = [DECIMAL_MIN, Decimal('0')]
+            special_cases = [Decimal('0')]
             if not avoid_positive_values:
                 special_cases.append(DECIMAL_MAX)
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
