@@ -165,6 +165,23 @@
             </properties>
         </profile>
         <profile>
+            <id>noSnapshotsScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>snapshotsScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshotScala213.buildvers},
+                    ${snapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>individual</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
