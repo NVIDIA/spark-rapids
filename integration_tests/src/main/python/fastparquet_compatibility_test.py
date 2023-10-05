@@ -80,6 +80,12 @@ def read_parquet(data_path):
     #                     ("second", FloatGen(nullable=False))], nullable=False)
 ], ids=idfn)
 def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
+    """
+    This test writes data_gen output to Parquet via Apache Spark, then verifies that fastparquet and the RAPIDS
+    plugin read the data identically.
+    There are xfails here because of limitations in converting Spark dataframes to Pandas, if they contain nulls,
+    as well as limitations in fastparquet's handling of Dates, Timestamps, Decimals, etc.
+    """
     data_path = spark_tmp_path + "/FASTPARQUET_SINGLE_COLUMN_INPUT"
     gen = StructGen([('a', data_gen)], nullable=False)
     # Write data with CPU session.
@@ -122,6 +128,11 @@ def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
 ], ids=idfn)
 def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
+    """
+    This test writes the data-gen output to file via the RAPIDS plugin, then checks that the data is read identically
+    via fastparquet and Spark.
+    There are xfails here because of fastparquet limitations in handling Decimal, Timestamps, Dates, etc.
+    """
     data_path = spark_tmp_path + "/FASTPARQUET_TEST_GPU_WRITE_PATH"
 
     gen = StructGen([('a', column_gen),
@@ -189,9 +200,14 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
         ArrayGen(IntegerGen(nullable=False), nullable=False),
         marks=pytest.mark.xfail(reason="spark.toPandas() problem: toPandas() converts Array columns into String. "
                                        "The test then fails with the same problem as with String columns. "
-                                       "See https://github.com/NVIDIA/spark-rapids/issues/9387.")),
+                                       "See https://github.com/NVIDIA/spark-rapids/issues/9387."
+                                       "This test has a workaround in test_reading_file_rewritten_with_fastparquet.")),
 ], ids=idfn)
 def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
+    """
+    This test writes data-gen output with fastparquet, and checks that both Apache Spark and the RAPIDS plugin
+    read the written data correctly.
+    """
     data_path = spark_tmp_path + "/FASTPARQUET_WRITE_PATH"
 
     def write_with_fastparquet(spark, data_gen):
