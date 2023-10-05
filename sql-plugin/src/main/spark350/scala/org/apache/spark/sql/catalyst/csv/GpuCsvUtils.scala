@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,28 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "321db"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.csv
 
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
+
 import org.apache.spark.sql.catalyst.util.DateFormatter
-import org.apache.spark.sql.internal.SQLConf
 
 object GpuCsvUtils {
   def dateFormatInRead(options: CSVOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
 
   def timestampFormatInRead(options: CSVOptions): String = options.timestampFormatInRead.getOrElse(
-    if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
+    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy()) {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss.SSSXXX"
     } else {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"
     })
 
-  def enableDateTimeParsingFallback(options: CSVOptions): Boolean = false
+  def enableDateTimeParsingFallback(options: CSVOptions): Boolean =
+    options.enableDateTimeParsingFallback.getOrElse(false)
 
-  def unsupportedTimestampFormatsForSchemaInference(options: CSVOptions): Set[String] = Set.empty
+  def unsupportedTimestampFormatsForSchemaInference(options: CSVOptions): Set[String] =
+    Set("yyyy-MM-dd", "yyyy-MM", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss")
 }

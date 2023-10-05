@@ -17,7 +17,6 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
-{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.csv
 
@@ -38,4 +37,6 @@ object GpuCsvUtils {
 
   def enableDateTimeParsingFallback(options: CSVOptions): Boolean =
     options.enableDateTimeParsingFallback.getOrElse(false)
+
+  def unsupportedTimestampFormatsForSchemaInference(options: CSVOptions): Set[String] = Set.empty
 }

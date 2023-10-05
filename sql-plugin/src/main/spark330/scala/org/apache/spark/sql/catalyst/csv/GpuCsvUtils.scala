@@ -40,4 +40,6 @@ object GpuCsvUtils {
     })
 
   def enableDateTimeParsingFallback(options: CSVOptions): Boolean = false
+
+  def unsupportedTimestampFormatsForSchemaInference(options: CSVOptions): Set[String] = Set.empty
 }
