@@ -82,6 +82,7 @@ decimal_gens_no_nulls = [DecimalGen(precision=7, scale=3, nullable=False),
         DecimalGen(precision=12, scale=2, nullable=False),
         DecimalGen(precision=20, scale=2, nullable=False)]
 
+# This non-nans version is only used for Spark version < 3.1.3
 no_neg_zero_all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct
         FloatGen(special_cases=[], no_nans=True), 

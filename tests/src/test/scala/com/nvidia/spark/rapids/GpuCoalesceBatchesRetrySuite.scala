@@ -175,7 +175,7 @@ class GpuCoalesceBatchesRetrySuite
   test("coalesce gpu batches fails with OOM if it cannot split enough") {
     val iters = getIters(mockInjectSplitAndRetry = true)
     iters.foreach { iter =>
-      assertThrows[OutOfMemoryError] {
+      assertThrows[SplitAndRetryOOM] {
         iter.next() // throws
       }
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()

@@ -14,39 +14,10 @@ better model complex market demands, traditional CPU-based processing can no lon
 compromising either speed or cost. The growing adoption of AI in analytics has created the need for 
 a new framework to process data quickly and cost-efficiently with GPUs.
 
-The RAPIDS Accelerator for Apache Spark combines the power of the <a href="https://github.com/rapidsai/cudf/">RAPIDS cuDF</a> library and the scale of the Spark distributed computing framework.  The RAPIDS Accelerator library also has a built-in accelerated shuffle based on <a href="https://github.com/openucx/ucx/">UCX</a> that can be configured to leverage GPU-to-GPU communication and RDMA capabilities. 
+The RAPIDS Accelerator for Apache Spark combines the power of the [RAPIDS cuDF](https://github.com/rapidsai/cudf/) library and
+the scale of the Spark distributed computing framework.  The RAPIDS Accelerator library also has a
+built-in accelerated shuffle based on [UCX](https://github.com/openucx/ucx/) that can be configured to leverage GPU-to-GPU
+communication and RDMA capabilities.
 
-## Performance & Cost Benefits
-Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while saving infrastructure costs.
-![Perf-cost](/docs/img/perf-cost.png)
-*ETL for FannieMae Mortgage Dataset (~200GB) as shown in our 
-[demo](https://www.youtube.com/watch?v=4MI_LYah900). Costs 
-based on Cloud T4 GPU instance market price.
-
-Please refer to [spark-rapids-examples repo](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/XGBoost-Examples)
-for details of this example job.
-
-## Ease of Use
-Run your existing Apache Spark applications with no code change.  Launch Spark with the RAPIDS Accelerator for Apache Spark plugin jar and enable a configuration setting: 
-
-`spark.conf.set('spark.rapids.sql.enabled','true')`
-
-The following is an example of a physical plan with operators running on the GPU: 
-
-```
-== Physical Plan ==
-GpuColumnarToRow false
-+- GpuProject [cast(c_customer_sk#0 as string) AS c_customer_sk#40]
-   +- GpuFileGpuScan parquet [c_customer_sk#0] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex[file:/tmp/customer], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<c_customer_sk:int>
-```
-
-Learn more on how to [get started](get-started/getting-started.md).
-
-## A Unified AI framework for ETL + ML/DL 
-A single pipeline, from ingest to data preparation to model training
-![spark3cluster](/docs/img/spark3cluster.png)
-
-## Technical Support 
-
-If you need any help or have questions on this product, please contact us : 
-spark-rapids-support@nvidia.com
+If you are a customer looking for information on how to adopt RAPIDS Accelerator for Apache Spark
+for your Spark workloads, please go to our User Guide for more information: [link](https://docs.nvidia.com/spark-rapids/user-guide/latest/index.html).

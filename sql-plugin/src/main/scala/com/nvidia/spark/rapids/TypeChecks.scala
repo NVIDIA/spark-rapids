@@ -2214,7 +2214,7 @@ object SupportedOpsDocs {
     println()
     println("### Apache Iceberg Support")
     println("Support for Apache Iceberg has additional limitations. See the")
-    println("[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.")
+    println("[Apache Iceberg Support](https://docs.nvidia.com/spark-rapids/user-guide/latest/additional-functionality/iceberg-support.html) document.")
     // scalastyle:on line.size.limit
   }
 

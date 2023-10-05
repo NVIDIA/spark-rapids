@@ -3857,10 +3857,7 @@ object GpuOverrides extends Logging {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128.withPsNote(
           TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
-          TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
-          TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
-          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-          TypeSig.BINARY.withPsNote(TypeEnum.BINARY, "Only supported for Parquet") +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
