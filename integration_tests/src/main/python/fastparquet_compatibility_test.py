@@ -265,6 +265,16 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
         marks=pytest.mark.xfail(reason="fastparquet does not support int96RebaseModeInWrite, for dates before "
                                        "1582-10-15 or timestamps before 1900-01-01T00:00:00Z. "
                                        "This messes up reads from Apache Spark and the plugin.")),
+    pytest.param(
+        ArrayGen(nullable=False, child_gen=IntegerGen(nullable=False)), 'int96',
+        marks=pytest.mark.xfail(reason="fastparquet fails to serialize array elements with any available encoding. "
+                                       "E.g. \"Error converting column 'a' to bytes using encoding JSON. "
+                                       "Original error: Object of type int32 is not JSON serializable\".")),
+    (StructGen(nullable=False, children=[('first', IntegerGen(nullable=False))]), 'int96'),
+    pytest.param(
+        StructGen(nullable=True, children=[('first', IntegerGen(nullable=False))]), 'int96',
+        marks=pytest.mark.xfail(reason="fastparquet fails to read nullable Struct columns written from Apache Spark. "
+                                       "It fails the rewrite to parquet, thereby failing the test.")),
 ], ids=idfn)
 def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_tmp_path):
     """
@@ -278,7 +288,6 @@ def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_
     This is then checked for read-accuracy, via CPU and GPU.
     """
     data_path = spark_tmp_path + "/FASTPARQUET_WRITE_PATH"
-    data_path = "/tmp/FASTPARQUET_WRITE_PATH"
 
     def rewrite_with_fastparquet(spark, data_gen):
         tmp_data_path = data_path + "_tmp"
