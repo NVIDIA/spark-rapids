@@ -2356,28 +2356,36 @@ case class GpuToCpuPercentileBufferTransition(override val child: Expression, el
 
   override protected def nullSafeEval(input: Any): Array[Array[Byte]] = {
     val buffer = new Array[Byte](4 << 10) // 4K
-    val bos = new ByteArrayOutputStream()
-    val out = new DataOutputStream(bos)
 
-    try {
+    System.err.println("input type : " + input.getClass.toString)
+
+
       val output = ArrayBuffer[Array[Byte]]()
       val projection = UnsafeProjection.create(Array[DataType](elementType, LongType))
-      val arrayData = input.asInstanceOf[Array[InternalRow]]
-      arrayData.foreach { histogram =>
-        histogram.asInstanceOf[Array[InternalRow]].foreach { row =>
-          val unsafeRow = projection.apply(row)
-          out.writeInt(unsafeRow.getSizeInBytes)
-          unsafeRow.writeToStream(out, buffer)
+      val arrayData = input.asInstanceOf[ArrayData]
+      (0 until arrayData.numElements()).foreach { i =>
+        val histogram = arrayData.getArray(i)
+
+        System.err.println("histogram type : " + histogram.getClass.toString)
+
+        val bos = new ByteArrayOutputStream()
+        val out = new DataOutputStream(bos)
+        try {
+          (0 until histogram.numElements()).foreach { j =>
+            val row = histogram.getStruct(j, 2)
+            val unsafeRow = projection.apply(row)
+            out.writeInt(unsafeRow.getSizeInBytes)
+            unsafeRow.writeToStream(out, buffer)
+          }
+          out.writeInt(-1)
+          out.flush()
+          output.append(bos.toByteArray)
+        } finally {
+          out.close()
+          bos.close()
         }
-        out.writeInt(-1)
-        out.flush()
-        output.append(bos.toByteArray)
       }
-      output.toArray[Array[Byte]]
-    } finally {
-      out.close()
-      bos.close()
-    }
+    output.toArray[Array[Byte]]
   }
 }
 
