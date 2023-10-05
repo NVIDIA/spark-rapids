@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 import fastparquet
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import spark_version, with_cpu_session, with_gpu_session
 
 rebase_write_corrected_conf = {
     'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
@@ -45,6 +45,9 @@ def read_parquet(data_path):
     return read_with_fastparquet_or_plugin
 
 
+@pytest.mark.skipif(condition=spark_version() < "3.4.1",
+                    reason="spark_df.to_pandas() is not reliable on prior versions of Spark. 3.4.1 and above seem to "
+                           "work more stably.")
 @pytest.mark.parametrize('data_gen', [
     ByteGen(nullable=False),
     ShortGen(nullable=False),
@@ -73,13 +76,17 @@ def read_parquet(data_path):
                               start=datetime(1, 1, 1, tzinfo=timezone.utc),
                               end=datetime(1899, 12, 31, tzinfo=timezone.utc)),
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
-    #  TODO: Array gen type deduction borked when converting from Pandas to Spark dataframe.
-    # ArrayGen(child_gen=IntegerGen(nullable=False), nullable=False),
-    #  TODO: Struct rows seem to be correct, but are failing comparison because of differences in Row representation.
-    # StructGen(children=[("first", IntegerGen(nullable=False)),
-    #                     ("second", FloatGen(nullable=False))], nullable=False)
+    pytest.param(
+        ArrayGen(child_gen=IntegerGen(nullable=False), nullable=False),
+        marks=pytest.mark.xfail(reason="Conversion from Pandas dataframe to Spark dataframe fails: "
+                                       "\"Unable to infer the type of the field a\".")),
+    pytest.param(
+        StructGen(children=[("first", IntegerGen(nullable=False)),
+                            ("second", FloatGen(nullable=False))], nullable=False),
+        marks=pytest.mark.xfail(reason="Values are correct, but struct row representations differ between "
+                                       "fastparquet and Spark."))
 ], ids=idfn)
-def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
+def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     """
     This test writes data_gen output to Parquet via Apache Spark, then verifies that fastparquet and the RAPIDS
     plugin read the data identically.
@@ -98,6 +105,9 @@ def test_read_fastparquet_single_column_tables(data_gen, spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
 
 
+@pytest.mark.skipif(condition=spark_version() < "3.4.1",
+                    reason="spark_df.to_pandas() is not reliable on prior versions of Spark. 3.4.1 and above seem to "
+                           "work more stably.")
 @pytest.mark.parametrize('column_gen', [
     ByteGen(nullable=False),
     ShortGen(nullable=False),
