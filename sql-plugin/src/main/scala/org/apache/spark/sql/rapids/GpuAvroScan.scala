@@ -656,34 +656,34 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufsAndSizes = buffer.memBuffersAndSizes
       val bufAndSizeInfo = bufsAndSizes.head
       val partitionValues = buffer.partitionedFile.partitionValues
-      val optBatchIter = if (bufAndSizeInfo.hmb == null) {
+      val batchIter = if (bufAndSizeInfo.hmb == null) {
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val emptyBatch = new ColumnarBatch(Array.empty, bufAndSizeInfo.numRows.toInt)
-        Some(BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(emptyBatch, partitionValues,
-          partitionSchema))
+        BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(emptyBatch,
+          partitionValues, partitionSchema)
       } else {
         val maybeBatch = sendToGpu(bufAndSizeInfo.hmb, bufAndSizeInfo.bytes, files)
         // we have to add partition values here for this batch, we already verified that
         // it's not different for all the blocks in this batch
-        if (maybeBatch.isDefined) {
-          Some(BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(maybeBatch.get,
-            partitionValues, partitionSchema))
-        } else {
-          None
+        maybeBatch match {
+          case Some(batch) => BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+            partitionValues, partitionSchema)
+          case None => EmptyGpuColumnarBatchIterator
         }
       }
       // Update the current buffers
-      // TODO: closeOnExcept for optBatchIter
-      if (bufsAndSizes.length > 1) {
-        val updatedBuffers = bufsAndSizes.drop(1)
-        currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
-      } else {
-        currentFileHostBuffers = None
+      closeOnExcept(batchIter) { _ =>
+        if (bufsAndSizes.length > 1) {
+          val updatedBuffers = bufsAndSizes.drop(1)
+          currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
+        } else {
+          currentFileHostBuffers = None
+        }
       }
 
-      optBatchIter.getOrElse(EmptyGpuColumnarBatchIterator)
+      batchIter
     case t =>
       throw new RuntimeException(s"Unknown avro buffer type: ${t.getClass.getSimpleName}")
   }
