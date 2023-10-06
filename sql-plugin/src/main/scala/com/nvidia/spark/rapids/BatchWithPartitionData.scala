@@ -297,7 +297,8 @@ object BatchWithPartitionDataUtils {
         val availableSpace = maxColumnSize - sizeOfBatch(colIndex)
         // Calculated max row numbers that can fit.
         val maxRows = (availableSpace / sizeOfSingleValue).toInt
-        maxRows
+        // It should be capped at row numbers in the partition
+        Math.min(maxRows, partitionRowData.rowNum)
       case _ => partitionRowData.rowNum
     }.min
   }
