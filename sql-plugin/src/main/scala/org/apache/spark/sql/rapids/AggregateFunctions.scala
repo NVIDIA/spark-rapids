@@ -24,7 +24,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 //import org.apache.spark.sql.catalyst.expressions.UnsafeArrayData
 
-//import ai.rapids.cudf.TableDebug
+import ai.rapids.cudf.TableDebug
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
@@ -2071,7 +2071,10 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
 
 case class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.histogram(), DType.LIST)
+    (col: cudf.ColumnVector) =>{
+      TableDebug.get().debug("historam: ", col);
+  col.reduce(ReductionAggregation.histogram(), DType.LIST)
+    }
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.histogram()
   override val name: String = "CudfHistogram"
 }
@@ -2080,6 +2083,9 @@ case class CudfMergeHistogram(override val dataType: DataType)
   extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
+
+      TableDebug.get().debug("merge historam: ", col);
+
 //      withResource(col.getChildColumnView(0)) { listChild =>
 //        listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
 //      }
@@ -2128,6 +2134,7 @@ case class GpuPercentileEvaluation(child: Expression,
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(child.columnarEval(batch)) { histogramArray =>
 
+      TableDebug.get().debug("evaluating histogramArray: ", histogramArray.getBase);
 
         val percentageArray = percentage match {
           case Left(p) => Array(p)
@@ -2252,6 +2259,37 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
   override def children: Seq[Expression] = Seq(valuesExpr, frequenciesExpr)
 }
 
+case class GpuNothing(child: Expression, msg: String) extends GpuExpression {
+  override def columnarEvalAny(batch: ColumnarBatch): Any = {
+    System.err.println(msg)
+    withResourceIfAllowed(child.columnarEvalAny(batch)) {
+      case cv: GpuColumnVector => {
+        withResource(cv.getBase.getChildColumnView(0)) { listChild =>
+          System.err.println("   " + msg + ", data size = " + listChild.getRowCount)
+        }
+        cv.incRefCount()
+        //GpuColumnVector.from(cv.getBase, cv.dataType())
+        cv
+      }
+
+
+      case other =>
+        throw new
+            IllegalArgumentException(s"Got an unexpected type out of columnarEvalAny $other")
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+    GpuExpressionsUtils.resolveColumnVector(columnarEvalAny(batch), batch.numRows())
+
+
+  override def nullable: Boolean = child.nullable
+
+  // Output type should be the element type of the input array.
+  override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
+
+  override def children: Seq[Expression] = Seq(child)
+}
 
 /**
  * Compute percentile of the input number(s).
@@ -2260,8 +2298,17 @@ case class GpuPercentileDefault(childExpr: Expression,
                                 percentage: GpuLiteral, isReduction: Boolean)
   extends GpuPercentile(childExpr, percentage, isReduction) {
   override val inputProjection: Seq[Expression] = Seq(childExpr)
+
+  val updateHistogram =new CudfHistogram(aggregationOutputType)
   override lazy val updateAggregates: Seq[CudfAggregate] =
-    Seq(new CudfHistogram(aggregationOutputType))
+    Seq(updateHistogram)
+
+    override lazy val postUpdate: Seq[Expression] =
+      Seq(GpuNothing(updateHistogram.attr, "postUpdate"))
+    override lazy val preMerge: Seq[Expression] =
+      Seq(GpuNothing(histogramBuff, "preMerge"))
+    override lazy val postMerge: Seq[Expression] =
+      Seq(GpuNothing(mergeHistogram.attr, "postMerge"))
 }
 
 /**
@@ -2312,8 +2359,13 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
   override protected def nullSafeEval(input: Any): ArrayData = {
     // Deserialization from the input byte stream into the internal buffer format.
     val bytes = input.asInstanceOf[Array[Byte]]
+    if(bytes.length == 0) {
+      return null
+    }
     val bis = new ByteArrayInputStream(bytes)
     val ins = new DataInputStream(bis)
+
+    System.err.println("Deserializing to GPU..., length = " + bytes.length)
 
     try {
       // Store a column of STRUCT<element, count>
@@ -2326,11 +2378,14 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
         row.pointTo(bs, sizeOfNextRow)
         val element = row.get(0, elementType)
         val count = row.get(1, LongType).asInstanceOf[Long]
+
+        System.err.println("  -- Deserializing e-c: " + element + " --- " + count +
+          " , avaiable byte : " + ins.available)
+
         histogram.append(InternalRow.apply(element, count))
         sizeOfNextRow = ins.readInt()
       }
       ArrayData.toArrayData(histogram)
-//      InternalRow.apply(histogram)
     } finally {
       ins.close()
       bis.close()
@@ -2354,13 +2409,21 @@ case class GpuToCpuPercentileBufferTransition(override val child: Expression, el
     val out = new DataOutputStream(bos)
 
 //    System.err.println("input type : " + input.getClass.toString)
-
+    System.err.println("Serializing from GPU...")
 
     try {
       val histogram = input.asInstanceOf[UnsafeArrayData]
+      if(histogram.numElements() == 0) {
+        return null
+      }
       val projection = UnsafeProjection.create(Array[DataType](elementType, LongType))
       (0 until histogram.numElements()).foreach { i =>
         val row = histogram.getStruct(i, 2)
+
+        val element = row.get(0, elementType)
+        val count = row.get(1, LongType).asInstanceOf[Long]
+        System.err.println("  -- Serializing e-c: " + element + " --- " + count)
+
         val unsafeRow = projection.apply(row)
         out.writeInt(unsafeRow.getSizeInBytes)
         unsafeRow.writeToStream(out, buffer)
