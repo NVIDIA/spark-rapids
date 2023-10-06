@@ -45,9 +45,10 @@ def read_parquet(data_path):
     return read_with_fastparquet_or_plugin
 
 
-@pytest.mark.skipif(condition=spark_version() < "3.4.1",
-                    reason="spark_df.to_pandas() is not reliable on prior versions of Spark. 3.4.1 and above seem to "
-                           "work more stably.")
+@pytest.mark.skipif(condition=spark_version() < "3.4.0",
+                    reason="spark.createDataFrame(pandasDF) fails with prior versions of Spark: "
+                           "\"AttributeError: 'DataFrame' object has no attribute 'iteritems'. "
+                           "Did you mean: 'isetitem'?\"")
 @pytest.mark.parametrize('data_gen', [
     ByteGen(nullable=False),
     ShortGen(nullable=False),
@@ -55,8 +56,6 @@ def read_parquet(data_path):
     pytest.param(IntegerGen(nullable=True),
                  marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
     LongGen(nullable=False),
-    pytest.param(LongGen(nullable=True),
-                 marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
     FloatGen(nullable=False),
     DoubleGen(nullable=False),
     StringGen(nullable=False),
@@ -84,7 +83,13 @@ def read_parquet(data_path):
         StructGen(children=[("first", IntegerGen(nullable=False)),
                             ("second", FloatGen(nullable=False))], nullable=False),
         marks=pytest.mark.xfail(reason="Values are correct, but struct row representations differ between "
-                                       "fastparquet and Spark."))
+                                       "fastparquet and Spark. E.g.:\n"
+                                       "--- CPU OUTPUT\n"
+                                       "+++ GPU OUTPUT\n"
+                                       "@@ -1 +1 @@\n"
+                                       "-Row(a.first=123, a.second=456)\n"
+                                       "+Row(a=Row(first=123, second=456))\n"
+                                       "See https://github.com/NVIDIA/spark-rapids/issues/9399."))
 ], ids=idfn)
 def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     """
@@ -105,9 +110,10 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
 
 
-@pytest.mark.skipif(condition=spark_version() < "3.4.1",
-                    reason="spark_df.to_pandas() is not reliable on prior versions of Spark. 3.4.1 and above seem to "
-                           "work more stably.")
+@pytest.mark.skipif(condition=spark_version() < "3.4.0",
+                    reason="spark.createDataFrame(pandasDF) fails with prior versions of Spark: "
+                           "\"AttributeError: 'DataFrame' object has no attribute 'iteritems'. "
+                           "Did you mean: 'isetitem'?\"")
 @pytest.mark.parametrize('column_gen', [
     ByteGen(nullable=False),
     ShortGen(nullable=False),
