@@ -107,22 +107,6 @@ object Arm {
     }
   }
 
-  /*
-  /** Executes the provided code block, closing the resources only if an exception occurs */
-  def closeOnExcept[T <: AutoCloseable, V](r: Seq[T])(block: Seq[T] => V): V = {
-    try {
-      block(r)
-    } catch {
-      case t: ControlThrowable =>
-        // Don't close for these cases..
-        throw t
-      case t: Throwable =>
-        r.safeClose(t)
-        throw t
-    }
-  }
-  */
-
   /** Executes the provided code block, closing the resources only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V](r: Array[T])(block: Array[T] => V): V = {
     try {
