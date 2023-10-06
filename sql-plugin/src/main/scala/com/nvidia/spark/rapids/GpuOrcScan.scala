@@ -2067,7 +2067,9 @@ class MultiFileCloudOrcPartitionReader(
               while (blockChunkIter.hasNext) {
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
                   maxReadBatchSizeBytes)
-                val (hostBuf, bufSize) = readPartFile(ctx, blocksToRead)
+                val (hostBuf, bufSize) = metrics(BUFFER_TIME).ns {
+                  readPartFile(ctx, blocksToRead)
+                }
                 val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum
                 val metas = blocksToRead.map(b => OrcDataStripe(OrcStripeWithMeta(b, ctx)))
                 hostBuffers += SingleHMBAndMeta(hostBuf, bufSize, numRows, metas)
