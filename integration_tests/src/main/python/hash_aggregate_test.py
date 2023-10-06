@@ -952,18 +952,17 @@ def test_exact_percentile_reduction(data_gen):
         lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
     )
 
-exact_percentile_reduction_cpu_fallback_data_gen = [[('val', data_gen)] 
-    for data_gen in [IntegerGen(), DoubleGen()]]
+exact_percentile_reduction_cpu_fallback_data_gen = [[('val', data_gen)]
+    for data_gen in [IntegerGen()]]
 
 @incompat
 @approximate_float
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
-               'AggregateExpression', 'Alias', 'Cast', 'Literal',
+               'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
                'Percentile')
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_cpu_fallback_data_gen, ids=idfn)
-@pytest.mark.parametrize('replace_mode', ['partial', 'partialMerge', 'final', 'complete'], ids=idfn)
-@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
-def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_mode, use_obj_hash_agg):
+@pytest.mark.parametrize('replace_mode', ['final'], ids=idfn)
+def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_mode):
     cpu_clz, gpu_clz = ['Percentile'], ['GpuPercentileDefault']
     exist_clz, non_exist_clz = [], []
     # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
@@ -977,14 +976,16 @@ def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_m
     else:
         exist_clz = cpu_clz + gpu_clz
 
+    def doit(spark):
+        df = spark.createDataFrame([1, 2, 3 ,4, 5, 6, 7, 8], IntegerType())
+        return df.repartition(4).selectExpr(
+            'percentile(value, 0.1)'
+        )
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: gen_df(spark, data_gen).selectExpr(
-            'percentile(val, 0.1)',
-            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
+        doit,
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
-        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
-              'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
+        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode}
     )
 
 

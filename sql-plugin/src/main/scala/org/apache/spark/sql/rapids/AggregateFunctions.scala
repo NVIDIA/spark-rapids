@@ -28,7 +28,7 @@ import ai.rapids.cudf.TableDebug
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
-import com.nvidia.spark.rapids.jni.AggregationUtils
+import com.nvidia.spark.rapids.jni.Histogram
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -2100,7 +2100,7 @@ case class CudfMergeHistogram(override val dataType: DataType)
             withResource(col.getChildColumnView(1)) { frequencies =>
 //              TableDebug.get().debug("frequencies: ", frequencies);
 
-              withResource(AggregationUtils.createHistogramsIfValid(values,
+              withResource(Histogram.createHistogramsIfValid(values,
                 frequencies, false)) {
                 histograms =>
                   histograms.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
@@ -2149,11 +2149,11 @@ case class GpuPercentileEvaluation(child: Expression,
 //      withResource(histogramArray.getBase.getChildColumnView(0)) { histogram =>
 //        System.err.println("evaluation, input size  = " + histogram.getRowCount)
 //
-//        val percentiles = AggregationUtils.percentileFromHistogram(
+//        val percentiles = Histogram.percentileFromHistogram(
 //          histogram, percentageArray, outputAsList)
 //        GpuColumnVector.from(percentiles, dataType)
 //      }
-          val percentiles = AggregationUtils.percentileFromHistogram(
+          val percentiles = Histogram.percentileFromHistogram(
             histogramArray.getBase, percentageArray, outputAsList)
           GpuColumnVector.from(percentiles, dataType)
 
@@ -2238,7 +2238,7 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
       case valuesCV: GpuColumnVector =>
       withResourceIfAllowed(frequenciesExpr.columnarEvalAny(batch)) {
         case frequenciesCV: GpuColumnVector => {
-          val histograms = AggregationUtils.createHistogramsIfValid(valuesCV.getBase,
+          val histograms = Histogram.createHistogramsIfValid(valuesCV.getBase,
             frequenciesCV.getBase, !isReduction)
           GpuColumnVector.from(histograms, dataType)
         }
