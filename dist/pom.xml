@@ -133,7 +133,8 @@
                     320,
                     321cdh,
                     330,
-                    330cdh
+                    330cdh,
+                    332cdh
                 </included_buildvers>
             </properties>
         </profile>

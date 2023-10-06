@@ -140,6 +140,24 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release332cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release330db</id>
             <activation>
                 <property>
