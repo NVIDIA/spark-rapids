@@ -730,14 +730,18 @@ case class GpuStack(children: Seq[Expression]) extends GpuGenerator with ShimExp
     }
   }
 
+  // Stack is a generator function, but there is no guaranteed output order for GenerateExec, 
+  // so we can probably implement this in terms of GpuExpandExec. The output of GenerateExec 
+  // is requiredChildOutput ++ generatorOutput requiredChildOutput are the ride along columns 
+  // that are going to possibly be replicated. So we take n, the first argument to stack that 
+  // has to be static and then interleave the expressions to produce an input to GpuExpandExec.
   override def generate(inputBatch: ColumnarBatch, 
       generatorOffset: Int, 
       outer: Boolean): ColumnarBatch = {
-
-    val schema = children.tail.take(numFields).map(_.dataType).toArray
-    // build a Seq[Seq[Expression]] from the input batch
+    val schema = GpuColumnVector.extractTypes(inputBatch)
+    
+    
   }
-
 }
 
 case class GpuGenerateExec(

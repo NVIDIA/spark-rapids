@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan}
+// import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuExpandExecMeta(
@@ -53,6 +54,42 @@ class GpuExpandExecMeta(
       childPlans.head.convertIfNeeded())(useTieredProject = conf.isTieredProjectEnabled)
   }
 }
+
+// // Stack is a generator function, but there is no guaranteed output order for GenerateExec, 
+// // so we can probably implement this in terms of GpuExpandExec. The output of GenerateExec 
+// // is requiredChildOutput ++ generatorOutput requiredChildOutput are the ride along columns 
+// // that are going to possibly be replicated. So we take n, the first argument to stack that 
+// // has to be static and then interleave the expressions to produce an input to GpuExpandExec.
+// class GpuStackMeta(
+//     stack: Stack,
+//     conf: RapidsConf,
+//     parent: Option[RapidsMeta[_, _, _]],
+//     rule: DataFromReplacementRule)
+//   extends BaseExprMeta[Stack](stack, conf, parent, rule) {
+
+//   private val gpuProjections: Seq[Seq[BaseExprMeta[_]]] = {
+//     val n = stack.children.head.asInstanceOf[Literal].value.asInstanceOf[Int]
+//     val numExprs = stack.children.length - 1
+//     val numStacks = numExprs / n
+//     val numRemainder = numExprs % n
+//     val numExprsPerStack = Array.fill(numStacks)(n)
+//     if (numRemainder > 0) {
+//       numExprsPerStack(numStacks - 1) = numRemainder
+//     }
+//     val exprs = stack.children.iterator
+//     numExprsPerStack.map { numExprs =>
+//       (0 until numExprs).map(_ => GpuOverrides.wrapExpr(exprs.next(), conf, Some(this)))
+//     }
+//   }
+
+//   /**
+//    * Convert what this wraps to a GPU enabled version.
+//    */
+//   override def convertToGpu(): GpuExpression = {
+//     // not implemented yet
+//     throw new UnsupportedOperationException(s"Stack is not supported yet: ${stack}")
+//   }
+// }
 
 /**
  * Apply all of the GroupExpressions to every input row, hence we will get
@@ -157,3 +194,7 @@ class GpuExpandIterator(
     projectedBatch
   }
 }
+
+// // should be a GpuExpandIterator
+// case class GpuStack(
+    
