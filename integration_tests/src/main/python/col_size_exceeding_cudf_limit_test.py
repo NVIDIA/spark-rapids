@@ -17,32 +17,50 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import with_cpu_session
-from marks import inject_oom, nightly_gpu_mem_consuming_case
+from marks import inject_oom
+from pyspark.sql.types import IntegerType, StringType
 
 # Define test cases
 gen_list_dict = {
-    'single_partition_single_value': [
-        ('v0', LongGen()),
-        ('k0', StringGen(pattern='a{100}', nullable=True))
+    'single_partition_int_value': [
+        ('v0', int_gen),
+        ('k0', SetValuesGen(IntegerType(), [INT_MAX]))
+    ],
+    'single_partition_single_value_without_nulls': [
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 100]))
+    ],
+    'single_partition_empty_value_with_nulls': [
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["", None]))
+    ],
+    'single_partition_single_empty_value_with_nulls': [
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 100, "", None]))
     ],
     'single_partition_multiple_value': [
-        ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=True), length=2))
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 100, "a" * 70, None]))
     ],
     'multiple_partition_single_value': [
-        ('v0', LongGen()),
-        ('k0', StringGen(pattern='a{100}', nullable=True)),
-        ('k1', StringGen(pattern='b{100}', nullable=True))
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 100, None])),
+        ('k1', SetValuesGen(StringType(), ["b" * 100, None]))
+    ],
+    'multiple_partition_int_value': [
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 100, None])),
+        ('k1', SetValuesGen(IntegerType(), [INT_MAX, INT_MIN]))
     ],
     'multiple_partition_multiple_value_wider_first_col': [
-        ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{80,100}', nullable=True), length=2)),
-        ('k1', RepeatSeqGen(StringGen(pattern='b{30,50}', nullable=True), length=2))
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 100, "a" * 70, None])),
+        ('k1', SetValuesGen(StringType(), ["b" * 50, "b" * 20, None]))
     ],
     'multiple_partition_multiple_value_narrow_first_col': [
-        ('v0', LongGen()),
-        ('k0', RepeatSeqGen(StringGen(pattern='a{30,50}', nullable=True), length=2)),
-        ('k1', RepeatSeqGen(StringGen(pattern='b{80,100}', nullable=True), length=2)),
+        ('v0', int_gen),
+        ('k0', SetValuesGen(StringType(), ["a" * 50, "a" * 20, None])),
+        ('k1', SetValuesGen(StringType(), ["b" * 100, "b" * 70, None]))
     ]
 }
 
@@ -61,7 +79,7 @@ def test_col_size_exceeding_cudf_limit(spark_tmp_path, key):
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/PARQUET_DATA/' + key
     with_cpu_session(
-        lambda spark: gen_df(spark, gen, length=2000).write.partitionBy(partition_cols).format('parquet').save(
-            data_path))
+        lambda spark: gen_df(spark, gen, length=5000).coalesce(1).write.partitionBy(partition_cols).format('parquet')
+        .save(data_path))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.format('parquet').load(data_path), conf)
