@@ -112,64 +112,6 @@ object RapidsPluginImplicits {
     }
   }
 
-  /*
-  implicit class AutoCloseableMutableSeq[A <: AutoCloseable](val in: mutable.Seq[A]) {
-    /**
-     * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
-     * element of the sequence, even if prior close calls fail. In case of failure in any of the
-     * close calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
-     * if any.
-     */
-    def safeClose(error: Throwable = null): Unit = if (in != null) {
-      var closeException: Throwable = null
-      in.foreach { element =>
-        if (element != null) {
-          try {
-            element.close()
-          } catch {
-            case e: Throwable if error != null => error.addSuppressed(e)
-            case e: Throwable if closeException == null => closeException = e
-            case e: Throwable => closeException.addSuppressed(e)
-          }
-        }
-      }
-      if (closeException != null) {
-        // an exception happened while we were trying to safely close
-        // resources, throw the exception to alert the caller
-        throw closeException
-      }
-    }
-  }
-
-  implicit class AutoCloseableImmutableSeq[A <: AutoCloseable](val in: immutable.Seq[A]) {
-    /**
-     * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
-     * element of the sequence, even if prior close calls fail. In case of failure in any of the
-     * close calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
-     * if any.
-     */
-    def safeClose(error: Throwable = null): Unit = if (in != null) {
-      var closeException: Throwable = null
-      in.foreach { element =>
-        if (element != null) {
-          try {
-            element.close()
-          } catch {
-            case e: Throwable if error != null => error.addSuppressed(e)
-            case e: Throwable if closeException == null => closeException = e
-            case e: Throwable => closeException.addSuppressed(e)
-          }
-        }
-      }
-      if (closeException != null) {
-        // an exception happened while we were trying to safely close
-        // resources, throw the exception to alert the caller
-        throw closeException
-      }
-    }
-  }
-  */
-
   implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: collection.SeqLike[A, _]) {
     /**
      * safeFree: Is an implicit on a sequence of RapidsBuffer classes that tries to free each
