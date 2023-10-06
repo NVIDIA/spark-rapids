@@ -459,6 +459,45 @@
             </modules>
         </profile>
         <profile>
+            <id>release332cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332cdh</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>332cdh</buildver>
+                <spark.version>${spark332cdh.version}</spark.version>
+                <spark.test.version>${spark332cdh.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <repositories>
+                <repository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+            </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
+            <modules>
+                <module>shim-deps/cloudera</module>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
+            </modules>
+        </profile>
+        <profile>
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
             <!-- Note that 330db backports many features from Spark3.4.0 -->
             <id>release330db</id>
@@ -654,6 +693,7 @@
         <spark340.version>3.4.0</spark340.version>
         <spark341.version>3.4.1</spark341.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
+        <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark350.version>3.5.0</spark350.version>
@@ -699,6 +739,7 @@
             332,
             333,
             330cdh,
+            332cdh,
             340,
             341,
             350
