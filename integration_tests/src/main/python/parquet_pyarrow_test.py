@@ -53,6 +53,8 @@ def _get_pa_type(data_gen):
         return pa.string()
     elif isinstance(data_gen, DecimalGen):
         return pa.decimal128(data_gen.precision, data_gen.scale)
+    elif isinstance(data_gen, RepeatSeqGen):
+        return _get_pa_type(data_gen._child)
     elif isinstance(data_gen, StructGen):
         fields = [pa.field(name, _get_pa_type(child)) for name, child in data_gen.children]
         return pa.struct(fields)
@@ -197,14 +199,16 @@ def assert_gpu_and_pyarrow_are_compatible(base_write_path, gen_list, conf={}):
         pa_pq.write_table(pa_table, pyarrow_parquet_path)
 
     def write_on_gpu():
-        with_gpu_session(lambda spark: gen_df(spark, gen_list, length=1).coalesce(1).write.parquet(gpu_parquet_path), conf=conf)
+        with_gpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(gpu_parquet_path), conf=conf)
 
     def read_on_pyarrow(parquet_path):
         print('### pyarrow RUN ###')
         pyarrow_start = time.time()
-        # By default, pyarrow read timestamp column with precision ns instead of us
-        # Spark only supports us
+        # By default, pyarrow read timestamp column with precision ns instead of us,
+        # Spark only supports us,
         # coerce_int96_timestamp_unit is used to read GPU generated timestamp column as us
+        # refer to: https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html
+        # In pyspark: INT96 timestamps will be inferred as timestamps in nanoseconds
         #
         pyarrow_table = pa_pq.read_table(parquet_path, coerce_int96_timestamp_unit="us")
         # adapt pyarrow table to CPU result
@@ -238,15 +242,17 @@ def assert_gpu_and_pyarrow_are_compatible(base_write_path, gen_list, conf={}):
     compare_reads(gpu_parquet_path)
 
 
-# types for test_parquet_read_round_trip_write_by_pyarrow
+# types for test_parquet_read_round_trip_for_pyarrow
+sub_gens = all_basic_gens_no_null + [decimal_gen_64bit, decimal_gen_128bit]
+
+struct_gen = StructGen([('child_' + str(i), sub_gens[i]) for i in range(len(sub_gens))])
+array_gens = [ArrayGen(sub_gen) for sub_gen in sub_gens]
 parquet_gens_list = [
-    [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen],  # basic types
-    [date_gen],
-    [timestamp_gen],
     [binary_gen],
-    [StructGen([('child1', short_gen)])],
-    [ArrayGen(date_gen)],
-    [MapGen(IntegerGen(nullable=False), int_gen)],
+    sub_gens,
+    [struct_gen_decimal128],
+    single_level_array_gens_no_null,
+    map_gens_sample,
 ]
 
 
@@ -266,8 +272,8 @@ def test_parquet_read_round_trip_for_pyarrow(
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
         'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
-        'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
-        'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
+        'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED',
+        'spark.sql.parquet.int96RebaseModeInRead': 'CORRECTED',
         'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
 
         'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
