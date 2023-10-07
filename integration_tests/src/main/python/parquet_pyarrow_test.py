@@ -250,7 +250,7 @@ array_gens = [ArrayGen(sub_gen) for sub_gen in sub_gens]
 parquet_gens_list = [
     [binary_gen],
     sub_gens,
-    [struct_gen_decimal128],
+    [struct_gen],
     single_level_array_gens_no_null,
     map_gens_sample,
 ]
