@@ -64,7 +64,7 @@ def _get_pa_type(data_gen):
         raise Exception("unexpected data_gen: " + str(data_gen))
 
 
-def _gen_pyarrow_table(data_gen, length=20, seed=0):
+def _gen_pyarrow_table(data_gen, length=2048, seed=0):
     """Generate pyarrow table from data gen"""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
@@ -115,6 +115,16 @@ def _convert_pyarrow_map_object_to_cpu_object(pyarrow_map_scalar):
         return dict(py_key_value_pair_list)
 
 
+def _convert_pyarrow_binary_object_to_cpu_object(pyarrow_binary_scalar):
+    """Convert pyarrow binary to bytearray"""
+    # pyarrow.BinaryScalar obj to bytearray
+    py_bytearray = pyarrow_binary_scalar.as_py()
+    if py_bytearray is None:
+        return None
+    else:
+        return bytearray(py_bytearray)
+
+
 def _convert_pyarrow_column_to_cpu_object(pyarrow_column, pa_type):
     """ convert pyarrow column to a column contains CPU type objects"""
     if isinstance(pa_type, pa.StructType):
@@ -126,6 +136,9 @@ def _convert_pyarrow_column_to_cpu_object(pyarrow_column, pa_type):
     elif isinstance(pa_type, pa.MapType):
         # map column
         return [_convert_pyarrow_map_object_to_cpu_object(v) for v in pyarrow_column]
+    elif pa_type.equals(pa.binary()):
+        # binary column should be converted to bytearray
+        return [_convert_pyarrow_binary_object_to_cpu_object(v) for v in pyarrow_column]
     else:
         # other type column
         return [v.as_py() for v in pyarrow_column]
@@ -184,12 +197,16 @@ def assert_gpu_and_pyarrow_are_compatible(base_write_path, gen_list, conf={}):
         pa_pq.write_table(pa_table, pyarrow_parquet_path)
 
     def write_on_gpu():
-        with_gpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(gpu_parquet_path))
+        with_gpu_session(lambda spark: gen_df(spark, gen_list, length=1).coalesce(1).write.parquet(gpu_parquet_path), conf=conf)
 
     def read_on_pyarrow(parquet_path):
         print('### pyarrow RUN ###')
         pyarrow_start = time.time()
-        pyarrow_table = pa_pq.read_table(parquet_path)
+        # By default, pyarrow read timestamp column with precision ns instead of us
+        # Spark only supports us
+        # coerce_int96_timestamp_unit is used to read GPU generated timestamp column as us
+        #
+        pyarrow_table = pa_pq.read_table(parquet_path, coerce_int96_timestamp_unit="us")
         # adapt pyarrow table to CPU result
         from_pyarrow = _convert_pyarrow_table_to_cpu_object(pyarrow_table)
         pyarrow_end = time.time()
@@ -224,9 +241,9 @@ def assert_gpu_and_pyarrow_are_compatible(base_write_path, gen_list, conf={}):
 # types for test_parquet_read_round_trip_write_by_pyarrow
 parquet_gens_list = [
     [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen],  # basic types
-    # [date_gen], TODO: not pass
-    # [timestamp_gen], TODO: not pass
-    # [binary_gen], TODO: not pass
+    [date_gen],
+    [timestamp_gen],
+    [binary_gen],
     [StructGen([('child1', short_gen)])],
     [ArrayGen(date_gen)],
     [MapGen(IntegerGen(nullable=False), int_gen)],
@@ -249,7 +266,15 @@ def test_parquet_read_round_trip_for_pyarrow(
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
         'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+        'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
+        'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
+
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+        'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+        'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_pyarrow_are_compatible(spark_tmp_path, gen_list, conf=all_confs)
