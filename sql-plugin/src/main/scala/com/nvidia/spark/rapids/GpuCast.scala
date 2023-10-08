@@ -1670,4 +1670,8 @@ case class GpuCast(
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     doCast(input.getBase, input.dataType(), dataType, options)
+
+
+
+
 }
