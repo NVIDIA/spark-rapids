@@ -383,8 +383,7 @@ object GpuOrcScan {
       case (f: DType, t: DType) if f.isDecimalType && t.isDecimalType =>
         val fromDataType = DecimalType(f.getDecimalMaxPrecision, -f.getScale)
         val toDataType = DecimalType(t.getDecimalMaxPrecision, -t.getScale)
-        GpuCast.doCast(col, fromDataType, toDataType, ansiMode=false, legacyCastToString = false,
-          stringToDateAnsiModeEnabled = false)
+        GpuCast.doCast(col, fromDataType, toDataType)
 
       case (DType.STRING, DType.STRING) if originalFromDt.isInstanceOf[CharType] =>
         // Trim trailing whitespace off of output strings, to match CPU output.

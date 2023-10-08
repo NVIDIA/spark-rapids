@@ -39,7 +39,7 @@ _struct_of_xxhash_gens = StructGen([(f"c{i}", g) for i, g in enumerate(_xxhash_g
 
 _xxhash_fallback_gens = single_level_array_gens + nested_array_gens_sample + [
     all_basic_struct_gen,
-    struct_array_gen_no_nans,
+    struct_array_gen,
     _struct_of_xxhash_gens]
 if is_before_spark_320():
     _xxhash_fallback_gens += [float_gen, double_gen]

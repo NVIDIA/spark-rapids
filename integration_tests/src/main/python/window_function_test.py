@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later
+from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -134,15 +134,15 @@ _grpkey_long_with_nulls_with_overflow = [
     ('a', IntegerGen()),
     ('b', LongGen(nullable=True))]
 
-part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+part_and_order_gens = [long_gen, DoubleGen(special_cases=[]),
         string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 
-running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+running_part_and_order_gens = [long_gen, DoubleGen(special_cases=[]),
         string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 
-lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+lead_lag_data_gens = [long_gen, DoubleGen(special_cases=[]),
         boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
         DecimalGen(precision=38, scale=4),
         StructGen(children=[
@@ -1485,6 +1485,103 @@ def test_to_date_with_window_functions():
         FROM window_input
         """
     )
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      _grpkey_longs_with_nullable_larger_decimals
+                                      ], ids=idfn)
+@pytest.mark.parametrize('window_spec', ["3 PRECEDING AND -1 FOLLOWING",
+                                         "-2 PRECEDING AND 4 FOLLOWING",
+                                         "UNBOUNDED PRECEDING AND -1 FOLLOWING",
+                                         "-1 PRECEDING AND UNBOUNDED FOLLOWING",
+                                         "10 PRECEDING AND -1 FOLLOWING",
+                                         "5 PRECEDING AND -2 FOLLOWING"], ids=idfn)
+def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size, window_spec):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' SUM(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ASC ROWS BETWEEN {window}) AS sum_c_asc, '
+        ' MAX(c) OVER '
+        '   (PARTITION BY a ORDER BY b DESC, c DESC ROWS BETWEEN {window}) AS max_c_desc, '
+        ' MIN(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS min_c_asc, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_1, '
+        ' COUNT(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_c, '
+        ' AVG(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS avg_c, '
+        ' COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS list_c, '
+        ' SORT_ARRAY(COLLECT_SET(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window})) AS sorted_set_c '
+        'FROM window_agg_table '.format(window=window_spec),
+        conf=conf)
+
+
+def spark_bugs_in_decimal_sorting():
+    """
+    Checks whether Apache Spark version has a bug in sorting Decimal columns correctly.
+    See https://issues.apache.org/jira/browse/SPARK-40089.
+    :return: True, if Apache Spark version does not sort Decimal(>20, >2) correctly. False, otherwise.
+    """
+    v = spark_version()
+    return v < "3.1.4" or v < "3.3.1" or v < "3.2.3" or v < "3.4.0"
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      pytest.param(_grpkey_longs_with_nullable_larger_decimals,
+                                                   marks=pytest.mark.skipif(
+                                                     condition=spark_bugs_in_decimal_sorting(),
+                                                     reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))],
+                         ids=idfn)
+def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' SUM(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN 3 PRECEDING AND -1 FOLLOWING) AS sum_c_asc, '
+        ' MAX(c) OVER '
+        '   (ORDER BY b DESC, c DESC, a DESC ROWS BETWEEN -2 PRECEDING AND 4 FOLLOWING) AS max_c_desc, '
+        ' min(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN UNBOUNDED PRECEDING AND -1 FOLLOWING) AS min_c_asc, '
+        ' COUNT(1) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS count_1, '
+        ' COUNT(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN 10 PRECEDING AND -1 FOLLOWING) AS count_c, '
+        ' AVG(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS avg_c, '
+        ' COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING) AS list_c, '
+        ' SORT_ARRAY(COLLECT_SET(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING)) AS set_c '
+        'FROM window_agg_table ',
+        conf=conf)
+
 
 def test_lru_cache_datagen():
     # log cache info at the end of integration tests, not related to window functions

@@ -14,9 +14,14 @@
 
 import pytest
 from pyspark.sql import Row
-from asserts import assert_gpu_fallback_collect
-from marks import allow_non_gpu, delta_lake
-from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, spark_version, is_spark_320_or_later
+from asserts import assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_collect
+from data_gen import *
+from delta_lake_merge_test import setup_dest_table
+from delta_lake_write_test import delta_meta_allow
+from marks import allow_non_gpu, delta_lake, ignore_order
+from parquet_test import reader_opt_confs_no_native
+from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
+    is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -63,3 +68,56 @@ def test_delta_merge_query(spark_tmp_table_factory):
     # check the results on CPU
     result = with_cpu_session(lambda spark: spark.sql("SELECT * FROM t1 ORDER BY c0").collect(), conf=_conf)
     assert [Row(c0='a', c1=40), Row(c0='b', c1=20), Row(c0='c', c1=30)] == result
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_read_fallback(spark_tmp_path, use_cdf):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true"}
+    def setup_tables(spark):
+        setup_dest_table(spark, data_path,
+                         dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                         use_cdf=use_cdf, enable_deletion_vectors=True)
+        spark.sql("INSERT INTO delta.`{}` VALUES(1)".format(data_path))
+        spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
+    with_cpu_session(setup_tables, conf=conf)
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
+        "FileSourceScanExec",
+        conf=conf)
+
+# ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
+# Delta Lake 2.1 from 2.2 in tests. https://github.com/NVIDIA/spark-rapids/issues/9276
+column_mappings = ["name"]
+if is_spark_340_or_later() or is_databricks_runtime():
+    column_mappings.append("id")
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("reader_confs", reader_opt_confs_no_native, ids=idfn)
+@pytest.mark.parametrize("mapping", column_mappings, ids=idfn)
+def test_delta_read_column_mapping(spark_tmp_path, reader_confs, mapping):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    gen_list = [("a", int_gen),
+                ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
+                ("c", string_gen),
+                ("d", SetValuesGen(IntegerType(), [1, 2, 3])),
+                ("e", long_gen)]
+    confs = copy_and_update(reader_confs, {
+        "spark.databricks.delta.properties.defaults.columnMapping.mode": mapping,
+        "spark.databricks.delta.properties.defaults.minReaderVersion": "2",
+        "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
+        "spark.sql.parquet.fieldId.read.enabled": "true"
+    })
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
+            .partitionBy("b", "d") \
+            .save(data_path),
+        conf=confs)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path),
+                                         conf=confs)

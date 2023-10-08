@@ -17,7 +17,6 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 {"spark": "330cdh"}
-{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332db"}
@@ -41,5 +40,7 @@ object ParquetFieldIdShims {
   }
 
   /** Get Parquet field ID write enabled configuration value */
-  def getParquetIdWriteEnabled(sqlConf: SQLConf): Boolean = sqlConf.parquetFieldIdWriteEnabled
+  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = {
+    sqlConf.parquetFieldIdWriteEnabled
+  }
 }
