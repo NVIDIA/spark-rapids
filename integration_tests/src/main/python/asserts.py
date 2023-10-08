@@ -26,26 +26,23 @@ import data_gen
 import difflib
 import sys
 
-def _assert_equal(cpu, gpu, float_check, path, cpu_data_adapted_from = "CPU"):
-    """
-    :param cpu_data_adapted_from: indicate where the cpu result is adapted from, e.g.: pyarrow
-    """
+def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
     if (t is Row):
-        assert len(cpu) == len(gpu), "{} and GPU row have different lengths at {} CPU: {} GPU: {}".format(cpu_data_adapted_from, path, len(cpu), len(gpu))
+        assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
-            assert cpu.__fields__ == gpu.__fields__, "{} and GPU row have different fields at {} CPU: {} GPU: {}".format(cpu_data_adapted_from, path, cpu.__fields__, gpu.__fields__)
+            assert cpu.__fields__ == gpu.__fields__, "CPU and GPU row have different fields at {} CPU: {} GPU: {}".format(path, cpu.__fields__, gpu.__fields__)
             for field in cpu.__fields__:
                 _assert_equal(cpu[field], gpu[field], float_check, path + [field])
         else:
             for index in range(len(cpu)):
                 _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is list):
-        assert len(cpu) == len(gpu), "{} and GPU list have different lengths at {} CPU: {} GPU: {}".format(cpu_data_adapted_from, path, len(cpu), len(gpu))
+        assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
             _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is tuple):
-        assert len(cpu) == len(gpu), "{} and GPU list have different lengths at {} CPU: {} GPU: {}".format(cpu_data_adapted_from, path, len(cpu), len(gpu))
+        assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
             _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is pytypes.GeneratorType):
@@ -66,7 +63,7 @@ def _assert_equal(cpu, gpu, float_check, path, cpu_data_adapted_from = "CPU"):
                 done = True
 
             if done:
-                assert sub_cpu == sub_gpu and sub_cpu == None, "{} and GPU generators have different lengths at {}".format(cpu_data_adapted_from, path)
+                assert sub_cpu == sub_gpu and sub_cpu == None, "CPU and GPU generators have different lengths at {}".format(path)
             else:
                 _assert_equal(sub_cpu, sub_gpu, float_check, path + [index])
 
@@ -78,29 +75,29 @@ def _assert_equal(cpu, gpu, float_check, path, cpu_data_adapted_from = "CPU"):
         gpu_items = list(gpu.items()).sort(key=_RowCmp)
         _assert_equal(cpu_items, gpu_items, float_check, path + ["map"])
     elif (t is int):
-        assert cpu == gpu, "GPU and {} int values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU int values are different at {}".format(path)
     elif (t is float):
         if (math.isnan(cpu)):
-            assert math.isnan(gpu), "GPU and {} float values are different at {}".format(cpu_data_adapted_from, path)
+            assert math.isnan(gpu), "GPU and CPU float values are different at {}".format(path)
         else:
-            assert float_check(cpu, gpu), "GPU and {} float values are different {}".format(cpu_data_adapted_from, path)
+            assert float_check(cpu, gpu), "GPU and CPU float values are different {}".format(path)
     elif isinstance(cpu, str):
-        assert cpu == gpu, "GPU and {} string values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU string values are different at {}".format(path)
     elif isinstance(cpu, datetime):
-        assert cpu == gpu, "GPU and {} timestamp values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU timestamp values are different at {}".format(path)
     elif isinstance(cpu, date):
-        assert cpu == gpu, "GPU and {} date values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
     elif isinstance(cpu, bool):
-        assert cpu == gpu, "GPU and {} boolean values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
     elif isinstance(cpu, Decimal):
-        assert cpu == gpu, "GPU and {} decimal values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
     elif isinstance(cpu, bytearray):
-        assert cpu == gpu, "GPU and {} bytearray values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU bytearray values are different at {}".format(path)
     elif isinstance(cpu, timedelta):
         # Used by interval type DayTimeInterval for Pyspark 3.3.0+
-        assert cpu == gpu, "GPU and {} timedelta values are different at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU timedelta values are different at {}".format(path)
     elif (cpu == None):
-        assert cpu == gpu, "GPU and {} are not both null at {}".format(cpu_data_adapted_from, path)
+        assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
         assert False, "Found unexpected type {} at {}".format(t, path)
 
