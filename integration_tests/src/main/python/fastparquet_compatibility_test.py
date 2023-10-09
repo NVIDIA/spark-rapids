@@ -24,6 +24,13 @@ rebase_write_corrected_conf = {
     'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED'
 }
 
+pandas_min_date = date(year=1677, month=9, day=22)   # Pandas.Timestamp.min, rounded up.
+pandas_max_date = date(year=2262, month=4, day=11)   # Pandas.Timestamp.max, rounded down.
+pandas_min_datetime = datetime(1677, 9, 21, 00, 12, 44, 0,
+                               tzinfo=timezone.utc)  # Pandas.Timestamp.min, rounded up.
+pandas_max_datetime = datetime(2262, 4, 11, 23, 47, 16, 0,
+                               tzinfo=timezone.utc)  # Pandas.Timestamp.max, rounded down.
+
 
 def read_parquet(data_path):
     """
@@ -63,17 +70,17 @@ def read_parquet(data_path):
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
                                                 "https://fastparquet.readthedocs.io/en/latest/details.html#data-types")),
     pytest.param(DateGen(nullable=False,
-                         start=date(year=2020, month=1, day=1),
-                         end=date(year=2020, month=12, day=31)),
+                         start=pandas_min_date,
+                         end=pandas_max_date),
                  marks=pytest.mark.xfail(reason="fastparquet reads dates as timestamps.")),
     pytest.param(DateGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads far future dates (e.g. year=8705) incorrectly.")),
     TimestampGen(nullable=False,
-                 start=datetime(2000, 1, 1, tzinfo=timezone.utc),
-                 end=datetime(2200, 12, 31, tzinfo=timezone.utc)),  # Vanilla case.
+                 start=pandas_min_datetime,
+                 end=pandas_max_datetime),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
-                              start=datetime(1, 1, 1, tzinfo=timezone.utc),
-                              end=datetime(1899, 12, 31, tzinfo=timezone.utc)),
+                              start=pandas_min_datetime,
+                              end=pandas_max_datetime),
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
     pytest.param(
         ArrayGen(child_gen=IntegerGen(nullable=False), nullable=False),
@@ -130,17 +137,17 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
                                                 "https://fastparquet.readthedocs.io/en/latest/details.html#data-types")),
     pytest.param(DateGen(nullable=False,
-                         start=date(year=2020, month=1, day=1),
-                         end=date(year=2020, month=12, day=31)),
+                         start=pandas_min_date,
+                         end=pandas_max_date),
                  marks=pytest.mark.xfail(reason="fastparquet reads dates as timestamps.")),
     pytest.param(DateGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads far future dates (e.g. year=8705) incorrectly.")),
     TimestampGen(nullable=False,
-                 start=datetime(2000, 1, 1, tzinfo=timezone.utc),
-                 end=datetime(2200, 12, 31, tzinfo=timezone.utc)),  # Vanilla case.
+                 start=pandas_min_datetime,
+                 end=pandas_max_datetime),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
                               start=datetime(1, 1, 1, tzinfo=timezone.utc),
-                              end=datetime(1899, 12, 31, tzinfo=timezone.utc)),
+                              end=pandas_min_datetime),
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
 ], ids=idfn)
 def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
@@ -192,8 +199,8 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
                                        "See https://github.com/NVIDIA/spark-rapids/issues/9387.")),
     pytest.param(
         DateGen(nullable=False,
-                start=date(year=2000, month=1, day=1),
-                end=date(year=2020, month=12, day=31)),
+                start=pandas_min_date,
+                end=pandas_max_date),
         marks=pytest.mark.xfail(reason="spark_df.toPandas() problem: Dates generated in Spark can't be written "
                                        "with fastparquet, because the dtype/encoding cannot be deduced. "
                                        "This test has a workaround in test_reading_file_rewritten_with_fastparquet.")),
@@ -205,8 +212,8 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
                                        "This test has a workaround in test_reading_file_rewritten_with_fastparquet.")),
     pytest.param(
         TimestampGen(nullable=False,
-                     start=datetime(2000, 1, 1, tzinfo=timezone.utc),
-                     end=datetime(2200, 12, 31, tzinfo=timezone.utc)),
+                     start=pandas_min_datetime,
+                     end=pandas_max_datetime),
         marks=pytest.mark.xfail(reason="spark_df.toPandas() problem: Timestamps in Spark can't be "
                                        "converted to pandas, because of type errors. The error states: "
                                        "\"TypeError: Casting to unit-less dtype 'datetime64' is not supported. "
@@ -247,8 +254,8 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
 @pytest.mark.parametrize('column_gen, time_format', [
     pytest.param(
         DateGen(nullable=False,
-                 start=date(year=2000, month=1, day=1),
-                 end=date(year=2020, month=12, day=31)), 'int64',
+                 start=pandas_min_date,
+                 end=pandas_max_date), 'int64',
         marks=pytest.mark.xfail(reason="Apache Spark and the plugin both have problems reading dates written via "
                                        "fastparquet, if written in int64: "
                                        "\"Illegal Parquet type: INT64 (TIMESTAMP(NANOS,false)).\"")),
