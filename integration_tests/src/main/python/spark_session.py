@@ -76,6 +76,10 @@ def _set_all_confs(conf):
         if _spark.conf.get(key, None) != value:
             _spark.conf.set(key, value)
 
+def set_single_conf(key, value):
+    """Set a single config for a given spark session."""
+    _spark.conf.set(key, value)
+
 def reset_spark_session_conf():
     """Reset all of the configs for a given spark session."""
     _set_all_confs(_orig_conf)
