@@ -77,8 +77,8 @@ def read_parquet(data_path):
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
     pytest.param(
         ArrayGen(child_gen=IntegerGen(nullable=False), nullable=False),
-        marks=pytest.mark.xfail(reason="Conversion from Pandas dataframe to Spark dataframe fails: "
-                                       "\"Unable to infer the type of the field a\".")),
+        marks=pytest.mark.xfail(reason="Conversion from Pandas dataframe (read with fastparquet) to Spark dataframe "
+                                       "fails: \"Unable to infer the type of the field a\".")),
     pytest.param(
         StructGen(children=[("first", IntegerGen(nullable=False)),
                             ("second", FloatGen(nullable=False))], nullable=False),
