@@ -35,6 +35,20 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class PartitionRowData(rowValue: InternalRow, rowNum: Int)
 
+object PartitionRowData {
+  def from(rowValues: Array[InternalRow], rowNums: Array[Int]): Array[PartitionRowData] = {
+    rowValues.zip(rowNums).map {
+      case (rowValue, rowNum) => PartitionRowData(rowValue, rowNum)
+    }
+  }
+
+  def from(rowValues: Array[InternalRow], rowNums: Array[Long]): Array[PartitionRowData] = {
+    rowValues.zip(rowNums).map {
+      case (rowValue, rowNum) => PartitionRowData(rowValue, rowNum.toInt)
+    }
+  }
+}
+
 /**
  * Class to wrap columnar batch and partition rows data and utility functions to merge them.
  *
@@ -155,9 +169,7 @@ object BatchWithPartitionDataUtils {
       partitionSchema: StructType): GpuColumnarBatchIterator = {
     if (partitionSchema.nonEmpty) {
       withResource(batch) { _ =>
-        val partitionRowData = partitionValues.zip(partitionRows).map {
-          case (rowValue, rowNum) => PartitionRowData(rowValue, rowNum.toInt)
-        }
+        val partitionRowData = PartitionRowData.from(partitionValues, partitionRows)
         val partitionedGroups = splitPartitionDataIntoGroups(partitionRowData, partitionSchema)
         val splitBatches = splitAndCombineBatchWithPartitionData(batch, partitionedGroups,
           partitionSchema)
@@ -220,7 +232,7 @@ object BatchWithPartitionDataUtils {
    * @return An array of batches, containing (row counts, partition values) pairs,
    *         such that each batch's size is less than column size limit.
    */
-  private def splitPartitionDataIntoGroups(
+  def splitPartitionDataIntoGroups(
       partitionRowData: Array[PartitionRowData],
       partSchema: StructType): Array[Array[PartitionRowData]] = {
     val maxColumnSize = getMaxColumnSize
@@ -433,7 +445,7 @@ object BatchWithPartitionDataUtils {
    * @note This function ensures that splitting is possible even in cases where there is a single
    * large partition until there is only one row.
    */
-  private def splitPartitionDataInHalf(
+  def splitPartitionDataInHalf(
       partitionedRowsData: Array[PartitionRowData]): Array[Array[PartitionRowData]] = {
     val totalRows = partitionedRowsData.map(_.rowNum).sum
     if (totalRows <= 1) {
