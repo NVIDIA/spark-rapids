@@ -16,13 +16,6 @@ import pyarrow.parquet as pa_pq
 
 from data_gen import *
 
-# It's copied from gen_df_help in data_gen.py and removed the @lru_cache mark for identify a CI error
-def gen_df_help_without_cache(data_gen, length, seed):
-    rand = random.Random(seed)
-    data_gen.start(rand)
-    data = [data_gen.gen() for index in range(0, length)]
-    return data
-
 def gen_pyarrow_table(data_gen, length=2048, seed=0):
     """Generate pyarrow table from data gen"""
     if isinstance(data_gen, list):
@@ -32,7 +25,7 @@ def gen_pyarrow_table(data_gen, length=2048, seed=0):
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
     # gen row based data
-    data = gen_df_help_without_cache(src, length, seed)
+    data = gen_df_help(src, length, seed)
     # convert row based data to column based data
     columnar_data = [[data[row][col] for row in range(length)] for col in range(len(src.children))]
     # generate pa schema
