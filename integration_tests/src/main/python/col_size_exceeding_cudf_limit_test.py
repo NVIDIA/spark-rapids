@@ -82,4 +82,4 @@ def test_col_size_exceeding_cudf_limit(spark_tmp_path, key):
         lambda spark: gen_df(spark, gen, length=5000).coalesce(1).write.partitionBy(partition_cols).format('parquet')
         .save(data_path))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format('parquet').load(data_path), conf)
+        lambda spark: spark.read.format('parquet').load(data_path).coalesce(1), conf)
