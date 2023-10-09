@@ -21,7 +21,7 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc, is_before_spark_340, set_single_conf
+from spark_session import is_tz_utc, is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
 from conftest import skip_unless_precommit_tests
@@ -812,9 +812,6 @@ def _mark_as_lit(data, data_type):
             col_array.append(_mark_as_lit(k, data_type.keyType))
             col_array.append(_mark_as_lit(data[k], data_type.valueType))
         return f.create_map(*col_array)
-    elif isinstance(data_type, DecimalType):
-        set_single_conf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
-        return f.lit(data).cast(data_type)
     else:
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)
@@ -835,11 +832,15 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
 def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values."""
-    if force_no_nulls:
-        assert(not isinstance(data_gen, NullGen))
-    src = _gen_scalars_common(data_gen, count, seed=seed)
-    data_type = src.data_type
-    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
+    def gen_scalars_help(data_gen, count, seed, force_no_nulls):
+        if force_no_nulls:
+            assert(not isinstance(data_gen, NullGen))
+        src = _gen_scalars_common(data_gen, count, seed=seed)
+        data_type = src.data_type
+        return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
+    return with_cpu_session(lambda spark: gen_scalars_help(data_gen=data_gen, 
+                                                           count=count, seed=seed, 
+                                                           force_no_nulls=force_no_nulls))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
