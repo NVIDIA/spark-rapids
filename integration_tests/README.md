@@ -101,6 +101,9 @@ For manual installation, you need to setup your environment:
   tests across multiple CPUs to speed up test execution
 - findspark
   : Adds pyspark to sys.path at runtime
+- [fastparquet](https://fastparquet.readthedocs.io)
+  : A Python library (independent of Apache Spark) for reading/writing Parquet. Used in the
+  integration tests for checking Parquet read/write compatibility with the RAPIDS plugin.
 
 You can install all the dependencies using `pip` by running the following command:
 

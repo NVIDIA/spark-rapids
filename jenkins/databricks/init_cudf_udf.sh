@@ -60,6 +60,7 @@ REQUIRED_PACKAGES=(
   pytest-xdist
   requests
   sre_yield
+  fastparquet
 )
 
 ${base}/envs/cudf-udf/bin/mamba install -y \

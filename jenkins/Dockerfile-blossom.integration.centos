@@ -59,6 +59,7 @@ RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     mamba install -y spacy && python -m spacy download en_core_web_sm && \
     mamba install -y -c anaconda pytest requests && \
     mamba install -y -c conda-forge sre_yield && \
+    mamba install -y -c conda-forge fastparquet && \
     conda clean -ay
 # install pytest plugins for xdist parallel run
 RUN python -m pip install findspark pytest-xdist pytest-order
