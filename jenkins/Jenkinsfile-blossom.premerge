@@ -134,9 +134,10 @@ pipeline {
                     container('cpu') {
                         // check if pre-merge dockerfile modified
                         def dockerfileModified = sh(returnStdout: true,
-                                script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
-                                        'git --no-pager diff --name-only HEAD $(git merge-base HEAD $BASE) ' +
-                                        "-- ${PREMERGE_DOCKERFILE} || true")
+script: """BASE=\$(git --no-pager log --oneline -1 | awk \'{ print \$NF }\')
+git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true""").trim()
+                        echo "$dockerfileModified"
+
                         if (!dockerfileModified?.trim()) {
                             TEMP_IMAGE_BUILD = false
                         }

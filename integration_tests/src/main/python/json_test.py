@@ -21,7 +21,8 @@ from data_gen import *
 from datetime import timezone
 from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_340, \
+    is_before_spark_341
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -203,7 +204,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
             conf=updated_conf)
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec')
-@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
@@ -211,7 +212,7 @@ def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part,
     json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'json', 'FileSourceScanExec')
 
 @allow_non_gpu('BatchScanExec', 'ProjectExec')
-@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])

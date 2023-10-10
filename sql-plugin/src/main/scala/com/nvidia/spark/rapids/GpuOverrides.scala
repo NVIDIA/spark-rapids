@@ -3093,20 +3093,11 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           in.children.head.dataType match {
-            case _: FloatType | DoubleType => {
-              if (!conf.isFloatFormatNumberEnabled) {
-                willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
+            case FloatType | DoubleType if !conf.isFloatFormatNumberEnabled =>
+              willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
                   "results that have a different precision than the default results of Spark. " +
                   "To enable this operation on the GPU, set" +
                   s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
-              }
-            }
-            case dt: DecimalType => {
-              if (dt.scale > 32) {
-                willNotWorkOnGpu("format_number will generate results mismatched from Spark " +
-                  "when the scale is larger than 32.")
-              }
-            }
             case _ =>
           }
         }
@@ -3857,10 +3848,7 @@ object GpuOverrides extends Logging {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128.withPsNote(
           TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
-          TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
-          TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
-          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-          TypeSig.BINARY.withPsNote(TypeEnum.BINARY, "Only supported for Parquet") +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {

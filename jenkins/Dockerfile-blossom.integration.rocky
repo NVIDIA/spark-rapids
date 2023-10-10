@@ -45,8 +45,9 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     /bin/bash ~/miniconda.sh -b -p /opt/conda && \
     rm -f ~/miniconda.sh
 ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
-RUN conda init && \
-    conda config --set solver libmamba
+RUN conda init
+# TODO: re-enable mamba solver after https://github.com/NVIDIA/spark-rapids/issues/9393
+# conda config --set solver libmamba
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
