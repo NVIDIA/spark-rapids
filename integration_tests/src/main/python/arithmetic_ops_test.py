@@ -938,7 +938,7 @@ def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
-@pytest.mark.parametrize('data_gen', [DecimalGen(25,-3)], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
 def test_least(data_gen):
     num_cols = 20
     s1 = with_cpu_session(

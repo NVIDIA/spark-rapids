@@ -67,10 +67,8 @@ def test_concat_double_list_with_lit(dg):
 
 @pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
 def test_concat_list_with_lit(data_gen):
-    lit_col1 = f.lit(with_cpu_session(
-        lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
-    lit_col2 = f.lit(with_cpu_session(
-        lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
+    lit_col1 = f.lit(with_cpu_session(lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
+    lit_col2 = f.lit(with_cpu_session(lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
@@ -80,8 +78,7 @@ def test_concat_list_with_lit(data_gen):
 
 def test_concat_string():
     gen = mk_str_gen('.{0,5}')
-    (s1, s2) = with_cpu_session(
-        lambda spark: gen_scalars(gen, 2, force_no_nulls=True))
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: binary_op_df(spark, gen).select(
                 f.concat(),
@@ -109,10 +106,8 @@ def test_map_concat(data_gen):
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_concat_with_lit(data_gen):
-    lit_col1 = f.lit(with_cpu_session(
-        lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
-    lit_col2 = f.lit(with_cpu_session(
-        lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
+    lit_col1 = f.lit(with_cpu_session(lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
+    lit_col2 = f.lit(with_cpu_session(lambda spark: gen_scalar(data_gen))).cast(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
             f.map_concat(f.col('a'), f.col('b'), lit_col1),

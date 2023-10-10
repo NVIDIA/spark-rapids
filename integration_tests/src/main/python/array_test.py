@@ -214,8 +214,7 @@ def test_orderby_array_of_structs(data_gen):
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
-    literal = with_cpu_session(
-        lambda spark: gen_scalar(data_gen, force_no_nulls=True))
+    literal = with_cpu_session(lambda spark: gen_scalar(data_gen, force_no_nulls=True))
 
     def get_input(spark):
         return two_col_df(spark, arr_gen, data_gen)

@@ -689,8 +689,7 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
             return df.withColumn('lead_def_c', f.lead('c', 2, None).over(base_window_spec)) \
                      .withColumn('lag_def_c', f.lag('c', 4, None).over(base_window_spec))
         else:
-            default_val = with_cpu_session(
-                lambda spark: gen_scalar_value(c_gen, force_no_nulls=False))
+            default_val = with_cpu_session(lambda spark: gen_scalar_value(c_gen, force_no_nulls=False))
             return df.withColumn('inc_max_c', f.max('c').over(inclusive_window_spec)) \
                      .withColumn('inc_min_c', f.min('c').over(inclusive_window_spec)) \
                      .withColumn('lead_def_c', f.lead('c', 2, default_val).over(base_window_spec)) \
