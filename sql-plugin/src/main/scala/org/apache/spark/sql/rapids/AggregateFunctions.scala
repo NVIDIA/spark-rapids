@@ -2171,8 +2171,11 @@ case class GpuPercentileEvaluation(child: Expression,
  * with the CPU version and automated checks.
  */
 abstract class GpuPercentile(childExpr: Expression,
-                             percentageLit: GpuLiteral, isReduction: Boolean)
+                             percentageLit: GpuLiteral, isReduction: Boolean,
+                             mutableAggBufferOffset: Int,
+                             inputAggBufferOffset: Int)
   extends GpuAggregateFunction with Serializable {
+
   private val valueExpr = childExpr
 
   // Output type of the aggregations.
@@ -2226,7 +2229,11 @@ private def makeArray(v: Any): (Boolean, Either[Double, Array[Double]]) = v matc
   override def prettyName: String = "percentile"
   override def nullable: Boolean = true
 
-  override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null, aggregationOutputType))
+  override val initialValues: Seq[Expression] = {
+    Seq(GpuLiteral.create(new GenericArrayData(Array.empty[Any]), aggregationOutputType))
+  }
+//  override val initialValues: Seq[Expression] = Seq(GpuLiteral.create(null,
+//  aggregationOutputType))
   override def children: Seq[Expression] = Seq(childExpr, percentageLit)
 }
 
@@ -2295,8 +2302,26 @@ case class GpuNothing(child: Expression, msg: String) extends GpuExpression {
  * Compute percentile of the input number(s).
  */
 case class GpuPercentileDefault(childExpr: Expression,
-                                percentage: GpuLiteral, isReduction: Boolean)
-  extends GpuPercentile(childExpr, percentage, isReduction) {
+                                percentage: GpuLiteral, isReduction: Boolean,
+                                mutableAggBufferOffset: Int,
+                                inputAggBufferOffset: Int)
+  extends GpuPercentile(childExpr, percentage, isReduction, mutableAggBufferOffset,
+    inputAggBufferOffset) {
+
+
+   def withNewMutableAggBufferOffset(newMutableAggBufferOffset: Int): GpuPercentile = {
+//    val copy = this.getClass.getConstructor(
+//        classOf[Expression], classOf[GpuLiteral], classOf[Boolean], classOf[Int], classOf[Int])
+//      .newInstance(childExpr, percentage, isReduction, newMutableAggBufferOffset,
+//        inputAggBufferOffset)
+//      .asInstanceOf[GpuPercentile]
+
+    copy(mutableAggBufferOffset = newMutableAggBufferOffset)
+  }
+
+  def withNewInputAggBufferOffset(newInputAggBufferOffset: Int): GpuPercentile =
+    copy(inputAggBufferOffset = newInputAggBufferOffset)
+
   override val inputProjection: Seq[Expression] = Seq(childExpr)
 
   val updateHistogram =new CudfHistogram(aggregationOutputType)
@@ -2315,8 +2340,11 @@ case class GpuPercentileDefault(childExpr: Expression,
  * Compute percentile of the input number(s) associated with frequencies.
  */
 case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLiteral,
-                                      frequencyExpr: Expression, isReduction: Boolean)
-  extends GpuPercentile(childExpr, percentage, isReduction) {
+                                      frequencyExpr: Expression, isReduction: Boolean,
+                                      mutableAggBufferOffset: Int,
+                                      inputAggBufferOffset: Int)
+  extends GpuPercentile(childExpr, percentage, isReduction, mutableAggBufferOffset,
+    inputAggBufferOffset) {
   override val inputProjection: Seq[Expression] = {
     if(isReduction) {
       val childrenWithNames = GpuLiteral("value", StringType) :: childExpr ::
@@ -2333,12 +2361,16 @@ object GpuPercentile{
   def apply(childExpr: Expression,
             percentageLit: GpuLiteral,
             frequencyExpr: Expression,
-            isReduction: Boolean): GpuPercentile = {
+            isReduction: Boolean,
+            mutableAggBufferOffset: Int = 0,
+            inputAggBufferOffset: Int = 0): GpuPercentile = {
     frequencyExpr match {
       case GpuLiteral(freq, LongType) if freq == 1 =>
-        GpuPercentileDefault(childExpr, percentageLit, isReduction)
+        GpuPercentileDefault(childExpr, percentageLit, isReduction,
+          mutableAggBufferOffset, inputAggBufferOffset)
       case _  =>
-        GpuPercentileWithFrequency(childExpr, percentageLit, frequencyExpr, isReduction)
+        GpuPercentileWithFrequency(childExpr, percentageLit, frequencyExpr, isReduction,
+          mutableAggBufferOffset, inputAggBufferOffset)
     }
   }
 }
@@ -2410,13 +2442,23 @@ case class GpuToCpuPercentileBufferTransition(override val child: Expression, el
     val bos = new ByteArrayOutputStream()
     val out = new DataOutputStream(bos)
 
+    if(input == null) {
+      System.err.println("Serializing from GPU, hit null...")
+
+      out.writeInt(-1)
+      out.flush()
+      return bos.toByteArray
+    }
+
 //    System.err.println("input type : " + input.getClass.toString)
     System.err.println("Serializing from GPU...")
 
     try {
       val histogram = input.asInstanceOf[UnsafeArrayData]
       if(histogram.numElements() == 0) {
-        return null
+        out.writeInt(-1)
+        out.flush()
+        return bos.toByteArray
       }
       val projection = UnsafeProjection.create(Array[DataType](elementType, LongType))
       (0 until histogram.numElements()).foreach { i =>
