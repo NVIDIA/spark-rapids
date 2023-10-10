@@ -106,6 +106,7 @@ parquet_gens_list = [
 #
 # test read/write by pyarrow/GPU
 #
+@pyarrow_test
 @ignore_order(local=True)
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
