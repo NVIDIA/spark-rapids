@@ -2354,7 +2354,7 @@ class CpuToGpuPercentileBufferConverter(elementType: DataType)
 case class CpuToGpuPercentileBufferTransition(override val child: Expression, elementType: DataType)
   extends CpuToGpuBufferTransition {
   override def dataType: DataType = ArrayType(StructType(Seq(
-    StructField("value", child.dataType),
+    StructField("value", elementType),
     StructField("frequency", LongType))), containsNull = false)
   override protected def nullSafeEval(input: Any): ArrayData = {
     // Deserialization from the input byte stream into the internal buffer format.
@@ -2365,7 +2365,8 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
     val bis = new ByteArrayInputStream(bytes)
     val ins = new DataInputStream(bis)
 
-    System.err.println("Deserializing to GPU..., length = " + bytes.length)
+    System.err.println("Deserializing to GPU..., length = " + bytes.length
+    + ", elementType: " + elementType + ", child.dataType: " + child.dataType)
 
     try {
       // Store a column of STRUCT<element, count>
@@ -2383,6 +2384,7 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
           " , avaiable byte : " + ins.available)
 
         histogram.append(InternalRow.apply(element, count))
+//        histogram.append(row.copy())
         sizeOfNextRow = ins.readInt()
       }
       ArrayData.toArrayData(histogram)
