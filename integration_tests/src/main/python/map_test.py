@@ -363,7 +363,8 @@ def test_str_to_map_expr_random_delimiters():
     delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
     (pair_delim, keyval_delim) = ('', '')
     while pair_delim == keyval_delim:
-        (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
+        (pair_delim, keyval_delim) = with_cpu_session(
+            lambda spark: gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',

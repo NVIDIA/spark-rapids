@@ -832,15 +832,11 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
 def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values."""
-    def gen_scalars_help(data_gen, count, seed, force_no_nulls):
-        if force_no_nulls:
-            assert(not isinstance(data_gen, NullGen))
-        src = _gen_scalars_common(data_gen, count, seed=seed)
-        data_type = src.data_type
-        return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
-    return with_cpu_session(lambda spark: gen_scalars_help(data_gen=data_gen, 
-                                                           count=count, seed=seed, 
-                                                           force_no_nulls=force_no_nulls))
+    if force_no_nulls:
+        assert(not isinstance(data_gen, NullGen))
+    src = _gen_scalars_common(data_gen, count, seed=seed)
+    data_type = src.data_type
+    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""

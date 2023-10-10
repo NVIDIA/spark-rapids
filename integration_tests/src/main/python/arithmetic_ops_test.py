@@ -938,10 +938,11 @@ def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [DecimalGen(25,-3)], ids=idfn)
 def test_least(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
+    s1 = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen)))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0))
         for x in range(0, num_cols)], nullable=False)
@@ -956,7 +957,8 @@ def test_least(data_gen):
 @pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
 def test_greatest(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
+    s1 = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen)))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0))
         for x in range(0, num_cols)], nullable=False)

@@ -75,7 +75,8 @@ def test_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
     with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
-    scalar = gen_scalar(data_gen, force_no_nulls=True)
+    scalar = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=True))
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(scalar))
 
@@ -234,7 +235,8 @@ def test_expm1(data_descr):
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_eq(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(
+        lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') == s1,
@@ -243,7 +245,8 @@ def test_eq(data_descr):
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_ne(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(
+        lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') != s1,
@@ -252,7 +255,8 @@ def test_ne(data_descr):
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_lt(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(
+        lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') < s1,
@@ -261,7 +265,8 @@ def test_lt(data_descr):
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_lte(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(
+        lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') <= s1,
@@ -270,7 +275,8 @@ def test_lte(data_descr):
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_gt(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(
+        lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') > s1,
@@ -279,7 +285,8 @@ def test_gt(data_descr):
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_gte(data_descr):
-    (s1, s2) = gen_scalars(data_descr[0], 2)
+    (s1, s2) = with_cpu_session(
+        lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
         lambda df: df.select(
             f.col('a') >= s1,
