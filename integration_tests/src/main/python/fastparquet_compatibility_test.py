@@ -16,8 +16,20 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-import fastparquet
 from spark_session import spark_version, with_cpu_session, with_gpu_session
+
+
+def fastparquet_unavailable():
+    """
+    Checks whether the `fastparquet` module is unavailable. Helps skip fastparquet tests.
+    :return: True, if fastparquet is not available. Else, False.
+    """
+    try:
+        import fastparquet
+        return False
+    except ImportError:
+        return True
+
 
 rebase_write_corrected_conf = {
     'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
@@ -42,6 +54,7 @@ def read_parquet(data_path):
     """
 
     def read_with_fastparquet_or_plugin(spark):
+        import fastparquet
         plugin_enabled = spark.conf.get("spark.rapids.sql.enabled", "false") == "true"
         if plugin_enabled:
             return spark.read.parquet(data_path)
@@ -52,6 +65,8 @@ def read_parquet(data_path):
     return read_with_fastparquet_or_plugin
 
 
+@pytest.mark.skipif(condition=fastparquet_unavailable(),
+                    reason="fastparquet is required for testing fastparquet compatibility")
 @pytest.mark.skipif(condition=spark_version() < "3.4.0",
                     reason="spark.createDataFrame(pandasDF) fails with prior versions of Spark: "
                            "\"AttributeError: 'DataFrame' object has no attribute 'iteritems'. "
@@ -117,6 +132,8 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
 
 
+@pytest.mark.skipif(condition=fastparquet_unavailable(),
+                    reason="fastparquet is required for testing fastparquet compatibility")
 @pytest.mark.skipif(condition=spark_version() < "3.4.0",
                     reason="spark.createDataFrame(pandasDF) fails with prior versions of Spark: "
                            "\"AttributeError: 'DataFrame' object has no attribute 'iteritems'. "
@@ -172,6 +189,8 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
     assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path), conf=rebase_write_corrected_conf)
 
 
+@pytest.mark.skipif(condition=fastparquet_unavailable(),
+                    reason="fastparquet is required for testing fastparquet compatibility")
 @pytest.mark.parametrize('column_gen', [
     ByteGen(nullable=False),
     ByteGen(nullable=True),
@@ -234,6 +253,7 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
     data_path = spark_tmp_path + "/FASTPARQUET_WRITE_PATH"
 
     def write_with_fastparquet(spark, data_gen):
+        import fastparquet
         #  TODO: (future) Compression settings?
         dataframe = gen_df(spark, data_gen, 2048)
         fastparquet.write(data_path, dataframe.toPandas())
@@ -251,6 +271,8 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
         rebase_write_corrected_conf)
 
 
+@pytest.mark.skipif(condition=fastparquet_unavailable(),
+                    reason="fastparquet is required for testing fastparquet compatibility")
 @pytest.mark.parametrize('column_gen, time_format', [
     pytest.param(
         DateGen(nullable=False,
@@ -313,6 +335,7 @@ def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_
     data_path = spark_tmp_path + "/FASTPARQUET_WRITE_PATH"
 
     def rewrite_with_fastparquet(spark, data_gen):
+        import fastparquet
         tmp_data_path = data_path + "_tmp"
         spark_df = gen_df(spark, data_gen, 2048)
         spark_df.repartition(1).write.mode("overwrite").parquet(tmp_data_path)
