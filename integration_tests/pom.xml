@@ -24,7 +24,7 @@
         <artifactId>rapids-4-spark-parent</artifactId>
         <version>23.12.0-SNAPSHOT</version>
     </parent>
-    <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
+    <artifactId>rapids-4-spark-integration-tests_2.13</artifactId>
     <version>23.12.0-SNAPSHOT</version>
     <properties>
         <target.classifier/>
@@ -70,7 +70,7 @@
         <!-- https://mvnrepository.com/artifact/com.github.scopt/scopt -->
         <dependency>
             <groupId>com.github.scopt</groupId>
-            <artifactId>scopt_2.12</artifactId>
+            <artifactId>scopt_2.13</artifactId>
             <version>4.1.0</version>
         </dependency>
     </dependencies>

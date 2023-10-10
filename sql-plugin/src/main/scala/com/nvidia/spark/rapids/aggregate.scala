@@ -388,7 +388,7 @@ class AggHelper(
         // perform the aggregate
         val aggTbl = preProcessedTbl
             .groupBy(groupOptions, groupingOrdinals: _*)
-            .aggregate(cudfAggsOnColumn: _*)
+            .aggregate(cudfAggsOnColumn.toSeq: _*)
 
         withResource(aggTbl) { _ =>
           GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
@@ -899,7 +899,7 @@ class GpuMergeAggregateIterator(
     //   of batches for the partial aggregate case. This would be done in case
     //   a retry failed a certain number of times.
     val concatBatch = withResource(batches) { _ =>
-      val concatSpillable = concatenateBatches(metrics, batches)
+      val concatSpillable = concatenateBatches(metrics, batches.toSeq)
       withResource(concatSpillable) { _.getColumnarBatch() }
     }
     computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
@@ -1112,15 +1112,18 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
 
     if (aggPattern.nonEmpty && strPatternToReplace != "all") {
-      val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
-        subPattern.split("&").map {
-          case "partial" => Partial
-          case "partialmerge" => PartialMerge
-          case "final" => Final
-          case "complete" => Complete
-          case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
-        }.toSet
-      }
+      // val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
+      //   subPattern.split("&").map {
+      //     case "partial" => Partial
+      //     case "partialmerge" => PartialMerge
+      //     case "final" => Final
+      //     case "complete" => Complete
+      //     case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
+      //   }.toSet
+      // }
+      val aggPatternsCanReplace = 
+          GpuBaseAggregateHelper.getAggPatternsCanReplace(strPatternToReplace)
+
       if (!aggPatternsCanReplace.contains(aggPattern)) {
         val message = aggPattern.map(_.toString).mkString(",")
         willNotWorkOnGpu(s"Replacing mode pattern `$message` hash aggregates disabled")
@@ -1848,7 +1851,7 @@ case class GpuHashAggregateExec(
   override def requiredChildDistribution: List[Distribution] = {
     requiredChildDistributionExpressions match {
       case Some(exprs) if exprs.isEmpty => AllTuples :: Nil
-      case Some(exprs) if exprs.nonEmpty => ClusteredDistribution(exprs) :: Nil
+      case Some(exprs) => ClusteredDistribution(exprs) :: Nil
       case None => UnspecifiedDistribution :: Nil
     }
   }
