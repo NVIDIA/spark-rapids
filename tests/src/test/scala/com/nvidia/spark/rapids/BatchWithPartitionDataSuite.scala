@@ -39,7 +39,7 @@ class BatchWithPartitionDataSuite extends SparkQueryCompareTestSuite {
   test("test splitting partition data into groups") {
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
-    withGpuSparkSession(_ => {
+    withCpuSparkSession(_ => {
       val (rowValues, rowNums, schema) = generateRowData()
       val partitionRowData = PartitionRowData.from(rowValues, rowNums)
       val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataIntoGroups(
@@ -53,7 +53,7 @@ class BatchWithPartitionDataSuite extends SparkQueryCompareTestSuite {
   test("test splitting partition data into halves") {
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
-    withGpuSparkSession(_ => {
+    withCpuSparkSession(_ => {
       val (rowValues, rowNums, _) = generateRowData()
       val partitionRowData = PartitionRowData.from(rowValues, rowNums)
       val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataInHalf(partitionRowData)

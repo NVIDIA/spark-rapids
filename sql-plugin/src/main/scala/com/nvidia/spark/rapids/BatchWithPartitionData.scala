@@ -449,7 +449,8 @@ object BatchWithPartitionDataUtils {
       partitionedRowsData: Array[PartitionRowData]): Array[Array[PartitionRowData]] = {
     val totalRows = partitionedRowsData.map(_.rowNum).sum
     if (totalRows <= 1) {
-      throw new SplitAndRetryOOM("GPU OutOfMemory: cannot split input with one row")
+      // cannot split input with one row
+      Array(partitionedRowsData)
     }
     var remainingRows = totalRows / 2
     var rowsAddedToLeft = 0
@@ -487,6 +488,9 @@ object BatchWithPartitionDataUtils {
       withResource(batchWithPartData) { _ =>
         // Split partition rows data into two halves
         val splitPartitionData = splitPartitionDataInHalf(batchWithPartData.partitionedRowsData)
+        if(splitPartitionData.length < 2) {
+          throw new SplitAndRetryOOM("GPU OutOfMemory: cannot split input with one row")
+        }
         // Split the batch into two halves
         val cb = batchWithPartData.inputBatch.getColumnarBatch()
         splitAndCombineBatchWithPartitionData(cb, splitPartitionData,
