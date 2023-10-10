@@ -145,7 +145,7 @@ ci_2() {
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
-    ./integration_tests/run_pyspark_from_build.sh
+    ./integration_tests/run_pyspark_from_build.sh --pyarrow_test
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled

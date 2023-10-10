@@ -259,6 +259,10 @@ rapids_shuffle_smoke_test() {
     ./run_pyspark_from_build.sh -m shuffle_test
 }
 
+run_pyarrow_tests() {
+  ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
+}
+
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
@@ -306,6 +310,11 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
     PYSP_TEST_spark_executorEnv_PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
     PYSP_TEST_spark_python=${CONDA_ROOT}/bin/python \
     ./run_pyspark_from_build.sh -m cudf_udf --cudf_udf
+fi
+
+# Pyarrow tests
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
+  run_pyarrow_tests
 fi
 
 popd
