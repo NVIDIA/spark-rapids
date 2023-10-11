@@ -55,8 +55,9 @@ object PartitionRowData {
  * Class to wrap columnar batch and partition rows data and utility functions to merge them.
  *
  * @param inputBatch           Input ColumnarBatch.
- * @param partitionedRowsData  Array of (row counts, InternalRow) pairs. Each entry specifies how
- *                             many rows to replicate the partition value.
+ * @param partitionedRowsData  Array of [[PartitionRowData]], where each entry contains an
+ *                             InternalRow and a row number pair. These pairs specify how many
+ *                             rows to replicate the partition value.
  * @param partitionSchema      Schema of the partitioned data.
  */
 case class BatchWithPartitionData(
@@ -74,11 +75,12 @@ case class BatchWithPartitionData(
       if (partitionSchema.isEmpty) {
         columnarBatch // No partition columns, return the original batch.
       } else {
-        val partitionColumns = buildPartitionColumns()
-        val numRows = partitionColumns.head.getRowCount.toInt
-        withResource(new ColumnarBatch(partitionColumns.toArray, numRows)) { partBatch =>
-          assert(columnarBatch.numRows == partBatch.numRows)
-          GpuColumnVector.combineColumns(columnarBatch, partBatch)
+        closeOnExcept(buildPartitionColumns()) { partitionColumns =>
+          val numRows = partitionColumns.head.getRowCount.toInt
+          withResource(new ColumnarBatch(partitionColumns.toArray, numRows)) { partBatch =>
+            assert(columnarBatch.numRows == partBatch.numRows)
+            GpuColumnVector.combineColumns(columnarBatch, partBatch)
+          }
         }
       }
     }
@@ -124,8 +126,12 @@ case class BatchWithPartitionData(
 }
 
 /**
- * An iterator for merging and retrieving split ColumnarBatches with partition data using
- * retry framework.
+ * An iterator that provides ColumnarBatch instances by merging existing batches with partition
+ * columns. Each partition value column added is within the CUDF column size limit.
+ * It uses `withRetry` to support retry framework and may spill data if needed.
+ *
+ * @param batchesWithPartitionData List of [[BatchWithPartitionData]] instances to be
+ *                                 iterated.
  */
 class BatchWithPartitionDataIterator(batchesWithPartitionData: Seq[BatchWithPartitionData])
   extends GpuColumnarBatchIterator(true) {
@@ -299,7 +305,7 @@ object BatchWithPartitionDataUtils {
     partSchema.zipWithIndex.map {
       case (field, colIndex) if field.dataType == StringType
         && !values.isNullAt(colIndex) =>
-        // Assumption: Columns of other data type would not have fit already. Do nothing.\
+        // Assumption: Columns of other data type would not have fit already. Do nothing.
         val sizeOfSingleValue = values.getUTF8String(colIndex).numBytes
         rowNum * sizeOfSingleValue
       case _ => 0L
@@ -331,19 +337,17 @@ object BatchWithPartitionDataUtils {
 
   /**
    * Splits the input ColumnarBatch into smaller batches, wraps these batches with partition
-   * data, and returns an Iterator.
+   * data, and returns them as a sequence of [[BatchWithPartitionData]].
    *
    * @note Partition values are merged with the columnar batches lazily by the resulting Iterator
    *       to save GPU memory.
-   *
    * @param batch                     Input ColumnarBatch.
-   * @param listOfPartitionedRowsData Array of arrays where each entry contains 'list of partition
-   *                                  values and number of times it is replicated'. See example in
-   *                                  `splitPartitionDataIntoGroups()`.
+   * @param listOfPartitionedRowsData Array of arrays of [[PartitionRowData]], where each entry
+   *                                  contains a list of InternalRow and a row number pair. These
+   *                                  pairs specify how many rows to replicate the partition value.
+   *                                  See the example in `splitPartitionDataIntoGroups()`.
    * @param partitionSchema           Schema of partition ColumnVectors.
-   * @return An Iterator of combined ColumnarBatches.
-   *
-   * @see [[com.nvidia.spark.rapids.PartitionRowData]]
+   * @return Sequence of [[BatchWithPartitionData]]
    */
   private def splitAndCombineBatchWithPartitionData(
       batch: ColumnarBatch,
