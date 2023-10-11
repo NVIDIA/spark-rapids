@@ -454,10 +454,11 @@ The marks you care about are all in marks.py
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
 
-All data generation should occur within a Spark session. Typically this is done by passing a 
-lambda to functions in `asserts.py` such as `assert_gpu_and_cpu_are_equal_collect`. However, 
-for scalar generation like `gen_scalars`, you may need to put it in a `with_cpu_session`. It is 
-because negative scale decimals can have problems if called from outside of `with_spark_session`.
+All data generation and Spark function calls should occur within a Spark session. Typically 
+this is done by passing a lambda to functions in `asserts.py` such as 
+`assert_gpu_and_cpu_are_equal_collect`. However, for scalar generation like `gen_scalars`, you 
+may need to put it in a `with_cpu_session`. It is because negative scale decimals can have 
+problems when calling `f.lit` from outside of `with_spark_session`.
 
 ## Guidelines for Testing
 
