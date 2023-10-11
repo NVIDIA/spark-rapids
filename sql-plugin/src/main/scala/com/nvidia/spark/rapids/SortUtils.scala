@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
+import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -64,17 +63,9 @@ object SortUtils {
  * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
  * @param inputSchema The schema of the input data
  */
-class GpuSorter(
+abstract class GpuSorterBase(
     val sortOrder: Seq[SortOrder],
     inputSchema: Array[Attribute]) extends Serializable {
-
-  /**
-   * A class that provides convenience methods for sorting batches of data
-   * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
-   * @param inputSchema The schema of the input data
-   */
-  def this(sortOrder: Seq[SortOrder], inputSchema: Seq[Attribute]) =
-    this(sortOrder, inputSchema.toArray)
 
   private[this] val boundSortOrder = GpuBindReferences.bindReferences(sortOrder, inputSchema.toSeq)
 
@@ -87,7 +78,7 @@ class GpuSorter(
    */
   def cpuOrdering: Seq[SortOrder] = cpuOrderingInternal.toSeq
 
-  private[this] lazy val (sortOrdersThatNeedComputation, cudfOrdering, cpuOrderingInternal) = {
+  protected[this] lazy val (sortOrdersThatNeedComputation, cudfOrdering, cpuOrderingInternal) = {
     val sortOrdersThatNeedsComputation = mutable.ArrayBuffer[SortOrder]()
     val cpuOrdering = mutable.ArrayBuffer[SortOrder]()
     val cudfOrdering = mutable.ArrayBuffer[OrderByArg]()
@@ -212,7 +203,7 @@ class GpuSorter(
     }
   }
 
-  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
+  protected[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
     order.child.dataType match {
       case _: BinaryType =>
         // binary is represented in cudf as a LIST column of UINT8
@@ -222,7 +213,7 @@ class GpuSorter(
   }
 
   /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
-  private[this] lazy val hasUnsupportedNestedInRideColumns = {
+  protected[this] lazy val hasUnsupportedNestedInRideColumns = {
     val keyColumnIndices = cpuOrderingInternal.map(_.child.asInstanceOf[BoundReference].ordinal)
     val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
     rideColumnIndices.exists { idx =>
@@ -231,94 +222,6 @@ class GpuSorter(
     }
   }
 
-  /**
-   * Merge multiple batches together. All of these batches should be the output of
-   * `appendProjectedColumns` and the output of this will also be in that same format.
-   *
-   * After this function is called, the argument `spillableBatches` should not be used.
-   *
-   * @param spillableBatches the spillable batches to sort
-   * @param sortTime metric for the time spent doing the merge sort
-   * @return the sorted data.
-   */
-  final def mergeSortAndCloseWithRetry(
-      spillableBatches: mutable.Stack[SpillableColumnarBatch],
-      sortTime: GpuMetric): SpillableColumnarBatch = {
-    closeOnExcept(spillableBatches) { _ =>
-      assert(spillableBatches.nonEmpty)
-    }
-    withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
-      if (spillableBatches.size == 1) {
-        // Single batch no need for a merge sort
-        spillableBatches.pop()
-      } else { // spillableBatches.size > 1
-        // In the current version of cudf merge does not work for lists and maps.
-        // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-        // Nested types in sort key columns is not supported either.
-        if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
-          // so as a work around we concatenate all of the data together and then sort it.
-          // It is slower, but it works
-          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
-            val tablesToMerge = attempt.safeMap { sb =>
-              withResource(sb.getColumnarBatch()) { cb =>
-                GpuColumnVector.from(cb)
-              }
-            }
-            val concatenated = withResource(tablesToMerge) { _ =>
-              Table.concatenate(tablesToMerge: _*)
-            }
-            withResource(concatenated) { _ =>
-              concatenated.orderBy(cudfOrdering: _*)
-            }
-          }
-          withResource(merged) { _ =>
-            closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-              SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-            }
-          }
-        } else {
-          closeOnExcept(spillableBatches) { _ =>
-            val batchesToMerge = new mutable.Stack[SpillableColumnarBatch]()
-            closeOnExcept(batchesToMerge) { _ =>
-              while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
-                // pop a spillable batch if there is one, and add it to `batchesToMerge`.
-                if (spillableBatches.nonEmpty) {
-                  batchesToMerge.push(spillableBatches.pop())
-                }
-                if (batchesToMerge.size > 1) {
-                  val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-                    val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
-                      withResource(sb.getColumnarBatch()) { cb =>
-                        GpuColumnVector.from(cb)
-                      }
-                    }
-                    withResource(tablesToMerge) { _ =>
-                      Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
-                    }
-                  }
-
-                  // we no longer care about the old batches, we closed them
-                  closeOnExcept(merged) { _ =>
-                    batchesToMerge.safeClose()
-                    batchesToMerge.clear()
-                  }
-
-                  // add the result to be merged with the next spillable batch
-                  withResource(merged) { _ =>
-                    closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-                      batchesToMerge.push(
-                        SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-                    }
-                  }
-                }
-              }
-              batchesToMerge.pop()
-            }
-          }
-        }
-      }
-    }
-  }
 
   /**
    * Get the sort order for a batch of data that is the output of `appendProjectedColumns`.
