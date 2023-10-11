@@ -14,7 +14,29 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python
+/*** spark-rapids-shim-json-lines
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.rapids.execution.python.shims
 
 import java.io.DataOutputStream
 import java.net.Socket
@@ -26,6 +48,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonRDD}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
+import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils

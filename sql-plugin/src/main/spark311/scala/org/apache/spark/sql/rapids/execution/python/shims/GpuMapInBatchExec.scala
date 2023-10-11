@@ -14,6 +14,28 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
+{"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332db"}
+{"spark": "333"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
+spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python
 
 import ai.rapids.cudf
@@ -28,6 +50,7 @@ import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunnerBase
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -87,25 +110,31 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             }
           }
       }
-      val pyRunner = new GpuArrowPythonRunnerBase(
-          chainedFunc,
-          pythonEvalType,
-          argOffsets,
-          pyInputSchema,
-          sessionLocalTimeZone,
-          pythonRunnerConf,
-          batchSize) {
-        override def toBatch(table: Table): ColumnarBatch = {
-          BatchGroupedIterator.extractChildren(table, localOutput)
-        }
-      }
 
-      pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        .map { cb =>
-          numOutputBatches += 1
-          numOutputRows += cb.numRows
-          cb
+      if (pyInputIterator.hasNext) {
+        val pyRunner = new GpuArrowPythonRunnerBase(
+            chainedFunc,
+            pythonEvalType,
+            argOffsets,
+            pyInputSchema,
+            sessionLocalTimeZone,
+            pythonRunnerConf,
+            batchSize) {
+          override def toBatch(table: Table): ColumnarBatch = {
+            BatchGroupedIterator.extractChildren(table, localOutput)
+          }
         }
+
+        pyRunner.compute(pyInputIterator, context.partitionId(), context)
+          .map { cb =>
+            numOutputBatches += 1
+            numOutputRows += cb.numRows
+            cb
+          }
+      } else {
+        // Empty partition, return it directly
+        inputIter
+      }
     } // end of mapPartitionsInternal
   } // end of internalDoExecuteColumnar
 

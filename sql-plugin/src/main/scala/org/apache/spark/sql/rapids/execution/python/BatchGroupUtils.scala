@@ -28,9 +28,9 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuPythonArrowOutput, GpuPythonRunnerBase}
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 /**
  * A helper class to pack the group related items for the Python input.
  *
