@@ -24,7 +24,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 //import org.apache.spark.sql.catalyst.expressions.UnsafeArrayData
 
-import ai.rapids.cudf.TableDebug
+//import ai.rapids.cudf.TableDebug
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
@@ -2072,7 +2072,7 @@ case class GpuToCpuCollectBufferTransition(override val child: Expression)
 case class CudfHistogram(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) =>{
-      TableDebug.get().debug("historam: ", col);
+//      TableDebug.get().debug("historam: ", col);
   col.reduce(ReductionAggregation.histogram(), DType.LIST)
     }
   override lazy val groupByAggregate: GroupByAggregation = GroupByAggregation.histogram()
@@ -2084,7 +2084,7 @@ case class CudfMergeHistogram(override val dataType: DataType)
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
 
-      TableDebug.get().debug("merge historam: ", col);
+//      TableDebug.get().debug("merge historam: ", col);
 
 //      withResource(col.getChildColumnView(0)) { listChild =>
 //        listChild.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
@@ -2134,7 +2134,7 @@ case class GpuPercentileEvaluation(child: Expression,
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(child.columnarEval(batch)) { histogramArray =>
 
-      TableDebug.get().debug("evaluating histogramArray: ", histogramArray.getBase);
+//      TableDebug.get().debug("evaluating histogramArray: ", histogramArray.getBase);
 
         val percentageArray = percentage match {
           case Left(p) => Array(p)
@@ -2397,8 +2397,8 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
     val bis = new ByteArrayInputStream(bytes)
     val ins = new DataInputStream(bis)
 
-    System.err.println("Deserializing to GPU..., length = " + bytes.length
-    + ", elementType: " + elementType + ", child.dataType: " + child.dataType)
+//    System.err.println("Deserializing to GPU..., length = " + bytes.length
+//    + ", elementType: " + elementType + ", child.dataType: " + child.dataType)
 
     try {
       // Store a column of STRUCT<element, count>
@@ -2412,8 +2412,8 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
         val element = row.get(0, elementType)
         val count = row.get(1, LongType).asInstanceOf[Long]
 
-        System.err.println("  -- Deserializing e-c: " + element + " --- " + count +
-          " , avaiable byte : " + ins.available)
+//        System.err.println("  -- Deserializing e-c: " + element + " --- " + count +
+//          " , avaiable byte : " + ins.available)
 
         histogram.append(InternalRow.apply(element, count))
 //        histogram.append(row.copy())
@@ -2465,12 +2465,14 @@ case class GpuToCpuPercentileBufferTransition(override val child: Expression, el
         val row = histogram.getStruct(i, 2)
 
         val element = row.get(0, elementType)
-        val count = row.get(1, LongType).asInstanceOf[Long]
-        System.err.println("  -- Serializing e-c: " + element + " --- " + count)
 
-        val unsafeRow = projection.apply(row)
-        out.writeInt(unsafeRow.getSizeInBytes)
-        unsafeRow.writeToStream(out, buffer)
+//        val count = row.get(1, LongType).asInstanceOf[Long]
+//        System.err.println("  -- Serializing e-c: " + element + " --- " + count)
+        if(element!= null) {
+          val unsafeRow = projection.apply(row)
+          out.writeInt(unsafeRow.getSizeInBytes)
+          unsafeRow.writeToStream(out, buffer)
+        }
       }
       out.writeInt(-1)
       out.flush()
