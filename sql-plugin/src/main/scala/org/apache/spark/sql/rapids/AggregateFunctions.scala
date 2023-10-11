@@ -2100,7 +2100,7 @@ case class CudfMergeHistogram(override val dataType: DataType)
             withResource(col.getChildColumnView(1)) { frequencies =>
 //              TableDebug.get().debug("frequencies: ", frequencies);
 
-              withResource(Histogram.createHistogramsIfValid(values,
+              withResource(Histogram.createHistogramIfValid(values,
                 frequencies, false)) {
                 histograms =>
                   histograms.reduce(ReductionAggregation.mergeHistogram(), DType.LIST)
@@ -2245,7 +2245,7 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
       case valuesCV: GpuColumnVector =>
       withResourceIfAllowed(frequenciesExpr.columnarEvalAny(batch)) {
         case frequenciesCV: GpuColumnVector => {
-          val histograms = Histogram.createHistogramsIfValid(valuesCV.getBase,
+          val histograms = Histogram.createHistogramIfValid(valuesCV.getBase,
             frequenciesCV.getBase, !isReduction)
           GpuColumnVector.from(histograms, dataType)
         }
