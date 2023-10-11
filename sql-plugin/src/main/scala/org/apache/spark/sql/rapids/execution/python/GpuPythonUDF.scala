@@ -68,6 +68,7 @@ abstract class GpuPythonFunction(
     with UserDefinedExpression with GpuAggregateWindowFunction with Serializable {
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
+  override val selfNonDeterministic: Boolean = !udfDeterministic
 
   override def toString: String = s"$name(${children.mkString(", ")})"
 

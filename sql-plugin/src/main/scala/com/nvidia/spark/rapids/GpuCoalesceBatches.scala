@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -670,7 +671,7 @@ abstract class AbstractGpuCoalesceIterator(
         val it = batchesToCoalesce.batches
         val numBatches = it.length
         if (numBatches <= 1) {
-          throw new OutOfMemoryError(s"Cannot split a sequence of $numBatches batches")
+          throw new SplitAndRetryOOM(s"Cannot split a sequence of $numBatches batches")
         }
         val res = it.splitAt(numBatches / 2)
         Seq(BatchesToCoalesce(res._1), BatchesToCoalesce(res._2))

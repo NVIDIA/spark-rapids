@@ -113,15 +113,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.2-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.2-SNAPSHOT-cuda11.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-23.08.2-SNAPSHOT-cuda11.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -144,8 +144,9 @@ specifying the environment variable `BUILD_PARALLEL=<n>`.
 
 ### Building against different CUDA Toolkit versions
 
-You can build against different versions of the CUDA Toolkit by using one of the following profiles:
-* `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
+You can build against different versions of the CUDA Toolkit by modifying the variable `cuda.version`:
+* `-Dcuda.version=cuda11` (CUDA 11.x, default)
+* `-Dcuda.version=cuda12` (CUDA 12.x)
 
 ### Building a Distribution for a Single Spark Release
 
@@ -163,7 +164,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-23.08.1-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-23.08.2-SNAPSHOT-cuda11.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -180,6 +181,16 @@ flag if cross-compilation is required.
 
 ```bash
 mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
+```
+
+### Building and Testing with ARM
+
+To build our project on ARM platform, please add `-Parm64` to your Maven commands.
+NOTE: Build process does not require an ARM machine, so if you want to build the artifacts only
+on X86 machine, please also add `-DskipTests` in commands.
+
+```bash
+mvn clean verify -Dbuildver=311 -Parm64
 ```
 
 ### Iterative development during local testing

@@ -689,12 +689,13 @@ object GroupedAggregations {
   private def getWindowOptions(
       orderSpec: Seq[SortOrder],
       orderPositions: Seq[Int],
-      frame: GpuSpecifiedWindowFrame): WindowOptions = {
+      frame: GpuSpecifiedWindowFrame,
+      minPeriods: Int): WindowOptions = {
     frame.frameType match {
       case RowFrame =>
         withResource(getRowBasedLower(frame)) { lower =>
           withResource(getRowBasedUpper(frame)) { upper =>
-            val builder = WindowOptions.builder().minPeriods(1)
+            val builder = WindowOptions.builder().minPeriods(minPeriods)
             if (isUnbounded(frame.lower)) builder.unboundedPreceding() else builder.preceding(lower)
             if (isUnbounded(frame.upper)) builder.unboundedFollowing() else builder.following(upper)
             builder.build
@@ -718,7 +719,7 @@ object GroupedAggregations {
         withResource(asScalarRangeBoundary(orderType, lower)) { preceding =>
           withResource(asScalarRangeBoundary(orderType, upper)) { following =>
             val windowOptionBuilder = WindowOptions.builder()
-                .minPeriods(1)
+                .minPeriods(1) // Does not currently support custom minPeriods.
                 .orderByColumnIndex(orderByIndex)
 
             if (preceding.isEmpty) {
@@ -929,13 +930,18 @@ class GroupedAggregations {
         if (frameSpec.frameType == frameType) {
           // For now I am going to assume that we don't need to combine calls across frame specs
           // because it would just not help that much
-          val result = withResource(
-            getWindowOptions(boundOrderSpec, orderByPositions, frameSpec)) { windowOpts =>
-            val allAggs = functions.map {
-              case (winFunc, _) => winFunc.aggOverWindow(inputCb, windowOpts)
-            }.toSeq
-            withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
-              aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+          val result = {
+            val allWindowOpts = functions.map { f =>
+              getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
+                f._1.windowFunc.getMinPeriods)
+            }
+            withResource(allWindowOpts.toSeq) { allWindowOpts =>
+              val allAggs = allWindowOpts.zip(functions).map { case (windowOpt, f) =>
+                f._1.aggOverWindow(inputCb, windowOpt)
+              }
+              withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
+                aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+              }
             }
           }
           withResource(result) { result =>

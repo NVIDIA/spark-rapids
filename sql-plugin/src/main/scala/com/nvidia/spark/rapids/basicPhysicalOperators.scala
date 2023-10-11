@@ -21,10 +21,11 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf._
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
@@ -136,13 +137,15 @@ object GpuProjectExec {
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
 
-    // First off we want to find/run all of the expressions that are non-deterministic
+    // First off we want to find/run all of the expressions that are not retryable,
     // These cannot be retried.
-    val (deterministicExprs, nonDeterministicExprs) = boundExprs.partition(_.deterministic)
+    val (retryableExprs, notRetryableExprs) = boundExprs.partition(
+      _.asInstanceOf[GpuExpression].retryable)
+    val retryables = GpuExpressionsUtils.collectRetryables(retryableExprs)
 
-    val snd = if (nonDeterministicExprs.nonEmpty) {
+    val snd = if (notRetryableExprs.nonEmpty) {
       withResource(sb.getColumnarBatch()) { cb =>
-        Some(SpillableColumnarBatch(project(cb, nonDeterministicExprs),
+        Some(SpillableColumnarBatch(project(cb, notRetryableExprs),
           SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
       }
     } else {
@@ -150,10 +153,13 @@ object GpuProjectExec {
     }
 
     withResource(snd) { snd =>
+      retryables.foreach(_.checkpoint())
       RmmRapidsRetryIterator.withRetryNoSplit {
         val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
-          // For now we are just going to run all of these and deal with losing work...
-          project(cb, deterministicExprs)
+          withRestoreOnRetry(retryables) {
+            // For now we are just going to run all of these and deal with losing work...
+            project(cb, retryableExprs)
+          }
         }
         if (snd.isEmpty) {
           // We are done and the order should be the same so we don't need to do anything...
@@ -493,13 +499,15 @@ case class GpuProjectAstExec(
  */
  case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
   /**
-   * Is everything deterministic. This can help with reliability in the common case.
+   * Is everything retryable. This can help with reliability in the common case.
    */
-  lazy val areAllDeterministic = !exprTiers.exists { tier =>
+  lazy val areAllRetryable = !exprTiers.exists { tier =>
     tier.exists { expr =>
-      !expr.deterministic
+      !expr.retryable
     }
   }
+
+  lazy val retryables: Seq[Retryable] = exprTiers.flatMap(GpuExpressionsUtils.collectRetryables)
 
   lazy val outputTypes = exprTiers.last.map(_.dataType).toArray
 
@@ -535,20 +543,22 @@ case class GpuProjectAstExec(
 
   private [this] def projectWithRetrySingleBatchInternal(sb: SpillableColumnarBatch,
       closeInputBatch: Boolean): ColumnarBatch = {
-    if (areAllDeterministic) {
-      // If all of the expressions are deterministic we can just run everything and retry it
-      // at the top level. If some things are non-deterministic we need to split them up and
+    if (areAllRetryable) {
+      // If all of the expressions are retryable we can just run everything and retry it
+      // at the top level. If some things are not retryable we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
-      if (closeInputBatch) {
-        RmmRapidsRetryIterator.withRetryNoSplit(sb) { _ =>
-          withResource(sb.getColumnarBatch()) { cb =>
-            project(cb)
-          }
-        }
+      val sbToClose = if (closeInputBatch) {
+        Some(sb)
       } else {
+        None
+      }
+      withResource(sbToClose) { _ =>
+        retryables.foreach(_.checkpoint())
         RmmRapidsRetryIterator.withRetryNoSplit {
           withResource(sb.getColumnarBatch()) { cb =>
-            project(cb)
+            withRestoreOnRetry(retryables) {
+              project(cb)
+            }
           }
         }
       }
@@ -639,16 +649,16 @@ object GpuFilter {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       filterTime: GpuMetric): Iterator[ColumnarBatch] = {
-    if (boundCondition.areAllDeterministic) {
+    if (boundCondition.areAllRetryable) {
       val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       filterAndCloseWithRetry(sb, boundCondition, numOutputRows, numOutputBatches, filterTime)
     } else {
-      filterAndCloseNondeterministic(batch, boundCondition, numOutputRows, numOutputBatches,
+      filterAndCloseNoRetry(batch, boundCondition, numOutputRows, numOutputBatches,
         filterTime)
     }
   }
 
-  private def filterAndCloseNondeterministic(batch: ColumnarBatch,
+  private def filterAndCloseNoRetry(batch: ColumnarBatch,
       boundCondition: GpuTieredProject,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -668,10 +678,13 @@ object GpuFilter {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
+    boundCondition.retryables.foreach(_.checkpoint())
     val ret = withRetry(input, splitSpillableInHalfByRows) { sb =>
       withResource(sb.getColumnarBatch()) { cb =>
-        withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
-          GpuFilter(cb, boundCondition)
+        withRestoreOnRetry(boundCondition.retryables) {
+          withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
+            GpuFilter(cb, boundCondition)
+          }
         }
       }
     }
