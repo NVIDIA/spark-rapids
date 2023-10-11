@@ -2391,9 +2391,6 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
   override protected def nullSafeEval(input: Any): ArrayData = {
     // Deserialization from the input byte stream into the internal buffer format.
     val bytes = input.asInstanceOf[Array[Byte]]
-    if(bytes.length == 0) {
-      return null
-    }
     val bis = new ByteArrayInputStream(bytes)
     val ins = new DataInputStream(bis)
 
@@ -2442,24 +2439,10 @@ case class GpuToCpuPercentileBufferTransition(override val child: Expression, el
     val bos = new ByteArrayOutputStream()
     val out = new DataOutputStream(bos)
 
-    if(input == null) {
-      System.err.println("Serializing from GPU, hit null...")
 
-      out.writeInt(-1)
-      out.flush()
-      return bos.toByteArray
-    }
-
-//    System.err.println("input type : " + input.getClass.toString)
-    System.err.println("Serializing from GPU...")
 
     try {
       val histogram = input.asInstanceOf[UnsafeArrayData]
-      if(histogram.numElements() == 0) {
-        out.writeInt(-1)
-        out.flush()
-        return bos.toByteArray
-      }
       val projection = UnsafeProjection.create(Array[DataType](elementType, LongType))
       (0 until histogram.numElements()).foreach { i =>
         val row = histogram.getStruct(i, 2)
