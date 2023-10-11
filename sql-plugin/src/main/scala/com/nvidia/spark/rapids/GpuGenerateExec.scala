@@ -27,12 +27,14 @@ import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+// import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
-import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, NullType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructField, StructType}
+// import org.apache.spark.sql.types.{ArrayType, DataType,
+//  IntegerType, MapType, NullType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuGenerateExecSparkPlanMeta(
@@ -54,12 +56,30 @@ class GpuGenerateExecSparkPlanMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    GpuGenerateExec(
-      childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
-      gen.requiredChildOutput,
-      gen.outer,
-      gen.generatorOutput,
-      childPlans.head.convertIfNeeded())
+    // if child expression contains Stack, use GpuExpandExec instead
+    if (childExprs.exists(_.isInstanceOf[GpuStackMeta])) {
+      println("GpuExpandExec")
+      childExprs.map { expr =>
+        println(expr.getClass.getSimpleName)
+      }
+      // get the GpuStackMeta
+      val stackMeta = childExprs.filter(_.isInstanceOf[GpuStackMeta]).head
+      val n = stackMeta.childExprs.head.convertToGpu()
+          .asInstanceOf[GpuLiteral].value.asInstanceOf[Int]
+      println(n)
+      val projections: Seq[Seq[Expression]] = stackMeta.childExprs.tail.
+          map(_.convertToGpu()).grouped(n).toSeq
+      val output: Seq[Attribute] = gen.requiredChildOutput ++ gen.generatorOutput
+      GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(
+          conf.isTieredProjectEnabled)
+    } else {
+      GpuGenerateExec(
+        childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
+        gen.requiredChildOutput,
+        gen.outer,
+        gen.generatorOutput,
+        childPlans.head.convertIfNeeded())
+    }
   }
 }
 
@@ -641,108 +661,108 @@ case class GpuPosExplode(child: Expression) extends GpuExplodeBase {
   override def position: Boolean = true
 }
 
-case class GpuStack(children: Seq[Expression]) extends GpuGenerator with ShimExpression {
-  private lazy val numRows = children.head.eval().asInstanceOf[Int]
-  private lazy val numFields = Math.ceil((children.length - 1.0) / numRows).toInt
+// case class GpuStack(children: Seq[Expression]) extends GpuGenerator with ShimExpression {
+//   private lazy val numRows = children.head.eval().asInstanceOf[Int]
+//   private lazy val numFields = Math.ceil((children.length - 1.0) / numRows).toInt
 
-  def hasFoldableNumRows: Boolean = {
-    children.nonEmpty && children.head.dataType == IntegerType && children.head.foldable
-  }
+//   def hasFoldableNumRows: Boolean = {
+//     children.nonEmpty && children.head.dataType == IntegerType && children.head.foldable
+//   }
 
-  def shimErrorsPlaceholder: TypeCheckResult = {
-    throw new IllegalStateException("This should never be called")
-  }
+//   def shimErrorsPlaceholder: TypeCheckResult = {
+//     throw new IllegalStateException("This should never be called")
+//   }
 
-  override def checkInputDataTypes(): TypeCheckResult = {
-    if (children.length <= 1) {
-      shimErrorsPlaceholder
-    } else if (children.head.dataType != IntegerType) {
-      shimErrorsPlaceholder
-    } else if (!children.head.foldable) {
-      shimErrorsPlaceholder
-    } 
-    // else if (numRows < 1) {
-    //   shimErrorsPlaceholder
-    // } 
-    else {
-      for (i <- 1 until children.length) {
-        val j = (i - 1) % numFields
-        if (children(i).dataType != elementSchema.fields(j).dataType) {
-          shimErrorsPlaceholder
-        }
-      }
-      TypeCheckResult.TypeCheckSuccess
-    }
-  }
+//   override def checkInputDataTypes(): TypeCheckResult = {
+//     if (children.length <= 1) {
+//       shimErrorsPlaceholder
+//     } else if (children.head.dataType != IntegerType) {
+//       shimErrorsPlaceholder
+//     } else if (!children.head.foldable) {
+//       shimErrorsPlaceholder
+//     } 
+//     // else if (numRows < 1) {
+//     //   shimErrorsPlaceholder
+//     // } 
+//     else {
+//       for (i <- 1 until children.length) {
+//         val j = (i - 1) % numFields
+//         if (children(i).dataType != elementSchema.fields(j).dataType) {
+//           shimErrorsPlaceholder
+//         }
+//       }
+//       TypeCheckResult.TypeCheckSuccess
+//     }
+//   }
 
-  def findDataType(index: Int): DataType = {
-    // Find the first data type except NullType.
-    val firstDataIndex = ((index - 1) % numFields) + 1
-    for (i <- firstDataIndex until children.length by numFields) {
-      if (children(i).dataType != NullType) {
-        return children(i).dataType
-      }
-    }
-    // If all values of the column are NullType, use it.
-    NullType
-  }
+//   def findDataType(index: Int): DataType = {
+//     // Find the first data type except NullType.
+//     val firstDataIndex = ((index - 1) % numFields) + 1
+//     for (i <- firstDataIndex until children.length by numFields) {
+//       if (children(i).dataType != NullType) {
+//         return children(i).dataType
+//       }
+//     }
+//     // If all values of the column are NullType, use it.
+//     NullType
+//   }
 
-  override def elementSchema: StructType = 
-    StructType(children.tail.take(numFields).zipWithIndex.map {
-      case (e, index) => StructField(s"col$index", e.dataType)
-    })
+//   override def elementSchema: StructType = 
+//     StructType(children.tail.take(numFields).zipWithIndex.map {
+//       case (e, index) => StructField(s"col$index", e.dataType)
+//     })
 
-  // TODO: generated by copilot, I have no idea what it does 
-  override def inputSplitIndices(inputBatch: ColumnarBatch,
-      generatorOffset: Int, 
-      outer: Boolean,
-      targetSizeBytes: Long,
-      maxRows: Int = Int.MaxValue): Array[Int] = {
-    val inputRows = inputBatch.numRows()
-    if (inputRows == 0) return Array()
+//   // TODO: generated by copilot, I have no idea what it does 
+//   override def inputSplitIndices(inputBatch: ColumnarBatch,
+//       generatorOffset: Int, 
+//       outer: Boolean,
+//       targetSizeBytes: Long,
+//       maxRows: Int = Int.MaxValue): Array[Int] = {
+//     val inputRows = inputBatch.numRows()
+//     if (inputRows == 0) return Array()
 
-    val vectors = GpuColumnVector.extractBases(inputBatch)
+//     val vectors = GpuColumnVector.extractBases(inputBatch)
 
-    // Calculate the number of rows that needs to be replicated. Here we find the mean of the
-    // generator column. Multiplying the mean with size of projected columns would give us the
-    // approximate memory required.
-    val meanOutputRows = math.ceil(withResource(vectors(generatorOffset).mean()) {
-      _.getDouble
-    })
-    val estimatedOutputRows = meanOutputRows * inputRows
+//     // Calculate the number of rows that needs to be replicated. Here we find the mean of the
+//     // generator column. Multiplying the mean with size of projected columns would give us the
+//     // approximate memory required.
+//     val meanOutputRows = math.ceil(withResource(vectors(generatorOffset).mean()) {
+//       _.getDouble
+//     })
+//     val estimatedOutputRows = meanOutputRows * inputRows
 
-    // input size of columns to be repeated
-    val repeatColsInputSize = vectors.slice(0, generatorOffset).map(_.getDeviceMemorySize).sum
-    // estimated total output size
-    val estimatedOutputSizeBytes = repeatColsInputSize * estimatedOutputRows / inputRows
+//     // input size of columns to be repeated
+//     val repeatColsInputSize = vectors.slice(0, generatorOffset).map(_.getDeviceMemorySize).sum
+//     // estimated total output size
+//     val estimatedOutputSizeBytes = repeatColsInputSize * estimatedOutputRows / inputRows
 
-    // how may splits will we need to keep the output size under the target size
-    val numSplitsForTargetSize = math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
-    // how may splits will we need to keep the output rows under max value
-    val numSplitsForTargetRow = math.ceil(estimatedOutputRows / maxRows).toInt
-    // how may splits will we need to keep replicateRows working safely
-    val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
+//     // how may splits will we need to keep the output size under the target size
+//     val numSplitsForTargetSize = math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
+//     // how may splits will we need to keep the output rows under max value
+//     val numSplitsForTargetRow = math.ceil(estimatedOutputRows / maxRows).toInt
+//     // how may splits will we need to keep replicateRows working safely
+//     val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
 
-    if (numSplits == 0) {
-      Array()
-    } else {
-      GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
-    }
-  }
+//     if (numSplits == 0) {
+//       Array()
+//     } else {
+//       GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
+//     }
+//   }
 
-  // Stack is a generator function, but there is no guaranteed output order for GenerateExec, 
-  // so we can probably implement this in terms of GpuExpandExec. The output of GenerateExec 
-  // is requiredChildOutput ++ generatorOutput requiredChildOutput are the ride along columns 
-  // that are going to possibly be replicated. So we take n, the first argument to stack that 
-  // has to be static and then interleave the expressions to produce an input to GpuExpandExec.
-  override def generate(inputBatch: ColumnarBatch, 
-      generatorOffset: Int, 
-      outer: Boolean): ColumnarBatch = {
-    val schema = GpuColumnVector.extractTypes(inputBatch)
+//   // Stack is a generator function, but there is no guaranteed output order for GenerateExec, 
+//   // so we can probably implement this in terms of GpuExpandExec. The output of GenerateExec 
+//   // is requiredChildOutput ++ generatorOutput requiredChildOutput are the ride along columns 
+//   // that are going to possibly be replicated. So we take n, the first argument to stack that 
+//   // has to be static and then interleave the expressions to produce an input to GpuExpandExec.
+//   override def generate(inputBatch: ColumnarBatch, 
+//       generatorOffset: Int, 
+//       outer: Boolean): ColumnarBatch = {
+//     val schema = GpuColumnVector.extractTypes(inputBatch)
     
     
-  }
-}
+//   }
+// }
 
 case class GpuGenerateExec(
     generator: GpuGenerator,

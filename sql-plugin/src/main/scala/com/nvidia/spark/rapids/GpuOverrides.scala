@@ -3291,11 +3291,7 @@ object GpuOverrides extends Logging {
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
-      (a, conf, p, r) => new GeneratorExprMeta[Stack](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = {
-          GpuStack(childExprs.map(_.convertToGpu()))
-        }
-      }
+      (a, conf, p, r) => new GpuStackMeta(a, conf, p, r)
     ),
     expr[ReplicateRows](
       "Given an input row replicates the row N times",
