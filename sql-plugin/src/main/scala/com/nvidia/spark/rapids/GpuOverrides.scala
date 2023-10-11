@@ -3407,21 +3407,19 @@ object GpuOverrides extends Logging {
       ExprChecks.reductionAndGroupByAgg(
         // The output can be a single number or array depending on whether percentiles param
         // is a single number or an array.
-        TypeSig.gpuNumeric + TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
-        TypeSig.cpuNumeric + TypeSig.ARRAY.nested(TypeSig.cpuNumeric),
+        TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+        TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
         Seq(
-          ParamCheck("input",
-            TypeSig.gpuNumeric,
-            TypeSig.cpuNumeric),
+          ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.integral + TypeSig.fp),
           ParamCheck("percentage",
-            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+            TypeSig.lit(TypeEnum.DOUBLE) + TypeSig.ARRAY.nested(TypeSig.lit(TypeEnum.DOUBLE)),
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
           ParamCheck("frequency",
             TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG),
             TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          // Check if the percentage input can be supported on GPU.
+          // Check if the input percentage can be supported on GPU.
           childExprs(1).wrapped match {
             case lit: Literal => lit.value match {
               case null =>
