@@ -292,10 +292,10 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
         conf=updated_conf)
 
 @pytest.mark.parametrize('filename', [
-    'malformed1.json',
-    pytest.param('malformed2.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
-    pytest.param('malformed3.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
-    pytest.param('malformed4.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
+    'malformed1.ndjson',
+    pytest.param('malformed2.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
+    pytest.param('malformed3.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
+    pytest.param('malformed4.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
     pytest.param('mixed-nested.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
 ])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
