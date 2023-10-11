@@ -3410,6 +3410,7 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
         TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
         Seq(
+          // ANSI interval types are not yet supported.
           ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.integral + TypeSig.fp),
           ParamCheck("percentage",
             TypeSig.lit(TypeEnum.DOUBLE) + TypeSig.ARRAY.nested(TypeSig.lit(TypeEnum.DOUBLE)),
