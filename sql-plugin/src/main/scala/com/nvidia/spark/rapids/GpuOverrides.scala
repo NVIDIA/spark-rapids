@@ -3410,7 +3410,8 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
         TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
         Seq(
-          // ANSI interval types are not yet supported.
+          // ANSI interval types are new in Spark 3.2.0 and are not yet supported by the
+          // current GPU implementation.
           ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.integral + TypeSig.fp),
           ParamCheck("percentage",
             TypeSig.lit(TypeEnum.DOUBLE) + TypeSig.ARRAY.nested(TypeSig.lit(TypeEnum.DOUBLE)),
