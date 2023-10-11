@@ -296,10 +296,26 @@ def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_
     pytest.param('malformed2.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
     pytest.param('malformed3.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
     pytest.param('malformed4.json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
+    pytest.param('mixed-nested.ndjson', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9310')),
 ])
 @pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
 @pytest.mark.parametrize('schema', [_int_schema])
 def test_read_invalid_json(spark_tmp_table_factory, std_input_path, read_func, filename, schema):
+    assert_gpu_and_cpu_are_equal_collect(
+        read_func(std_input_path + '/' + filename,
+                  schema,
+                  spark_tmp_table_factory,
+                  {}),
+        conf=_enable_all_types_conf)
+
+@pytest.mark.parametrize('filename', [
+    'mixed-primitives.ndjson',
+    'mixed-primitives-nested.ndjson',
+    'simple-nested.ndjson',
+])
+@pytest.mark.parametrize('read_func', [read_json_df, read_json_sql])
+@pytest.mark.parametrize('schema', [_int_schema])
+def test_read_valid_json(spark_tmp_table_factory, std_input_path, read_func, filename, schema):
     assert_gpu_and_cpu_are_equal_collect(
         read_func(std_input_path + '/' + filename,
                   schema,
