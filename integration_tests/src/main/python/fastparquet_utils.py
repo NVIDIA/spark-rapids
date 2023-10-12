@@ -58,7 +58,7 @@ def _merge_cpu_dict(cpu_dict, gpu_dict, cpu_prefix=""):
         if isinstance(gpu_v, Row):
             cpu_prefix = cpu_prefix + gpu_k + "."
             _merge_cpu_dict(cpu_dict, gpu_v.asDict(), cpu_prefix)
-            # redcue the dict for the `cpu_prefix`
+            # reduce the dict for the `cpu_prefix`
             _reduce_cpu_dict(cpu_dict, cpu_prefix)
 
 def _reduce_cpu_dict(cpu_dict, cpu_prefix):
@@ -86,7 +86,7 @@ def _reduce_cpu_dict(cpu_dict, cpu_prefix):
     cpu_dict[prefix_key] = row
 
 
-def _test_convert_fastparquet_result():
+def _test_convert_fastparquet_result_no_null():
     """
     verify the method `_convert_fastparquet_result`
     """
@@ -110,3 +110,32 @@ def _test_convert_fastparquet_result():
     print("after:")
     print(cpu, gpu)
     assert cpu == gpu
+
+def _test_convert_fastparquet_result_with_null():
+    """
+    verify the method `_convert_fastparquet_result`
+    """
+    cpu_dict = {'v1_1' : None, 'v1_2.v2_1' : None, 'v1_2.v2_2.v3_1' : None, 'v1_2.v2_2.v3_2' : 32}
+    cpu_row = Row(**cpu_dict)
+    gpu_row = Row(
+                v1_1 = None,
+                v1_2 = Row(
+                    v2_1 = None,
+                    v2_2 = Row(
+                        v3_1 = None,
+                        v3_2 = 32)))
+
+    cpu = [cpu_row]
+    gpu = [gpu_row]
+    print()
+    print("before:")
+    print(cpu, gpu)
+    (cpu, gpu) = _convert_fastparquet_result(cpu, gpu)
+    print()
+    print("after:")
+    print(cpu, gpu)
+    assert cpu == gpu
+
+if __name__ == "__main__":
+    _test_convert_fastparquet_result_no_null()
+    _test_convert_fastparquet_result_with_null()
