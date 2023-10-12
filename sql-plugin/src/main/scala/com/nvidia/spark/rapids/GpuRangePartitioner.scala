@@ -200,7 +200,8 @@ case class GpuRangePartitioner(
 
   def computeBoundsAndCloseWithRetry(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val types = GpuColumnVector.extractTypes(batch)
-    val spillableBatch = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    val spillableBatch = SpillableColumnarBatch(GpuColumnVector.incRefCounts(batch),
+      SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     withRetryNoSplit(spillableBatch) { sb =>
       val partedTable = withResource(sb.getColumnarBatch()) { cb =>
         val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>

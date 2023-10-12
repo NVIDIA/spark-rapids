@@ -46,12 +46,11 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       val attrs = AttributeReference(ref.name, ref.dataType, ref.nullable)()
       val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs))
 
-      val gp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
+      val rp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
       val prebuiltBatch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
       withResource(prebuiltBatch) { batch =>
-        GpuColumnVector.incRefCounts(batch)
-        val ret = gp.columnarEvalAny(batch)
+        val ret = rp.columnarEvalAny(batch)
         assert(2 === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
       }
     }
@@ -60,12 +59,11 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
   test("GPU round robin partition with retry") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
       val partNum = 4
-      val gp = GpuRoundRobinPartitioning(partNum)
-      val prebuiltBatch = buildBatch()
+      val rrp = GpuRoundRobinPartitioning(partNum)
+      val prebuiltBatch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
       withResource(prebuiltBatch) { batch =>
-        GpuColumnVector.incRefCounts(batch)
-        val ret = gp.columnarEvalAny(batch)
+        val ret = rrp.columnarEvalAny(batch)
         assert(partNum === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
       }
     }
