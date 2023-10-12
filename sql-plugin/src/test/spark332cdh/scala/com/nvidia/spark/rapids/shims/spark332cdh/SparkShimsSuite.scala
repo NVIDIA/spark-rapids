@@ -26,7 +26,7 @@ import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
 class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
   test("spark shims version") {
-    assert(VersionUtils.cmpSparkVersion(3, 3, 0) === 0)
+    assert(VersionUtils.cmpSparkVersion(3, 3, 2) === 0)
   }
 
   test("shuffle manager class") {
