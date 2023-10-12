@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
@@ -28,6 +29,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, CollectSet, Count, Max, Min, Sum}
 import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -81,13 +83,25 @@ abstract class GpuWindowExpressionMetaBase(
               case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
-                if (lower > 0) {
-                  willNotWorkOnGpu(s"lower-bounds ahead of current row is not supported. " +
-                      s"Found $lower")
+                // Negative bounds are allowed, so long as lower does not exceed upper.
+                if (upper < lower) {
+                  willNotWorkOnGpu("upper-bounds must equal or exceed the lower bounds. " +
+                    s"Found lower=$lower, upper=$upper ")
                 }
-                if (upper < 0) {
-                  willNotWorkOnGpu(s"upper-bounds behind the current row is not supported. " +
-                      s"Found $upper")
+                // Also check for negative offsets.
+                if (upper < 0 || lower > 0) {
+                  windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
+                    case _: Average => // Supported
+                    case _: CollectList => // Supported
+                    case _: CollectSet => // Supported
+                    case _: Count => // Supported
+                    case _: Max => // Supported
+                    case _: Min => // Supported
+                    case _: Sum => // Supported
+                    case f: AggregateFunction =>
+                      willNotWorkOnGpu("negative row bounds unsupported for specified " +
+                        s"aggregation: ${f.prettyName}")
+                  }
                 }
             }
           case RangeFrame =>
@@ -649,7 +663,15 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression {
+  /**
+   * Get "min-periods" value, i.e. the minimum number of periods/rows
+   * above which a non-null value is returned for the function.
+   * Otherwise, null is returned.
+   * @return Non-negative value for min-periods.
+   */
+  def getMinPeriods: Int = 1
+}
 
 /**
  * This is a special window function that simply replaces itself with one or more
@@ -814,7 +836,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  * </code>
  * which can be output.
  */
-trait BatchedRunningWindowFixer extends AutoCloseable with CheckpointRestore {
+trait BatchedRunningWindowFixer extends AutoCloseable with Retryable {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -991,6 +1013,55 @@ class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
           column.incRefCount()
       }
     }
+  }
+}
+
+class BatchedUnboundedToUnboundedBinaryFixer(val binOp: BinaryOp, val dataType: DataType)
+    extends BatchedUnboundedToUnboundedWindowFixer {
+  private var previousResult: Option[Scalar] = None
+
+  override def updateState(scalar: Scalar): Unit = previousResult match {
+    case None =>
+      previousResult = Some(scalar.incRefCount())
+    case Some(prev) =>
+      // This is ugly, but for now it is simple to make it work
+      val result = withResource(ColumnVector.fromScalar(prev, 1)) { p1 =>
+        withResource(p1.binaryOp(binOp, scalar, prev.getType)) { result1 =>
+          result1.getScalarElement(0)
+        }
+      }
+      closeOnExcept(result) { _ =>
+        previousResult.foreach(_.close)
+        previousResult = Some(result)
+      }
+  }
+
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+      column: ColumnVector): ColumnVector = {
+    val scalar =  previousResult match {
+      case Some(value) =>
+        value.incRefCount()
+      case None =>
+        GpuScalar.from(null, dataType)
+    }
+
+    withResource(scalar) { scalar =>
+      samePartitionMask match {
+        case scala.Left(cv) =>
+          cv.ifElse(scalar, column)
+        case scala.Right(true) =>
+          ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+        case _ =>
+          column.incRefCount()
+      }
+    }
+  }
+
+  override def close(): Unit = reset()
+
+  override def reset(): Unit = {
+    previousResult.foreach(_.close())
+    previousResult = None
   }
 }
 

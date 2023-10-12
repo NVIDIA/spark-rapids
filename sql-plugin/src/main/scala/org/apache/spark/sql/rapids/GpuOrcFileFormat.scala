@@ -37,10 +37,8 @@ object GpuOrcFileFormat extends Logging {
   // Spark is not always compiled with Hive support so we cannot import from Spark jars directly.
   private val HIVE_IMPL_CLASS = "org.apache.spark.sql.hive.orc.OrcFileFormat"
 
-  def isSparkOrcFormat(format: FileFormat): Boolean = format match {
-    case _: OrcFileFormat => true
-    case f if f.getClass.getCanonicalName.equals(HIVE_IMPL_CLASS) => true
-    case _ => false
+  def isSparkOrcFormat(cls: Class[_ <: FileFormat]): Boolean = {
+    cls == classOf[OrcFileFormat] || cls.getCanonicalName.equals(HIVE_IMPL_CLASS)
   }
 
   def tagGpuSupport(meta: RapidsMeta[_, _, _],

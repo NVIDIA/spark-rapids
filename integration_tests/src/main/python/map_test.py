@@ -337,7 +337,7 @@ def test_str_to_map_expr_fixed_pattern_input():
     # Test pattern "key1:val1,key2:val2".
     # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
     # key start with a letter [a-zA-Z].
-    data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
+    data_gen = [('a', StringGen(pattern='[0-9][^:,]{0,10}:[^:,]{0,10},[a-zA-Z][^:,]{0,10}:[^:,]{0,10}',
                                 nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(

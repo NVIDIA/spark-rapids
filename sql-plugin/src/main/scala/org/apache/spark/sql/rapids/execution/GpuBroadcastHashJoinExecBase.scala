@@ -142,7 +142,7 @@ abstract class GpuBroadcastHashJoinExecBase(
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
 
-    val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
+    val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
       withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
         if (bufferedStreamIter.hasNext) {

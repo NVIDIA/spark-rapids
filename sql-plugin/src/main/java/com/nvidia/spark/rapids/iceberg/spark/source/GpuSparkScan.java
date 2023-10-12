@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.GpuScanWrapper;
 import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
-import com.nvidia.spark.rapids.ScanWithMetricsWrapper;
 import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
@@ -67,7 +67,7 @@ import org.apache.spark.util.SerializableConfiguration;
  * GPU-accelerated Iceberg Scan.
  * This is derived from Apache Iceberg's SparkScan class.
  */
-abstract class GpuSparkScan extends ScanWithMetricsWrapper
+abstract class GpuSparkScan extends GpuScanWrapper
     implements Scan, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(GpuSparkScan.class);
 

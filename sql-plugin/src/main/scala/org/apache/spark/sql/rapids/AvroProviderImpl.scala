@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,26 +30,16 @@ import org.apache.spark.util.SerializableConfiguration
 class AvroProviderImpl extends AvroProvider {
 
   /** If the file format is supported as an external source */
-  def isSupportedFormat(format: FileFormat): Boolean = {
-    format match {
-      case _: AvroFileFormat => true
-      case _ => false
-    }
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
+    format == classOf[AvroFileFormat]
   }
 
   def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean = {
-    format match {
-      case _: AvroFileFormat => conf.isAvroPerFileReadEnabled
-      case _ => false
-    }
+    conf.isAvroPerFileReadEnabled
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    meta.wrapped.relation.fileFormat match {
-      case _: AvroFileFormat => GpuReadAvroFileFormat.tagSupport(meta)
-      case f =>
-        meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
-    }
+    GpuReadAvroFileFormat.tagSupport(meta)
   }
 
   /**
@@ -57,11 +47,8 @@ class AvroProviderImpl extends AvroProvider {
    * Better to check if the format is supported first by calling 'isSupportedFormat'
    */
   def getReadFileFormat(format: FileFormat): FileFormat = {
-    format match {
-      case _: AvroFileFormat => new GpuReadAvroFileFormat
-      case f =>
-        throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
-    }
+    require(isSupportedFormat(format.getClass), s"unexpected format: $format")
+    new GpuReadAvroFileFormat
   }
 
   /**
@@ -73,23 +60,17 @@ class AvroProviderImpl extends AvroProvider {
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
-    format match {
-      case _: AvroFileFormat =>
-        GpuAvroMultiFilePartitionReaderFactory(
-          fileScan.relation.sparkSession.sessionState.conf,
-          fileScan.rapidsConf,
-          broadcastedConf,
-          fileScan.relation.dataSchema,
-          fileScan.requiredSchema,
-          fileScan.readPartitionSchema,
-          new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
-          fileScan.allMetrics,
-          pushedFilters,
-          fileScan.queryUsesInputFile)
-      case _ =>
-        // never reach here
-        throw new RuntimeException(s"File format $format is not supported yet")
-    }
+    GpuAvroMultiFilePartitionReaderFactory(
+      fileScan.relation.sparkSession.sessionState.conf,
+      fileScan.rapidsConf,
+      broadcastedConf,
+      fileScan.relation.dataSchema,
+      fileScan.requiredSchema,
+      fileScan.readPartitionSchema,
+      new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
+      fileScan.allMetrics,
+      pushedFilters,
+      fileScan.queryUsesInputFile)
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
@@ -99,7 +80,7 @@ class AvroProviderImpl extends AvroProvider {
         (a, conf, p, r) => new ScanMeta[AvroScan](a, conf, p, r) {
           override def tagSelfForGpu(): Unit = GpuAvroScan.tagSupport(this)
 
-          override def convertToGpu(): Scan =
+          override def convertToGpu(): GpuScan =
             GpuAvroScan(a.sparkSession,
               a.fileIndex,
               a.dataSchema,
@@ -112,14 +93,5 @@ class AvroProviderImpl extends AvroProvider {
               a.dataFilters)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-  }
-
-  def isSupportedScan(scan: Scan): Boolean = scan.isInstanceOf[GpuAvroScan]
-
-  def copyScanWithInputFileTrue(scan: Scan): Scan = scan match {
-    case avroScan: GpuAvroScan =>
-      avroScan.copy(queryUsesInputFile=true)
-    case _ =>
-      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
   }
 }

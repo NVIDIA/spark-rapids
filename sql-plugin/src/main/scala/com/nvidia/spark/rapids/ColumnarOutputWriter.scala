@@ -21,6 +21,7 @@ import java.io.OutputStream
 import scala.collection.mutable
 
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, TableWriter}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
@@ -186,7 +187,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   /** Apply any necessary casts before writing batch out */
   def transformAndClose(cb: ColumnarBatch): ColumnarBatch = cb
 
-  private val checkpointRestore = new CheckpointRestore {
+  private val checkpointRestore = new Retryable {
     override def checkpoint(): Unit = ()
     override def restore(): Unit = dropBufferedData()
   }

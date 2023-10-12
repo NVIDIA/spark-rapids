@@ -31,7 +31,6 @@ class DeviceMemoryEventHandlerSuite extends RmmSparkRetrySuiteBase with MockitoS
       mockCatalog,
       mockStore,
       None,
-      false,
       2)
     assertResult(true)(handler.onAllocFailure(1024, 0))
   }
@@ -45,7 +44,6 @@ class DeviceMemoryEventHandlerSuite extends RmmSparkRetrySuiteBase with MockitoS
       mockCatalog,
       mockStore,
       None,
-      false,
       2)
     assertResult(true)(handler.onAllocFailure(1024, 0)) // sync
     assertResult(true)(handler.onAllocFailure(1024, 1)) // sync 2
@@ -61,7 +59,6 @@ class DeviceMemoryEventHandlerSuite extends RmmSparkRetrySuiteBase with MockitoS
       mockCatalog,
       mockStore,
       None,
-      false,
       2)
     // with this call we sync, and we mark our attempts at 1, we store 0 as the last count
     assertResult(true)(handler.onAllocFailure(1024, 0))
@@ -80,7 +77,6 @@ class DeviceMemoryEventHandlerSuite extends RmmSparkRetrySuiteBase with MockitoS
       mockCatalog,
       mockStore,
       None,
-      false,
       2)
     assertThrows[IllegalArgumentException](handler.onAllocFailure(-1, 0))
   }
@@ -94,7 +90,6 @@ class DeviceMemoryEventHandlerSuite extends RmmSparkRetrySuiteBase with MockitoS
       mockCatalog,
       mockStore,
       None,
-      false,
       2)
     assertThrows[IllegalArgumentException](handler.onAllocFailure(1024, -1))
   }

@@ -31,7 +31,6 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * RMM event handler to trigger spilling from the device memory store.
  * @param store device memory store that will be triggered to spill
  * @param oomDumpDir local directory to create heap dumps on GPU OOM
- * @param isGdsSpillEnabled true if GDS is enabled for device->disk spill
  * @param maxFailedOOMRetries maximum number of retries for OOMs after
  *                            depleting the device store
  */
@@ -39,7 +38,6 @@ class DeviceMemoryEventHandler(
     catalog: RapidsBufferCatalog,
     store: RapidsDeviceMemoryStore,
     oomDumpDir: Option[String],
-    isGdsSpillEnabled: Boolean,
     maxFailedOOMRetries: Int) extends RmmEventHandler with Logging {
 
   // Flag that ensures we dump stack traces once and not for every allocation
@@ -159,11 +157,7 @@ class DeviceMemoryEventHandler(
             catalog.synchronousSpill(store, targetSize, Cuda.DEFAULT_STREAM)
           maybeAmountSpilled.foreach { amountSpilled =>
             logInfo(s"Spilled $amountSpilled bytes from the device store")
-            if (isGdsSpillEnabled) {
-              TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
-            } else {
-              TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
-            }
+            TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
           }
           true
         }
