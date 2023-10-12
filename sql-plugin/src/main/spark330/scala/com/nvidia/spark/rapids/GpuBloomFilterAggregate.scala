@@ -36,7 +36,7 @@ import com.nvidia.spark.rapids.jni.BloomFilter
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
+import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateFunction}
 import org.apache.spark.sql.types.{BinaryType, DataType}
 
 case class GpuBloomFilterAggregate(
