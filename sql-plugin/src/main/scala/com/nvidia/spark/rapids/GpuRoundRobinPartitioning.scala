@@ -43,7 +43,6 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
 
   def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val sparkTypes = GpuColumnVector.extractTypes(batch)
-
     val spillableBatch = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     withRetryNoSplit(spillableBatch) { sb =>
       withResource(GpuColumnVector.from(sb.getColumnarBatch())) { table =>

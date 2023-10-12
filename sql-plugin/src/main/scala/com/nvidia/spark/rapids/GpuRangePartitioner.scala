@@ -188,7 +188,7 @@ case class GpuRangePartitioner(
    * @return the partition id for each item.
    */
   def computePartitionIndexes(cb: ColumnarBatch): cudf.ColumnVector = {
-    // Please don't make this retry-block avoiding nested try-blocks
+    // Don't make this retry-block avoiding nested try-blocks
     // from computeBoundsAndCloseWithRetry
     withResource(converters.convertBatch(rangeBounds,
       TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
@@ -228,7 +228,8 @@ case class GpuRangePartitioner(
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (rangeBounds.nonEmpty) {
       val (parts, partitionColumns) = computeBoundsAndCloseWithRetry(batch)
-      (partitionColumns.head.getRowCount.toInt, parts, partitionColumns)
+      sliceInternalGpuOrCpuAndClose(partitionColumns.head.getRowCount.toInt,
+        parts, partitionColumns)
     } else {
       // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
       // slice will produce.
