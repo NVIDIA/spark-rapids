@@ -495,8 +495,7 @@ def _assert_gpu_and_cpu_are_equal(func,
     if result_canonicalize_func_before_compare is not None:
         (from_cpu, from_gpu) = result_canonicalize_func_before_compare(from_cpu, from_gpu)
 
-    if should_sort_locally() or result_canonicalize_func_before_compare is not None:
-        # if result is canonicalized, since it's changed, should sort result locally again
+    if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
         from_gpu.sort(key=_RowCmp)
 
