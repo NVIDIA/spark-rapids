@@ -178,16 +178,12 @@ case class GpuRangePartitioner(
     TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))
 
   override def nullable: Boolean = false
-
   override def dataType: DataType = IntegerType
-
   override def children: Seq[Expression] = Seq.empty
-
   override val numPartitions: Int = rangeBounds.length + 1
 
   /**
    * Produce the integer partition to put the data into.
-   *
    * @param cb the input data
    * @return the partition id for each item.
    */
