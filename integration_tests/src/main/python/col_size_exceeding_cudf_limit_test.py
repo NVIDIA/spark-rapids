@@ -64,6 +64,17 @@ gen_list_dict = {
     ]
 }
 
+file_formats = ['parquet', 'orc']
+if os.environ.get('INCLUDE_SPARK_AVRO_JAR', 'false') == 'true':
+    file_formats = file_formats + ['avro']
+
+conf = {
+    'spark.rapids.cudfColumnSizeLimit': 1000,
+    'spark.sql.orc.impl': 'hive',  # null type column is not supported on native
+    'spark.rapids.sql.format.avro.enabled': 'true',
+    'spark.rapids.sql.format.avro.read.enabled': 'true'
+}
+
 
 def extract_partition_cols(gen_list):
     partition_cols = [item[0] for item in gen_list if item[0].startswith('k')]
@@ -71,15 +82,15 @@ def extract_partition_cols(gen_list):
 
 
 @inject_oom
-@pytest.mark.parametrize("key", gen_list_dict.keys())
-def test_col_size_exceeding_cudf_limit(spark_tmp_path, key):
-    conf = {'spark.rapids.cudfColumnSizeLimit': 1000}
+@pytest.mark.parametrize('file_format', file_formats)
+@pytest.mark.parametrize('key', gen_list_dict.keys())
+def test_col_size_exceeding_cudf_limit(spark_tmp_path, file_format, key):
     gen_list = gen_list_dict[key]
     partition_cols = extract_partition_cols(gen_list)
     gen = StructGen(gen_list, nullable=False)
-    data_path = spark_tmp_path + '/PARQUET_DATA/' + key
+    data_path = spark_tmp_path + '/PART_DATA/' + key
     with_cpu_session(
-        lambda spark: gen_df(spark, gen, length=5000).coalesce(1).write.partitionBy(partition_cols).format('parquet')
+        lambda spark: gen_df(spark, gen, length=5000).coalesce(1).write.partitionBy(partition_cols).format(file_format)
         .save(data_path))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format('parquet').load(data_path).coalesce(1), conf)
+        lambda spark: spark.read.format(file_format).load(data_path).coalesce(1), conf)

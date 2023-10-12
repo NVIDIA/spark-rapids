@@ -16,32 +16,28 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.RmmSpark
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Unit tests for utility methods in [[ BatchWithPartitionDataUtils ]]
  */
-class BatchWithPartitionDataSuite extends SparkQueryCompareTestSuite {
-
-  private def generateRowData(): (Array[InternalRow], Array[Int], StructType) = {
-    val schema = StructType(Seq(
-      StructField("v0", IntegerType),
-      StructField("k0", StringType),
-      StructField("k1", IntegerType)
-    ))
-    val rowNums = Array(50, 70, 25, 100, 50)
-    val rowValues = GpuBatchUtilsSuite.createRows(schema, rowNums.length)
-    (rowValues, rowNums, schema)
-  }
+class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQueryCompareTestSuite {
 
   test("test splitting partition data into groups") {
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
     withCpuSparkSession(_ => {
-      val (rowValues, rowNums, schema) = generateRowData()
-      val partitionRowData = PartitionRowData.from(rowValues, rowNums)
+      val (_, partValues, partRows, schema) = getSamplePartitionData
+      val partitionRowData = PartitionRowData.from(partValues, partRows)
       val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataIntoGroups(
         partitionRowData, schema)
       val resultRowCounts = resultPartitions.flatMap(_.map(_.rowNum)).sum
@@ -54,12 +50,107 @@ class BatchWithPartitionDataSuite extends SparkQueryCompareTestSuite {
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
     withCpuSparkSession(_ => {
-      val (rowValues, rowNums, _) = generateRowData()
-      val partitionRowData = PartitionRowData.from(rowValues, rowNums)
+      val (_, partValues, partRows, _) = getSamplePartitionData
+      val partitionRowData = PartitionRowData.from(partValues, partRows)
       val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataInHalf(partitionRowData)
       val resultRowCounts = resultPartitions.flatMap(_.map(_.rowNum)).sum
       val expectedRowCounts = partitionRowData.map(_.rowNum).sum
       assert(resultRowCounts == expectedRowCounts)
     }, conf)
+  }
+
+  test("test adding partition values to batch with OOM retry") {
+    val conf = new SparkConf(false)
+      .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
+    withGpuSparkSession(_ => {
+      val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
+      val (valueCols, _) = getSampleValueData
+      withResource(buildBatch(valueCols)) { valueBatch =>
+        withResource(buildBatch(partCols)) { partBatch =>
+          withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
+            val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
+              partRows, partValues, partSchema)
+            withResource(resultBatchIter) { _ =>
+              RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+              val rowCounts = resultBatchIter.map(_.numRows()).toSeq
+              // Assert that the final count of rows matches expected batch
+              assert(rowCounts.sum == expectedBatch.numRows())
+            }
+          }
+        }
+      }
+    }, conf)
+  }
+
+  test("test adding partition values to batch with OOM split and retry") {
+    val conf = new SparkConf(false)
+      .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
+    withGpuSparkSession(_ => {
+      val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
+      val (valueCols, _) = getSampleValueData
+      withResource(buildBatch(valueCols)) { valueBatch =>
+        withResource(buildBatch(partCols)) { partBatch =>
+          withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
+            val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
+              partRows, partValues, partSchema)
+            withResource(resultBatchIter) { _ =>
+              RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+              val rowCounts = resultBatchIter.map(_.numRows()).toSeq
+              // Assert that there was a split and the final count of rows matches expected batch
+              assert(rowCounts.length > 1)
+              assert(rowCounts.sum == expectedBatch.numRows())
+            }
+          }
+        }
+      }
+    }, conf)
+  }
+
+  private def getSamplePartitionData: (Array[Array[String]], Array[InternalRow], Array[Long],
+      StructType) = {
+    val schema = StructType(Array(
+      StructField("k0", StringType),
+      StructField("k1", StringType)
+    ))
+    // Partition columns as UTF8String
+    val partCols = Array(
+      Array("pk1", "pk1", "pk2", "pk3", "pk3", "pk3", null, null, "pk4", "pk4"),
+      Array("sk1", "sk1", null, "sk2", "sk2", "sk2", "sk3", "sk3", "sk3", "sk3")
+    )
+    // Partition values with counts from above sample
+    // Declaring it directly instead of calculating from above to avoid code complexity in tests
+    val partValues = Array(
+      Array("pk1", "sk1"),
+      Array("pk2", null),
+      Array("pk3", "sk2"),
+      Array(null, "sk3"),
+      Array("pk4", "sk3")
+    )
+    val partRowNums = Array(2L, 1L, 3L, 2L, 2L)
+    (partCols, partValues.map(toInternalRow), partRowNums, schema)
+  }
+
+  private def getSampleValueData: (Array[Array[String]], StructType) = {
+    val schema = StructType(Array(
+      StructField("v0", StringType),
+      StructField("v1", StringType)
+    ))
+    val valueCols = Array(
+      Array("v00", "v01", "v02", "v03", "v04", "v05", "v06", "v07", "v08", "v09"),
+      Array("v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19")
+    )
+    (valueCols, schema)
+  }
+
+  private def toInternalRow(values: Array[String]): InternalRow = {
+    val utfStrings = values.map(v => UTF8String.fromString(v).asInstanceOf[Any])
+    new GenericInternalRow(utfStrings)
+  }
+
+  private def buildBatch(data: Array[Array[String]]): ColumnarBatch = {
+    val numRows = data.head.length
+    val colVectors = data.map(v =>
+      GpuColumnVector.from(ColumnVector.fromStrings(v: _*), StringType))
+    new ColumnarBatch(colVectors.toArray, numRows)
   }
 }
