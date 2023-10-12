@@ -435,12 +435,18 @@ def test_from_json_map_fallback():
         'JsonToStructs',
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.parametrize('schema', ['struct<a:string>',
-                                    'struct<d:string>',
-                                    'struct<a:string,b:string>',
-                                    'struct<c:int,a:string>',
-                                    'struct<a:string,a:string>',
-                                    ])
+@pytest.mark.parametrize('schema', [
+    'struct<a:string>',
+    'struct<b:string>',
+    'struct<c:string>',
+    'struct<a:boolean>',
+    pytest.param('struct<a:int>', marks=pytest.mark.xfail(reason='TODO file issue')),
+    pytest.param('struct<a:double>', marks=pytest.mark.xfail(reason='TODO file issue')),
+    'struct<d:string>',
+    'struct<a:string,b:string>',
+    'struct<c:int,a:string>',
+    'struct<a:string,a:string>',
+    ])
 def test_from_json_struct(schema):
     json_string_gen = StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1\d\d\d}').with_special_pattern('', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
