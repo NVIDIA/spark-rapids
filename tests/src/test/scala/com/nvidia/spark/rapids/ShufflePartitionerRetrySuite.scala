@@ -51,16 +51,15 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
       withResource(prebuiltBatch) { batch =>
         GpuColumnVector.incRefCounts(batch)
-        val ret = gp.columnarEvalAny(batch).
-          asInstanceOf[(Long, Array[Int], Array[GpuColumnVector])]
-        assert(ret._1 === 10)
+        val ret = gp.columnarEvalAny(batch)
+        assert(2 === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
       }
     }
   }
 
   test("GPU round robin partition with retry") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      val partNum = 4;
+      val partNum = 4
       val gp = GpuRoundRobinPartitioning(partNum)
       val prebuiltBatch = buildBatch()
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
