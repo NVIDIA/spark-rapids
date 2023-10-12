@@ -21,7 +21,8 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression}
-import org.apache.spark.sql.rapids.{GpuAbs, GpuAdd, GpuAnd, GpuDecimalMultiply, GpuExtractChunk32, GpuGreaterThan, GpuLessThanOrEqual, GpuMultiply, GpuSqrt, GpuSubtract}
+import org.apache.spark.sql.rapids.{GpuAbs, GpuAdd, GpuAnd, GpuDecimalMultiply, GpuGreaterThan, GpuLessThanOrEqual, GpuMultiply, GpuSqrt, GpuSubtract}
+import org.apache.spark.sql.rapids.aggregate.GpuExtractChunk32
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 
 /*

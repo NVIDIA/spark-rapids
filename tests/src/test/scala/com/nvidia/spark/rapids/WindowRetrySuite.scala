@@ -23,7 +23,7 @@ import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, CurrentRow, ExprId, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
-import org.apache.spark.sql.rapids.GpuCount
+import org.apache.spark.sql.rapids.aggregate.GpuCount
 import org.apache.spark.sql.types.{DataType, DataTypes, IntegerType, LongType}
 
 class WindowRetrySuite

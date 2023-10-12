@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
