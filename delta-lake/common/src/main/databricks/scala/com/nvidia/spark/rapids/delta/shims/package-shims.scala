@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.expressions.JoinedProjection
 import com.databricks.sql.transaction.tahoe.DeltaColumnMapping
-import com.databricks.sql.transaction.tahoe.stats.UsesMetadataFields
 import com.databricks.sql.transaction.tahoe.util.JsonUtils
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
@@ -48,5 +47,3 @@ object ShimJoinedProjection {
 object ShimJsonUtils {
   def fromJson[T: Manifest](json: String): T = JsonUtils.fromJson[T](json)
 }
-
-trait ShimUsesMetadataFields extends UsesMetadataFields
