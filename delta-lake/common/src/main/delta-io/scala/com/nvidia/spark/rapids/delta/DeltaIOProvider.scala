@@ -28,7 +28,7 @@ import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSourceUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
@@ -66,14 +66,32 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
-    val properties = cpuExec.properties
-    val provider = properties.getOrElse("provider",
-      cpuExec.conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
+    checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
+    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    require(isSupportedCatalog(cpuExec.catalog.getClass))
+    if (!meta.conf.isDeltaWriteEnabled) {
+      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    checkDeltaProvider(meta, cpuExec.properties, cpuExec.conf)
+    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+  }
+
+  private def checkDeltaProvider(
+      meta: RapidsMeta[_, _, _],
+      properties: Map[String, String],
+      conf: SQLConf): Unit = {
+    val provider = properties.getOrElse("provider", conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
     if (!DeltaSourceUtils.isDeltaDataSourceName(provider)) {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
-    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
   }
 }
 

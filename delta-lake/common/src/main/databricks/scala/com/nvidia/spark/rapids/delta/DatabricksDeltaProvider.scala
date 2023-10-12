@@ -31,8 +31,8 @@ import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
-import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -137,6 +137,40 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.ifNotExists)
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    require(isSupportedCatalog(cpuExec.catalog.getClass))
+    if (!meta.conf.isDeltaWriteEnabled) {
+      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    val properties = cpuExec.properties
+    val provider = properties.getOrElse("provider",
+      cpuExec.conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
+    if (!DeltaSourceUtils.isDeltaDataSourceName(provider)) {
+      meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
+    }
+    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
+      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
+    GpuAtomicReplaceTableAsSelectExec(
+      cpuExec.output,
+      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.plan,
+      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.tableSpec,
+      cpuExec.writeOptions,
+      cpuExec.orCreate,
+      cpuExec.invalidateCache)
   }
 }
 

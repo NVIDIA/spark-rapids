@@ -1,0 +1,96 @@
+/*
+ * Copyright (c) 2023, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.execution.datasources.v2.rapids
+
+import scala.collection.JavaConverters._
+
+import com.nvidia.spark.rapids.GpuExec
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.util.CharVarcharUtils
+import org.apache.spark.sql.connector.catalog.{Identifier, StagingTableCatalog, Table, TableCatalog}
+import org.apache.spark.sql.connector.expressions.Transform
+import org.apache.spark.sql.errors.QueryCompilationErrors
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.v2.TableWriteExecHelper
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * GPU version of AtomicReplaceTableAsSelectExec.
+ *
+ * Physical plan node for v2 replace table as select when the catalog does not support staging
+ * table replacement.
+ *
+ * A new table will be created using the schema of the query, and rows from the query are appended.
+ * If the table exists, its contents and schema should be replaced with the schema and the contents
+ * of the query. This is a non-atomic implementation that drops the table and then runs non-atomic
+ * CTAS. For an atomic implementation for catalogs with the appropriate support, see
+ * ReplaceTableAsSelectStagingExec.
+ */
+case class GpuAtomicReplaceTableAsSelectExec(
+    catalog: StagingTableCatalog,
+    ident: Identifier,
+    partitioning: Seq[Transform],
+    plan: LogicalPlan,
+    query: SparkPlan,
+    properties: Map[String, String],
+    writeOptions: CaseInsensitiveStringMap,
+    orCreate: Boolean,
+    invalidateCache: (TableCatalog, Table, Identifier) => Unit)
+  extends TableWriteExecHelper with GpuExec {
+
+  override def supportsColumnar: Boolean = false
+
+  override protected def run(): Seq[InternalRow] = {
+    // Note that this operation is potentially unsafe, but these are the strict semantics of
+    // RTAS if the catalog does not support atomic operations.
+    //
+    // There are numerous cases we concede to where the table will be dropped and irrecoverable:
+    //
+    // 1. Creating the new table fails,
+    // 2. Writing to the new table fails,
+    // 3. The table returned by catalog.createTable doesn't support writing.
+    if (catalog.tableExists(ident)) {
+      val table = catalog.loadTable(ident)
+      invalidateCache(catalog, table, ident)
+      catalog.dropTable(ident)
+    } else if (!orCreate) {
+      throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
+    }
+    val schema = CharVarcharUtils.getRawSchema(query.schema).asNullable
+    val table = catalog.createTable(
+      ident, schema, partitioning.toArray, properties.asJava)
+    writeToTable(catalog, table, writeOptions, ident)
+  }
+
+  override protected def withNewChildInternal(
+      newChild: SparkPlan): GpuAtomicReplaceTableAsSelectExec = copy(query = newChild)
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =
+    throw new IllegalStateException("Columnar execution not supported")
+}

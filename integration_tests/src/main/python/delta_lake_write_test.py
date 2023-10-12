@@ -256,12 +256,7 @@ def test_delta_overwrite_round_trip_unmanaged(spark_tmp_path):
 def test_delta_append_round_trip_unmanaged(spark_tmp_path):
     do_update_round_trip_managed(spark_tmp_path, "append")
 
-@allow_non_gpu(*delta_meta_allow)
-@delta_lake
-@ignore_order(local=True)
-@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("gens", parquet_write_gens_list, ids=idfn)
-def test_delta_atomic_create_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path):
+def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite):
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
@@ -269,12 +264,31 @@ def test_delta_atomic_create_table_as_select(gens, spark_tmp_table_factory, spar
     def do_write(spark, path):
         table = spark_tmp_table_factory.get()
         path_to_table[path] = table
-        gen_df(spark, gen_list).coalesce(1).write.format("delta").saveAsTable(table)
+        writer = gen_df(spark, gen_list).coalesce(1).write.format("delta")
+        if overwrite:
+            writer = writer.mode("overwrite")
+        writer.saveAsTable(table)
     assert_gpu_and_cpu_writes_are_equal_collect(
         do_write,
         lambda spark, path: spark.read.format("delta").table(path_to_table[path]),
         data_path,
-        conf = confs)
+        conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("gens", parquet_write_gens_list, ids=idfn)
+def test_delta_atomic_create_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path):
+    _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("gens", parquet_write_gens_list, ids=idfn)
+def test_delta_atomic_replace_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path):
+    _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
