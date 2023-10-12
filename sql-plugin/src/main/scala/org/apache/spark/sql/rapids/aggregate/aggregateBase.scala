@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{GroupByAggregation}
+import ai.rapids.cudf.GroupByAggregation
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExpression}
 
