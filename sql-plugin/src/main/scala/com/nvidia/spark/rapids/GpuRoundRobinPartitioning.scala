@@ -43,27 +43,34 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
 
   def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val sparkTypes = GpuColumnVector.extractTypes(batch)
-    // Increase ref count since the caller will close the batch also.
-    val spillableBatch = SpillableColumnarBatch(GpuColumnVector.incRefCounts(batch),
-      SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-    withRetryNoSplit(spillableBatch) { sb =>
-      withResource(GpuColumnVector.from(sb.getColumnarBatch())) { table =>
-        if (numPartitions == 1) {
-          val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
-            case (idx, sparkType) =>
-              GpuColumnVector
-                .from(table.getColumn(idx).incRefCount(), sparkType)
-          }.toArray
-          return (Array(0), columns)
-        }
-        withResource(table.roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
-          val parts = partedTable.getPartitions
-          val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
-            case (idx, sparkType) =>
-              GpuColumnVector
-                .from(partedTable.getColumn(idx).incRefCount(), sparkType)
-          }.toArray
-          (parts, columns)
+    if (numPartitions == 1) {
+      // Skip retry since partition number = 1
+      withResource(GpuColumnVector.from(batch)) { table =>
+        val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
+          case (idx, sparkType) =>
+            GpuColumnVector
+              .from(table.getColumn(idx).incRefCount(), sparkType)
+        }.toArray
+        (Array(0), columns)
+      }
+    } else {
+      // Increase ref count since the caller will close the batch also.
+      val spillableBatch = SpillableColumnarBatch(GpuColumnVector.incRefCounts(batch),
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      withRetryNoSplit(spillableBatch) { sb =>
+        withResource(sb.getColumnarBatch()) { b =>
+          withResource(GpuColumnVector.from(b)) { table =>
+            withResource(table.
+              roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
+              val parts = partedTable.getPartitions
+              val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
+                case (idx, sparkType) =>
+                  GpuColumnVector
+                    .from(partedTable.getColumn(idx).incRefCount(), sparkType)
+              }.toArray
+              (parts, columns)
+            }
+          }
         }
       }
     }

@@ -34,6 +34,19 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
+  private def testRoundRobinPartitioner(partNum: Int) = {
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val rrp = GpuRoundRobinPartitioning(partNum)
+      val prebuiltBatch = buildBatch
+      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
+      withResource(prebuiltBatch) { batch =>
+        // Increase ref count since batch will be closed by rrp
+        val ret = rrp.columnarEvalAny(GpuColumnVector.incRefCounts(batch))
+        assert(partNum === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
+      }
+    }
+  }
+
   test("GPU range partition with retry") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
       // Initialize range bounds
@@ -56,16 +69,11 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
-  test("GPU round robin partition with retry") {
-    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      val partNum = 4
-      val rrp = GpuRoundRobinPartitioning(partNum)
-      val prebuiltBatch = buildBatch
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-      withResource(prebuiltBatch) { batch =>
-        val ret = rrp.columnarEvalAny(batch)
-        assert(partNum === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
-      }
-    }
+  test("GPU round robin partition with retry using multiple partition") {
+    testRoundRobinPartitioner(4)
+  }
+
+  test("GPU round robin partitioner with retry using 1 partition") {
+    testRoundRobinPartitioner(1)
   }
 }
