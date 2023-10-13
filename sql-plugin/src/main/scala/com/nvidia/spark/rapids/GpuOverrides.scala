@@ -3463,18 +3463,14 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
           val exprMeta = p.get.asInstanceOf[BaseExprMeta[_]]
-          val context = exprMeta.context
-          context match {
-            case ReductionAggExprContext => GpuPercentile(childExprs.head,
-              childExprs(1).asInstanceOf[GpuLiteral],
-              childExprs(2),
-              isReduction = true)
-            case GroupByAggExprContext => GpuPercentile(childExprs.head,
-              childExprs(1).asInstanceOf[GpuLiteral],
-              childExprs(2),
-              isReduction = false)
-            case _ => throw new IllegalStateException(s"Invalid aggregation context: $context")
+          val isReduction = exprMeta.context match {
+            case ReductionAggExprContext => true
+            case GroupByAggExprContext => false
+            case _ => throw new IllegalStateException(
+              s"Invalid aggregation context: ${exprMeta.context}")
           }
+          GpuPercentile(childExprs.head, childExprs(1).asInstanceOf[GpuLiteral], childExprs(2),
+            isReduction)
         }
         // Declare the data type of the internal buffer so it can be serialized and
         // deserialized correctly during shuffling.
