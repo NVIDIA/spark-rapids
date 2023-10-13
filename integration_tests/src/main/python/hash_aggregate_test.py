@@ -1057,18 +1057,16 @@ def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
                'HashAggregateExec', 'HashPartitioning',
-               'ApproximatePercentile', 'Percentile',
-               'Alias', 'Literal', 'AggregateExpression')
+               'ApproximatePercentile', 'Alias', 'Literal', 'AggregateExpression')
 def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', UniqueLongGen())], length=100),
-        exist_classes='ApproximatePercentile,Percentile,ObjectHashAggregateExec',
-        non_exist_classes='GpuApproximatePercentile,GpuPercentile,GpuObjectHashAggregateExec',
+        exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
+        non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
         table_name='table',
         sql="""select k,
-        approx_percentile(v, array(0.25, 0.5, 0.75)),
-        percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
+        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
 
 @approximate_float
 @ignore_order
