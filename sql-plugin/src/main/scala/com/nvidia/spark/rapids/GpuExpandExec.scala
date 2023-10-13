@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan}
-// import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuExpandExecMeta(
@@ -158,7 +157,3 @@ class GpuExpandIterator(
     projectedBatch
   }
 }
-
-// // should be a GpuExpandIterator
-// case class GpuStack(
-    
