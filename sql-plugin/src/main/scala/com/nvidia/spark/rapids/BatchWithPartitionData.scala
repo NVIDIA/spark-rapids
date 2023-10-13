@@ -459,32 +459,33 @@ object BatchWithPartitionDataUtils {
     if (totalRows <= 1) {
       // cannot split input with one row
       Array(partitionedRowsData)
-    }
-    var remainingRows = totalRows / 2
-    var rowsAddedToLeft = 0
-    var rowsAddedToRight = 0
-    val leftHalf = ArrayBuffer[PartitionRowData]()
-    val rightHalf = ArrayBuffer[PartitionRowData]()
-    partitionedRowsData.foreach { partitionRow: PartitionRowData =>
-      if (remainingRows > 0) {
-        // Add rows to the left partition, up to the remaining rows available
-        val rowsToAddToLeft = Math.min(partitionRow.rowNum, remainingRows)
-        leftHalf += partitionRow.copy(rowNum = rowsToAddToLeft)
-        rowsAddedToLeft += rowsToAddToLeft
-        remainingRows -= rowsToAddToLeft
-        if (remainingRows <= 0) {
-          // Add remaining rows to the right partition
-          val rowsToAddToRight = partitionRow.rowNum - rowsToAddToLeft
-          rightHalf += partitionRow.copy(rowNum = rowsToAddToRight)
-          rowsAddedToRight += rowsToAddToRight
+    } else {
+      var remainingRows = totalRows / 2
+      var rowsAddedToLeft = 0
+      var rowsAddedToRight = 0
+      val leftHalf = ArrayBuffer[PartitionRowData]()
+      val rightHalf = ArrayBuffer[PartitionRowData]()
+      partitionedRowsData.foreach { partitionRow: PartitionRowData =>
+        if (remainingRows > 0) {
+          // Add rows to the left partition, up to the remaining rows available
+          val rowsToAddToLeft = Math.min(partitionRow.rowNum, remainingRows)
+          leftHalf += partitionRow.copy(rowNum = rowsToAddToLeft)
+          rowsAddedToLeft += rowsToAddToLeft
+          remainingRows -= rowsToAddToLeft
+          if (remainingRows <= 0) {
+            // Add remaining rows to the right partition
+            val rowsToAddToRight = partitionRow.rowNum - rowsToAddToLeft
+            rightHalf += partitionRow.copy(rowNum = rowsToAddToRight)
+            rowsAddedToRight += rowsToAddToRight
+          }
+        } else {
+          rightHalf += partitionRow
+          rowsAddedToRight += partitionRow.rowNum
         }
-      } else {
-        rightHalf += partitionRow
-        rowsAddedToRight += partitionRow.rowNum
       }
+      assert((rowsAddedToLeft + rowsAddedToRight) == totalRows)
+      Array(leftHalf.toArray, rightHalf.toArray)
     }
-    assert((rowsAddedToLeft + rowsAddedToRight) == totalRows)
-    Array(leftHalf.toArray, rightHalf.toArray)
   }
 
   /**

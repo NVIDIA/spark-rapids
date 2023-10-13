@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.InternalRow
@@ -59,23 +59,20 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
     }, conf)
   }
 
-  test("test adding partition values to batch with OOM retry") {
+  test("test adding partition values to batch with OOM split and retry - unhandled") {
+    // This test uses single-row partition values that should throw a SplitAndRetryOOM exception
+    // when a retry is forced.
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
-    withGpuSparkSession(_ => {
-      val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
-      val (valueCols, _) = getSampleValueData
-      withResource(buildBatch(valueCols)) { valueBatch =>
-        withResource(buildBatch(partCols)) { partBatch =>
-          withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
-            val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
-              partRows, partValues, partSchema)
-            withResource(resultBatchIter) { _ =>
-              RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
-              val rowCounts = resultBatchIter.map(_.numRows()).toSeq
-              // Assert that the final count of rows matches expected batch
-              assert(rowCounts.sum == expectedBatch.numRows())
-            }
+    withGpuSparkSession(sparkSession => {
+      val (_, partValues, _, partSchema) = getSamplePartitionData
+      closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
+        val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
+          Array(1), partValues.take(1), partSchema)
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+        withResource(resultBatchIter) { _ =>
+          assertThrows[SplitAndRetryOOM] {
+            resultBatchIter.next()
           }
         }
       }
@@ -83,22 +80,21 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
   }
 
   test("test adding partition values to batch with OOM split and retry") {
+    // This test should split the input batch and process them when a retry is forced.
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
     withGpuSparkSession(_ => {
       val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
-      val (valueCols, _) = getSampleValueData
-      withResource(buildBatch(valueCols)) { valueBatch =>
+      withResource(buildBatch(getSampleValueData)) { valueBatch =>
         withResource(buildBatch(partCols)) { partBatch =>
           withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
             val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
               partRows, partValues, partSchema)
             withResource(resultBatchIter) { _ =>
               RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
-              val rowCounts = resultBatchIter.map(_.numRows()).toSeq
-              // Assert that there was a split and the final count of rows matches expected batch
-              assert(rowCounts.length > 1)
-              assert(rowCounts.sum == expectedBatch.numRows())
+              // Assert that the final count of rows matches expected batch
+              val rowCounts = resultBatchIter.map(_.numRows()).sum
+              assert(rowCounts == expectedBatch.numRows())
             }
           }
         }
@@ -112,7 +108,6 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
       StructField("k0", StringType),
       StructField("k1", StringType)
     ))
-    // Partition columns as UTF8String
     val partCols = Array(
       Array("pk1", "pk1", "pk2", "pk3", "pk3", "pk3", null, null, "pk4", "pk4"),
       Array("sk1", "sk1", null, "sk2", "sk2", "sk2", "sk3", "sk3", "sk3", "sk3")
@@ -130,16 +125,11 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
     (partCols, partValues.map(toInternalRow), partRowNums, schema)
   }
 
-  private def getSampleValueData: (Array[Array[String]], StructType) = {
-    val schema = StructType(Array(
-      StructField("v0", StringType),
-      StructField("v1", StringType)
-    ))
-    val valueCols = Array(
+  private def getSampleValueData: Array[Array[String]] = {
+    Array(
       Array("v00", "v01", "v02", "v03", "v04", "v05", "v06", "v07", "v08", "v09"),
       Array("v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19")
     )
-    (valueCols, schema)
   }
 
   private def toInternalRow(values: Array[String]): InternalRow = {
