@@ -3468,11 +3468,11 @@ object GpuOverrides extends Logging {
             case ReductionAggExprContext => GpuPercentile(childExprs.head,
               childExprs(1).asInstanceOf[GpuLiteral],
               childExprs(2),
-              isReduction = true, c.mutableAggBufferOffset, c.inputAggBufferOffset)
+              isReduction = true)
             case GroupByAggExprContext => GpuPercentile(childExprs.head,
               childExprs(1).asInstanceOf[GpuLiteral],
               childExprs(2),
-              isReduction = false, c.mutableAggBufferOffset, c.inputAggBufferOffset)
+              isReduction = false)
             case _ => throw new IllegalStateException(s"Invalid aggregation context: $context")
           }
         }

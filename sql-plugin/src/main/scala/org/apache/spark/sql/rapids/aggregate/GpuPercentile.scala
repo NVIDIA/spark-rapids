@@ -63,64 +63,52 @@ case class CudfMergeHistogram(override val dataType: DataType)
 
 case class GpuPercentileEvaluation(child: Expression,
                                    percentage: Either[Double, Array[Double]],
-                                   dataType: DataType,
+                                   outputType: DataType,
                                    isReduction: Boolean)
   extends GpuExpression with ShimExpression {
+  override def dataType: DataType = outputType
   override def prettyName: String = "percentile_evaluation"
+  override def nullable: Boolean = true
+  override def children: Seq[Expression] = Seq(child)
 
+  private lazy val percentageArray = percentage match {
+    case Left(p) => Array(p)
+    case Right(p) => p
+  }
 
+  private lazy val outputAsList = outputType match {
+    case _: ArrayType => true
+    case _ => false
+  }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(child.columnarEval(batch)) { histogramArray =>
-        val percentageArray = percentage match {
-          case Left(p) => Array(p)
-          case Right(p) => p
-        }
-        val outputAsList = dataType match {
-          case _: ArrayType => true
-          case _ => false
-        }
 
-          val percentiles = Histogram.percentileFromHistogram(
-            histogramArray.getBase, percentageArray, outputAsList)
-          GpuColumnVector.from(percentiles, dataType)
-
+      val percentiles = Histogram.percentileFromHistogram(histogramArray.getBase,
+        percentageArray, outputAsList)
+      GpuColumnVector.from(percentiles, outputType)
     }
   }
-
-  override def nullable: Boolean = true
-  override def children: Seq[Expression] = Seq(child)
 }
 
-/**
- * Compute percentile of the input number(s).
- *
- * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
- * with the CPU version and automated checks.
- */
 abstract class GpuPercentile(childExpr: Expression,
-                             percentageLit: GpuLiteral, isReduction: Boolean,
-                             mutableAggBufferOffset: Int,
-                             inputAggBufferOffset: Int)
+                             percentageLit: GpuLiteral, isReduction: Boolean)
   extends GpuAggregateFunction with Serializable {
-
   private val valueExpr = childExpr
 
-  // Output type of the aggregations.
-  val aggregationOutputType: DataType = ArrayType(StructType(Seq(
+  val aggregationBufferType: DataType = ArrayType(StructType(Seq(
     StructField("value", valueExpr.dataType),
     StructField("frequency", LongType))), containsNull = false)
 
-  protected lazy val mergeHistogram = new CudfMergeHistogram(aggregationOutputType)
+  protected lazy val mergeHistogram = new CudfMergeHistogram(aggregationBufferType)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeHistogram)
   override lazy val evaluateExpression: Expression =
     GpuPercentileEvaluation(histogramBuff, percentage, finalDataType, isReduction)
 
   protected final lazy val histogramBuff: AttributeReference =
-    AttributeReference("histogramBuff", aggregationOutputType)()
+    AttributeReference("histogramBuff", aggregationBufferType)()
 
-  // Output type of percentile.
-  override def dataType: DataType = aggregationOutputType
+  override def dataType: DataType = aggregationBufferType
 
   private def makeArray(v: Any): (Boolean, Either[Double, Array[Double]]) = v match {
   // Rule ImplicitTypeCasts can cast other numeric types to double
@@ -145,7 +133,7 @@ abstract class GpuPercentile(childExpr: Expression,
   override def nullable: Boolean = true
 
   override val initialValues: Seq[Expression] = {
-    Seq(GpuLiteral.create(new GenericArrayData(Array.empty[Any]), aggregationOutputType))
+    Seq(GpuLiteral.create(new GenericArrayData(Array.empty[Any]), aggregationBufferType))
   }
   override def children: Seq[Expression] = Seq(childExpr, percentageLit)
 }
@@ -183,23 +171,12 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
  * Compute percentile of the input number(s).
  */
 case class GpuPercentileDefault(childExpr: Expression,
-                                percentage: GpuLiteral, isReduction: Boolean,
-                                mutableAggBufferOffset: Int,
-                                inputAggBufferOffset: Int)
-  extends GpuPercentile(childExpr, percentage, isReduction, mutableAggBufferOffset,
-    inputAggBufferOffset) {
-
-
-   def withNewMutableAggBufferOffset(newMutableAggBufferOffset: Int): GpuPercentile = {
-    copy(mutableAggBufferOffset = newMutableAggBufferOffset)
-  }
-
-  def withNewInputAggBufferOffset(newInputAggBufferOffset: Int): GpuPercentile =
-    copy(inputAggBufferOffset = newInputAggBufferOffset)
+                                percentage: GpuLiteral, isReduction: Boolean)
+  extends GpuPercentile(childExpr, percentage, isReduction) {
 
   override val inputProjection: Seq[Expression] = Seq(childExpr)
 
-  val updateHistogram =new CudfHistogram(aggregationOutputType)
+  val updateHistogram =new CudfHistogram(aggregationBufferType)
   override lazy val updateAggregates: Seq[CudfAggregate] =
     Seq(updateHistogram)
 }
@@ -208,11 +185,8 @@ case class GpuPercentileDefault(childExpr: Expression,
  * Compute percentile of the input number(s) associated with frequencies.
  */
 case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLiteral,
-                                      frequencyExpr: Expression, isReduction: Boolean,
-                                      mutableAggBufferOffset: Int,
-                                      inputAggBufferOffset: Int)
-  extends GpuPercentile(childExpr, percentage, isReduction, mutableAggBufferOffset,
-    inputAggBufferOffset) {
+                                      frequencyExpr: Expression, isReduction: Boolean)
+  extends GpuPercentile(childExpr, percentage, isReduction) {
   override val inputProjection: Seq[Expression] = {
     if(isReduction) {
       val outputType: DataType = StructType(Seq(
@@ -220,7 +194,7 @@ case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLite
         StructField("frequency", LongType)))
       Seq(GpuCreateHistogramIfValid(childExpr, frequencyExpr, isReduction, outputType))
     } else {
-      Seq(GpuCreateHistogramIfValid(childExpr, frequencyExpr, isReduction, aggregationOutputType))
+      Seq(GpuCreateHistogramIfValid(childExpr, frequencyExpr, isReduction, aggregationBufferType))
     }
   }
   override lazy val updateAggregates: Seq[CudfAggregate] =  Seq(new CudfMergeHistogram(dataType))
@@ -230,16 +204,12 @@ object GpuPercentile{
   def apply(childExpr: Expression,
             percentageLit: GpuLiteral,
             frequencyExpr: Expression,
-            isReduction: Boolean,
-            mutableAggBufferOffset: Int = 0,
-            inputAggBufferOffset: Int = 0): GpuPercentile = {
+            isReduction: Boolean): GpuPercentile = {
     frequencyExpr match {
       case GpuLiteral(freq, LongType) if freq == 1 =>
-        GpuPercentileDefault(childExpr, percentageLit, isReduction,
-          mutableAggBufferOffset, inputAggBufferOffset)
+        GpuPercentileDefault(childExpr, percentageLit, isReduction)
       case _  =>
-        GpuPercentileWithFrequency(childExpr, percentageLit, frequencyExpr, isReduction,
-          mutableAggBufferOffset, inputAggBufferOffset)
+        GpuPercentileWithFrequency(childExpr, percentageLit, frequencyExpr, isReduction)
     }
   }
 }
