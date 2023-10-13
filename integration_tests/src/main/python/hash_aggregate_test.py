@@ -896,7 +896,6 @@ exact_percentile_data_gen = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), Flo
                              .with_special_case(math.inf, 500.0),
                              DoubleGen().with_special_case(math.nan, 500.0)
                              .with_special_case(math.inf, 500.0)]
-# exact_percentile_data_gen = [ByteGen()]
 
 exact_percentile_reduction_data_gen = [
     [('val', data_gen),
@@ -934,7 +933,10 @@ def test_exact_percentile_reduction(data_gen):
         lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
     )
 
-exact_percentile_reduction_cpu_fallback_data_gen = [[('value', data_gen)]
+exact_percentile_reduction_cpu_fallback_data_gen = [
+    [('val', data_gen),
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+      .with_special_case(0, weight=100))]
     for data_gen in [IntegerGen(), DoubleGen()]]
 
 @incompat
@@ -962,8 +964,10 @@ def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_m
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen).selectExpr(
-            'percentile(value, 0.1)',
-            'percentile(value, array(0, 0.0001, 0.5, 0.9999, 1))'),
+            'percentile(val, 0.1)',
+            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))',
+            'percentile(val, 0.1, abs(freq))',
+            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'),
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
@@ -973,10 +977,10 @@ def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_m
 
 exact_percentile_groupby_data_gen = [
     [('key', RepeatSeqGen(IntegerGen(), length=100)),
-     ('val', gen),
+     ('val', data_gen),
      ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
                      .with_special_case(0, weight=100))]
-    for gen in exact_percentile_data_gen]
+    for data_gen in exact_percentile_data_gen]
 
 def exact_percentile_groupby(df):
     return df.groupby('key').agg(
@@ -1007,17 +1011,46 @@ def test_exact_percentile_groupby(data_gen):
         lambda spark: exact_percentile_groupby(gen_df(spark, data_gen))
     )
 
+exact_percentile_groupby_cpu_fallback_data_gen = [
+    [('key', RepeatSeqGen(IntegerGen(), length=100)),
+     ('val', data_gen),
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+      .with_special_case(0, weight=100))]
+    for data_gen in [IntegerGen(), DoubleGen()]]
+
 @incompat
 @approximate_float
 @ignore_order
-@allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
-               'Percentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
-@pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
-@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
-def yyy(data_gen, replace_mode):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: exact_percentile_groupby(gen_df(spark, data_gen)),
-        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode}
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
+               'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
+               'Percentile')
+@pytest.mark.parametrize('data_gen', exact_percentile_groupby_cpu_fallback_data_gen, ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode, use_obj_hash_agg):
+    cpu_clz, gpu_clz = ['Percentile'], ['GpuPercentileDefault']
+    exist_clz, non_exist_clz = [], []
+    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
+    # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
+    # set the expected exist_classes according to runtime.
+    if is_databricks_runtime():
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
+    else:
+        exist_clz = cpu_clz + gpu_clz
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen).groupby('key').agg(
+            f.expr('percentile(val, 0.1)'),
+            f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
+            f.expr('percentile(val, 0.1, abs(freq))'),
+            f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')),
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+              'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
     )
 
 
