@@ -3489,9 +3489,9 @@ object GpuOverrides extends Logging {
         override val needsAnsiCheck: Boolean = false
         override val supportBufferConversion: Boolean = true
         override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
-          new CpuToGpuPercentileBufferConverter(childExprs.head.dataType)
+          CpuToGpuPercentileBufferConverter(childExprs.head.dataType)
         override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
-          new GpuToCpuPercentileBufferConverter(childExprs.head.dataType)
+          GpuToCpuPercentileBufferConverter(childExprs.head.dataType)
       }).incompat("the GPU implementation of percentile is not bit-for-bit " +
           s"compatible with Apache Spark"),
     expr[ApproximatePercentile](
