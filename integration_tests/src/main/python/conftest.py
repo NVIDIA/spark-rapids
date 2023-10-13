@@ -248,6 +248,12 @@ oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1
 print(f"Starting with OOM injection seed: {oom_random_injection_seed}. " 
       "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
 
+# For datagen: we expect a seed to be provided by the environment, or default to 0.
+# Note that tests can override their seed when calling into datagen by setting seed= in their tests.
+test_datagen_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_DATAGEN_SEED", 0))
+print(f"Starting with datagen test seed: {test_datagen_random_seed}. " 
+      "Set env variable SPARK_RAPIDS_TEST_DATAGEN_SEED to override.")
+
 def pytest_collection_modifyitems(config, items):
     r = random.Random(oom_random_injection_seed)
     for item in items:

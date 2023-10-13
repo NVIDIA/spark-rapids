@@ -24,7 +24,7 @@ import random
 from spark_session import is_tz_utc, is_before_spark_340
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests
+from conftest import skip_unless_precommit_tests,test_datagen_random_seed
 import time
 import os
 from functools import lru_cache
@@ -761,7 +761,7 @@ def gen_df_help(data_gen, length, seed):
     data = [data_gen.gen() for index in range(0, length)]
     return data
 
-def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
+def gen_df(spark, data_gen, length=2048, seed=test_datagen_random_seed, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
@@ -815,7 +815,7 @@ def _mark_as_lit(data, data_type):
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)
 
-def _gen_scalars_common(data_gen, count, seed=0):
+def _gen_scalars_common(data_gen, count, seed=test_datagen_random_seed):
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
     else:
@@ -829,7 +829,7 @@ def _gen_scalars_common(data_gen, count, seed=0):
     src.start(rand)
     return src
 
-def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
+def gen_scalars(data_gen, count, seed=test_datagen_random_seed, force_no_nulls=False):
     """Generate scalar values."""
     if force_no_nulls:
         assert(not isinstance(data_gen, NullGen))
@@ -837,17 +837,17 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     data_type = src.data_type
     return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
 
-def gen_scalar(data_gen, seed=0, force_no_nulls=False):
+def gen_scalar(data_gen, seed=test_datagen_random_seed, force_no_nulls=False):
     """Generate a single scalar value."""
     v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
 
-def gen_scalar_values(data_gen, count, seed=0, force_no_nulls=False):
+def gen_scalar_values(data_gen, count, seed=test_datagen_random_seed, force_no_nulls=False):
     """Generate scalar values."""
     src = _gen_scalars_common(data_gen, count, seed=seed)
     return (src.gen(force_no_nulls=force_no_nulls) for i in range(0, count))
 
-def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
+def gen_scalar_value(data_gen, seed=test_datagen_random_seed, force_no_nulls=False):
     """Generate a single scalar value."""
     v = list(gen_scalar_values(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
@@ -889,18 +889,18 @@ def meta_idfn(meta):
         return meta + idfn(something)
     return tmp
 
-def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
+def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=test_datagen_random_seed, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, num_slices=None):
+def two_col_df(spark, a_gen, b_gen, length=2048, seed=test_datagen_random_seed, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def binary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+def binary_op_df(spark, gen, length=2048, seed=test_datagen_random_seed, num_slices=None):
     return two_col_df(spark, gen, gen, length=length, seed=seed, num_slices=num_slices)
 
-def unary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+def unary_op_df(spark, gen, length=2048, seed=test_datagen_random_seed, num_slices=None):
     return gen_df(spark, StructGen([('a', gen)], nullable=False),
         length=length, seed=seed, num_slices=num_slices)
 
@@ -973,7 +973,7 @@ def _convert_to_sql(spark_type, data):
     else:
         return 'CAST({} as {})'.format(d, to_cast_string(spark_type))
 
-def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
+def gen_scalars_for_sql(data_gen, count, seed=test_datagen_random_seed, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
     src = _gen_scalars_common(data_gen, count, seed=seed)
     if isinstance(data_gen, NullGen):
