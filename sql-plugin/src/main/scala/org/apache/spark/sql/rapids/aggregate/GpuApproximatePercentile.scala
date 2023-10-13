@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, GroupByAggregation, ReductionAggregation}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -26,7 +27,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
