@@ -22,7 +22,6 @@ import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
-import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.types.{DataType, LongType, StructField, StructType}
