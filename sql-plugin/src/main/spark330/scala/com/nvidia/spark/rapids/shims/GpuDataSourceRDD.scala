@@ -24,10 +24,12 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{MetricsBatchIterator, PartitionIterator}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, SparkException, TaskContext}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -82,9 +84,8 @@ class GpuDataSourceRDD(
               new PartitionIterator[ColumnarBatch](batchReader))
             (iter, batchReader)
           }
-          context.addTaskCompletionListener[Unit] { _ =>
-            reader.close()
-          }
+          onTaskCompletion(reader.close())
+
           currentIter = Some(iter)
           hasNext
         }

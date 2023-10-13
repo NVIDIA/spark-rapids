@@ -17,18 +17,20 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.json
 
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
+
 import org.apache.spark.sql.catalyst.util.DateFormatter
-import org.apache.spark.sql.internal.SQLConf
 
 object GpuJsonUtils {
   def dateFormatInRead(options: JSONOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
 
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormatInRead.getOrElse(
-    if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
+    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy()) {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss.SSSXXX"
     } else {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"

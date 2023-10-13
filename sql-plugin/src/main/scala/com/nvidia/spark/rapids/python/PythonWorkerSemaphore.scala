@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.python
 import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 
 import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonConfEntries.CONCURRENT_PYTHON_WORKERS
 import org.apache.commons.lang3.mutable.MutableInt
 
@@ -105,7 +106,7 @@ private final class PythonWorkerSemaphore(tasksPerGpu: Int) extends Logging {
     if (refs == null) {
       // first time this task has been seen
       activeTasks.put(taskAttemptId, new MutableInt(1))
-      context.addTaskCompletionListener[Unit](completeTask)
+      onTaskCompletion(tc => completeTask(tc))
     } else {
       refs.increment()
     }

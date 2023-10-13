@@ -23,9 +23,9 @@ from asserts import *
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import *
-from parquet_write_test import limited_timestamp, parquet_part_write_gens, parquet_write_gens_list, writer_confs
+from parquet_write_test import parquet_part_write_gens, parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_databricks122_or_later, with_cpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_databricks122_or_later, is_spark_340_or_later, with_cpu_session
 
 delta_meta_allow = [
     "DeserializeToObjectExec",
@@ -769,7 +769,7 @@ def test_delta_write_optimized_supported_types(spark_tmp_path):
         "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
     })
     simple_gens = [ byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                    string_gen, boolean_gen, date_gen, limited_timestamp() ]
+                    string_gen, boolean_gen, date_gen, TimestampGen() ]
     genlist = simple_gens + \
         [ StructGen([("child" + str(i), gen) for i, gen in enumerate(simple_gens)]) ] + \
         [ StructGen([("x", StructGen([("y", int_gen)]))]) ]
@@ -932,3 +932,35 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+# ID mapping is supported starting in Delta Lake 2.2, but currently cannot distinguish
+# Delta Lake 2.1 from 2.2 in tests. https://github.com/NVIDIA/spark-rapids/issues/9276
+column_mappings = ["name"]
+if is_spark_340_or_later() or is_databricks_runtime():
+    column_mappings.append("id")
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.parametrize("mapping", column_mappings)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_write_column_name_mapping(spark_tmp_path, mapping):
+    gen_list = [("a", int_gen),
+                ("b", SetValuesGen(StringType(), ["x", "y", "z"])),
+                ("c", string_gen),
+                ("d", SetValuesGen(IntegerType(), [1, 2, 3])),
+                ("e", long_gen)]
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.databricks.delta.properties.defaults.columnMapping.mode": mapping,
+        "spark.databricks.delta.properties.defaults.minReaderVersion": "2",
+        "spark.databricks.delta.properties.defaults.minWriterVersion": "5",
+        "spark.sql.parquet.fieldId.read.enabled": "true"
+    })
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta") \
+            .partitionBy("b", "d") \
+            .save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)

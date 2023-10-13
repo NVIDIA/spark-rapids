@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,13 +48,14 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
   private final long maxBatchSizeBytes;
   private final long targetBatchSizeBytes;
   private final boolean useChunkedReader;
-  private final String parquetDebugDumpPrefix;
+  private final scala.Option<String> parquetDebugDumpPrefix;
+  private final boolean parquetDebugDumpAlways;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
 
   GpuBatchDataReader(CombinedScanTask task, Table table, Schema expectedSchema, boolean caseSensitive,
                      Configuration conf, int maxBatchSizeRows, long maxBatchSizeBytes,
                      long targetBatchSizeBytes, boolean useChunkedReader,
-                     String parquetDebugDumpPrefix,
+                     scala.Option<String> parquetDebugDumpPrefix, boolean parquetDebugDumpAlways,
                      scala.collection.immutable.Map<String, GpuMetric> metrics) {
     super(table, task);
     this.expectedSchema = expectedSchema;
@@ -66,6 +67,7 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
     this.targetBatchSizeBytes = targetBatchSizeBytes;
     this.useChunkedReader = useChunkedReader;
     this.parquetDebugDumpPrefix = parquetDebugDumpPrefix;
+    this.parquetDebugDumpAlways = parquetDebugDumpAlways;
     this.metrics = metrics;
   }
 
@@ -99,7 +101,7 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
           .withMaxBatchSizeBytes(maxBatchSizeBytes)
           .withTargetBatchSizeBytes(targetBatchSizeBytes)
           .withUseChunkedReader(useChunkedReader)
-          .withDebugDumpPrefix(parquetDebugDumpPrefix)
+          .withDebugDump(parquetDebugDumpPrefix, parquetDebugDumpAlways)
           .withMetrics(metrics);
 
       if (nameMapping != null) {

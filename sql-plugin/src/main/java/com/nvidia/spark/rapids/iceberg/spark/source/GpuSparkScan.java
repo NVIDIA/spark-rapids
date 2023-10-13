@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.GpuScanWrapper;
 import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
-import com.nvidia.spark.rapids.ScanWithMetricsWrapper;
 import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
@@ -67,7 +67,7 @@ import org.apache.spark.util.SerializableConfiguration;
  * GPU-accelerated Iceberg Scan.
  * This is derived from Apache Iceberg's SparkScan class.
  */
-abstract class GpuSparkScan extends ScanWithMetricsWrapper
+abstract class GpuSparkScan extends GpuScanWrapper
     implements Scan, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(GpuSparkScan.class);
 
@@ -283,7 +283,8 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.useChunkedReader(),
-          task.getParquetDebugDumpPrefix(), task.getNumThreads(), task.getMaxNumFileProcessed(),
+          task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
+          task.getNumThreads(), task.getMaxNumFileProcessed(),
           useMultiThread, ff, metrics, queryUsesInputFile);
     }
   }
@@ -293,7 +294,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.useChunkedReader(),
-          task.getParquetDebugDumpPrefix(), metrics);
+          task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(), metrics);
     }
   }
 
@@ -308,7 +309,8 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final long maxBatchSizeBytes;
 
     private final long targetBatchSizeBytes;
-    private final String parquetDebugDumpPrefix;
+    private final scala.Option<String> parquetDebugDumpPrefix;
+    private final boolean parquetDebugDumpAlways;
     private final int numThreads;
     private final int maxNumFileProcessed;
 
@@ -333,6 +335,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       this.maxBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes();
       this.targetBatchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes();
       this.parquetDebugDumpPrefix = rapidsConf.parquetDebugDumpPrefix();
+      this.parquetDebugDumpAlways = rapidsConf.parquetDebugDumpAlways();
       this.numThreads = rapidsConf.multiThreadReadNumThreads();
       this.maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel();
       this.useChunkedReader = rapidsConf.chunkedReaderEnabled();
@@ -371,8 +374,12 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       return targetBatchSizeBytes;
     }
 
-    public String getParquetDebugDumpPrefix() {
+    public scala.Option<String> getParquetDebugDumpPrefix() {
       return parquetDebugDumpPrefix;
+    }
+
+    public boolean getParquetDebugDumpAlways() {
+      return parquetDebugDumpAlways;
     }
 
     public int getNumThreads() {

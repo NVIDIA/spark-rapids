@@ -21,7 +21,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions._
+import org.apache.spark.sql.functions.{col, lower, upper}
 import org.apache.spark.sql.rapids.GpuRegExpUtils
 
  /*
@@ -217,6 +217,35 @@ class RegExpUtilsSuite extends AnyFunSuite {
       assert(result.isDefined && result.forall(_ == choices))
     }
 
+  }
+}
+
+class FormatNumberSuite extends SparkQueryCompareTestSuite {
+  def testFormatNumberDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[java.lang.Float](
+      -0.0f, 
+      0.0f,
+      Float.PositiveInfinity,
+      Float.NegativeInfinity,
+      Float.NaN,
+      1.0f,
+      1.2345f,
+      123456789.0f,
+      123456789.123456789f,
+      0.00123456789f,
+      0.0000000123456789f,
+      1.0000000123456789f
+    ).toDF("doubles")
+  }
+
+  testSparkResultsAreEqual("Test format_number float", 
+  testFormatNumberDf,
+  conf = new SparkConf().set("spark.rapids.sql.formatNumberFloat.enabled", "true")) {
+    frame => frame.selectExpr("format_number(doubles, -1)",
+                              "format_number(doubles, 0)",
+                              "format_number(doubles, 1)",
+                              "format_number(doubles, 5)")
   }
 }
 

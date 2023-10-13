@@ -21,10 +21,13 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf._
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
@@ -134,13 +137,15 @@ object GpuProjectExec {
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
 
-    // First off we want to find/run all of the expressions that are non-deterministic
+    // First off we want to find/run all of the expressions that are not retryable,
     // These cannot be retried.
-    val (deterministicExprs, nonDeterministicExprs) = boundExprs.partition(_.deterministic)
+    val (retryableExprs, notRetryableExprs) = boundExprs.partition(
+      _.asInstanceOf[GpuExpression].retryable)
+    val retryables = GpuExpressionsUtils.collectRetryables(retryableExprs)
 
-    val snd = if (nonDeterministicExprs.nonEmpty) {
+    val snd = if (notRetryableExprs.nonEmpty) {
       withResource(sb.getColumnarBatch()) { cb =>
-        Some(SpillableColumnarBatch(project(cb, nonDeterministicExprs),
+        Some(SpillableColumnarBatch(project(cb, notRetryableExprs),
           SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
       }
     } else {
@@ -148,10 +153,13 @@ object GpuProjectExec {
     }
 
     withResource(snd) { snd =>
+      retryables.foreach(_.checkpoint())
       RmmRapidsRetryIterator.withRetryNoSplit {
         val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
-          // For now we are just going to run all of these and deal with losing work...
-          project(cb, deterministicExprs)
+          withRestoreOnRetry(retryables) {
+            // For now we are just going to run all of these and deal with losing work...
+            project(cb, retryableExprs)
+          }
         }
         if (snd.isEmpty) {
           // We are done and the order should be the same so we don't need to do anything...
@@ -418,7 +426,12 @@ case class GpuProjectAstExec(
             }
           }
 
-        Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+        // Don't install the callback if in a unit test
+        Option(TaskContext.get()).foreach { tc =>
+          onTaskCompletion(tc) {
+            close()
+          }
+        }
 
         override def hasNext: Boolean = {
           if (cbIter.hasNext) {
@@ -486,13 +499,15 @@ case class GpuProjectAstExec(
  */
  case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
   /**
-   * Is everything deterministic. This can help with reliability in the common case.
+   * Is everything retryable. This can help with reliability in the common case.
    */
-  lazy val areAllDeterministic = !exprTiers.exists { tier =>
+  lazy val areAllRetryable = !exprTiers.exists { tier =>
     tier.exists { expr =>
-      !expr.deterministic
+      !expr.retryable
     }
   }
+
+  lazy val retryables: Seq[Retryable] = exprTiers.flatMap(GpuExpressionsUtils.collectRetryables)
 
   lazy val outputTypes = exprTiers.last.map(_.dataType).toArray
 
@@ -528,20 +543,22 @@ case class GpuProjectAstExec(
 
   private [this] def projectWithRetrySingleBatchInternal(sb: SpillableColumnarBatch,
       closeInputBatch: Boolean): ColumnarBatch = {
-    if (areAllDeterministic) {
-      // If all of the expressions are deterministic we can just run everything and retry it
-      // at the top level. If some things are non-deterministic we need to split them up and
+    if (areAllRetryable) {
+      // If all of the expressions are retryable we can just run everything and retry it
+      // at the top level. If some things are not retryable we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
-      if (closeInputBatch) {
-        RmmRapidsRetryIterator.withRetryNoSplit(sb) { _ =>
-          withResource(sb.getColumnarBatch()) { cb =>
-            project(cb)
-          }
-        }
+      val sbToClose = if (closeInputBatch) {
+        Some(sb)
       } else {
+        None
+      }
+      withResource(sbToClose) { _ =>
+        retryables.foreach(_.checkpoint())
         RmmRapidsRetryIterator.withRetryNoSplit {
           withResource(sb.getColumnarBatch()) { cb =>
-            project(cb)
+            withRestoreOnRetry(retryables) {
+              project(cb)
+            }
           }
         }
       }
@@ -632,16 +649,16 @@ object GpuFilter {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       filterTime: GpuMetric): Iterator[ColumnarBatch] = {
-    if (boundCondition.areAllDeterministic) {
+    if (boundCondition.areAllRetryable) {
       val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       filterAndCloseWithRetry(sb, boundCondition, numOutputRows, numOutputBatches, filterTime)
     } else {
-      filterAndCloseNondeterministic(batch, boundCondition, numOutputRows, numOutputBatches,
+      filterAndCloseNoRetry(batch, boundCondition, numOutputRows, numOutputBatches,
         filterTime)
     }
   }
 
-  private def filterAndCloseNondeterministic(batch: ColumnarBatch,
+  private def filterAndCloseNoRetry(batch: ColumnarBatch,
       boundCondition: GpuTieredProject,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -661,10 +678,13 @@ object GpuFilter {
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric): Iterator[ColumnarBatch] = {
+    boundCondition.retryables.foreach(_.checkpoint())
     val ret = withRetry(input, splitSpillableInHalfByRows) { sb =>
       withResource(sb.getColumnarBatch()) { cb =>
-        withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
-          GpuFilter(cb, boundCondition)
+        withRestoreOnRetry(boundCondition.retryables) {
+          withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, opTime)) { _ =>
+            GpuFilter(cb, boundCondition)
+          }
         }
       }
     }
@@ -978,6 +998,111 @@ case class GpuFastSampleExec(
   }
 }
 
+private[rapids] class GpuRangeIterator(
+    partitionStart: BigInt,
+    partitionEnd: BigInt,
+    step: Long,
+    maxRowCountPerBatch: Long,
+    taskContext: TaskContext,
+    opTime: GpuMetric) extends Iterator[ColumnarBatch] with Logging {
+
+  // This iterator is designed for GpuRangeExec, so it has the requirement for the inputs.
+  assert((partitionEnd - partitionStart) % step == 0)
+
+  private def getSafeMargin(bi: BigInt): Long = {
+    if (bi.isValidLong) {
+      bi.toLong
+    } else if (bi > 0) {
+      Long.MaxValue
+    } else {
+      Long.MinValue
+    }
+  }
+
+  private val safePartitionStart = getSafeMargin(partitionStart) // inclusive
+  private val safePartitionEnd = getSafeMargin(partitionEnd) // exclusive, unless start == this
+  private[this] var currentPosition: Long = safePartitionStart
+  private[this] var done: Boolean = false
+
+  override def hasNext: Boolean = {
+    if (!done) {
+      if (step > 0) {
+        currentPosition < safePartitionEnd
+      } else {
+        currentPosition > safePartitionEnd
+      }
+    } else false
+  }
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+    GpuSemaphore.acquireIfNecessary(taskContext)
+    withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
+      val start = currentPosition
+      val remainingRows = (safePartitionEnd - start) / step
+      // Start is inclusive so we need to produce at least one row
+      val rowsExpected = Math.max(1, Math.min(remainingRows, maxRowCountPerBatch))
+      val iter = withRetry(AutoCloseableLong(rowsExpected), reduceRowsNumberByHalf) { rows =>
+        withResource(Scalar.fromLong(start)) { startScalar =>
+          withResource(Scalar.fromLong(step)) { stepScalar =>
+            withResource(
+                cudf.ColumnVector.sequence(startScalar, stepScalar, rows.value.toInt)) { vec =>
+              withResource(new Table(vec)) { tab =>
+                GpuColumnVector.from(tab, Array[DataType](LongType))
+              }
+            }
+          }
+        }
+      }
+      assert(iter.hasNext)
+      closeOnExcept(iter.next()) { batch =>
+        // This "iter" returned from the "withRetry" block above has only one batch,
+        // because the split function "reduceRowsNumberByHalf" returns a Seq with a single
+        // element inside.
+        // By doing this, we can pull out this single batch directly without maintaining
+        // this extra `iter` for the next loop.
+        assert(iter.isEmpty)
+        val endInclusive = start + ((batch.numRows() - 1) * step)
+        currentPosition = endInclusive + step
+        if (currentPosition < endInclusive ^ step < 0) {
+          // we have Long.MaxValue + Long.MaxValue < Long.MaxValue
+          // and Long.MinValue + Long.MinValue > Long.MinValue, so iff the step causes a
+          // step back, we are pretty sure that we have an overflow.
+          done = true
+        }
+        if (batch.numRows() < rowsExpected) {
+          logDebug(s"Retried with ${batch.numRows()} rows when expected $rowsExpected rows")
+        }
+        batch
+      }
+    }
+  }
+
+  /**
+   * Reduce the input rows number by half, and it returns a Seq with only one element,
+   * that is the half value.
+   * This will be used with the split_retry block to generate a single batch a with smaller
+   * size when getting relevant OOMs.
+   */
+  private def reduceRowsNumberByHalf: AutoCloseableLong => Seq[AutoCloseableLong] =
+    (rowsNumber) => {
+      withResource(rowsNumber) { _ =>
+        if (rowsNumber.value < 10) {
+          throw new SplitAndRetryOOM(s"GPU OutOfMemory: the number of rows generated is" +
+            s" too small to be split ${rowsNumber.value}!")
+        }
+        Seq(AutoCloseableLong(rowsNumber.value / 2))
+      }
+    }
+
+  /** A bridge class between Long and AutoCloseable for retry */
+  case class AutoCloseableLong(value: Long) extends AutoCloseable {
+    override def close(): Unit = { /* Nothing to be closed */ }
+  }
+}
+
 /**
  * Physical plan for range (generating a range of 64 bit numbers).
  */
@@ -988,7 +1113,7 @@ case class GpuRangeExec(
     numSlices: Int,
     output: Seq[Attribute],
     targetSizeBytes: Long)
-    extends ShimLeafExecNode with GpuExec {
+  extends ShimLeafExecNode with GpuExec {
 
   val numElements: BigInt = {
     val safeStart = BigInt(start)
@@ -1043,78 +1168,23 @@ case class GpuRangeExec(
       sparkContext.emptyRDD[ColumnarBatch]
     } else {
       sparkSession
-          .sparkContext
-          .parallelize(0 until numSlices, numSlices)
-          .mapPartitionsWithIndex { (i, _) =>
-            val partitionStart = (i * numElements) / numSlices * step + start
-            val partitionEnd = (((i + 1) * numElements) / numSlices) * step + start
+        .sparkContext
+        .parallelize(0 until numSlices, numSlices)
+        .mapPartitionsWithIndex { (i, _) =>
+          val partitionStart = (i * numElements) / numSlices * step + start
+          val partitionEnd = (((i + 1) * numElements) / numSlices) * step + start
+          val taskContext = TaskContext.get()
+          val inputMetrics = taskContext.taskMetrics().inputMetrics
 
-            def getSafeMargin(bi: BigInt): Long =
-              if (bi.isValidLong) {
-                bi.toLong
-              } else if (bi > 0) {
-                Long.MaxValue
-              } else {
-                Long.MinValue
-              }
-
-            val safePartitionStart = getSafeMargin(partitionStart) // inclusive
-            val safePartitionEnd = getSafeMargin(partitionEnd) // exclusive, unless start == this
-            val taskContext = TaskContext.get()
-
-            val iter: Iterator[ColumnarBatch] = new Iterator[ColumnarBatch] {
-              private[this] var number: Long = safePartitionStart
-              private[this] var done: Boolean = false
-              private[this] val inputMetrics = taskContext.taskMetrics().inputMetrics
-
-              override def hasNext: Boolean =
-                if (!done) {
-                  if (step > 0) {
-                    number < safePartitionEnd
-                  } else {
-                    number > safePartitionEnd
-                  }
-                } else false
-
-              override def next(): ColumnarBatch = {
-                GpuSemaphore.acquireIfNecessary(taskContext)
-                withResource(
-                  new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
-                    val start = number
-                    val remainingSteps = (safePartitionEnd - start) / step
-                    // Start is inclusive so we need to produce at least one row
-                    val rowsThisBatch = Math.max(1, Math.min(remainingSteps, maxRowCountPerBatch))
-                    val endInclusive = start + ((rowsThisBatch - 1) * step)
-                    number = endInclusive + step
-                    if (number < endInclusive ^ step < 0) {
-                      // we have Long.MaxValue + Long.MaxValue < Long.MaxValue
-                      // and Long.MinValue + Long.MinValue > Long.MinValue, so iff the step causes a
-                      // step back, we are pretty sure that we have an overflow.
-                      done = true
-                    }
-
-                    val ret = withResource(Scalar.fromLong(start)) { startScalar =>
-                      withResource(Scalar.fromLong(step)) { stepScalar =>
-                        withResource(
-                          cudf.ColumnVector.sequence(
-                            startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>
-                          withResource(new Table(vec)) { tab =>
-                            GpuColumnVector.from(tab, Array[DataType](LongType))
-                          }
-                        }
-                      }
-                    }
-
-                    assert(rowsThisBatch == ret.numRows())
-                    numOutputRows += rowsThisBatch
-                    TrampolineUtil.incInputRecordsRows(inputMetrics, rowsThisBatch)
-                    numOutputBatches += 1
-                    ret
-                }
-              }
-            }
-            new InterruptibleIterator(taskContext, iter)
+          val rangeIter = new GpuRangeIterator(partitionStart, partitionEnd, step,
+              maxRowCountPerBatch, taskContext, opTime).map { batch =>
+            numOutputRows += batch.numRows()
+            TrampolineUtil.incInputRecordsRows(inputMetrics, batch.numRows())
+            numOutputBatches += 1
+            batch
           }
+          new InterruptibleIterator(taskContext, rangeIter)
+        }
     }
   }
 

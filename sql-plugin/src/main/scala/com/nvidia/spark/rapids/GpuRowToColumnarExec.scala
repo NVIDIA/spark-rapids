@@ -60,9 +60,10 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
    */
   final def convertBatch(rows: Array[InternalRow], schema: StructType): ColumnarBatch = {
     val numRows = rows.length
-    val builders = new GpuColumnarBatchBuilder(schema, numRows)
-    rows.foreach(convert(_, builders))
-    builders.build(numRows)
+    withResource(new GpuColumnarBatchBuilder(schema, numRows)) { builders =>
+      rows.foreach(convert(_, builders))
+      builders.build(numRows)
+    }
   }
 }
 
@@ -625,8 +626,7 @@ class RowToColumnarIterator(
         }
       }
 
-      val builders = new GpuColumnarBatchBuilder(localSchema, targetRows)
-      try {
+      withResource(new GpuColumnarBatchBuilder(localSchema, targetRows)) { builders =>
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
@@ -653,8 +653,10 @@ class RowToColumnarIterator(
             .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
         val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
-          opTime)) { _ =>
-          builders.build(rowCount)
+            opTime)) { _ =>
+          RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
+            builders.tryBuild(rowCount)
+          }
         }
         numInputRows += rowCount
         numOutputRows += rowCount
@@ -670,8 +672,6 @@ class RowToColumnarIterator(
 
         // The returned batch will be closed by the consumer of it
         ret
-      } finally {
-        builders.close()
       }
     }
   }

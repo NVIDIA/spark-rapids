@@ -24,10 +24,10 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
@@ -689,12 +689,13 @@ object GroupedAggregations {
   private def getWindowOptions(
       orderSpec: Seq[SortOrder],
       orderPositions: Seq[Int],
-      frame: GpuSpecifiedWindowFrame): WindowOptions = {
+      frame: GpuSpecifiedWindowFrame,
+      minPeriods: Int): WindowOptions = {
     frame.frameType match {
       case RowFrame =>
         withResource(getRowBasedLower(frame)) { lower =>
           withResource(getRowBasedUpper(frame)) { upper =>
-            val builder = WindowOptions.builder().minPeriods(1)
+            val builder = WindowOptions.builder().minPeriods(minPeriods)
             if (isUnbounded(frame.lower)) builder.unboundedPreceding() else builder.preceding(lower)
             if (isUnbounded(frame.upper)) builder.unboundedFollowing() else builder.following(upper)
             builder.build
@@ -718,7 +719,7 @@ object GroupedAggregations {
         withResource(asScalarRangeBoundary(orderType, lower)) { preceding =>
           withResource(asScalarRangeBoundary(orderType, upper)) { following =>
             val windowOptionBuilder = WindowOptions.builder()
-                .minPeriods(1)
+                .minPeriods(1) // Does not currently support custom minPeriods.
                 .orderByColumnIndex(orderByIndex)
 
             if (preceding.isEmpty) {
@@ -929,13 +930,18 @@ class GroupedAggregations {
         if (frameSpec.frameType == frameType) {
           // For now I am going to assume that we don't need to combine calls across frame specs
           // because it would just not help that much
-          val result = withResource(
-            getWindowOptions(boundOrderSpec, orderByPositions, frameSpec)) { windowOpts =>
-            val allAggs = functions.map {
-              case (winFunc, _) => winFunc.aggOverWindow(inputCb, windowOpts)
-            }.toSeq
-            withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
-              aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+          val result = {
+            val allWindowOpts = functions.map { f =>
+              getWindowOptions(boundOrderSpec, orderByPositions, frameSpec,
+                f._1.windowFunc.getMinPeriods)
+            }
+            withResource(allWindowOpts.toSeq) { allWindowOpts =>
+              val allAggs = allWindowOpts.zip(functions).map { case (windowOpt, f) =>
+                f._1.aggOverWindow(inputCb, windowOpt)
+              }
+              withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
+                aggIt(initProjTab.groupBy(partByPositions: _*), allAggs)
+              }
             }
           }
           withResource(result) { result =>
@@ -1494,7 +1500,7 @@ class GpuRunningWindowIterator(
   private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  onTaskCompletion(close())
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -1724,6 +1730,11 @@ class GpuCachedDoublePassWindowIterator(
 
   override def isRunningBatched: Boolean = true
 
+  // firstPassIter returns tuples where the first element is the result of calling
+  // computeBasicWindow on a batch, and the second element is a projection of boundPartitionSpec
+  // against the batch
+  private var firstPassIter: Option[Iterator[(Array[cudf.ColumnVector], ColumnarBatch)]] = None
+  private var postProcessedIter: Option[Iterator[ColumnarBatch]] = None
   private var readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
   private var firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
   // This should only ever be cached in between calls to `hasNext` and `next`.
@@ -1733,7 +1744,7 @@ class GpuCachedDoublePassWindowIterator(
   private var lastPartsProcessing: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  onTaskCompletion(close())
 
   private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
     lastPartsCaching.foreach(_.close())
@@ -1759,6 +1770,9 @@ class GpuCachedDoublePassWindowIterator(
 
       waitingForFirstPass.foreach(_.close())
       waitingForFirstPass = None
+
+      firstPassIter = None
+      postProcessedIter = None
     }
   }
 
@@ -1853,12 +1867,18 @@ class GpuCachedDoublePassWindowIterator(
     val numRows = cb.numRows()
 
     val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-    val (basic, parts) = withRetryNoSplit(sp) { _ =>
-      withResource(sp.getColumnarBatch()) { batch =>
-        closeOnExcept(computeBasicWindow(batch)) { basic =>
-          (basic, GpuProjectExec.project(batch, boundPartitionSpec))
-        }
-      }
+
+    val (basic, parts) = firstPassIter match {
+      case Some(it) if it.hasNext => it.next()
+      case _ =>
+        firstPassIter = Some(withRetry(sp, splitSpillableInHalfByRows) { sp =>
+          withResource(sp.getColumnarBatch()) { batch =>
+            closeOnExcept(computeBasicWindow(batch)) { basic =>
+              (basic, GpuProjectExec.project(batch, boundPartitionSpec))
+            }
+          }
+        })
+        firstPassIter.get.next()
     }
 
     withResource(basic) { _ =>
@@ -1932,6 +1952,30 @@ class GpuCachedDoublePassWindowIterator(
     if (!hasNext) {
       throw new NoSuchElementException()
     }
+    postProcessedIter match {
+      case Some(it) if it.hasNext =>
+        it.next()
+      case _ =>
+        postProcessedIter = Some(withRetry(getReadyForPostProcessing(),
+            splitSpillableInHalfByRows) { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            val ret = withResource(
+                new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+              postProcess(cb)
+            }
+            numOutputBatches += 1
+            numOutputRows += ret.numRows()
+            ret
+          }
+        })
+        postProcessedIter.get.next()
+    }
+  }
+
+  /**
+   * Get the next batch that is ready for post-processing.
+   */
+  private def getReadyForPostProcessing(): SpillableColumnarBatch = {
     while (readyForPostProcessing.isEmpty) {
       // Keep reading and processing data until we have something to output
       cacheBatchIfNeeded()
@@ -1947,17 +1991,7 @@ class GpuCachedDoublePassWindowIterator(
         }
       }
     }
-    withRetryNoSplit(readyForPostProcessing.dequeue()) { sb =>
-      withResource(sb.getColumnarBatch()) { cb =>
-        val ret = withResource(
-          new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
-          postProcess(cb)
-        }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
-      }
-    }
+    readyForPostProcessing.dequeue()
   }
 }
 

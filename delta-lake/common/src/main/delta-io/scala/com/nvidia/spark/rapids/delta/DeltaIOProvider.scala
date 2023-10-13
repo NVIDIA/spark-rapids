@@ -21,10 +21,10 @@ import scala.util.Try
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.delta.DeltaLog
+import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.sources.DeltaDataSource
-import org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand
+import org.apache.spark.sql.execution.datasources.{FileFormat, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -43,6 +43,10 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
           new DeltaCreatableRelationProviderMeta(a, conf, p, r)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[CreatableRelationProvider]), r)).toMap
+  }
+
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
+    format == classOf[DeltaParquetFileFormat]
   }
 }
 

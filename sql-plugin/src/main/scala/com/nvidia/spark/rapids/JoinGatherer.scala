@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, OutOfBoundsPolicy, Scalar, Table}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.TaskContext
@@ -34,7 +35,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * If the data is needed after `allowSpilling` is called the implementations should get the data
  * back and cache it again until allowSpilling is called once more.
  */
-trait LazySpillable extends AutoCloseable with CheckpointRestore {
+trait LazySpillable extends AutoCloseable with Retryable {
 
   /**
    * Indicate that we are done using the data for now and it can be spilled.

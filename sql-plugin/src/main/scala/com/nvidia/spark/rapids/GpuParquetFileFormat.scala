@@ -16,11 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
+
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
+import com.nvidia.spark.rapids.jni.DateTimeRebase
+import com.nvidia.spark.rapids.shims._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -118,11 +121,6 @@ object GpuParquetFileFormat {
       }
     }
 
-    val schemaHasDates = schema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
-    }
-
-
     SparkShimImpl.int96ParquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" =>
       case "CORRECTED" =>
@@ -135,11 +133,13 @@ object GpuParquetFileFormat {
     }
 
     SparkShimImpl.parquetRebaseWrite(sqlConf) match {
-      case "EXCEPTION" => //Good
-      case "CORRECTED" => //Good
+      case "EXCEPTION" | "CORRECTED" => // Good
       case "LEGACY" =>
-        if (schemaHasDates || schemaHasTimestamps) {
-          meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
+        if (!TypeChecks.areTimestampsSupported()) {
+          meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
+            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+            s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
+            " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported rebase mode")
@@ -193,13 +193,12 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val conf = ContextUtil.getConfiguration(job)
 
     val outputTimestampType = sqlConf.parquetOutputTimestampType
-    val dateTimeRebaseException = "EXCEPTION".equals(
-      sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
-    val timestampRebaseException =
-      outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
-          "EXCEPTION".equals(sparkSession.sqlContext
-              .getConf(SparkShimImpl.int96ParquetRebaseWriteKey)) ||
-          !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
+    val dateTimeRebaseMode = sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey)
+    val timestampRebaseMode = if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
+      sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey)
+    } else {
+      dateTimeRebaseMode
+    }
 
     val committerClass =
       conf.getClass(
@@ -251,7 +250,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
-    val parquetFieldIdWriteEnabled = ParquetFieldIdShims.getParquetIdWriteEnabled(sqlConf)
+    val parquetFieldIdWriteEnabled = ParquetFieldIdShims.getParquetIdWriteEnabled(conf, sqlConf)
 
     ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 
@@ -283,8 +282,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException,
-          timestampRebaseException, context, parquetFieldIdWriteEnabled)
+        new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
+          dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -302,23 +301,22 @@ class GpuParquetWriter(
     override val path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
-    dateRebaseException: Boolean,
-    timestampRebaseException: Boolean,
+    outputTimestampType: String,
+    dateRebaseMode: String,
+    timestampRebaseMode: String,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
-
-  val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
-
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
       // if col is a day
-      if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
+      if (dateRebaseMode.equals("EXCEPTION") && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
       // if col is a time
-      else if (timestampRebaseException && RebaseHelper.isTimeRebaseNeededInWrite(col)) {
+      else if (timestampRebaseMode.equals("EXCEPTION") &&
+               RebaseHelper.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
@@ -336,45 +334,38 @@ class GpuParquetWriter(
 
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
-      // Timestamp types are checked and transformed for all nested columns.
-      // Note that cudf's `isTimestampType` returns `true` for `TIMESTAMP_DAYS`, which is not
-      // included in Spark's `TimestampType`.
-      case (cv, _) if cv.getType.isTimestampType && cv.getType != DType.TIMESTAMP_DAYS =>
-        val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-        val typeInt96 = ParquetOutputTimestampType.INT96.toString
-
-        outputTimestampType match {
-          case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
-            cv.castTo(DType.TIMESTAMP_MILLISECONDS)
-
-          case `typeInt96` =>
-            val inRange = withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
-              withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
-                withResource(cv.bitCastTo(DType.INT64)) { int64 =>
-                  withResource(int64.greaterOrEqualTo(upper)) { a =>
-                    withResource(int64.lessOrEqualTo(lower)) { b =>
-                      a.or(b)
-                    }
-                  }
-                }
+      case (cv, _) if cv.getType.isTimestampType =>
+        if(cv.getType == DType.TIMESTAMP_DAYS) {
+          if (dateRebaseMode.equals("LEGACY")) {
+            DateTimeRebase.rebaseGregorianToJulian(cv)
+          } else {
+            cv.copyToColumnVector()
+          }
+        } else { /* timestamp */
+          val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
+          if (timestampRebaseMode.equals("LEGACY")) {
+            val rebasedTimestampAsMicros = if(cv.getType == DType.TIMESTAMP_MICROSECONDS) {
+              DateTimeRebase.rebaseGregorianToJulian(cv)
+            } else {
+              withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
+                DateTimeRebase.rebaseGregorianToJulian(cvAsMicros)
               }
             }
-            val anyInRange = withResource(inRange)(_.any())
-            withResource(anyInRange) { _ =>
-              require(!(anyInRange.isValid && anyInRange.getBoolean),
-                // Its the writer's responsibility to close the input batch when this
-                // exception is thrown.
-                "INT96 column contains one " +
-                "or more values that can overflow and will result in data " +
-                "corruption. Please set " +
-                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false " +
-                "so we can fallback on CPU for writing parquet but still take " +
-                "advantage of parquet read on the GPU.")
+            if(outputTimestampType.equals(typeMillis)) {
+              withResource(rebasedTimestampAsMicros) { rebasedTs =>
+                rebasedTs.castTo(DType.TIMESTAMP_MILLISECONDS) }
+            } else { /* outputTimestampType is either micros, or int96 */
+              rebasedTimestampAsMicros
             }
-            cv.copyToColumnVector() /* the input is unchanged */
+          } else {  /* timestampRebaseMode is not LEGACY */
+            outputTimestampType match {
+              case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
+                cv.castTo(DType.TIMESTAMP_MILLISECONDS)
 
-          // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`
-          case _ => cv.copyToColumnVector() /* the input is unchanged */
+              // Here outputTimestampType is either micros, or int96.
+              case _ => cv.copyToColumnVector() /* the input is unchanged */
+            }
+          }
         }
 
       // Decimal types are checked and transformed only for the top level column because we don't

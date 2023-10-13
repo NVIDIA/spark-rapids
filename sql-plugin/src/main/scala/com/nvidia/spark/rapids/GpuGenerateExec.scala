@@ -22,9 +22,9 @@ import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Sc
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
@@ -593,7 +593,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         spillableCurrentBatch = null
       }
 
-      TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrent())
+      onTaskCompletion(closeCurrent())
 
       def fetchNextBatch(): Unit = {
         indexIntoData = 0

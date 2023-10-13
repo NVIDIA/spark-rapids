@@ -21,6 +21,7 @@ import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.apache.commons.lang3.mutable.MutableInt
 
@@ -142,7 +143,7 @@ private final class GpuSemaphore() extends Logging {
           activeTasks.put(
             taskAttemptId,
             TaskInfo(new MutableInt(1), Thread.currentThread(), permits))
-          context.addTaskCompletionListener[Unit](completeTask)
+          onTaskCompletion(context, completeTask)
         }
         GpuDeviceManager.initializeFromTask()
       } else {

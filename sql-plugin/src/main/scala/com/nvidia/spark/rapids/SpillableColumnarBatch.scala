@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.DataType
@@ -97,7 +97,7 @@ class SpillableColumnarBatchImpl (
   }
 
   override lazy val sizeInBytes: Long =
-    withRapidsBuffer(_.getMemoryUsedBytes)
+    withRapidsBuffer(_.memoryUsedBytes)
 
   /**
    * Set a new spill priority.
@@ -110,6 +110,73 @@ class SpillableColumnarBatchImpl (
     withRapidsBuffer { rapidsBuffer =>
       GpuSemaphore.acquireIfNecessary(TaskContext.get())
       rapidsBuffer.getColumnarBatch(sparkTypes)
+    }
+  }
+
+  /**
+   * Remove the `ColumnarBatch` from the cache.
+   */
+  override def close(): Unit = {
+    // closing my reference
+    handle.close()
+  }
+}
+
+class JustRowsHostColumnarBatch(numRows: Int)
+  extends SpillableColumnarBatch {
+  override def numRows(): Int = numRows
+  override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
+
+  def getColumnarBatch(): ColumnarBatch = {
+    new ColumnarBatch(Array.empty, numRows)
+  }
+
+  override def close(): Unit = () // NOOP nothing to close
+  override val sizeInBytes: Long = 0L
+
+  override def dataTypes: Array[DataType] = Array.empty
+}
+
+/**
+ * The implementation of [[SpillableHostColumnarBatch]] that points to buffers that can be spilled.
+ * @note the buffer should be in the cache by the time this is created and this is taking over
+ *       ownership of the life cycle of the batch.  So don't call this constructor directly please
+ *       use `SpillableHostColumnarBatch.apply` instead.
+ */
+class SpillableHostColumnarBatchImpl (
+    handle: RapidsBufferHandle,
+    rowCount: Int,
+    sparkTypes: Array[DataType],
+    catalog: RapidsBufferCatalog)
+  extends SpillableColumnarBatch {
+
+  override def dataTypes: Array[DataType] = sparkTypes
+
+  /**
+   * The number of rows stored in this batch.
+   */
+  override def numRows(): Int = rowCount
+
+  private def withRapidsHostBatchBuffer[T](fn: RapidsHostBatchBuffer => T): T = {
+    withResource(catalog.acquireHostBatchBuffer(handle)) { rapidsBuffer =>
+      fn(rapidsBuffer)
+    }
+  }
+
+  override lazy val sizeInBytes: Long = {
+    withRapidsHostBatchBuffer(_.memoryUsedBytes)
+  }
+
+  /**
+   * Set a new spill priority.
+   */
+  override def setSpillPriority(priority: Long): Unit = {
+    handle.setSpillPriority(priority)
+  }
+
+  override def getColumnarBatch(): ColumnarBatch = {
+    withRapidsHostBatchBuffer { hostBatchBuffer =>
+      hostBatchBuffer.getHostColumnarBatch(sparkTypes)
     }
   }
 
@@ -207,10 +274,46 @@ object SpillableColumnarBatch {
       }
     }
   }
-
 }
 
+object SpillableHostColumnarBatch {
+  /**
+   * Create a new SpillableColumnarBatch backed by host columns.
+   *
+   * @note This takes over ownership of batch, and batch should not be used after this.
+   * @param batch         the batch to make spillable
+   * @param priority      the initial spill priority of this batch
+   */
+  def apply(
+      batch: ColumnarBatch,
+      priority: Long,
+      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton): SpillableColumnarBatch = {
+    val numRows = batch.numRows()
+    if (batch.numCols() <= 0) {
+      // We consumed it
+      batch.close()
+      new JustRowsHostColumnarBatch(numRows)
+    } else {
+      val types = RapidsHostColumnVector.extractColumns(batch).map(_.dataType())
+      val handle = addHostBatch(batch, priority, catalog)
+      new SpillableHostColumnarBatchImpl(
+        handle,
+        numRows,
+        types,
+        catalog)
+    }
+  }
 
+  private[this] def addHostBatch(
+      batch: ColumnarBatch,
+      initialSpillPriority: Long,
+      catalog: RapidsBufferCatalog): RapidsBufferHandle = {
+    withResource(batch) { batch =>
+      catalog.addBatch(batch, initialSpillPriority)
+    }
+  }
+
+}
 /**
  * Just like a SpillableColumnarBatch but for buffers.
  */
@@ -241,6 +344,72 @@ class SpillableBuffer(
   }
 }
 
+/**
+ * This represents a spillable `HostMemoryBuffer` and adds an interface to access
+ * this host buffer at the host layer, unlike `SpillableBuffer` (device)
+ * @param handle an object used to refer to this buffer in the spill framework
+ * @param length a metadata-only length that is kept in the `SpillableHostBuffer`
+ *               instance. Used in cases where the backing host buffer is larger
+ *               than the number of usable bytes.
+ * @param catalog this was added for tests, it defaults to
+ *                `RapidsBufferCatalog.singleton` in the companion object.
+ */
+class SpillableHostBuffer(handle: RapidsBufferHandle,
+                          val length: Long,
+                          catalog: RapidsBufferCatalog) extends AutoCloseable {
+  /**
+   * Set a new spill priority.
+   */
+  def setSpillPriority(priority: Long): Unit = {
+    handle.setSpillPriority(priority)
+  }
+
+  /**
+   * Remove the buffer from the cache.
+   */
+  override def close(): Unit = {
+    handle.close()
+  }
+
+  /**
+   * Acquires the underlying `RapidsBuffer` and uses
+   * `RapidsBuffer.withMemoryBufferReadLock` to obtain a read lock
+   * that will held while invoking `body` with a `HostMemoryBuffer`.
+   * @param body function that takes a `HostMemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(hostMemoryBuffer)
+   */
+  def withHostBufferReadOnly[K](body: HostMemoryBuffer => K): K = {
+    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+      rapidsBuffer.withMemoryBufferReadLock {
+        case hmb: HostMemoryBuffer => body(hmb)
+        case memoryBuffer =>
+          throw new IllegalStateException(
+            s"Expected a HostMemoryBuffer but instead got ${memoryBuffer}")
+      }
+    }
+  }
+
+  /**
+   * Acquires the underlying `RapidsBuffer` and uses
+   * `RapidsBuffer.withMemoryBufferWriteLock` to obtain a write lock
+   * that will held while invoking `body` with a `HostMemoryBuffer`.
+   * @param body function that takes a `HostMemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(hostMemoryBuffer)
+   */
+  def withHostBufferWriteLock[K](body: HostMemoryBuffer => K): K = {
+    withResource(catalog.acquireBuffer(handle)) { rapidsBuffer =>
+      rapidsBuffer.withMemoryBufferWriteLock {
+        case hmb: HostMemoryBuffer => body(hmb)
+        case memoryBuffer =>
+          throw new IllegalStateException(
+            s"Expected a HostMemoryBuffer but instead got ${memoryBuffer}")
+      }
+    }
+  }
+}
+
 object SpillableBuffer {
 
   /**
@@ -249,12 +418,41 @@ object SpillableBuffer {
    * @param buffer the buffer to make spillable
    * @param priority the initial spill priority of this buffer
    */
-  def apply(buffer: DeviceMemoryBuffer,
+  def apply(
+      buffer: DeviceMemoryBuffer,
       priority: Long): SpillableBuffer = {
-    val meta = MetaUtils.getTableMetaNoTable(buffer)
+    val meta = MetaUtils.getTableMetaNoTable(buffer.getLength)
     val handle = withResource(buffer) { _ => 
       RapidsBufferCatalog.addBuffer(buffer, meta, priority)
     }
     new SpillableBuffer(handle)
+  }
+}
+
+object SpillableHostBuffer {
+
+  /**
+   * Create a new SpillableBuffer.
+   * @note This takes over ownership of buffer, and buffer should not be used after this.
+   * @param length the actual length of the data within the host buffer, which
+   *               must be <= than buffer.getLength, otherwise this function throws
+   *               and closes `buffer`
+   * @param buffer the buffer to make spillable
+   * @param priority the initial spill priority of this buffer
+   */
+  def apply(buffer: HostMemoryBuffer,
+            length: Long,
+            priority: Long,
+            catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton): SpillableHostBuffer = {
+    closeOnExcept(buffer) { _ =>
+      require(length <= buffer.getLength,
+        s"Attempted to add a host spillable with a length ${length} B which is " +
+          s"greater than the backing host buffer length ${buffer.getLength} B")
+    }
+    val meta = MetaUtils.getTableMetaNoTable(buffer.getLength)
+    val handle = withResource(buffer) { _ =>
+      catalog.addBuffer(buffer, meta, priority)
+    }
+    new SpillableHostBuffer(handle, length, catalog)
   }
 }

@@ -22,6 +22,7 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -31,41 +32,11 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuAggregateInPandasExecMeta(
-    aggPandas: AggregateInPandasExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends SparkPlanMeta[AggregateInPandasExec](aggPandas, conf, parent, rule) {
 
-  override def replaceMessage: String = "partially run on GPU"
-  override def noReplacementPossibleMessage(reasons: String): String =
-    s"cannot run even partially on the GPU because $reasons"
-
-  private val groupingNamedExprs: Seq[BaseExprMeta[NamedExpression]] =
-    aggPandas.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  private val udfs: Seq[BaseExprMeta[PythonUDF]] =
-    aggPandas.udfExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  private val resultNamedExprs: Seq[BaseExprMeta[NamedExpression]] =
-    aggPandas.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-  override val childExprs: Seq[BaseExprMeta[_]] = groupingNamedExprs ++ udfs ++ resultNamedExprs
-
-  override def convertToGpu(): GpuExec =
-    GpuAggregateInPandasExec(
-      groupingNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
-      resultNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans.head.convertIfNeeded()
-    )(aggPandas.groupingExpressions)
-}
 
 /**
  * Physical node for aggregation with group aggregate Pandas UDF.
@@ -80,7 +51,8 @@ class GpuAggregateInPandasExecMeta(
  */
 case class GpuAggregateInPandasExec(
     gpuGroupingExpressions: Seq[NamedExpression],
-    udfExpressions: Seq[GpuPythonUDF],
+    udfExpressions: Seq[GpuPythonFunction],
+    pyOutAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan)(
     cpuGroupingExpressions: Seq[NamedExpression])
@@ -102,14 +74,15 @@ case class GpuAggregateInPandasExec(
     }
   }
 
-  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  private def collectFunctions(udf: GpuPythonFunction):
+  (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
-      case Seq(u: GpuPythonUDF) =>
+      case Seq(u: GpuPythonFunction) =>
         val (chained, children) = collectFunctions(u)
         (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        assert(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
         (ChainedPythonFunctions(Seq(udf.func)), udf.children)
     }
   }
@@ -137,8 +110,7 @@ case class GpuAggregateInPandasExec(
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
-    val pyOutAttributes = udfExpressions.map(_.resultAttribute)
+    val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
     val childOutput = child.output
     val resultExprs = resultExpressions
 
@@ -170,7 +142,7 @@ case class GpuAggregateInPandasExec(
     child.executeColumnar().mapPartitionsInternal { inputIter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(queue.close())
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
@@ -250,7 +222,7 @@ case class GpuAggregateInPandasExec(
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
-          StructType.fromAttributes(pyOutAttributes),
+          DataTypeUtilsShim.fromAttributes(pyOutAttributes),
           () => queue.finish())
 
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
@@ -270,5 +242,27 @@ case class GpuAggregateInPandasExec(
       }
     }
   } // end of internalDoExecuteColumnar
+
+}
+
+object GpuAggregateInPandasExec {
+  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+      udfExpressions: Seq[GpuPythonFunction],
+      resultExpressions: Seq[NamedExpression],
+      child: SparkPlan)(
+      cpuGroupingExpressions: Seq[NamedExpression]) = {
+    new GpuAggregateInPandasExec(gpuGroupingExpressions, udfExpressions,
+      udfExpressions.map(_.resultAttribute), resultExpressions, child)(cpuGroupingExpressions)
+  }
+
+  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+      udfExpressions: Seq[GpuPythonFunction],
+      pyOutAttributes: Seq[Attribute],
+      resultExpressions: Seq[NamedExpression],
+      child: SparkPlan)(
+      cpuGroupingExpressions: Seq[NamedExpression]) = {
+    new GpuAggregateInPandasExec(gpuGroupingExpressions, udfExpressions,
+      pyOutAttributes, resultExpressions, child)(cpuGroupingExpressions)
+  }
 
 }

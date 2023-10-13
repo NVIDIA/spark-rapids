@@ -52,7 +52,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
   test("not a quantifier") {
     assert(parse("{1}") ===
       RegexSequence(ListBuffer(
-        RegexChar('{'), RegexChar('1'),RegexChar('}'))))
+        RegexChar('{'), RegexChar('1'),RegexEscaped('}'))))
   }
 
   test("nested repetition") {
@@ -109,7 +109,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
     assert(parse("[a]]") ===
       RegexSequence(ListBuffer(
         RegexCharacterClass(negated = false,
-          ListBuffer(RegexChar('a'))), RegexChar(']'))))
+          ListBuffer(RegexChar('a'))), RegexEscaped(']'))))
   }
 
   test("escaped brackets") {

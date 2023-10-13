@@ -25,9 +25,9 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
@@ -138,7 +138,7 @@ case class GpuSortExec(
       if (outOfCore) {
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
           targetSize, opTime, sortTime, outputBatch, outputRows)
-        TaskContext.get().addTaskCompletionListener(_ -> iter.close())
+        onTaskCompletion(iter.close())
         iter
       } else {
         GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
@@ -159,16 +159,20 @@ case class GpuSortEachBatchIterator(
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): ColumnarBatch = {
-    withResource(iter.next()) { cb =>
-      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
-        val ret = sorter.fullySortBatch(cb, sortTime)
-        outputBatches += 1
-        outputRows += ret.numRows()
-        if (singleBatch) {
-          GpuColumnVector.tagAsFinalBatch(ret)
-        } else {
-          ret
-        }
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+    val scb = closeOnExcept(iter.next()) { cb =>
+      SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+    val ret = sorter.fullySortBatchAndCloseWithRetry(scb, sortTime, opTime)
+    opTime.ns {
+      outputBatches += 1
+      outputRows += ret.numRows()
+      if (singleBatch) {
+        GpuColumnVector.tagAsFinalBatch(ret)
+      } else {
+        ret
       }
     }
   }
@@ -455,51 +459,54 @@ case class GpuOutOfCoreSortIterator(
           bytesLeftToFetch -= buffer.sizeInBytes
         }
       }
-      // Here may need to retry work, however `mergeSortAndClose` already has some
-      // optimization to reduce the GPU memory pressure for some cases.
-      val mergedBatch = sorter.mergeSortAndClose(pendingSort, sortTime)
 
-      val (retBatch, sortedOffset) = closeOnExcept(mergedBatch) { _ =>
+      val mergedSpillBatch = sorter.mergeSortAndCloseWithRetry(pendingSort, sortTime)
+      val (retBatch, sortedOffset) = closeOnExcept(mergedSpillBatch) { _ =>
         // First we want figure out what is fully sorted from what is not
         val sortSplitOffset = if (pending.isEmpty) {
           // No need to split it
-          mergedBatch.numRows()
+          mergedSpillBatch.numRows()
         } else {
           // The data is only fully sorted if there is nothing pending that is smaller than it
           // so get the next "smallest" row that is pending.
           val cutoff = pending.peek().firstRow
-          withResource(converters.convertBatch(Array(cutoff),
-            TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { cutoffCb =>
-            withResource(sorter.upperBound(mergedBatch, cutoffCb)) { result =>
-              withResource(result.copyToHost()) { hostResult =>
-                assert(hostResult.getRowCount == 1)
-                hostResult.getInt(0)
+          val result = RmmRapidsRetryIterator.withRetryNoSplit[ColumnVector] {
+            withResource(converters.convertBatch(Array(cutoff),
+              TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { cutoffCb =>
+              withResource(mergedSpillBatch.getColumnarBatch()) { mergedBatch =>
+                sorter.upperBound(mergedBatch, cutoffCb)
               }
             }
           }
+          withResource(result) { _ =>
+            withResource(result.copyToHost()) { hostResult =>
+              assert(hostResult.getRowCount == 1)
+              hostResult.getInt(0)
+            }
+          }
         }
-        if (sortSplitOffset == mergedBatch.numRows() && sorted.isEmpty &&
-          (GpuColumnVector.getTotalDeviceMemoryUsed(mergedBatch) >= targetSize ||
-            pending.isEmpty)) {
+        if (sortSplitOffset == mergedSpillBatch.numRows() && sorted.isEmpty &&
+            (mergedSpillBatch.sizeInBytes >= targetSize || pending.isEmpty)) {
           // This is a special case where we have everything we need to output already so why
           // bother with another contig split just to put it into the queue
-          withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
-            (Some(sorter.removeProjectedColumns(mergedTbl)), sortSplitOffset)
+          val projectedBatch = RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
+            withResource(mergedSpillBatch.getColumnarBatch()) { mergedBatch =>
+              withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
+                sorter.removeProjectedColumns(mergedTbl)
+              }
+            }
           }
+          (Some(projectedBatch), sortSplitOffset)
         } else {
           (None, sortSplitOffset)
         }
       }
 
       if (retBatch.nonEmpty) {
-        withResource(mergedBatch) { _ =>
-          return retBatch
-        }
+        mergedSpillBatch.close()
+        return retBatch
       } else {
-        val mergedSp = closeOnExcept(mergedBatch) { _ =>
-          SpillableColumnarBatch(mergedBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        }
-        val splitResult = withRetryNoSplit(mergedSp) { attempt =>
+        val splitResult = withRetryNoSplit(mergedSpillBatch) { attempt =>
           onMergeSortSplit()
           splitAfterSort(attempt, sortedOffset)
         }

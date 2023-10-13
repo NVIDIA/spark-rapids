@@ -26,6 +26,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
@@ -34,8 +35,8 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -55,7 +56,7 @@ class RebatchingRoundoffIterator(
     extends Iterator[ColumnarBatch] {
   var pending: Option[SpillableColumnarBatch] = None
 
-  TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
+  onTaskCompletion {
     pending.foreach(_.close())
     pending = None
   }
@@ -260,7 +261,7 @@ case class GpuArrowEvalPythonExec(
 
   private val batchSize = conf.arrowMaxRecordsPerBatch
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+  private val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
@@ -274,7 +275,7 @@ case class GpuArrowEvalPythonExec(
     // On Databricks when projecting only one column from a Python UDF output where containing
     // multiple result columns, there will be only one attribute in the 'resultAttrs' for the
     // projecting output, but the output schema for this Python UDF contains multiple columns.
-    val pythonOutputSchema = StructType.fromAttributes(udfs.map(_.resultAttribute))
+    val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfs.map(_.resultAttribute))
 
     val childOutput = child.output
     val targetBatchSize = batchSize
@@ -285,7 +286,7 @@ case class GpuArrowEvalPythonExec(
     inputRDD.mapPartitions { iter =>
       val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(context)(queue.close())
 
       val (pyFuncs, inputs) = udfs.map(collectFunctions).unzip
 

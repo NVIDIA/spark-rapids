@@ -17,13 +17,13 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 {"spark": "330cdh"}
-{"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -40,5 +40,7 @@ object ParquetFieldIdShims {
   }
 
   /** Get Parquet field ID write enabled configuration value */
-  def getParquetIdWriteEnabled(sqlConf: SQLConf): Boolean = sqlConf.parquetFieldIdWriteEnabled
+  def getParquetIdWriteEnabled(conf: Configuration, sqlConf: SQLConf): Boolean = {
+    sqlConf.parquetFieldIdWriteEnabled
+  }
 }

@@ -33,13 +33,13 @@ import org.apache.spark.sql.catalyst.json.rapids.GpuReadJsonFileFormat
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
-import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, PartitionedFileUtil, SQLExecution}
-import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
+import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.SQLMetrics
+import org.apache.spark.sql.execution.rapids.shims.FilePartitionShims
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -90,8 +90,7 @@ case class GpuFileSourceScanExec(
     dataOutAttrs ++ prunedPartOutAttrs
   }.getOrElse(originalOutput)
 
-  private[rapids] val readPartitionSchema =
-    requiredPartitionSchema.getOrElse(relation.partitionSchema)
+  val readPartitionSchema = requiredPartitionSchema.getOrElse(relation.partitionSchema)
 
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced.
@@ -99,13 +98,12 @@ case class GpuFileSourceScanExec(
   // should update this to None and read directly from s3 to get faster.
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
-  private val isPerFileReadEnabled = relation.fileFormat match {
-    case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
-    case _: OrcFileFormat => rapidsConf.isOrcPerFileReadEnabled
-    case ef if ExternalSource.isSupportedFormat(ef) =>
-      ExternalSource.isPerFileReadEnabledForFormat(ef, rapidsConf)
-    case _ => true // For others, default to PERFILE reader
+  @transient private val gpuFormat = relation.fileFormat match {
+    case g: GpuReadFileFormatWithMetrics => g
+    case f => throw new IllegalStateException(s"${f.getClass} is not a GPU format with metrics")
   }
+
+  private val isPerFileReadEnabled = gpuFormat.isPerFileReadEnabled(rapidsConf)
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
@@ -362,8 +360,7 @@ case class GpuFileSourceScanExec(
   lazy val inputRDD: RDD[InternalRow] = {
     val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
       if (isPerFileReadEnabled) {
-        val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
-        val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
+        val reader = gpuFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
           dataSchema = relation.dataSchema,
           partitionSchema = readPartitionSchema,
@@ -510,13 +507,7 @@ case class GpuFileSourceScanExec(
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
 
-    val partitionedFiles = {
-      selectedPartitions.flatMap { p =>
-        p.files.map { f =>
-          PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values)
-        }
-      }
-    }
+    val partitionedFiles = FilePartitionShims.getPartitions(selectedPartitions)
 
     val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
       BucketingUtils
@@ -569,22 +560,7 @@ case class GpuFileSourceScanExec(
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
 
-    val splitFiles = selectedPartitions.flatMap { partition =>
-      partition.files.flatMap { file =>
-        // getPath() is very expensive so we only want to call it once in this block:
-        val filePath = file.getPath
-        val isSplitable = relation.fileFormat.isSplitable(
-          relation.sparkSession, relation.options, filePath)
-        PartitionedFileUtil.splitFiles(
-          sparkSession = relation.sparkSession,
-          file = file,
-          filePath = filePath,
-          isSplitable = isSplitable,
-          maxSplitBytes = maxSplitBytes,
-          partitionValues = partition.values
-        )
-      }
-    }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+    val splitFiles = FilePartitionShims.splitFiles(selectedPartitions, relation, maxSplitBytes)
 
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
@@ -640,44 +616,13 @@ case class GpuFileSourceScanExec(
   lazy val readerFactory: PartitionReaderFactory = {
     // here we are making an optimization to read more then 1 file at a time on the CPU side
     // if they are small files before sending it down to the GPU
-    val sqlConf = relation.sparkSession.sessionState.conf
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
-
-    relation.fileFormat match {
-      case _: ParquetFileFormat =>
-        GpuParquetMultiFilePartitionReaderFactory(
-          sqlConf,
-          broadcastedHadoopConf,
-          relation.dataSchema,
-          requiredSchema,
-          readPartitionSchema,
-          pushedDownFilters.toArray,
-          rapidsConf,
-          allMetrics,
-          queryUsesInputFile,
-          alluxioPathReplacementMap)
-      case _: OrcFileFormat =>
-        GpuOrcMultiFilePartitionReaderFactory(
-          sqlConf,
-          broadcastedHadoopConf,
-          relation.dataSchema,
-          requiredSchema,
-          readPartitionSchema,
-          pushedDownFilters.toArray,
-          rapidsConf,
-          allMetrics,
-          queryUsesInputFile)
-      case ef if ExternalSource.isSupportedFormat(ef) =>
-        ExternalSource.createMultiFileReaderFactory(
-          ef,
-          broadcastedHadoopConf,
-          pushedDownFilters.toArray,
-          this)
-      case other =>
-        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
-    }
+    gpuFormat.createMultiFileReaderFactory(
+      broadcastedHadoopConf,
+      pushedDownFilters.toArray,
+      this)
   }
 
   // Filters unused DynamicPruningExpression expressions - one which has been replaced
@@ -706,28 +651,36 @@ case class GpuFileSourceScanExec(
 
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    meta.wrapped.relation.fileFormat match {
-      case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
-      case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
-      case _: JsonFileFormat => GpuReadJsonFileFormat.tagSupport(meta)
-      case ef if ExternalSource.isSupportedFormat(ef) =>
-        ExternalSource.tagSupportForGpuFileSourceScan(meta)
-      case other =>
-        meta.willNotWorkOnGpu(s"unsupported file format: ${other.getClass.getCanonicalName}")
+    val cls = meta.wrapped.relation.fileFormat.getClass
+    if (cls == classOf[CSVFileFormat]) {
+      GpuReadCSVFileFormat.tagSupport(meta)
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
+      GpuReadOrcFileFormat.tagSupport(meta)
+    } else if (cls == classOf[ParquetFileFormat]) {
+      GpuReadParquetFileFormat.tagSupport(meta)
+    } else if (cls == classOf[JsonFileFormat]) {
+      GpuReadJsonFileFormat.tagSupport(meta)
+    } else if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.tagSupportForGpuFileSourceScan(meta)
+    } else {
+      meta.willNotWorkOnGpu(s"unsupported file format: ${cls.getCanonicalName}")
     }
   }
 
   def convertFileFormat(format: FileFormat): FileFormat = {
-    format match {
-      case _: CSVFileFormat => new GpuReadCSVFileFormat
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
-      case _: ParquetFileFormat => new GpuReadParquetFileFormat
-      case _: JsonFileFormat => new GpuReadJsonFileFormat
-      case ef if ExternalSource.isSupportedFormat(ef) => ExternalSource.getReadFileFormat(ef)
-      case other =>
-        throw new IllegalArgumentException(s"${other.getClass.getCanonicalName} is not supported")
-
+    val cls = format.getClass
+    if (cls == classOf[CSVFileFormat]) {
+      new GpuReadCSVFileFormat
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
+      new GpuReadOrcFileFormat
+    } else if (cls == classOf[ParquetFileFormat]) {
+      new GpuReadParquetFileFormat
+    } else if (cls == classOf[JsonFileFormat]) {
+      new GpuReadJsonFileFormat
+    } else if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.getReadFileFormat(format)
+    } else {
+      throw new IllegalArgumentException(s"${cls.getCanonicalName} is not supported")
     }
   }
 }

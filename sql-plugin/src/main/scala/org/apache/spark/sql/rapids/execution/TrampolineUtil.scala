@@ -18,17 +18,19 @@ package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
 
-import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
+import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.internal.config.EXECUTOR_ID
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
@@ -43,9 +45,10 @@ object TrampolineUtil {
   def unionLikeMerge(left: DataType, right: DataType): DataType =
     ShimTrampolineUtil.unionLikeMerge(left, right)
 
-  def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
+  def fromAttributes(attrs: Seq[Attribute]): StructType = DataTypeUtilsShim.fromAttributes(attrs)
 
-  def toAttributes(structType: StructType): Seq[Attribute] = structType.toAttributes
+  def toAttributes(structType: StructType): Seq[Attribute] =
+    DataTypeUtilsShim.toAttributes(structType)
 
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
 
@@ -170,5 +173,28 @@ object TrampolineUtil {
 
   def getSparkConf(spark: SparkSession): SQLConf = {
     spark.sqlContext.conf
+  }
+
+  def setExecutorEnv(sc: SparkContext, key: String, value: String): Unit = {
+    sc.executorEnvs(key) = value
+  }
+
+  def createCodec(conf: SparkConf, codecName: String): CompressionCodec = {
+    CompressionCodec.createCodec(conf, codecName)
+  }
+
+  def getCodecShortName(codecName: String): String = CompressionCodec.getShortName(codecName)
+
+  // If the master is a local mode (local or local-cluster), return the number
+  // of cores per executor it is going to use, otherwise return 1.
+  def getCoresInLocalMode(master: String, conf: SparkConf): Int = {
+    master match {
+      case SparkMasterRegex.LOCAL_CLUSTER_REGEX(_, coresPerWorker, _) =>
+        coresPerWorker.toInt
+      case master if master.startsWith("local") =>
+        SparkContext.numDriverCores(master, conf)
+      case _ =>
+        1
+    }
   }
 }

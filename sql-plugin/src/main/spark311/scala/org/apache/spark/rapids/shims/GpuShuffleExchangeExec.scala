@@ -31,6 +31,7 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
@@ -46,7 +47,8 @@ import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetr
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)(
+    shuffleOrigin: ShuffleOrigin,
+    advisoryPartitionSize: Option[Long] = None)(
     cpuOutputPartitioning: Partitioning)
     extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
         with ShuffleExchangeLike {

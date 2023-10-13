@@ -67,7 +67,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
   private final long targetBatchSizeBytes;
 
   private final boolean useChunkedReader;
-  private final String parquetDebugDumpPrefix;
+  private final scala.Option<String> parquetDebugDumpPrefix;
+  private final boolean parquetDebugDumpAlways;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
   private final boolean useMultiThread;
   private final FileFormat fileFormat;
@@ -85,7 +86,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       boolean caseSensitive, Configuration conf, int maxBatchSizeRows, long maxBatchSizeBytes,
       long targetBatchSizeBytes,
       boolean useChunkedReader,
-      String parquetDebugDumpPrefix, int numThreads, int maxNumFileProcessed,
+      scala.Option<String> parquetDebugDumpPrefix, boolean parquetDebugDumpAlways,
+      int numThreads, int maxNumFileProcessed,
       boolean useMultiThread, FileFormat fileFormat,
       scala.collection.immutable.Map<String, GpuMetric> metrics,
       boolean queryUsesInputFile) {
@@ -98,6 +100,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     this.targetBatchSizeBytes = targetBatchSizeBytes;
     this.useChunkedReader = useChunkedReader;
     this.parquetDebugDumpPrefix = parquetDebugDumpPrefix;
+    this.parquetDebugDumpAlways = parquetDebugDumpAlways;
     this.useMultiThread = useMultiThread;
     this.fileFormat = fileFormat;
     this.metrics = metrics;
@@ -329,7 +332,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     protected FilePartitionReaderBase createRapidsReader(PartitionedFile[] pFiles,
         StructType partitionSchema) {
       return new MultiFileCloudParquetPartitionReader(conf, pFiles,
-          this::filterParquetBlocks, caseSensitive, parquetDebugDumpPrefix,
+          this::filterParquetBlocks, caseSensitive, parquetDebugDumpPrefix, parquetDebugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader,
           metrics, partitionSchema,
           numThreads, maxNumFileProcessed,
@@ -403,8 +406,9 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
       return new MultiFileParquetPartitionReader(conf, pFiles,
           JavaConverters.asScalaBuffer(clippedBlocks).toSeq(),
-          caseSensitive, parquetDebugDumpPrefix, useChunkedReader, maxBatchSizeRows,
-          maxBatchSizeBytes, targetBatchSizeBytes, metrics, partitionSchema, numThreads,
+          caseSensitive, parquetDebugDumpPrefix, parquetDebugDumpAlways, useChunkedReader,
+          maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, metrics, partitionSchema,
+          numThreads,
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles
           false // useFieldId

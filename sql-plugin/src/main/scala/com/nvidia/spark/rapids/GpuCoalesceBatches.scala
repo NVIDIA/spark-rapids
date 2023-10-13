@@ -22,6 +22,8 @@ import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -91,7 +93,7 @@ object ConcatAndConsumeAll {
    */
   def getSingleBatchWithVerification(batches: Iterator[ColumnarBatch],
       format: Seq[Attribute]): ColumnarBatch = {
-    import collection.JavaConverters._
+    import scala.collection.JavaConverters._
     if (!batches.hasNext) {
       GpuColumnVector.emptyBatch(format.asJava)
     } else {
@@ -300,10 +302,12 @@ abstract class AbstractGpuCoalesceIterator(
   /** Optional row limit */
   var batchRowLimit: Int = 0
 
-  // note that TaskContext.get() can return null during unit testing so we wrap it in an
-  // option here
-  Option(TaskContext.get())
-      .foreach(_.addTaskCompletionListener[Unit](_ => clearOnDeck()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      clearOnDeck()
+    }
+  }
 
   private def getHasOnDeck: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
@@ -407,6 +411,26 @@ abstract class AbstractGpuCoalesceIterator(
   }
 
   /**
+   * A Simple wrapper around a ColumnarBatch to let us avoid closing it in some cases.
+   */
+  private class BatchWrapper(var cb: ColumnarBatch) extends AutoCloseable {
+    def get: ColumnarBatch = cb
+
+    def release: ColumnarBatch = {
+      val tmp = cb
+      cb = null
+      tmp
+    }
+
+    override def close(): Unit = {
+      if (cb != null) {
+        cb.close()
+        cb = null
+      }
+    }
+  }
+
+  /**
    * Add input batches to the `batches` collection up to the limit specified
    * by the goal. Note: for a size goal, if any incoming batch is greater than this size
    * it will be passed through unmodified.
@@ -444,13 +468,13 @@ abstract class AbstractGpuCoalesceIterator(
       }
 
       while(maybeFilteredIter.hasNext) {
-        var cb = maybeFilteredIter.next()
+        val cb = new BatchWrapper(maybeFilteredIter.next())
         closeOnExcept(cb) { _ =>
-          val nextRows = cb.numRows()
+          val nextRows = cb.get.numRows()
           // filter out empty batches
           if (nextRows > 0) {
             numInputRows += nextRows
-            val nextBytes = getBatchDataSize(cb)
+            val nextBytes = getBatchDataSize(cb.get)
 
             // calculate the new sizes based on this input batch being added to the current
             // output batch
@@ -485,9 +509,10 @@ abstract class AbstractGpuCoalesceIterator(
                       }
                     }
                     // 2) Filter the incoming batch.
-                    val filteredCbIter = GpuFilter.filterAndClose(cb, filterTier,
+                    // filterAndClose takes ownership of CB so we should not close it on a failure
+                    // anymore...
+                    val filteredCbIter = GpuFilter.filterAndClose(cb.release, filterTier,
                       NoopMetric, NoopMetric, opTime)
-                    cb = null // null out `cb` to prevent multiple close calls
                     while (filteredCbIter.hasNext) {
                       closeOnExcept(filteredCbIter.next()) { filteredCb =>
                         val filteredWouldBeRows = filteredNumRows + filteredCb.numRows()
@@ -518,23 +543,23 @@ abstract class AbstractGpuCoalesceIterator(
                       s"At least $wouldBeRows are in this partition, even after filtering " +
                       s"nulls. Please try increasing your partition count.")
                   }
-                case _ => saveOnDeck(cb) // not a single batch requirement
+                case _ => saveOnDeck(cb.get) // not a single batch requirement
               }
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
-              saveOnDeck(cb)
+              saveOnDeck(cb.get)
             } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
               // There are no explicit checks for the concatenate result exceeding the cudf 2^31
               // row count limit for any column. We are relying on cudf's concatenate to throw
               // an exception if this occurs and limiting performance-oriented goals to under
               // 2GB data total to avoid hitting that error.
-              saveOnDeck(cb)
+              saveOnDeck(cb.get)
             } else {
-              addBatch(cb)
+              addBatch(cb.get)
               numRows = wouldBeRows
               numBytes = wouldBeBytes
             }
           } else {
-            cleanupInputBatch(cb)
+            cleanupInputBatch(cb.get)
           }
         } // end of closeOnExcept(cb)
       } // end of while(maybeFilteredIter.hasNext)
@@ -646,7 +671,7 @@ abstract class AbstractGpuCoalesceIterator(
         val it = batchesToCoalesce.batches
         val numBatches = it.length
         if (numBatches <= 1) {
-          throw new OutOfMemoryError(s"Cannot split a sequence of $numBatches batches")
+          throw new SplitAndRetryOOM(s"Cannot split a sequence of $numBatches batches")
         }
         val res = it.splitAt(numBatches / 2)
         Seq(BatchesToCoalesce(res._1), BatchesToCoalesce(res._2))

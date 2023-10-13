@@ -18,6 +18,7 @@
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -51,15 +52,14 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     origProvider =
       GpuDataSourceBase.lookupDataSourceWithFallback(cmd.table.provider.get,
         spark.sessionState.conf)
-    origProvider.getConstructor().newInstance() match {
-      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark,
-          cmd.table.storage.properties, cmd.query.schema)
-      case ds =>
-        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
-        None
+    if (classOf[FileFormat].isAssignableFrom(origProvider) &&
+      GpuOrcFileFormat.isSparkOrcFormat(origProvider.asInstanceOf[Class[_ <: FileFormat]])) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
+    } else if (origProvider == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark,
+        cmd.table.storage.properties, cmd.query.schema)
+    } else {
+      willNotWorkOnGpu(s"Data source class not supported: $origProvider")
     }
   }
 

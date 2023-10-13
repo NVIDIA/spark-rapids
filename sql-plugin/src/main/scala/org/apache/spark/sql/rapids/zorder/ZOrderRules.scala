@@ -44,7 +44,7 @@ object ZOrderRules {
         TypeSig.INT,
         TypeSig.INT,
         // Same as RangePartitioningExec
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+        pluginSupportedOrderableSig,
         TypeSig.orderable),
       (a, conf, p, r) => new UnaryExprMeta[UnaryExpression](a, conf, p, r) {
         def getBoundsNOrder: (Array[InternalRow], SortOrder) = {

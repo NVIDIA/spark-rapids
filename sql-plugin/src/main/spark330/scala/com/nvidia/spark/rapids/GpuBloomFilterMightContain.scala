@@ -24,11 +24,13 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.TaskContext
@@ -49,7 +51,12 @@ case class GpuBloomFilterMightContain(
       case s: GpuScalar => GpuBloomFilter(s)
       case x => throw new IllegalStateException(s"Expected GPU scalar, found $x")
     }
-    Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+    // Don't install the callback if in a unit test
+    Option(TaskContext.get()).foreach { tc =>
+      onTaskCompletion(tc) {
+        close()
+      }
+    }
     ret
   }
 

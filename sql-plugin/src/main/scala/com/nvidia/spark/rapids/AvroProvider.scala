@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.sources.Filter
-import org.apache.spark.util.SerializableConfiguration
 
 trait AvroProvider {
   /** If the file format is supported as an external source */
-  def isSupportedFormat(format: FileFormat): Boolean
-
-  def isPerFileReadEnabledForFormat(format: FileFormat, conf: RapidsConf): Boolean
+  def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
@@ -38,19 +32,5 @@ trait AvroProvider {
    */
   def getReadFileFormat(format: FileFormat): FileFormat
 
-  /**
-   * Create a multi-file reader factory for the input format.
-   * Better to check if the format is supported first by calling 'isSupportedFormat'
-   */
-  def createMultiFileReaderFactory(
-      format: FileFormat,
-      broadcastedConf: Broadcast[SerializableConfiguration],
-      pushedFilters: Array[Filter],
-      fileScan: GpuFileSourceScanExec): PartitionReaderFactory
-
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-
-  def isSupportedScan(scan: Scan): Boolean
-
-  def copyScanWithInputFileTrue(scan: Scan): Scan
 }

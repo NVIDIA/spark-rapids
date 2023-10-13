@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
@@ -324,24 +324,23 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
 
     val spark = SparkSession.active
-
-    fileFormat = cmd.fileFormat match {
-      case _: CSVFileFormat =>
-        willNotWorkOnGpu("CSV output is not supported")
-        None
-      case _: JsonFileFormat =>
-        willNotWorkOnGpu("JSON output is not supported")
-        None
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: TextFileFormat =>
-        willNotWorkOnGpu("text output is not supported")
-        None
-      case f =>
-        willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
-        None
+    val formatCls = cmd.fileFormat.getClass
+    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+      willNotWorkOnGpu("CSV output is not supported")
+      None
+    } else if (formatCls == classOf[JsonFileFormat]) {
+      willNotWorkOnGpu("JSON output is not supported")
+      None
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(formatCls)) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[TextFileFormat]) {
+      willNotWorkOnGpu("text output is not supported")
+      None
+    } else {
+      willNotWorkOnGpu(s"unknown file format: ${formatCls.getCanonicalName}")
+      None
     }
   }
 
@@ -393,7 +392,7 @@ trait GpuOverridesListener {
   def optimizedPlan(
       plan: SparkPlanMeta[SparkPlan],
       sparkPlan: SparkPlan,
-      costOptimizations: Seq[Optimization])
+      costOptimizations: Seq[Optimization]): Unit
 }
 
 sealed trait FileFormatType
@@ -458,10 +457,9 @@ object GpuOverrides extends Logging {
     ret
   }
 
-  private[this] val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
+  val gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128
 
-  val pluginSupportedOrderableSig: TypeSig =
-    _gpuCommonTypes + TypeSig.STRUCT.nested(_gpuCommonTypes)
+  val pluginSupportedOrderableSig: TypeSig = (gpuCommonTypes + TypeSig.STRUCT).nested()
 
   private[this] def isStructType(dataType: DataType) = dataType match {
     case StructType(_) => true
@@ -696,6 +694,28 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
+  def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
+    def findRootProcessingNode(plan: SparkPlan): SparkPlan = plan match {
+      case p: AdaptiveSparkPlanExec => findRootProcessingNode(p.executedPlan)
+      case p: QueryStageExec => findRootProcessingNode(p.plan)
+      case p: ReusedSubqueryExec => findRootProcessingNode(p.child)
+      case p: ReusedExchangeExec => findRootProcessingNode(p.child)
+      case p => p
+    }
+
+    val aqeSubPlan = findRootProcessingNode(adaptivePlan.executedPlan)
+    aqeSubPlan match {
+      case _: GpuExec =>
+        // plan is already on the GPU
+        true
+      case p =>
+        // see if the root processing node of the current subplan will translate to the GPU
+        val meta = GpuOverrides.wrapAndTagPlan(p, conf)
+        meta.canThisBeReplaced
+    }
+  }
 
   def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_,_]): Unit = {
     if (!conf.isFloatAggEnabled && isOrContainsFloatingPoint(dataType)) {
@@ -1420,11 +1440,11 @@ object GpuOverrides extends Logging {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
+        (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
+          (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
             TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
@@ -1984,16 +2004,16 @@ object GpuOverrides extends Logging {
     expr[If](
       "IF expression",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
+        (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
-            (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
+            (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
                 TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
-            (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
+            (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
                 TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
@@ -2046,14 +2066,12 @@ object GpuOverrides extends Logging {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
-         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
-           .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
+        pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
+            .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
-           TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+          pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
              .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
@@ -3032,6 +3050,61 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
       }),
+    expr[Conv](
+      desc = "Convert string representing a number from one base to another",
+      pluginChecks = ExprChecks.projectOnly(
+        outputCheck = TypeSig.STRING,
+        paramCheck = Seq(
+          ParamCheck(
+            name = "num",
+            cudf = TypeSig.STRING,
+            spark = TypeSig.STRING),
+          ParamCheck(
+            name = "from_base",
+            cudf = TypeSig.integral
+              .withAllLit()
+              .withInitialTypesPsNote("only values 10 and 16 are supported"),
+            spark = TypeSig.integral),
+          ParamCheck(
+            name = "to_base",
+            cudf = TypeSig.integral
+              .withAllLit()
+              .withInitialTypesPsNote("only values 10 and 16 are supported"),
+            spark = TypeSig.integral)),
+        sparkOutputSig = TypeSig.STRING),
+        (convExpr, conf, parentMetaOpt, dataFromReplacementRule) =>
+          new GpuConvMeta(convExpr, conf, parentMetaOpt, dataFromReplacementRule)
+    ).disabledByDefault(
+      """GPU implementation is incomplete. We currently only support from/to_base values
+         |of 10 and 16. We fall back on CPU if the signed conversion is signalled via
+         |a negative to_base.
+         |GPU implementation does not check for an 64-bit signed/unsigned int overflow when
+         |performing the conversion to return `FFFFFFFFFFFFFFFF` or `18446744073709551615` or
+         |to throw an error in the ANSI mode.
+         |It is safe to enable if the overflow is not possible or detected externally.
+         |For instance decimal strings not longer than 18 characters / hexadecimal strings
+         |not longer than 15 characters disregarding the sign cannot cause an overflow.
+         """.stripMargin.replaceAll("\n", " ")),
+    expr[FormatNumber](
+      "Formats the number x like '#,###,###.##', rounded to d decimal places.",
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
+        ("x", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT+TypeSig.STRING)),
+      (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          in.children.head.dataType match {
+            case FloatType | DoubleType if !conf.isFloatFormatNumberEnabled =>
+              willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
+                  "results that have a different precision than the default results of Spark. " +
+                  "To enable this operation on the GPU, set" +
+                  s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
+            case _ =>
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuFormatNumber(lhs, rhs)
+      }
+    ),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3534,6 +3607,14 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[RaiseError](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRaiseError(child)
       }),
+    expr[DynamicPruningExpression](
+      "Dynamic pruning expression marker",
+      ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+      (a, conf, p, r) => new UnaryExprMeta[DynamicPruningExpression](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = {
+          GpuDynamicPruningExpression(child)
+        }
+      }),
     SparkShimImpl.ansiCastRule
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
 
@@ -3541,7 +3622,7 @@ object GpuOverrides extends Logging {
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
-        BloomFilterShims.exprs ++ SparkShimImpl.getExprs
+        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -3557,7 +3638,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuCSVScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3574,7 +3655,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[JsonScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuJsonScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuJsonScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3631,8 +3712,7 @@ object GpuOverrides extends Logging {
     part[RangePartitioning](
       "Range partitioning",
       PartChecks(RepeatingParamCheck("order_key",
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
-         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128)
+        pluginSupportedOrderableSig + TypeSig.ARRAY.nested(gpuCommonTypes)
            .withPsNote(TypeEnum.ARRAY, "STRUCT is not supported as a child type for ARRAY"),
         TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
@@ -3757,7 +3837,7 @@ object GpuOverrides extends Logging {
       (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
-      ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
+      ExecChecks((gpuCommonTypes + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP + TypeSig.BINARY + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all),
       (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
@@ -3768,10 +3848,7 @@ object GpuOverrides extends Logging {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128.withPsNote(
           TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
-          TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
-          TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
-          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-          TypeSig.BINARY.withPsNote(TypeEnum.BINARY, "Only supported for Parquet") +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
@@ -3790,7 +3867,7 @@ object GpuOverrides extends Logging {
       "Take the first limit elements as defined by the sortOrder, and do projection if needed",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 +
+      ExecChecks((pluginSupportedOrderableSig +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
@@ -3985,7 +4062,7 @@ object GpuOverrides extends Logging {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.ARRAY +
           TypeSig.STRUCT +TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[SortMergeJoinExec](

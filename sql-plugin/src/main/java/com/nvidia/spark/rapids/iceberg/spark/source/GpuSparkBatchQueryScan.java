@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -368,7 +368,7 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
   }
 
   /** Return a copy of "this" but with "queryUsesInputFile = true" */
-  public GpuSparkBatchQueryScan copyWithInputFileTrue() {
+  public GpuSparkBatchQueryScan withInputFile() {
     return new GpuSparkBatchQueryScan(SparkSession.active(), table(), this.scan, readConf(),
         expectedSchema(), filterExpressions(), rapidsConf(),
         true // queryUsesInputFile

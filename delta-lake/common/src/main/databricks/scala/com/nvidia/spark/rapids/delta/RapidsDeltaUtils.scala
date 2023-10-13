@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
-import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, TypeSig, WriteFileOp}
+import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuOverrides, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 
 import org.apache.spark.sql.SparkSession
@@ -33,11 +33,11 @@ object RapidsDeltaUtils {
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    DeltaLogShim.fileFormat(deltaLog) match {
-      case _: DeltaParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
-      case f =>
-        meta.willNotWorkOnGpu(s"file format $f is not supported")
+    val format = DeltaLogShim.fileFormat(deltaLog)
+    if (format.getClass == classOf[DeltaParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
+    } else {
+      meta.willNotWorkOnGpu(s"file format $format is not supported")
     }
     checkIncompatibleConfs(meta, schema, deltaLog, spark.sessionState.conf, options)
   }
@@ -60,8 +60,7 @@ object RapidsDeltaUtils {
     // can involve a sort on all columns. The GPU doesn't currently support sorting on all types,
     // so we fallback if the GPU cannot support the round-robin partitioning.
     if (sqlConf.sortBeforeRepartition) {
-      val orderableTypeSig = (GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128
-          + TypeSig.STRUCT).nested()
+      val orderableTypeSig = GpuOverrides.pluginSupportedOrderableSig
       val unorderableTypes = schema.map(_.dataType).filterNot { t =>
         orderableTypeSig.isSupportedByPlugin(t)
       }
