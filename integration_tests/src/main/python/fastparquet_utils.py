@@ -16,7 +16,7 @@ import pytest
 
 from pyspark.sql import Row
 
-def get_fastparquet_result_converter():
+def get_fastparquet_result_canonicalizer():
     # Get a converter like fastparquet that flattens the GPU results.
     # e.g.:
     # Row(a = Row(b1 = 1, b2 = 2)) => Row(a.b1 = 1, a.b2 = 2)
