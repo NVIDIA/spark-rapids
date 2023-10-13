@@ -61,6 +61,9 @@ case class CudfMergeHistogram(override val dataType: DataType)
   override val name: String = "CudfMergeHistogram"
 }
 
+/**
+ * Perform the final evaluation step to compute percentiles from histograms.
+ */
 case class GpuPercentileEvaluation(childExpr: Expression, percentage: Either[Double, Array[Double]],
                                    outputType: DataType, isReduction: Boolean)
   extends GpuExpression with ShimExpression {
@@ -127,7 +130,7 @@ abstract class GpuPercentile(childExpr: Expression, percentageLit: GpuLiteral,
 }
 
 /**
- * Compute percentile from the input values.
+ * Compute percentiles from just the input values.
  */
 case class GpuPercentileDefault(childExpr: Expression, percentage: GpuLiteral,
                                 isReduction: Boolean)
@@ -138,15 +141,14 @@ case class GpuPercentileDefault(childExpr: Expression, percentage: GpuLiteral,
 }
 
 /**
- * Compute percentile of the input values associated with frequencies.
+ * Compute percentiles from the input values associated with frequencies.
  */
 case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLiteral,
                                       frequencyExpr: Expression, isReduction: Boolean)
   extends GpuPercentile(childExpr, percentage, isReduction) {
   override lazy val inputProjection: Seq[Expression] = {
     val outputType: DataType = if(isReduction) {
-      StructType(Seq(StructField("value", childExpr.dataType),
-        StructField("frequency", LongType)))
+      StructType(Seq(StructField("value", childExpr.dataType), StructField("frequency", LongType)))
     } else {
       aggregationBufferType
     }
@@ -155,6 +157,12 @@ case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLite
   override lazy val updateAggregates: Seq[CudfAggregate] =  Seq(CudfMergeHistogram(dataType))
 }
 
+/**
+ * Create a histogram buffer from the input values and frequencies.
+ *
+ * The frequencies are also checked to ensure that they are non-negative. If a negative frequency
+ * exists, an exception will be thrown.
+ */
 case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Expression,
                                      isReduction: Boolean, outputType: DataType)
   extends GpuExpression with ShimExpression {
@@ -166,6 +174,7 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(valuesExpr.columnarEval(batch)) { values =>
       withResourceIfAllowed(frequenciesExpr.columnarEval(batch)) { frequencies =>
+        // If a negative frequency exists, an exception will be thrown from here.
         val histograms = Histogram.createHistogramIfValid(values.getBase, frequencies.getBase,
           /*outputAsLists = */ !isReduction)
         GpuColumnVector.from(histograms, outputType)
@@ -186,6 +195,9 @@ object GpuPercentile{
   }
 }
 
+/**
+ * Convert the incoming byte stream received from Spark CPU into internal histogram buffer format.
+ */
 case class CpuToGpuPercentileBufferConverter(elementType: DataType)
   extends CpuToGpuAggregateBufferConverter {
   override def createExpression(child: Expression): CpuToGpuBufferTransition =
@@ -228,6 +240,9 @@ case class CpuToGpuPercentileBufferTransition(override val child: Expression, el
   }
 }
 
+/**
+ * Convert the internal histogram buffer into a byte stream that can be deserialized by Spark CPU.
+ */
 case class GpuToCpuPercentileBufferConverter(elementType: DataType)
   extends GpuToCpuAggregateBufferConverter {
   override def createExpression(child: Expression): GpuToCpuBufferTransition =
