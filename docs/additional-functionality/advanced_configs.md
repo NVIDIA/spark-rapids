@@ -383,6 +383,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last`, `last_value`|last aggregate operator|true|None|
 <a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|`max`|Max aggregate operator|true|None|
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|`min`|Min aggregate operator|true|None|
+<a name="sql.expression.Percentile"></a>spark.rapids.sql.expression.Percentile|`percentile`|Aggregation computing exact percentile|true|This is not 100% compatible with the Spark version because the GPU implementation of percentile is not bit-for-bit compatible with Apache Spark|
 <a name="sql.expression.PivotFirst"></a>spark.rapids.sql.expression.PivotFirst| |PivotFirst operator|true|None|
 <a name="sql.expression.StddevPop"></a>spark.rapids.sql.expression.StddevPop|`stddev_pop`|Aggregation computing population standard deviation|true|None|
 <a name="sql.expression.StddevSamp"></a>spark.rapids.sql.expression.StddevSamp|`stddev_samp`, `std`, `stddev`|Aggregation computing sample standard deviation|true|None|
