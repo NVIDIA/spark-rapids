@@ -262,6 +262,7 @@ def pytest_collection_modifyitems(config, items):
         # decide if OOMs should be injected, and when
         injection_mode = config.getoption('test_oom_injection_mode').lower()
         inject_choice = False
+        extras.append('DATAGEN_SEED=%s' % str(test_datagen_random_seed))
         if injection_mode == 'random':
             inject_choice = r.randrange(0, 2) == 1
         elif injection_mode == 'always':
