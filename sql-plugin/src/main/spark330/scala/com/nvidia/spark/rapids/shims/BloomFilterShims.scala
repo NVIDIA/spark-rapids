@@ -32,7 +32,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
-
+import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate
 
 object BloomFilterShims {
   val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
