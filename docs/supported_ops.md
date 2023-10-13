@@ -13283,11 +13283,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">Stack</td>
-<td rowSpan="2">`stack`</td>
-<td rowSpan="2">Separates expr1, ..., exprk into n rows.</td>
-<td rowSpan="2">None</td>
-<td rowSpan="2">project</td>
+<td rowSpan="3">Stack</td>
+<td rowSpan="3">`stack`</td>
+<td rowSpan="3">Separates expr1, ..., exprk into n rows.</td>
+<td rowSpan="3">None</td>
+<td rowSpan="3">project</td>
+<td>n</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>Literal value only</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td>expr</td>
 <td>S</td>
 <td>S</td>
