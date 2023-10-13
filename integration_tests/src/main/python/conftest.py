@@ -113,7 +113,6 @@ _limit = -1
 _inject_oom = None
 
 def should_inject_oom():
-    global _inject_oom
     return _inject_oom != None
 
 def get_limit():
