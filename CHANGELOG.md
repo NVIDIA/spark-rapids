@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-10-12
+Generated on 2023-10-13
 
 ## Release 23.10
 
@@ -42,6 +42,7 @@ Generated on 2023-10-12
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9060](https://github.com/NVIDIA/spark-rapids/issues/9060)|[BUG] OOM error in split and retry with multifile coalesce reader with parquet data|
 |[#8916](https://github.com/NVIDIA/spark-rapids/issues/8916)|[BUG] Databricks - move init scripts off DBFS|
 |[#9416](https://github.com/NVIDIA/spark-rapids/issues/9416)|[BUG] CDH build failed due to missing dependencies|
 |[#9357](https://github.com/NVIDIA/spark-rapids/issues/9357)|[BUG] json_test failed on "NameError: name 'TimestampNTZType' is not defined"|
