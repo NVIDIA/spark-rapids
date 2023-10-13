@@ -12,25 +12,10 @@ Generated on 2023-10-13
 |[#9057](https://github.com/NVIDIA/spark-rapids/issues/9057)|[FEA] Add unbounded to unbounded fixers for min and max|
 |[#8121](https://github.com/NVIDIA/spark-rapids/issues/8121)|[FEA] Add Spark 3.5.0 shim layer|
 |[#9224](https://github.com/NVIDIA/spark-rapids/issues/9224)|[FEA] Allow } and }} to be transpiled to static strings|
-|[#8314](https://github.com/NVIDIA/spark-rapids/issues/8314)|[FEA] SupportSplitAndRetry for GpuRangeExec|
 |[#8596](https://github.com/NVIDIA/spark-rapids/issues/8596)|[FEA] Support spark.sql.legacy.parquet.datetimeRebaseModeInWrite=LEGACY|
-|[#8816](https://github.com/NVIDIA/spark-rapids/issues/8816)|[FEA] Write the rest of the scale test queries|
-|[#8315](https://github.com/NVIDIA/spark-rapids/issues/8315)|[FEA] Support Retry for GpuBaseLimitExec|
-|[#8310](https://github.com/NVIDIA/spark-rapids/issues/8310)|[FEA] Support Split and Retry for GpuTopN|
-|[#8352](https://github.com/NVIDIA/spark-rapids/issues/8352)|[FEA] Add retry support to GpuSorter.fullySortBatch|
-|[#8814](https://github.com/NVIDIA/spark-rapids/issues/8814)|[FEA] Write Initial Set of scale test queries + application|
-|[#8388](https://github.com/NVIDIA/spark-rapids/issues/8388)|[FEA] Update GpuCachedDoublePassWindowIterator to use RetryWithSplit|
 |[#8767](https://github.com/NVIDIA/spark-rapids/issues/8767)|[AUDIT][SPARK-43302][SQL] Make Python UDAF an AggregateFunction|
-|[#1255](https://github.com/NVIDIA/spark-rapids/issues/1255)|[FEA] Add spark.sql.caseSensitive integration tests|
-|[#8998](https://github.com/NVIDIA/spark-rapids/issues/8998)|[AUDIT][SPARK-43525][BUILD] Import `scala.collection` instead of `collection`|
-|[#9017](https://github.com/NVIDIA/spark-rapids/issues/9017)|[FEA] [SPARK-39979][SQL] Add option to use large variable width vectors for arrow UDF operations|
-|[#9055](https://github.com/NVIDIA/spark-rapids/issues/9055)|[FEA]  Make Spark 3.3.3 official release|
-|[#8885](https://github.com/NVIDIA/spark-rapids/issues/8885)|[FEA] CUDF API to get allocation size needed for copy to host.|
-|[#8912](https://github.com/NVIDIA/spark-rapids/issues/8912)|[FEA] Dump host buffer on cuDF reader error|
+|[#9055](https://github.com/NVIDIA/spark-rapids/issues/9055)|[FEA]  Support Spark 3.3.3 official release|
 |[#8672](https://github.com/NVIDIA/spark-rapids/issues/8672)|[FEA] Make GPU readers easier to debug on failure (any failure including OOM)|
-|[#8813](https://github.com/NVIDIA/spark-rapids/issues/8813)|[FEA] Write entry point to generate data for scale testing.|
-|[#8808](https://github.com/NVIDIA/spark-rapids/issues/8808)|[FEA] Match Spark's NaN handling in `collect_set` for nested type contains float/double|
-|[#9008](https://github.com/NVIDIA/spark-rapids/issues/9008)|[FEA] Make databricks CI pipeline use a multi-shim jar.|
 |[#8965](https://github.com/NVIDIA/spark-rapids/issues/8965)|[FEA] Enable Bloom filter join acceleration by default|
 |[#8625](https://github.com/NVIDIA/spark-rapids/issues/8625)|[FEA] Support outputTimestampType being INT96|
 
@@ -54,6 +39,7 @@ Generated on 2023-10-13
 |[#9290](https://github.com/NVIDIA/spark-rapids/issues/9290)|[BUG] delta_lake_test FAILED on "column mapping mode id is not supported for this Delta version"|
 |[#9255](https://github.com/NVIDIA/spark-rapids/issues/9255)|[BUG] Unable to read DeltaTable with columnMapping.mode = name|
 |[#9261](https://github.com/NVIDIA/spark-rapids/issues/9261)|[BUG] Leaks and Double Frees in Unit Tests|
+|[#9246](https://github.com/NVIDIA/spark-rapids/issues/9246)|[BUG] `test_predefined_character_classes` failed with seed 4|
 |[#9208](https://github.com/NVIDIA/spark-rapids/issues/9208)|[BUG] SplitAndRetryOOM query14_part1 at 100TB with spark.executor.cores=64|
 |[#9106](https://github.com/NVIDIA/spark-rapids/issues/9106)|[BUG] Configuring GDS breaks new host spillable buffers and batches|
 |[#9131](https://github.com/NVIDIA/spark-rapids/issues/9131)|[BUG] ConcurrentModificationException in ScalableTaskCompletion|
