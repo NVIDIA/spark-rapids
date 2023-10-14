@@ -21,15 +21,7 @@ package org.apache.spark.sql.rapids.shims.spark321db
 
 import org.apache.spark.SparkConf
 import org.apache.spark.shuffle._
-import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
-
-/**
- * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
- * @note This is an internal class to obtain access to the private
- *       `ShuffleManager` and `SortShuffleManager` classes.
- */
-class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends RapidsShuffleInternalManagerBase(conf, isDriver)
+import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
 
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
