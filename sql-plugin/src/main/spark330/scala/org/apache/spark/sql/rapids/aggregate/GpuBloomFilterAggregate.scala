@@ -27,17 +27,17 @@
 {"spark": "341"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.aggregate
 
 import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuBloomFilterAggregate.optimalNumOfHashFunctions
+import com.nvidia.spark.rapids.GpuLiteral
 import com.nvidia.spark.rapids.jni.BloomFilter
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
+import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate.optimalNumOfHashFunctions
 import org.apache.spark.sql.types.{BinaryType, DataType}
 
 case class GpuBloomFilterAggregate(

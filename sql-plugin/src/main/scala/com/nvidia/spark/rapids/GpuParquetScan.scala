@@ -890,26 +890,27 @@ private case class GpuParquetFileFilterHandler(
           }
         } else {
           val fileGroupType = fileType.asGroupType()
-          if (fileGroupType.getFieldCount != 1 ||
-              !fileGroupType.getType(0).isRepetition(Type.Repetition.REPEATED)) {
-            // LIST column must have a single, REPEATED child field.
-            // Otherwise, signal error.
-            errorCallback(fileType, readType)
+          if (fileGroupType.getFieldCount > 1 &&
+              fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
+            // legacy array format where struct child is directly repeated under array type group
+            checkSchemaCompat(fileGroupType, array.elementType, errorCallback, isCaseSensitive,
+              useFieldId, rootFileType, rootReadType)
+          } else {
+            val repeatedType = fileGroupType.getType(0)
+            val childType =
+              if (isElementType(repeatedType, fileType.getName)) {
+                // Legacy element, per Parquet LogicalType backward compatibility rules.
+                // Retain the child as the element type.
+                repeatedType
+              }
+              else {
+                // Conforms to current Parquet LogicalType rules.
+                // Unwrap child group layer, and use grandchild's element type.
+                repeatedType.asGroupType().getType(0)
+              }
+            checkSchemaCompat(childType, array.elementType, errorCallback, isCaseSensitive,
+              useFieldId, rootFileType, rootReadType)
           }
-          val repeatedType = fileGroupType.getType(0)
-          val childType =
-            if (isElementType(repeatedType, fileType.getName)) {
-              // Legacy element, per Parquet LogicalType backward compatibility rules.
-              // Retain the child as the element type.
-              repeatedType
-            }
-            else {
-              // Conforms to current Parquet LogicalType rules.
-              // Unwrap child group layer, and use grandchild's element type.
-              repeatedType.asGroupType().getType(0)
-            }
-          checkSchemaCompat(childType, array.elementType, errorCallback, isCaseSensitive,
-            useFieldId, rootFileType, rootReadType)
         }
 
       case map: MapType =>
