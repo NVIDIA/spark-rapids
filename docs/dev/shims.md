@@ -118,7 +118,7 @@ By making a visible class merely a wrapper of the real implementation, extending
 val, we prevent classes from Parallel Worlds to be loaded before they can be, and are actually required.
 For examples see:
 
-1. `abstract class ProxyRapidsShuffleInternalManagerBase`
+1. `class ProxyRapidsShuffleInternalManagerBase`
 2. `class ExclusiveModeGpuDiscoveryPlugin`
 
 Note that we currently have to manually code up the delegation methods to the tune of:

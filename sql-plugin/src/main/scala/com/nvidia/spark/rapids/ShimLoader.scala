@@ -128,11 +128,6 @@ object ShimLoader extends Logging {
     s"com.nvidia.spark.rapids.$shimId.RapidsShuffleManager"
   }
 
-  def getRapidsShuffleInternalClass: String = {
-    initShimProviderIfNeeded()
-    s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
-  }
-
   @tailrec
   private def findURLClassLoader(classLoader: ClassLoader): Option[ClassLoader] = {
     // walk up the classloader hierarchy until we hit a classloader we can mutate
@@ -347,7 +342,7 @@ object ShimLoader extends Logging {
 
   def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): Any = {
     val shuffleClassLoader = getShimClassLoader()
-    val shuffleClassName = getRapidsShuffleInternalClass
+    val shuffleClassName = "org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase"
     val shuffleClass = shuffleClassLoader.loadClass(shuffleClassName)
     shuffleClass.getConstructor(classOf[SparkConf], java.lang.Boolean.TYPE)
         .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
