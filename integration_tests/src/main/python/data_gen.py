@@ -983,7 +983,7 @@ def _convert_to_sql(spark_type, data):
     else:
         return 'CAST({} as {})'.format(d, to_cast_string(spark_type))
 
-def gen_scalars_for_sql(data_gen, count, seed=get_datagen_seed, force_no_nulls=False):
+def gen_scalars_for_sql(data_gen, count, seed=None, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
     src = _gen_scalars_common(data_gen, count, seed=seed)
     if isinstance(data_gen, NullGen):
