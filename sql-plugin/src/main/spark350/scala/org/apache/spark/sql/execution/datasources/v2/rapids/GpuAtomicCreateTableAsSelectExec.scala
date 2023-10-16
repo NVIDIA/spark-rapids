@@ -29,7 +29,6 @@ import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec}
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.execution.ColumnarToRowTransition
 import org.apache.spark.sql.execution.datasources.v2.V2CreateTableAsSelectBaseExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -52,7 +51,7 @@ case class GpuAtomicCreateTableAsSelectExec(
     tableSpec: TableSpec,
     writeOptions: Map[String, String],
     ifNotExists: Boolean)
-  extends V2CreateTableAsSelectBaseExec with GpuExec with ColumnarToRowTransition {
+  extends V2CreateTableAsSelectBaseExec with GpuExec {
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
