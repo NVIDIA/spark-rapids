@@ -30,6 +30,7 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
