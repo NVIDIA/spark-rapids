@@ -259,7 +259,6 @@ def test_sequence_without_step(start_gen, stop_gen):
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get a step scalar from the 'step_gen' which follows the rules.
-    step_gen.start(random.Random(0))
     step_lit = step_gen.gen()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
