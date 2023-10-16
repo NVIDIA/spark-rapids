@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-10-13
+Generated on 2023-10-16
 
 ## Release 23.10
 
@@ -81,6 +81,8 @@ Generated on 2023-10-13
 ### PRs
 |||
 |:---|:---|
+|[#9445](https://github.com/NVIDIA/spark-rapids/pull/9445)|Only run test_csv_infer_schema_timestamp_ntz tests with PySpark >= 3.4.1|
+|[#9420](https://github.com/NVIDIA/spark-rapids/pull/9420)|Update private and jni dep version to released 23.10.0|
 |[#9415](https://github.com/NVIDIA/spark-rapids/pull/9415)|[BUG] fix docker modified check in premerge [skip ci]|
 |[#9392](https://github.com/NVIDIA/spark-rapids/pull/9392)|Only run test_json_ts_formats_round_trip_ntz tests with PySpark >= 3.4.1|
 |[#9401](https://github.com/NVIDIA/spark-rapids/pull/9401)|Remove using mamba before they fix the incompatibility issue [skip ci]|
