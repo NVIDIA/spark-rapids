@@ -75,12 +75,13 @@ case class BatchWithPartitionData(
       if (partitionSchema.isEmpty) {
         columnarBatch // No partition columns, return the original batch.
       } else {
-        closeOnExcept(buildPartitionColumns()) { partitionColumns =>
+        val partBatch = closeOnExcept(buildPartitionColumns()) { partitionColumns =>
           val numRows = partitionColumns.head.getRowCount.toInt
-          withResource(new ColumnarBatch(partitionColumns.toArray, numRows)) { partBatch =>
-            assert(columnarBatch.numRows == partBatch.numRows)
-            GpuColumnVector.combineColumns(columnarBatch, partBatch)
-          }
+          new ColumnarBatch(partitionColumns.toArray, numRows)
+        }
+        withResource(partBatch) { _ =>
+          assert(columnarBatch.numRows == partBatch.numRows)
+          GpuColumnVector.combineColumns(columnarBatch, partBatch)
         }
       }
     }

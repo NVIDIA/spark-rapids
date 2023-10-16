@@ -64,7 +64,7 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
     // when a retry is forced.
     val conf = new SparkConf(false)
       .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
-    withGpuSparkSession(sparkSession => {
+    withGpuSparkSession(_ => {
       val (_, partValues, _, partSchema) = getSamplePartitionData
       closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
         val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
