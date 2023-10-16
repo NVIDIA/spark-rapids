@@ -64,7 +64,7 @@ Note that v23.08.1 is deprecated.
 * Import the public key: `gpg --import PUB_KEY`
 * Verify the signature: `gpg --verify rapids-4-spark_2.12-23.08.2.jar.asc rapids-4-spark_2.12-23.08.2.jar`
 
-The output if signature verify:
+The output of signature verify:
 
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
