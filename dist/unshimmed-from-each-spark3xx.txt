@@ -6,5 +6,4 @@ com/nvidia/spark/rapids/delta/DeltaProbe.class
 com/nvidia/spark/rapids/delta/DeltaProvider.class
 com/nvidia/spark/rapids/delta/DeltaProvider$.class
 com/nvidia/spark/rapids/PlanShims*
-org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
 spark-*-info.properties

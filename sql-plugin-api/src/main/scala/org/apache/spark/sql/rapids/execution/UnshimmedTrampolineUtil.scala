@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,13 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "341"}
-spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.spark341
+package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.SparkConf
-import org.apache.spark.shuffle.rapids.ProxyRapidsShuffleInternalManagerBase
+object UnshimmedTrampolineUtil {
+  def sparkClassLoader: ClassLoader = {
+    org.apache.spark.util.Utils.getContextOrSparkClassLoader
+  }
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean
-) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
+  def classIsLoadable(className: String): Boolean =
+    org.apache.spark.util.Utils.classIsLoadable(className)
+}

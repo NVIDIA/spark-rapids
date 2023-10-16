@@ -52,7 +52,7 @@ object ExternalSource extends Logging {
     }
   }
 
-  lazy val avroProvider = ShimLoader.newAvroProvider()
+  lazy val avroProvider = ShimLoaderTemp.newAvroProvider()
 
   private lazy val hasIcebergJar = {
     Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
