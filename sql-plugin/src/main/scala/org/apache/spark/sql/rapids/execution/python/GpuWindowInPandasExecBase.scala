@@ -24,8 +24,9 @@ import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{PythonUDFShim, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -34,8 +35,8 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuWindowInPandasExecMetaBase(
@@ -94,7 +95,7 @@ class GroupingIterator(
   // batch into multiple batches to make sure one batch contains only one group.
   private val groupBatches: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
 
-  TaskContext.get().addTaskCompletionListener[Unit]{ _ =>
+  onTaskCompletion {
     groupBatches.foreach(_.close())
     groupBatches.clear()
   }
@@ -229,14 +230,15 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
 
   protected val windowBoundTypeConf = "pandas_window_bound_types"
 
-  protected def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  protected def collectFunctions(udf: GpuPythonFunction):
+  (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
-      case Seq(u: GpuPythonUDF) =>
+      case Seq(u: GpuPythonFunction) =>
         val (chained, children) = collectFunctions(u)
         (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        assert(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
         (ChainedPythonFunctions(Seq(udf.func)), udf.children)
     }
   }
@@ -410,9 +412,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
 
     // 2) Extract window functions, here should be Python (Pandas) UDFs
     val allWindowExpressions = expressionsWithFrameIndex.map(_._1)
-    val udfExpressions = allWindowExpressions.map {
-      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuPythonUDF]
-    }
+    val udfExpressions = PythonUDFShim.getUDFExpressions(allWindowExpressions)
     // We shouldn't be chaining anything here.
     // All chained python functions should only contain one function.
     val (pyFuncs, inputs) = udfExpressions.map(collectFunctions).unzip
@@ -422,7 +422,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     val udfWindowBoundTypesStr = pyFuncs.indices
       .map(expId => frameWindowBoundTypes(exprIndex2FrameIndex(expId)).value)
       .mkString(",")
-    val pythonRunnerConf: Map[String, String] = ArrowUtils.getPythonRunnerConfMap(conf) +
+    val pythonRunnerConf: Map[String, String] = ArrowUtilsShim.getPythonRunnerConfMap(conf) +
       (windowBoundTypeConf -> udfWindowBoundTypesStr)
 
     // 4) Filter child output attributes down to only those that are UDF inputs.
@@ -489,14 +489,14 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // where containing multiple result columns, there will be only one item in the
     // 'windowExpression' for the projecting output, but the output schema for this Python
     // UDF contains multiple columns.
-    val pythonOutputSchema = StructType.fromAttributes(udfExpressions.map(_.resultAttribute))
+    val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
 
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
+      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator

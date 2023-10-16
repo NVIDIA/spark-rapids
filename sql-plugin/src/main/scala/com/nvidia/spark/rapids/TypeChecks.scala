@@ -283,6 +283,10 @@ final class TypeSig private(
       dataTypes.foldLeft(initialTypes)(_+_), maxAllowedDecimalPrecision, childTypes,
       litOnlyTypes, dataTypes.foldLeft(notes)((notes, dataType) => notes.+((dataType, note))))
 
+  def withInitialTypesPsNote(note: String): TypeSig = {
+    withPsNote(initialTypes.toSeq, note)
+  }
+
   private def isSupportedType(dataType: TypeEnum.Value): Boolean =
       initialTypes.contains(dataType)
 
@@ -1472,7 +1476,7 @@ class CastChecks extends ExprChecks {
     }
   }
 
-  private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+  protected def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
     val from = cast.child.dataType
     val to = cast.dataType
@@ -1499,6 +1503,21 @@ class CastChecks extends ExprChecks {
   def gpuCanCast(from: DataType, to: DataType): Boolean = {
     val (checks, _) = getChecksAndSigs(from)
     checks.isSupportedByPlugin(to)
+  }
+}
+
+/** 
+ * This class is just restricting the 'to' dataType to a StringType in the CastChecks class
+ */ 
+class ToPrettyStringChecks extends CastChecks {
+
+  override protected def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+    val cast = meta.wrapped.asInstanceOf[UnaryExpression]
+    val from = cast.child.dataType
+    val to = StringType
+    if (!gpuCanCast(from, to)) {
+      willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
+    }
   }
 }
 
@@ -2195,7 +2214,7 @@ object SupportedOpsDocs {
     println()
     println("### Apache Iceberg Support")
     println("Support for Apache Iceberg has additional limitations. See the")
-    println("[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.")
+    println("[Apache Iceberg Support](https://docs.nvidia.com/spark-rapids/user-guide/latest/additional-functionality/iceberg-support.html) document.")
     // scalastyle:on line.size.limit
   }
 
@@ -2231,7 +2250,7 @@ object SupportedOpsForTools {
     }
   }
 
-  private def outputSupportIO() {
+  private def outputSupportIO(): Unit = {
     // Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
     val conf = new RapidsConf(Map.empty[String, String])

@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
-import java.io.File
 import org.scalatest.Assertions
 
 import org.apache.spark.SparkConf

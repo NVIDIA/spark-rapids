@@ -19,6 +19,7 @@
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -94,11 +95,11 @@ trait GpuAddSub extends CudfBinaryArithmetic {
             } else {
               // eval operands using the output precision
               val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-                GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
+                GpuCast.doCast(lhs.getBase(), leftInputType, resultType)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
                 withResource(right.columnarEval(batch)) { rhs =>
-                  GpuCast.doCast(rhs.getBase(), rightInputType, resultType, false, false, false)
+                  GpuCast.doCast(rhs.getBase(), rightInputType, resultType)
                 }
               }
 
@@ -341,14 +342,14 @@ case class GpuDecimalRemainder(left: Expression, right: Expression)
 
   private def regularRemainder(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
-        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType,
+        CastOptions.getArithmeticCastOptions(failOnError))
     }
     withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
-          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
-            legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType,
+            CastOptions.getArithmeticCastOptions(failOnError))
         }
       }
       withResource(castRhs) { castRhs =>
@@ -480,10 +481,8 @@ case class GpuIntegralDecimalDivide(
     super.columnarEval(batch)
   }
 
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    // This follows division rule
-    val intDig = p1 - s1 + s2
-    // No precision loss can happen as the result scale is 0.
-    DecimalType.bounded(intDig, 0)
-  }
+  /**
+   * We are not overriding resultDecimalType as the method `dataType` is overridden in this class
+   * and so the superclass method that calls resultDecimalType will never be called.
+  */
 }

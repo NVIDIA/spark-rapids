@@ -75,7 +75,7 @@ object GpuRunnableCommand {
     }
   }
 
-  def assertEmptyRootPath(tablePath: URI, saveMode: SaveMode, hadoopConf: Configuration) {
+  def assertEmptyRootPath(tablePath: URI, saveMode: SaveMode, hadoopConf: Configuration): Unit = {
     if (saveMode == SaveMode.ErrorIfExists && !getAllowNonEmptyLocationInCTAS) {
       val filePath = new org.apache.hadoop.fs.Path(tablePath)
       val fs = filePath.getFileSystem(hadoopConf)

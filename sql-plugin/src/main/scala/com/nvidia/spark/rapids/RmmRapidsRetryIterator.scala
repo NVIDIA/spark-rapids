@@ -16,10 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
+import ai.rapids.cudf.CudfColumnSizeOverflowException
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, RmmSparkThreadState, SplitAndRetryOOM}
 
 import org.apache.spark.TaskContext
@@ -211,8 +215,16 @@ object RmmRapidsRetryIterator extends Logging {
     (causedByRetry, causedBySplit)
   }
 
+  private def isColumnSizeOverflow(ex: Throwable): Boolean =
+    ex.isInstanceOf[CudfColumnSizeOverflowException]
+
+  @tailrec
+  private def isOrCausedByColumnSizeOverflow(ex: Throwable): Boolean = {
+    ex != null && (isColumnSizeOverflow(ex) || isOrCausedByColumnSizeOverflow(ex.getCause))
+  }
+
   /**
-   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * withRestoreOnRetry for Retryable. This helper function calls `fn` with no input and
    * returns the result. In the event of an OOM Retry exception, it calls the restore() method
    * of the input and then throws the oom exception.  This is intended to be used within the `fn`
    * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
@@ -220,18 +232,18 @@ object RmmRapidsRetryIterator extends Logging {
    *
    * @param r  a single item T
    * @param fn the work to perform. Takes no input and produces K
-   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam T element type that must be a `Retryable` subclass
    * @tparam K `fn` result type
    * @return a single item of type K
    */
-  def withRestoreOnRetry[T <: CheckpointRestore, K](r: T)(fn: => K): K = {
+  def withRestoreOnRetry[T <: Retryable, K](r: T)(fn: => K): K = {
     try {
       fn
     } catch {
       case ex: Throwable =>
         // Only restore on retry exceptions
         val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
-        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.restore()
         }
         throw ex
@@ -239,7 +251,7 @@ object RmmRapidsRetryIterator extends Logging {
   }
 
   /**
-   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * withRestoreOnRetry for Retryable. This helper function calls `fn` with no input and
    * returns the result. In the event of an OOM Retry exception, it calls the restore() method
    * of the input and then throws the oom exception.  This is intended to be used within the `fn`
    * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
@@ -247,18 +259,18 @@ object RmmRapidsRetryIterator extends Logging {
    *
    * @param r  a Seq of item T
    * @param fn the work to perform. Takes no input and produces K
-   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam T element type that must be a `Retryable` subclass
    * @tparam K `fn` result type
    * @return a single item of type K
    */
-  def withRestoreOnRetry[T <: CheckpointRestore, K](r: Seq[T])(fn: => K): K = {
+  def withRestoreOnRetry[T <: Retryable, K](r: Seq[T])(fn: => K): K = {
     try {
       fn
     } catch {
       case ex: Throwable =>
         // Only restore on retry exceptions
         val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
-        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1) {
+        if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.foreach(_.restore())
         }
         throw ex
@@ -403,6 +415,18 @@ object RmmRapidsRetryIterator extends Logging {
     def this(input: Iterator[T], fn: T => K) =
       this(input, fn, null)
 
+    private def closeInternal(): Unit = {
+      attemptStack.safeClose()
+      attemptStack.clear()
+    }
+
+    // Don't install the callback if in a unit test
+    private val onClose = Option(TaskContext.get()).map { tc =>
+      onTaskCompletion(tc) {
+        closeInternal()
+      }
+    }
+
     protected val attemptStack = new mutable.ArrayStack[T]()
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
@@ -433,12 +457,15 @@ object RmmRapidsRetryIterator extends Logging {
         RmmSpark.currentThreadEndRetryBlock()
       }
       attemptStack.pop().close()
+      if (attemptStack.isEmpty && !input.hasNext) {
+        // No need to call the onClose because the attemptStack is empty
+        onClose.foreach(_.removeCallback())
+      }
       res
     }
 
     override def close(): Unit = {
-      attemptStack.safeClose()
-      attemptStack.clear()
+      onClose.map(_.removeAndCall()).getOrElse(closeInternal())
     }
   }
 
@@ -564,9 +591,14 @@ object RmmRapidsRetryIterator extends Logging {
             lastException = ex
 
             if (!topLevelIsRetry && !causedByRetry) {
-              // we want to throw early here, since we got an exception
-              // we were not prepared to handle
-              throw lastException
+              if (isOrCausedByColumnSizeOverflow(ex)) {
+                // CUDF column size overflow? Attempt split-retry.
+                doSplit = true
+              } else {
+                // we want to throw early here, since we got an exception
+                // we were not prepared to handle
+                throw lastException
+              }
             }
             // else another exception wrapped a retry. So we are going to try again
         }
@@ -640,18 +672,6 @@ object RmmRapidsRetryIterator extends Logging {
         Seq(AutoCloseableTargetSize(newTarget, target.minSize))
       }
   }
-}
-
-trait CheckpointRestore {
-  /**
-   * Save state so it can be restored in case of an OOM Retry.
-   */
-  def checkpoint(): Unit
-
-  /**
-   * Restore state that was checkpointed.
-   */
-  def restore(): Unit
 }
 
 /**

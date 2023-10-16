@@ -29,6 +29,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -525,7 +526,7 @@ object GpuAggregateIterator extends Logging {
         withResource(
           new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime,
             opTime)) { _ =>
-          val batchesToConcat = attempt.map(_.getColumnarBatch())
+          val batchesToConcat = attempt.safeMap(_.getColumnarBatch())
           withResource(batchesToConcat) { _ =>
             val numCols = batchesToConcat.head.numCols()
             val dataTypes = (0 until numCols).map {
@@ -730,7 +731,12 @@ class GpuMergeAggregateIterator(
   /** Whether a batch is pending for a reduction-only aggregation */
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   override def hasNext: Boolean = {
     sortFallbackIter.map(_.hasNext).getOrElse {
@@ -1167,8 +1173,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     }
   }
 
-  private val orderable =
-    (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested()
+  private val orderable = pluginSupportedOrderableSig
 
   override def convertToGpu(): GpuExec = {
     lazy val aggModes = agg.aggregateExpressions.map(_.mode).toSet

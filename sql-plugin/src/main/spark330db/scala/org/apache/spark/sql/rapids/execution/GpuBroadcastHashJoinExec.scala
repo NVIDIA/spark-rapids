@@ -131,7 +131,7 @@ case class GpuBroadcastHashJoinExec(
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
 
-    val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
+    val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
       withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
         if (bufferedStreamIter.hasNext) {

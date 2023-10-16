@@ -26,6 +26,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{MetricsBatchIterator, PartitionIterator}
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, SparkException, TaskContext}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -57,7 +58,7 @@ class GpuDataSourceRDD(
     val inputPartition = castPartition(split).inputPartition
     val batchReader = partitionReaderFactory.createColumnarReader(inputPartition)
     val iter = new MetricsBatchIterator(new PartitionIterator[ColumnarBatch](batchReader))
-    context.addTaskCompletionListener[Unit](_ => batchReader.close())
+    onTaskCompletion(batchReader.close())
     // TODO: SPARK-25083 remove the type erasure hack in data source scan
     new InterruptibleIterator(context, iter.asInstanceOf[Iterator[InternalRow]])
   }

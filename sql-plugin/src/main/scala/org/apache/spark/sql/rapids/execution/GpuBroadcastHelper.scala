@@ -21,7 +21,9 @@ import com.nvidia.spark.rapids.{GpuColumnVector, RmmRapidsRetryIterator}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
+import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -75,6 +77,22 @@ object GpuBroadcastHelper {
       case v if SparkShimImpl.isEmptyRelation(v) => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
+    }
+  }
+
+  /**
+   * Given a broadcast relation return an RDD of that relation.
+   * @note This can only be called from driver code.
+   */
+  def asRDD(sc: SparkContext, broadcast: Broadcast[Any]): RDD[ColumnarBatch] = {
+    broadcast.value match {
+      case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
+        val hostBatchRDD = sc.makeRDD(Seq(broadcastBatch), 1)
+        hostBatchRDD.map { serializedBatch =>
+          serializedBatch.batch.getColumnarBatch()
+        }
+      case v if SparkShimImpl.isEmptyRelation(v) => sc.emptyRDD
+      case t => throw new IllegalStateException(s"Invalid broadcast batch received $t")
     }
   }
 }

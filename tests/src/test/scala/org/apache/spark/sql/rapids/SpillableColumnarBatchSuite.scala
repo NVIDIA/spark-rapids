@@ -47,7 +47,7 @@ class SpillableColumnarBatchSuite extends AnyFunSuite {
   }
 
   class MockBuffer(override val id: RapidsBufferId) extends RapidsBuffer {
-    override def getMemoryUsedBytes: Long = 123
+    override val memoryUsedBytes: Long = 123
     override def meta: TableMeta = null
     override val storageTier: StorageTier = StorageTier.DEVICE
     override def getMemoryBuffer: MemoryBuffer = null
@@ -61,5 +61,7 @@ class SpillableColumnarBatchSuite extends AnyFunSuite {
     override def close(): Unit = {}
     override def getColumnarBatch(
       sparkTypes: Array[DataType]): ColumnarBatch = null
+    override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = { body(null) }
+    override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = { body(null) }
   }
 }

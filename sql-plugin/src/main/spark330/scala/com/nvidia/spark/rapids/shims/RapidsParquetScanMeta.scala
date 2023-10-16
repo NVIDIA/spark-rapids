@@ -24,12 +24,12 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuParquetScan, RapidsConf, RapidsMeta, ScanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuParquetScan, GpuScan, RapidsConf, RapidsMeta, ScanMeta}
 
-import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 
 class RapidsParquetScanMeta(
@@ -50,7 +50,7 @@ class RapidsParquetScanMeta(
     }
   }
 
-  override def convertToGpu(): Scan = {
+  override def convertToGpu(): GpuScan = {
     GpuParquetScan(pScan.sparkSession,
       pScan.hadoopConf,
       pScan.fileIndex,

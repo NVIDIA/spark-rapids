@@ -678,7 +678,7 @@ def test_like_null():
             .with_special_case('%SystemDrive%\\Users\\John')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').like('_'))) 
+                f.col('a').like('_')))
 
 def test_like():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
@@ -755,7 +755,7 @@ def test_like_simple_escape():
                 'a like "c_" escape "c"',
                 'a like x "6162632325616263" escape "#"',
                 'a like x "61626325616263" escape "#"'))
- 
+
 def test_like_complex_escape():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
             .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
@@ -779,4 +779,67 @@ def test_like_complex_escape():
                 'a like "\\%SystemDrive\\%\\\\\\\\Users%"',
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
- 
+
+
+@pytest.mark.parametrize('from_base,pattern',
+                         [
+                             pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
+                             pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16')
+                         ])
+# to_base can be positive and negative
+@pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
+def test_conv_dec_to_from_hex(from_base, to_base, pattern):
+    # before 3.2 leading space are deem the string non-numeric and the result is 0
+    if not is_before_spark_320:
+        pattern = r' ?' + pattern
+    gen = mk_str_gen(pattern)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),
+        conf={'spark.rapids.sql.expression.Conv': True}
+    )
+
+format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0), 
+                                      DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5), 
+                                      DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10), 
+                                      DecimalGen(precision=38, scale=-10), 
+                                      DecimalGen(precision=38, scale=30, special_cases=[Decimal('0.000125')]),
+                                      DecimalGen(precision=38, scale=32, special_cases=[Decimal('0.000125')]),
+                                      DecimalGen(precision=38, scale=37, special_cases=[Decimal('0.000125')])]
+
+@pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
+def test_format_number_supported(data_gen):
+    gen = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, -2)',
+            'format_number(a, 0)',
+            'format_number(a, 1)',
+            'format_number(a, 5)',
+            'format_number(a, 10)',
+            'format_number(a, 13)',
+            'format_number(a, 30)',
+            'format_number(a, 100)')
+    )
+
+float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
+format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=15)]
+
+@pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
+def test_format_number_float_limited(data_gen):
+    gen = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, 5)'),
+        conf = float_format_number_conf
+    )
+
+# format_number for float/double is disabled by default due to compatibility issue
+# GPU will generate result with less precision than CPU
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_format_number_float_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'format_number(a, 5)'),
+        'FormatNumber'
+    )

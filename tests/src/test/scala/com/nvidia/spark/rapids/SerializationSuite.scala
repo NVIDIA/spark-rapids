@@ -154,9 +154,10 @@ class SerializationSuite extends AnyFunSuite
         withBroadcast(broadcast) { _ =>
           withResource(broadcast.hostBatch) { hostBatch1 =>
             TestUtils.compareBatches(expectedHostBatch, hostBatch1)
-            val clonedObj = SerializationUtils.clone(broadcast)
-            withResource(clonedObj.hostBatch) { hostBatch2 =>
-              TestUtils.compareBatches(expectedHostBatch, hostBatch2)
+            withBroadcast(SerializationUtils.clone(broadcast)) { clonedObj =>
+              withResource(clonedObj.hostBatch) { hostBatch2 =>
+                TestUtils.compareBatches(expectedHostBatch, hostBatch2)
+              }
             }
           }
         }
@@ -176,9 +177,10 @@ class SerializationSuite extends AnyFunSuite
           // we materialized
           withResource(broadcast.hostBatch) { hostBatch1 =>
             TestUtils.compareBatches(expectedHostBatch, hostBatch1)
-            val clonedObj = SerializationUtils.clone(broadcast)
-            withResource(clonedObj.hostBatch) { hostBatch2 =>
-              TestUtils.compareBatches(expectedHostBatch, hostBatch2)
+            withBroadcast(SerializationUtils.clone(broadcast)) { clonedObj =>
+              withResource(clonedObj.hostBatch) { hostBatch2 =>
+                TestUtils.compareBatches(expectedHostBatch, hostBatch2)
+              }
             }
           }
         }

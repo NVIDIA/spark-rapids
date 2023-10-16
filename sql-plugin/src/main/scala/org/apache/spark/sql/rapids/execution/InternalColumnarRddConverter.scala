@@ -591,8 +591,7 @@ private class ExternalRowToColumnarIterator(
       }
     }
 
-    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows)
-    try {
+    Arm.withResource(new GpuColumnarBatchBuilder(localSchema, targetRows)) { builders =>
       var rowCount = 0
       // Double because validity can be < 1 byte, and this is just an estimate anyways
       var byteCount: Double = 0
@@ -623,8 +622,6 @@ private class ExternalRowToColumnarIterator(
 
       // The returned batch will be closed by the consumer of it
       ret
-    } finally {
-      builders.close()
     }
   }
 }

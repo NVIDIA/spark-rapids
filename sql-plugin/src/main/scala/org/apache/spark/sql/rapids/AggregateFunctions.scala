@@ -573,6 +573,7 @@ object GpuMin{
 
 abstract class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
+    with GpuUnboundToUnboundWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction
     with Serializable {
@@ -601,6 +602,10 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min")
+
+  // UNBOUNDED TO UNBOUNDED WINDOW
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
+    new BatchedUnboundedToUnboundedBinaryFixer(BinaryOp.NULL_MIN, dataType)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection
@@ -752,6 +757,7 @@ object GpuMax {
 
 abstract class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
+    with GpuUnboundToUnboundWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction
     with Serializable {
@@ -780,6 +786,10 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max")
+
+  // UNBOUNDED TO UNBOUNDED WINDOW
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
+    new BatchedUnboundedToUnboundedBinaryFixer(BinaryOp.NULL_MAX, dataType)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection
@@ -1576,6 +1586,13 @@ case class GpuCount(children: Seq[Expression],
 
   override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
     new CountUnboundedToUnboundedFixer(failOnError)
+
+  // minPeriods should be 0.
+  // Consider the following rows:
+  //   v = [ 0, 1, 2, 3, 4, 5 ]
+  // A `COUNT` window aggregation over (2, -1) should yield 0, not null,
+  // for the first row.
+  override def getMinPeriods: Int = 0
 }
 
 object GpuAverage {
@@ -1961,6 +1978,12 @@ case class GpuCollectList(
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.collectList().onColumn(inputs.head._2)
+
+  // minPeriods should be 0.
+  // Consider the following rows: v = [ 0, 1, 2, 3, 4, 5 ]
+  // A `COLLECT_LIST` window aggregation over (2, -1) should yield an empty array [],
+  // not null, for the first row.
+  override def getMinPeriods: Int = 0
 }
 
 /**
@@ -1995,6 +2018,12 @@ case class GpuCollectSet(
       RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
         NaNEquality.ALL_EQUAL).onColumn(inputs.head._2)
   }
+
+  // minPeriods should be 0.
+  // Consider the following rows: v = [ 0, 1, 2, 3, 4, 5 ]
+  // A `COLLECT_SET` window aggregation over (2, -1) should yield an empty array [],
+  // not null, for the first row.
+  override def getMinPeriods: Int = 0
 }
 
 trait CpuToGpuAggregateBufferConverter {

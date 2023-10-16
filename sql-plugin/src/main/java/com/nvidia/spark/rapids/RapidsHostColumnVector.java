@@ -1,6 +1,5 @@
-
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +16,11 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.HostColumnVector;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
+
+import java.util.HashSet;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -57,6 +59,25 @@ public final class RapidsHostColumnVector extends RapidsHostColumnVectorCore {
     return vectors;
   }
 
+  public static ColumnarBatch incRefCounts(ColumnarBatch batch) {
+    for (RapidsHostColumnVector rapidsHostCv: extractColumns(batch)) {
+      rapidsHostCv.incRefCount();
+    }
+    return batch;
+  }
+
+  public static long getTotalHostMemoryUsed(ColumnarBatch batch) {
+    long sum = 0;
+    if (batch.numCols() > 0) {
+      HashSet<RapidsHostColumnVector> found = new HashSet<>();
+      for (RapidsHostColumnVector rapidsHostCv: extractColumns(batch)) {
+        if (found.add(rapidsHostCv)) {
+          sum += rapidsHostCv.getHostMemoryUsed();
+        }
+      }
+    }
+    return sum;
+  }
 
   private final ai.rapids.cudf.HostColumnVector cudfCv;
 
@@ -73,6 +94,10 @@ public final class RapidsHostColumnVector extends RapidsHostColumnVectorCore {
     // Just pass through the reference counting
     cudfCv.incRefCount();
     return this;
+  }
+
+  public final long getHostMemoryUsed() {
+    return cudfCv.getHostMemorySize();
   }
 
   public final ai.rapids.cudf.HostColumnVector getBase() {

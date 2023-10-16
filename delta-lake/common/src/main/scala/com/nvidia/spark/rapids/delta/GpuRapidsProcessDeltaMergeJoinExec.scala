@@ -22,6 +22,7 @@ import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -239,7 +240,12 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
   private[this] val opTime = metrics.getOrElse(GpuMetric.OP_TIME, NoopMetric)
   private[this] val numOutputRows = metrics.getOrElse(GpuMetric.NUM_OUTPUT_ROWS, NoopMetric)
 
-  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+  // Don't install the callback if in a unit test
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      close()
+    }
+  }
 
   override def hasNext: Boolean = {
     nextBatch = nextBatch.orElse(processNextBatch())

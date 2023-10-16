@@ -217,7 +217,7 @@ To run the tests separate from the build go to the `integration_tests` directory
 `pytest-xdist` you will need to submit it as a regular python application and have `findspark`
 installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
 `spark-submit` or with the cluster when it is
-[setup](../docs/get-started/getting-started-on-prem.md).
+[setup](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/on-premise.html).
 The command line arguments to `runtests.py` are the same as for
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
@@ -250,7 +250,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-23.08.2-tests.jar,rapids-4-spark-integration-tests_2.12-23.08.2-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-23.10.0-tests.jar,rapids-4-spark-integration-tests_2.12-23.10.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -273,7 +273,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.08.2-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.10.0-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -372,7 +372,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.08.2-cuda11.jar,rapids-4-spark-tests_2.12-23.08.2.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.08.2-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.08.2-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.10.0-cuda11.jar,rapids-4-spark-tests_2.12-23.10.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-23.10.0-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-23.10.0-cuda11.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -599,3 +599,8 @@ acceptable.
 It is advised that `DateGen` and `TimestampGen` classes from `data_gen.py` be used to generate valid
 (proleptic Gregorian calendar) dates when testing operators that work on dates. This data generator respects
 the valid boundaries for dates and timestamps.
+
+## Scale Test
+
+Scale Test is a test suite to do stress test and estimate the stablity of the spark-rapids plugin when running in large
+scale data. For more information please refer to [Scale Test](./ScaleTest.md)

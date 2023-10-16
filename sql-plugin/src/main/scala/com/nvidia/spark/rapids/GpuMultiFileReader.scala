@@ -157,10 +157,19 @@ object MultiFileReaderThreadPool extends Logging {
 
   /**
    * Get the existing thread pool or create one with the given thread count if it does not exist.
-   * @note The thread number will be ignored if the thread pool is already created.
+   * @note The thread number will be ignored if the thread pool is already created, or modified
+   *       if it is not the right size compared to the number of cores available.
    */
-  def getOrCreateThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    threadPool.getOrElse(initThreadPool(numThreads))
+  def getOrCreateThreadPool(numThreadsFromConf: Int): ThreadPoolExecutor = {
+    threadPool.getOrElse {
+      val numThreads = Math.max(numThreadsFromConf, GpuDeviceManager.getNumCores)
+
+      if (numThreadsFromConf != numThreads) {
+        logWarning(s"Configuring the file reader thread pool with a max of $numThreads " +
+            s"threads instead of ${RapidsConf.MULTITHREAD_READ_NUM_THREADS} = $numThreadsFromConf")
+      }
+      initThreadPool(numThreads)
+    }
   }
 }
 
@@ -386,33 +395,6 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   override def close(): Unit = {
     batchIter = EmptyGpuColumnarBatchIterator
     isDone = true
-  }
-
-  /**
-   * Dump the data from HostMemoryBuffer to a file named by debugDumpPrefix + random + format
-   *
-   * @param hmb             host data to be dumped
-   * @param dataLength      data size
-   * @param splits          PartitionedFile to be handled
-   * @param debugDumpPrefix file name prefix, if it is None, will not dump
-   * @param format          file name suffix, if it is None, will not dump
-   */
-  protected def dumpDataToFile(
-      hmb: HostMemoryBuffer,
-      dataLength: Long,
-      splits: Array[PartitionedFile],
-      debugDumpPrefix: Option[String] = None,
-      format: Option[String] = None): Unit = {
-    if (debugDumpPrefix.isDefined && format.isDefined) {
-      val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix.get, s".${format.get}")
-
-      withResource(out) { _ =>
-        withResource(new HostMemoryInputStream(hmb, dataLength)) { in =>
-          logInfo(s"Writing split data for ${splits.mkString(", ")} to $path")
-          IOUtils.copy(in, out)
-        }
-      }
-    }
   }
 }
 

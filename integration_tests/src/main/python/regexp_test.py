@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import locale
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_error, \
+    assert_gpu_and_cpu_error, \
     assert_gpu_sql_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_jvm_charset_utf8
+from spark_session import is_before_spark_320, is_before_spark_350, is_jvm_charset_utf8
 
 if not is_jvm_charset_utf8():
     pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
@@ -123,6 +122,25 @@ def test_split_re_no_limit():
             'split(a, "^[o]")'),
             conf=_regexp_conf)
 
+def test_split_with_dangling_brackets():
+    data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|{}]{1,2}){1,7}') \
+        .with_special_case('boo.and.foo') \
+        .with_special_case('boo?and?foo') \
+        .with_special_case('boo+and+foo') \
+        .with_special_case('boo^and^foo') \
+        .with_special_case('boo$and$foo') \
+        .with_special_case('boo|and|foo') \
+        .with_special_case('boo{and}foo') \
+        .with_special_case('boo$|and$|foo')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, "[a-z]]")',
+            'split(a, "[boo]]]")',
+            'split(a, "[foo]}")',
+            'split(a, "[foo]}}")'),
+            conf=_regexp_conf)
+
+
 def test_split_optimized_no_re():
     data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|{}]{1,2}){1,7}') \
         .with_special_case('boo.and.foo') \
@@ -135,6 +153,11 @@ def test_split_optimized_no_re():
         .with_special_case('boo$|and$|foo')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'split(a, "]")',
+            'split(a, "]]")',
+            'split(a, "}")',
+            'split(a, "}}")',
+            'split(a, ",")',
             'split(a, "\\\\.")',
             'split(a, "\\\\?")',
             'split(a, "\\\\+")',
@@ -466,22 +489,27 @@ def test_regexp_extract_no_match():
 # Spark take care of the error handling
 @allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_negative():
+    message = "The specified group index cannot be less than zero" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract` is invalid"
+
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", -1)').collect(),
-            error_message = "The specified group index cannot be less than zero",
+            error_message = message,
         conf=_regexp_conf)
 
 # if we determine that the index is out of range we fall back to CPU and let
 # Spark take care of the error handling
 @allow_non_gpu('ProjectExec', 'RegExpExtract')
 def test_regexp_extract_idx_out_of_bounds():
+    message = "Regex group count is 3, but the specified group index is 4" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract` is invalid: Expects group index between 0 and 3, but got 4."
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 4)').collect(),
-            error_message = "Regex group count is 3, but the specified group index is 4",
+            error_message = message,
             conf=_regexp_conf)
 
 def test_regexp_extract_multiline():
@@ -520,7 +548,7 @@ def test_word_boundaries():
                 'regexp_replace(a, "\\\\B", "#")',
             ),
         conf=_regexp_conf)
-        
+
 def test_character_classes():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -667,7 +695,7 @@ def test_regexp_replace_word():
 def test_predefined_character_classes():
     gen = mk_str_gen('[a-zA-Z]{0,2}[\r\n!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~]{0,2}[0-9]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
+        lambda spark: unary_op_df(spark, gen, length=4096).selectExpr(
             'regexp_replace(a, "\\\\p{Lower}", "x")',
             'regexp_replace(a, "\\\\p{Upper}", "x")',
             'regexp_replace(a, "\\\\p{ASCII}", "x")',
@@ -798,22 +826,27 @@ def test_regexp_extract_all_idx_positive():
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_negative():
+    message = "The specified group index cannot be less than zero" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract_all` is invalid"
+
     gen = mk_str_gen('[abcd]{0,3}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract_all(a, "(a)", -1)'
             ).collect(),
-        error_message="The specified group index cannot be less than zero",
+        error_message=message,
         conf=_regexp_conf)
 
 @allow_non_gpu('ProjectExec', 'RegExpExtractAll')
 def test_regexp_extract_all_idx_out_of_bounds():
+    message = "Regex group count is 2, but the specified group index is 3" if is_before_spark_350() else \
+        "[INVALID_PARAMETER_VALUE.REGEX_GROUP_INDEX] The value of parameter(s) `idx` in `regexp_extract_all` is invalid: Expects group index between 0 and 2, but got 3."
     gen = mk_str_gen('[a-d]{1,2}.{0,1}[0-9]{1,2}')
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract_all(a, "([a-d]+).*([0-9])", 3)'
             ).collect(),
-        error_message="Regex group count is 2, but the specified group index is 3",
+        error_message=message,
         conf=_regexp_conf)
 
 def test_rlike_unicode_support():
@@ -864,7 +897,7 @@ def test_regexp_replace_fallback_configured_off():
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_regexp_extract():
     gen = mk_str_gen('[abcdef]{0,2}')
-    regex_gen = StringGen('\[a-z\]\+')
+    regex_gen = StringGen(r'\[a-z\]\+')
     num_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
 
     def assert_gpu_did_fallback(sql_text):
@@ -886,7 +919,7 @@ def test_unsupported_fallback_regexp_extract():
 @allow_non_gpu('ProjectExec')
 def test_unsupported_fallback_regexp_extract_all():
     gen = mk_str_gen('[abcdef]{0,2}')
-    regex_gen = StringGen('\[a-z\]\+')
+    regex_gen = StringGen(r'\[a-z\]\+')
     num_gen = IntegerGen(min_val=0, max_val=0, special_cases=[])
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
@@ -907,7 +940,7 @@ def test_unsupported_fallback_regexp_extract_all():
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_unsupported_fallback_regexp_replace():
     gen = mk_str_gen('[abcdef]{0,2}')
-    regex_gen = StringGen('\[a-z\]\+')
+    regex_gen = StringGen(r'\[a-z\]\+')
     def assert_gpu_did_fallback(sql_text):
         assert_gpu_fallback_collect(lambda spark:
             gen_df(spark, [
@@ -992,7 +1025,7 @@ def test_regexp_memory_fallback():
             'a rlike "1|2|3|4|5|6"'
         ),
         cpu_fallback_class_name='RLike',
-        conf={ 
+        conf={
             'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
@@ -1014,7 +1047,7 @@ def test_regexp_memory_ok():
             'a rlike "(1)(2)(3)"',
             'a rlike "1|2|3|4|5|6"'
         ),
-        conf={ 
+        conf={
             'spark.rapids.sql.regexp.enabled': True,
             'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch

@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.nio.channels.WritableByteChannel
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -60,7 +61,6 @@ object StorageTier extends Enumeration {
   val DEVICE: StorageTier = Value(0, "device memory")
   val HOST: StorageTier = Value(1, "host memory")
   val DISK: StorageTier = Value(2, "local disk")
-  val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
 /**
@@ -175,7 +175,6 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
   } else {
     None
   }
-
   def isChunked: Boolean = chunkedPacker.isDefined
 
   // this is used for the single shot case to flag when `next` is call
@@ -207,14 +206,11 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
   }
 
   override def close(): Unit = {
-    val hasNextBeforeClose = hasNext
     val toClose = new ArrayBuffer[AutoCloseable]()
     toClose.appendAll(chunkedPacker)
     toClose.appendAll(Option(singleShotBuffer))
 
     toClose.safeClose()
-    require(!hasNextBeforeClose,
-      "RapidsBufferCopyIterator was closed before exhausting")
   }
 }
 
@@ -230,14 +226,14 @@ trait RapidsBuffer extends AutoCloseable {
    *
    * @note Do not use this size to allocate a target buffer to copy, always use `getPackedSize.`
    */
-  def getMemoryUsedBytes: Long
+  val memoryUsedBytes: Long
 
   /**
    * The size of this buffer if it has already gone through contiguous_split.
    *
    * @note Use this function when allocating a target buffer for spill or shuffle purposes.
    */
-  def getPackedSizeBytes: Long = getMemoryUsedBytes
+  def getPackedSizeBytes: Long = memoryUsedBytes
 
   /**
    * At spill time, obtain an iterator used to copy this buffer to a different tier.
@@ -262,6 +258,21 @@ trait RapidsBuffer extends AutoCloseable {
    *       with decompressing the data if necessary.
    */
   def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
+
+  /**
+   * Get the host-backed columnar batch from this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   *
+   * If this `RapidsBuffer` was added originally to the device tier, or if this is
+   * a just a buffer (not a batch), this function will throw.
+   *
+   * @param sparkTypes the spark data types the batch should have
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
+   */
+  def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+    throw new IllegalStateException(s"$this does not support host columnar batches.")
+  }
 
   /**
    * Get the underlying memory buffer. This may be either a HostMemoryBuffer or a DeviceMemoryBuffer
@@ -289,7 +300,7 @@ trait RapidsBuffer extends AutoCloseable {
    * @param stream CUDA stream to use
    */
   def copyToMemoryBuffer(
-      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream): Unit
 
   /**
    * Get the device memory buffer from the underlying storage. If the buffer currently resides
@@ -333,6 +344,32 @@ trait RapidsBuffer extends AutoCloseable {
    * @param priority new priority value for this buffer
    */
   def setSpillPriority(priority: Long): Unit
+
+  /**
+   * Function invoked by the `RapidsBufferStore.addBuffer` method that prompts
+   * the specific `RapidsBuffer` to check its reference counting to make itself
+   * spillable or not. Only `RapidsTable` and `RapidsHostMemoryBuffer` implement
+   * this method.
+   */
+  def updateSpillability(): Unit = {}
+
+  /**
+   * Obtains a read lock on this instance of `RapidsBuffer` and calls the function
+   * in `body` while holding the lock.
+   * @param body function that takes a `MemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(memoryBuffer)
+   */
+  def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K
+
+  /**
+   * Obtains a write lock on this instance of `RapidsBuffer` and calls the function
+   * in `body` while holding the lock.
+   * @param body function that takes a `MemoryBuffer` and produces `K`
+   * @tparam K any return type specified by `body`
+   * @return the result of body(memoryBuffer)
+   */
+  def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K
 }
 
 /**
@@ -348,7 +385,7 @@ sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
     override val meta: TableMeta) extends RapidsBuffer {
 
-  override def getMemoryUsedBytes: Long = 0L
+  override val memoryUsedBytes: Long = 0L
 
   override val storageTier: StorageTier = StorageTier.DEVICE
 
@@ -385,5 +422,43 @@ sealed class DegenerateRapidsBuffer(
 
   override def setSpillPriority(priority: Long): Unit = {}
 
+  override def withMemoryBufferReadLock[K](body: MemoryBuffer => K): K = {
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+  }
+
+  override def withMemoryBufferWriteLock[K](body: MemoryBuffer => K): K = {
+    throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+  }
+
   override def close(): Unit = {}
+}
+
+trait RapidsHostBatchBuffer extends AutoCloseable {
+  /**
+   * Get the host-backed columnar batch from this buffer. The caller must have
+   * successfully acquired the buffer beforehand.
+   *
+   * If this `RapidsBuffer` was added originally to the device tier, or if this is
+   * a just a buffer (not a batch), this function will throw.
+   *
+   * @param sparkTypes the spark data types the batch should have
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the batch.
+   */
+  def getHostColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
+
+  val memoryUsedBytes: Long
+}
+
+trait RapidsBufferChannelWritable {
+  /**
+   * At spill time, write this buffer to an nio WritableByteChannel.
+   * @param writableChannel that this buffer can just write itself to, either byte-for-byte
+   *                        or via serialization if needed.
+   * @param stream the Cuda.Stream for the spilling thread. If the `RapidsBuffer` that
+   *               implements this method is on the device, synchronization may be needed
+   *               for staged copies.
+   * @return the amount of bytes written to the channel
+   */
+  def writeToChannel(writableChannel: WritableByteChannel, stream: Cuda.Stream): Long
 }
