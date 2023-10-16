@@ -904,8 +904,6 @@ exact_percentile_reduction_data_gen = [
     for data_gen in exact_percentile_data_gen]
 
 def exact_percentile_reduction(df):
-    # df = spark.read.parquet("/home/nghiat/TMP/df.parquet")
-    # df.coalesce(1).write.mode("overwrite").parquet("/home/nghiat/TMP/df.parquet")
     return df.selectExpr(
         'percentile(val, 0.1)',
         'percentile(val, 0)',
