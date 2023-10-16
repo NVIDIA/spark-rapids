@@ -40,7 +40,6 @@ The plugin is tested on the following architectures:
 		Please be aware that we do not currently support Spark builds with Scala 2.13.
 
 	Supported Spark versions:
-		Apache Spark 3.1.1, 3.1.2, 3.1.3 
 		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
 		Apache Spark 3.3.0, 3.3.1, 3.3.2
 		Apache Spark 3.4.0, 3.4.1
@@ -61,8 +60,6 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
-#### Apache Spark Support Policy for RAPIDS Accelerator:
-
 ### Download v23.10.0
 * Download the [RAPIDS
   Accelerator for Apache Spark 23.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar)
@@ -77,7 +74,7 @@ CUDA 11.8 through CUDA 12.0.
 * Import the public key: `gpg --import PUB_KEY`
 * Verify the signature: `gpg --verify rapids-4-spark_2.12-23.10.0.jar.asc rapids-4-spark_2.12-23.10.0.jar`
 
-The output if signature verify:
+The output of signature verify:
 
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 

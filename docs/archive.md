@@ -55,7 +55,7 @@ for your hardware's minimum driver version.
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
 
-Note that v23.08.0 is deprecated.
+Note that v23.08.1 is deprecated.
 
 ### Verify signature
 * Download the [RAPIDS Accelerator for Apache Spark 23.08.2 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.2/rapids-4-spark_2.12-23.08.2.jar)
