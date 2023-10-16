@@ -913,6 +913,7 @@ def exact_percentile_reduction(df):
         'percentile(val, array(0.1, 0.5, 0.9))',
         'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))',
         # There is issue with python data generation that still produces negative values for freq.
+        # See https://github.com/NVIDIA/spark-rapids/issues/9452.
         # Thus, freq needs to be wrapped in abs.
         'percentile(val, 0.1, abs(freq))',
         'percentile(val, 0, abs(freq))',
@@ -990,6 +991,7 @@ def exact_percentile_groupby(df):
         f.expr('percentile(val, array(0.1, 0.5, 0.9))'),
         f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
         # There is issue with python data generation that still produces negative values for freq.
+        # See https://github.com/NVIDIA/spark-rapids/issues/9452.
         # Thus, freq needs to be wrapped in abs.
         f.expr('percentile(val, 0.1, abs(freq))'),
         f.expr('percentile(val, 0, abs(freq))'),
