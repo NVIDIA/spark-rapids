@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog, Table, TableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.datasources.v2.TableWriteExecHelper
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -63,7 +63,7 @@ case class GpuAtomicReplaceTableAsSelectExec(
     writeOptions: CaseInsensitiveStringMap,
     orCreate: Boolean,
     invalidateCache: (TableCatalog, Table, Identifier) => Unit)
-  extends TableWriteExecHelper with GpuExec {
+  extends TableWriteExecHelper with GpuExec with ColumnarToRowTransition {
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
