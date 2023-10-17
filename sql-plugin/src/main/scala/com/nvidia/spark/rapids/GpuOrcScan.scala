@@ -37,6 +37,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.CountingOutputStream
@@ -337,7 +338,7 @@ object GpuOrcScan {
       // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
       // enable or not.
       case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
-        GpuCast.castFloatingTypeToString(col)
+        CastStrings.fromFloats(col)
 
       // float/double -> timestamp
       case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>

@@ -47,7 +47,6 @@ def test_delta_zorder(spark_tmp_table_factory):
 
     assert_gpu_and_cpu_are_equal_collect(optimize_table,
             conf={"spark.rapids.sql.castFloatToIntegralTypes.enabled": True,
-                  "spark.rapids.sql.castFloatToString.enabled": True,
                   "spark.rapids.sql.explain": "ALL"})
 
 _statements = [

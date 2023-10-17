@@ -1362,10 +1362,7 @@ class CastChecks extends ExprChecks {
   val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING +
       BINARY + CastCheckShims.additionalTypesIntegralCanCastTo
 
-  val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
-      s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
   val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING)
-      .withPsNote(TypeEnum.STRING, fpToStringPsNote)
   val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING
 
   def dateChecks: TypeSig = TIMESTAMP + DATE + STRING +

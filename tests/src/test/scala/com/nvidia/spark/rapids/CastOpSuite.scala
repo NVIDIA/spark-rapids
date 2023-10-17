@@ -263,7 +263,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
-        .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))

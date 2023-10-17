@@ -302,6 +302,12 @@ def test_cast_array_to_string(data_gen, legacy):
         data_gen, 
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
+@pytest.mark.parametrize('data_gen', not_matched_gens_for_cast_to_string, ids=idfn)
+def test_cast_float_to_string(data_gen):
+    _assert_cast_to_string_equal(
+        data_gen,
+        {}
+    )
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
@@ -309,8 +315,7 @@ def test_cast_array_to_string(data_gen, legacy):
 def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
-         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 
@@ -328,8 +333,7 @@ def test_cast_map_to_string(data_gen, legacy):
 def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen,
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
-         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 
@@ -381,8 +385,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
-        {"spark.rapids.sql.castFloatToString.enabled"       : "true",
-         "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
 

@@ -658,18 +658,11 @@ to `false`.
 
 This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
-### Float to String
-
-The GPU will use different precision than Java's toString method when converting floating-point data
-types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
-`E`. As a result the computed string can differ from the default behavior in Spark.
+### Float to formatted String
 
 The `format_number` function will retain 10 digits of precision for the GPU when the input is a floating 
 point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
 will return `1,234,567,890.00000` on the GPU and `1,234,567,890.12346` on the CPU. To enable this on the GPU, set [`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `true`.
-
-Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
 
