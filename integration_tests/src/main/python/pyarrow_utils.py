@@ -75,6 +75,7 @@ def get_pyarrow_type(data_gen):
     elif isinstance(data_gen, DateGen):
         return pa.date32()
     elif isinstance(data_gen, TimestampGen):
+        # use us, because Spark does not support ns
         return pa.timestamp('us')
     elif isinstance(data_gen, BinaryGen):
         return pa.binary()
