@@ -2175,14 +2175,15 @@ class MultiFileCloudOrcPartitionReader(
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
         }
-        val tmp = meta.allPartValues.map { partRowsAndValues =>
-          val (rowsPerPart, partValues) = partRowsAndValues.unzip
-          MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch,
-            partValues, rowsPerPart, partitionSchema)
-        }.getOrElse {
-          addPartitionValues(batch, meta.partitionedFile.partitionValues, partitionSchema)
+        meta.allPartValues match {
+          case Some(partRowsAndValues) =>
+            val (rowsPerPart, partValues) = partRowsAndValues.unzip
+            BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, rowsPerPart,
+              partValues, partitionSchema)
+          case None =>
+            BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+              meta.partitionedFile.partitionValues, partitionSchema)
         }
-        new SingleGpuColumnarBatchIterator(tmp)
 
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
@@ -2190,14 +2191,15 @@ class MultiFileCloudOrcPartitionReader(
         val batchReader = decodeToBatch(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
             buffer.requestedMapping, filterHandler.isCaseSensitive, files) match {
           case Some(batch) =>
-            val tmp = buffer.allPartValues.map { partRowsAndValues =>
-              val (rowsPerPart, partValues) = partRowsAndValues.unzip
-              MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch,
-                partValues, rowsPerPart, partitionSchema)
-            }.getOrElse {
-              addPartitionValues(batch, buffer.partitionedFile.partitionValues, partitionSchema)
+            buffer.allPartValues match {
+              case Some(partRowsAndValues) =>
+                val (rowsPerPart, partValues) = partRowsAndValues.unzip
+                BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, rowsPerPart,
+                  partValues, partitionSchema)
+              case None =>
+                BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+                  buffer.partitionedFile.partitionValues, partitionSchema)
             }
-            new SingleGpuColumnarBatchIterator(tmp)
           case _ =>
             EmptyGpuColumnarBatchIterator
         }

@@ -510,6 +510,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def insertColumnarFromGpu(plan: SparkPlan): SparkPlan = {
     if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
       GpuBringBackToHost(insertColumnarToGpu(plan))
+    } else if (plan.isInstanceOf[ColumnarToRowTransition] && plan.isInstanceOf[GpuExec]) {
+      plan.withNewChildren(plan.children.map(insertColumnarToGpu))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarFromGpu))
     }

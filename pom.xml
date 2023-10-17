@@ -191,25 +191,8 @@
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
+                <cloudera.repo.enabled>true</cloudera.repo.enabled>
             </properties>
-            <repositories>
-                <repository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-            </repositories>
-            <pluginRepositories>
-                <pluginRepository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                </pluginRepository>
-            </pluginRepositories>
             <modules>
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-20x</module>
@@ -438,25 +421,30 @@
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <cloudera.repo.enabled>true</cloudera.repo.enabled>
             </properties>
-            <repositories>
-                <repository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-            </repositories>
-            <pluginRepositories>
-                <pluginRepository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                </pluginRepository>
-            </pluginRepositories>
+            <modules>
+                <module>shim-deps/cloudera</module>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release332cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332cdh</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>332cdh</buildver>
+                <spark.version>${spark332cdh.version}</spark.version>
+                <spark.test.version>${spark332cdh.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <cloudera.repo.enabled>true</cloudera.repo.enabled>
+            </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
@@ -674,6 +662,7 @@
         <spark340.version>3.4.0</spark340.version>
         <spark341.version>3.4.1</spark341.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
+        <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark350.version>3.5.0</spark350.version>
@@ -719,6 +708,7 @@
             332,
             333,
             330cdh,
+            332cdh,
             340,
             341,
             350
@@ -795,6 +785,7 @@
             --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
+        <cloudera.repo.enabled>false</cloudera.repo.enabled>
     </properties>
 
     <dependencyManagement>
@@ -1555,6 +1546,16 @@
                 <enabled>false</enabled>
             </snapshots>
         </repository>
+        <repository>
+            <id>cloudera-repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </snapshots>
+        </repository>
     </repositories>
     <pluginRepositories>
         <pluginRepository>
@@ -1562,6 +1563,16 @@
             <url>https://repo1.maven.org/maven2</url>
             <snapshots>
                 <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>cloudera-repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
             </snapshots>
         </pluginRepository>
     </pluginRepositories>

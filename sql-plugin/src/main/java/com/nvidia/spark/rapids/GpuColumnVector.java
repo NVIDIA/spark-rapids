@@ -137,6 +137,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     protected abstract ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex);
 
+    /** Try to build a ColumnarBatch, it can be called multiple times in case of failures */
+    public abstract ColumnarBatch tryBuild(int rows);
+
     public ColumnarBatch build(int rows) {
       return build(rows, this::buildAndPutOnDevice);
     }
@@ -210,6 +213,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
       return builders[i];
+    }
+
+    @Override
+    public ColumnarBatch tryBuild(int rows) {
+      // Arrow data should not be released until close is called.
+      return build(rows, i -> builders[i].buildAndPutOnDevice());
     }
 
     @Override
@@ -300,6 +309,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
      * It is safe to call this multiple times, and data will be released
      * after a call to `close`.
      */
+    @Override
     public ColumnarBatch tryBuild(int rows) {
       if (hostColumns == null) {
         hostColumns = buildHostColumns();

@@ -2532,16 +2532,16 @@ class MultiFileCloudParquetPartitionReader(
 
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      val batch = if (meta.allPartValues.isDefined) {
-        val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
-        val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
-        MultiFileReaderUtils.addMultiplePartitionValuesAndClose(origBatch, allPartInternalRows,
-          rowsPerPartition, partitionSchema)
-      } else {
-        addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
+      meta.allPartValues match {
+        case Some(partRowsAndValues) =>
+          val (rowsPerPart, partValues) = partRowsAndValues.unzip
+          BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
+            partValues, partitionSchema)
+        case None =>
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(origBatch,
+            meta.partitionedFile.partitionValues, partitionSchema)
       }
 
-      new SingleGpuColumnarBatchIterator(batch)
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head
@@ -2606,10 +2606,11 @@ class MultiFileCloudParquetPartitionReader(
       } else {
         // this is a bit weird, we don't have number of rows when allPartValues isn't
         // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
-        batchIter.map { batch =>
+        batchIter.flatMap { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+            partedFile.partitionValues, partitionSchema)
         }
       }
     }.flatten
