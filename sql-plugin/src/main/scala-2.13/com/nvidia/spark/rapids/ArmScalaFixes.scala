@@ -15,7 +15,6 @@
  */
 package com.nvidia.spark.rapids
 
-import scala.collection
 import scala.collection.{immutable, mutable}
 import scala.collection.mutable.ListBuffer
 import scala.util.control.ControlThrowable

@@ -17,8 +17,7 @@
 package com.nvidia.spark.rapids
 
 import scala.collection
-import scala.collection.generic.CanBuildFrom
-import scala.collection.{immutable, mutable}
+import scala.collection.mutable
 import scala.reflect.ClassTag
 
 import org.apache.spark.sql.catalyst.expressions.Expression
