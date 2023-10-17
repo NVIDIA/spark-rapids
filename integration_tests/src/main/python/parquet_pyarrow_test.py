@@ -212,7 +212,7 @@ def test_parquet_pyarrow_flavor_for_timestamp(
 @pyarrow_test
 @ignore_order(local=True)
 @pytest.mark.parametrize('pyarrow_compression_type', ['NONE', 'SNAPPY', 'ZSTD'])
-def test_parquet_pyarrow_1_compression_type(
+def test_parquet_pyarrow_compression_type(
         spark_tmp_path,
         pyarrow_compression_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(sub_gens)]
@@ -227,7 +227,7 @@ def test_parquet_pyarrow_1_compression_type(
     (1024 * 1024, 1024),
     (1024, 512),
 ])
-def test_parquet_pyarrow_1_group_size_page_size(
+def test_parquet_pyarrow_group_size_page_size(
         spark_tmp_path,
         row_group_size,
         data_page_size):
@@ -239,7 +239,7 @@ def test_parquet_pyarrow_1_group_size_page_size(
 @pyarrow_test
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_page_version', ['1.0', '2.0'])
-def test_parquet_pyarrow_1_data_page_version(
+def test_parquet_pyarrow_data_page_version(
         spark_tmp_path,
         data_page_version):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(sub_gens)]
