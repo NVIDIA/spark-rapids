@@ -74,7 +74,7 @@
         <scriptdef
             name="doCopyDependencies"
             language="jython"
-            src="${project.basedir}/build/package-parallel-worlds.py">
+            src="${spark.rapids.source.basedir}/${rapids.module}/build/package-parallel-worlds.py">
             <attribute name="artifact_csv"/>
         </scriptdef>
         <doCopyDependencies artifact_csv="sql-plugin-api,aggregator"/>

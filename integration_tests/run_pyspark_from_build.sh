@@ -33,11 +33,13 @@ else
     VERSION_STRING=$(PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} python -c \
         "import pyspark, re; print(re.sub('\.dev0?$', '', pyspark.__version__))"
     )
+    SCALA_VERSION=`$SPARK_HOME/bin/pyspark --version 2>&1| grep Scala | awk '{split($4,v,"."); printf "%s.%s", v[1], v[2]}'`
 
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
+    [[ -z $SCALA_VERSION ]] && { echo "Unable to detect the Scala version at $SPARK_HOME"; exit; }
     [[ -z $SPARK_SHIM_VER ]] && { SPARK_SHIM_VER="spark${VERSION_STRING//./}"; }
 
-    echo "Detected Spark version $VERSION_STRING (shim version: $SPARK_SHIM_VER)"
+    echo "Detected Spark version $VERSION_STRING (shim version: $SPARK_SHIM_VER) (Scala version: $SCALA_VERSION)"
 
     INTEGRATION_TEST_VERSION=$SPARK_SHIM_VER
 
@@ -72,7 +74,11 @@ else
         # Make sure we have Parquet version >= 1.12 in the dependency
         LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
         export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "$MIN_PARQUET_JAR" ]] && echo true || echo false)
-        PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
+        if [ "$SCALA_VERSION" == "2.12" ]; then
+            PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
+        else
+            PLUGIN_JARS=$(echo "$SCRIPTPATH"/../scala$SCALA_VERSION/dist/target/rapids-4-spark_*.jar)
+        fi
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     fi
