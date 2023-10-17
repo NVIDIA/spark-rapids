@@ -16,19 +16,23 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{File, FileInputStream, FileOutputStream}
+import java.io.{File, FileInputStream}
+import java.nio.channels.{Channels, FileChannel}
 import java.nio.channels.FileChannel.MapMode
+import java.nio.file.{Paths, StandardOpenOption}
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
+import org.apache.commons.io.IOUtils
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
 
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
@@ -47,7 +51,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       id.getDiskPath(diskBlockManager)
     }
 
-    val (fileOffset, diskLength) = if (id.canShareDiskPaths) {
+    val (fileOffset, uncompressedSize, diskLength) = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
       path.synchronized {
         writeToFile(incoming, path, append = true, stream)
@@ -62,6 +66,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         new RapidsDiskColumnarBatch(
           id,
           fileOffset,
+          uncompressedSize,
           diskLength,
           incoming.meta,
           incoming.getSpillPriority)
@@ -70,6 +75,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         new RapidsDiskBuffer(
           id,
           fileOffset,
+          uncompressedSize,
           diskLength,
           incoming.meta,
           incoming.getSpillPriority)
@@ -82,20 +88,26 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       incoming: RapidsBuffer,
       path: File,
       append: Boolean,
-      stream: Cuda.Stream): (Long, Long) = {
+      stream: Cuda.Stream): (Long, Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
-        withResource(new FileOutputStream(path, append)) { fos =>
-          withResource(fos.getChannel) { outputChannel =>
-            val startOffset = outputChannel.position()
-            val writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
-            if (writtenBytes == 0) {
-              throw new IllegalStateException(
-                s"Buffer ${fileWritable} wrote 0 bytes disk on spill. This is not supported!"
-              )
+        val currentPos = if (!path.exists()) {
+          path.createNewFile()
+          path.length()
+        } else {
+          path.length()
+        }
+        var startOffSet, writtenBytes = 0L
+        withResource(FileChannel.open(Paths.get(path.toURI), StandardOpenOption.APPEND)) { fc =>
+          startOffSet = fc.position()
+          withResource(Channels.newOutputStream(fc)) { os =>
+            withResource(diskBlockManager.getSerializerManager()
+              .wrapStream(incoming.id, os)) { cos =>
+              val outputChannel = Channels.newChannel(cos)
+              writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
             }
-            (startOffset, writtenBytes)
           }
+          (startOffSet, writtenBytes, path.length() - currentPos)
         }
       case other =>
         throw new IllegalStateException(
@@ -110,25 +122,38 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
   class RapidsDiskBuffer(
       id: RapidsBufferId,
       fileOffset: Long,
-      size: Long,
+      uncompressedSize: Long,
+      compressedSize: Long,
       meta: TableMeta,
       spillPriority: Long)
       extends RapidsBufferBase(
         id, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
-    override val memoryUsedBytes: Long = size
+    override val memoryUsedBytes: Long = uncompressedSize
 
     override val storageTier: StorageTier = StorageTier.DISK
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
-        require(size > 0,
+        require(compressedSize > 0,
           s"$this attempted an invalid 0-byte mmap of a file")
         val path = id.getDiskPath(diskBlockManager)
-        val mappedBuffer = HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE,
-          fileOffset, size)
-        hostBuffer = Some(mappedBuffer)
+        val memBuffer = closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
+          withResource(HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset
+            , compressedSize)) { compressed =>
+            withResource(new HostMemoryInputStream(compressed, compressedSize)) { hmbStream =>
+              withResource(diskBlockManager.getSerializerManager()
+                .wrapStream(id, hmbStream)) { in =>
+                withResource(new HostMemoryOutputStream(decompressed)) { out =>
+                  IOUtils.copy(in, out)
+                }
+                decompressed
+              }
+            }
+          }
+        }
+        hostBuffer = Some(memBuffer)
       }
       hostBuffer.foreach(_.incRefCount())
       hostBuffer.get
@@ -170,11 +195,12 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       id: RapidsBufferId,
       fileOffset: Long,
       size: Long,
+      uncompressedSize: Long,
       // TODO: remove meta
       meta: TableMeta,
       spillPriority: Long)
     extends RapidsDiskBuffer(
-      id, fileOffset, size, meta, spillPriority)
+      id, fileOffset, size, uncompressedSize, meta, spillPriority)
         with RapidsHostBatchBuffer {
 
     override def getMemoryBuffer: MemoryBuffer =

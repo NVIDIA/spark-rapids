@@ -1632,13 +1632,34 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(500 * 1024)
 
+  val IO_COMPRESSION_CODEC = conf("spark.rapids.io.compression.codec")
+    .doc("The CPU compression codec used to compress data at the rest for both shuffle and " +
+      "spill. Supported codecs: lz4, lzf, snappy, zstd")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("lz4")
+
+  val SHUFFLE_COMPRESSION_ENABLED = conf("spark.rapids.shuffle.io.compression.enabled")
+    .doc("Whether to enable compression for shuffle file, " +
+      s"it will use codec specified by ${IO_COMPRESSION_CODEC.key} provided by Spark")
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
+  val SPILL_COMPRESSION_ENABLED = conf("spark.rapids.spill.io.compression.enabled")
+    .doc(s"Whether to enable compression for spill file, " +
+      s"it will use codec specified by ${IO_COMPRESSION_CODEC.key} provided by Spark")
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
-      .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: lz4, copy, none")
-      .internal()
-      .startupOnly()
-      .stringConf
-      .createWithDefault("none")
+    .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
+      "Supported codecs: lz4, copy, none")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault("none")
 
   val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
@@ -2038,6 +2059,12 @@ object RapidsConf {
       .internal()
       .longConf
       .createOptional
+
+  val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
+    .doc("Only for tests: verify for IO encryption")
+    .internal()
+    .booleanConf
+    .createOptional
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

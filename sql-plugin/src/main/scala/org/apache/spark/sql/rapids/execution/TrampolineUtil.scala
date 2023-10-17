@@ -25,6 +25,8 @@ import org.apache.spark.executor.InputMetrics
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
+import org.apache.spark.security.CryptoStreamUtils
+import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
@@ -181,6 +183,15 @@ object TrampolineUtil {
 
   def createCodec(conf: SparkConf, codecName: String): CompressionCodec = {
     CompressionCodec.createCodec(conf, codecName)
+  }
+
+  def getSerializerManager(): SerializerManager = {
+    if (SparkEnv.get != null) SparkEnv.get.serializerManager else null
+  }
+
+  // For test only
+  def createSerializerManager(conf: SparkConf): SerializerManager = {
+    new SerializerManager(new JavaSerializer(conf), conf, Some(CryptoStreamUtils.createKey(conf)))
   }
 
   def getCodecShortName(codecName: String): String = CompressionCodec.getShortName(codecName)
