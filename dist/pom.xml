@@ -290,7 +290,7 @@
                         <id>create-parallel-world</id>
                         <configuration>
                             <target>
-                                <property name="project.basedir" value="${spark.rapids.source.basedir}/${rapids.module}"/>
+                                <property name="project.basedir" value="${project.basedir}"/>
                                 <property name="project.build.directory" value="${project.build.directory}"/>
                                 <property name="project.version" value="${project.version}"/>
                                 <property name="scala.binary.version" value="${scala.binary.version}"/>
