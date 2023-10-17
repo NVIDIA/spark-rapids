@@ -944,7 +944,7 @@ exact_percentile_reduction_cpu_fallback_data_gen = [
                'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
                'Percentile')
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_cpu_fallback_data_gen, ids=idfn)
-@pytest.mark.parametrize('replace_mode', ['partial', 'final'], ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_mode,
                                                             use_obj_hash_agg):
@@ -1025,7 +1025,7 @@ exact_percentile_groupby_cpu_fallback_data_gen = [
                'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
                'Percentile')
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_cpu_fallback_data_gen, ids=idfn)
-@pytest.mark.parametrize('replace_mode', ['partial', 'final'], ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode, use_obj_hash_agg):
     cpu_clz, gpu_clz = ['Percentile'], ['GpuPercentileDefault']
