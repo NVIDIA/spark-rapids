@@ -890,26 +890,27 @@ private case class GpuParquetFileFilterHandler(
           }
         } else {
           val fileGroupType = fileType.asGroupType()
-          if (fileGroupType.getFieldCount != 1 ||
-              !fileGroupType.getType(0).isRepetition(Type.Repetition.REPEATED)) {
-            // LIST column must have a single, REPEATED child field.
-            // Otherwise, signal error.
-            errorCallback(fileType, readType)
+          if (fileGroupType.getFieldCount > 1 &&
+              fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
+            // legacy array format where struct child is directly repeated under array type group
+            checkSchemaCompat(fileGroupType, array.elementType, errorCallback, isCaseSensitive,
+              useFieldId, rootFileType, rootReadType)
+          } else {
+            val repeatedType = fileGroupType.getType(0)
+            val childType =
+              if (isElementType(repeatedType, fileType.getName)) {
+                // Legacy element, per Parquet LogicalType backward compatibility rules.
+                // Retain the child as the element type.
+                repeatedType
+              }
+              else {
+                // Conforms to current Parquet LogicalType rules.
+                // Unwrap child group layer, and use grandchild's element type.
+                repeatedType.asGroupType().getType(0)
+              }
+            checkSchemaCompat(childType, array.elementType, errorCallback, isCaseSensitive,
+              useFieldId, rootFileType, rootReadType)
           }
-          val repeatedType = fileGroupType.getType(0)
-          val childType =
-            if (isElementType(repeatedType, fileType.getName)) {
-              // Legacy element, per Parquet LogicalType backward compatibility rules.
-              // Retain the child as the element type.
-              repeatedType
-            }
-            else {
-              // Conforms to current Parquet LogicalType rules.
-              // Unwrap child group layer, and use grandchild's element type.
-              repeatedType.asGroupType().getType(0)
-            }
-          checkSchemaCompat(childType, array.elementType, errorCallback, isCaseSensitive,
-            useFieldId, rootFileType, rootReadType)
         }
 
       case map: MapType =>
@@ -2530,16 +2531,16 @@ class MultiFileCloudParquetPartitionReader(
 
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      val batch = if (meta.allPartValues.isDefined) {
-        val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
-        val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
-        MultiFileReaderUtils.addMultiplePartitionValuesAndClose(origBatch, allPartInternalRows,
-          rowsPerPartition, partitionSchema)
-      } else {
-        addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
+      meta.allPartValues match {
+        case Some(partRowsAndValues) =>
+          val (rowsPerPart, partValues) = partRowsAndValues.unzip
+          BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
+            partValues, partitionSchema)
+        case None =>
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(origBatch,
+            meta.partitionedFile.partitionValues, partitionSchema)
       }
 
-      new SingleGpuColumnarBatchIterator(batch)
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
       val hmbAndInfo = memBuffersAndSize.head
@@ -2604,10 +2605,11 @@ class MultiFileCloudParquetPartitionReader(
       } else {
         // this is a bit weird, we don't have number of rows when allPartValues isn't
         // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
-        batchIter.map { batch =>
+        batchIter.flatMap { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
+          BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+            partedFile.partitionValues, partitionSchema)
         }
       }
     }.flatten

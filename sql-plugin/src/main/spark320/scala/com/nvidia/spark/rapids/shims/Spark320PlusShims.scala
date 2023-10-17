@@ -27,6 +27,7 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
@@ -62,6 +63,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
