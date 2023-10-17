@@ -28,6 +28,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -135,5 +136,27 @@ object ExternalSource extends Logging {
     require(desc != null)
     require(doWrap != null)
     new CreatableRelationProviderRule[INPUT](doWrap, desc, tag)
+  }
+
+  def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"catalog ${cpuExec.catalog.getClass} is not supported")
+    }
+  }
+
+  def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
   }
 }

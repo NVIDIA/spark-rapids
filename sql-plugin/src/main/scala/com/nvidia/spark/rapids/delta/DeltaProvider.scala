@@ -16,12 +16,14 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
 
 import org.apache.spark.sql.Strategy
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -46,6 +48,16 @@ trait DeltaProvider {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
   def getReadFileFormat(format: FileFormat): FileFormat
+
+  def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
+
+  def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit
+
+  def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec
 }
 
 object DeltaProvider {
@@ -74,4 +86,18 @@ object NoDeltaProvider extends DeltaProvider {
 
   override def getReadFileFormat(format: FileFormat): FileFormat =
     throw new IllegalStateException("unsupported format")
+
+  override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false
+
+  override def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    throw new IllegalStateException("catalog not supported, should not be called")
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    throw new IllegalStateException("catalog not supported, should not be called")
+  }
 }

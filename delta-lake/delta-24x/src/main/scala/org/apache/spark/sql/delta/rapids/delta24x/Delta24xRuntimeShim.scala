@@ -18,10 +18,12 @@ package org.apache.spark.sql.delta.rapids.delta24x
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.DeltaProvider
-import com.nvidia.spark.rapids.delta.delta24x.Delta24xProvider
+import com.nvidia.spark.rapids.delta.delta24x.{Delta24xProvider, GpuDeltaCatalog}
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.datasources.FileFormat
@@ -54,4 +56,9 @@ class Delta24xRuntimeShim extends DeltaRuntimeShim {
     spark.sessionState.conf.getConf(DeltaSQLConf.TIGHT_BOUND_COLUMN_ON_FILE_INIT_DISABLED)
   }
 
+  override def getGpuDeltaCatalog(
+      cpuCatalog: DeltaCatalog,
+      rapidsConf: RapidsConf): StagingTableCatalog = {
+    new GpuDeltaCatalog(cpuCatalog, rapidsConf)
+  }
 }

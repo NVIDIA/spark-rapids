@@ -29,12 +29,13 @@ object RapidsDeltaUtils {
   def tagForDeltaWrite(
       meta: RapidsMeta[_, _, _],
       schema: StructType,
-      deltaLog: DeltaLog,
+      deltaLog: Option[DeltaLog],
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    val format = DeltaLogShim.fileFormat(deltaLog)
-    if (format.getClass == classOf[DeltaParquetFileFormat]) {
+    val format = deltaLog.map(log => DeltaLogShim.fileFormat(log).getClass)
+      .getOrElse(classOf[DeltaParquetFileFormat])
+    if (format == classOf[DeltaParquetFileFormat]) {
       GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
     } else {
       meta.willNotWorkOnGpu(s"file format $format is not supported")
@@ -45,7 +46,7 @@ object RapidsDeltaUtils {
   private def checkIncompatibleConfs(
       meta: RapidsMeta[_, _, _],
       schema: StructType,
-      deltaLog: DeltaLog,
+      deltaLog: Option[DeltaLog],
       sqlConf: SQLConf,
       options: Map[String, String]): Unit = {
     def getSQLConf(key: String): Option[String] = {
@@ -65,19 +66,21 @@ object RapidsDeltaUtils {
         orderableTypeSig.isSupportedByPlugin(t)
       }
       if (unorderableTypes.nonEmpty) {
-        val metadata = DeltaLogShim.getMetadata(deltaLog)
-        val hasPartitioning = metadata.partitionColumns.nonEmpty ||
+        val metadata = deltaLog.map(log => DeltaLogShim.getMetadata(log))
+        val hasPartitioning = metadata.exists(_.partitionColumns.nonEmpty) ||
             options.get(DataSourceUtils.PARTITIONING_COLUMNS_KEY).exists(_.nonEmpty)
         if (!hasPartitioning) {
           val optimizeWriteEnabled = {
             val deltaOptions = new DeltaOptions(options, sqlConf)
             deltaOptions.optimizeWrite.orElse {
               getSQLConf("spark.databricks.delta.optimizeWrite.enabled").map(_.toBoolean).orElse {
-                DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
-                  metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
-                    getSQLConf(
-                      "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
-                  }.map(_.toBoolean)
+                metadata.flatMap { m =>
+                  DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(m).orElse {
+                    m.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
+                      getSQLConf(
+                        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
+                    }.map(_.toBoolean)
+                  }
                 }
               }
             }.getOrElse(false)
