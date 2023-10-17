@@ -3442,22 +3442,22 @@ object GpuOverrides extends Logging {
       (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           // Check if the input percentage can be supported on GPU.
-          childExprs(1).wrapped match {
-            case lit: Literal => lit.value match {
-              case null =>
-                willNotWorkOnGpu(
-                  "percentile on GPU only supports non-null literal percentages")
-              case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
+          GpuOverrides.extractLit(childExprs(1).wrapped.asInstanceOf[Expression]) match {
+            case None =>
+              willNotWorkOnGpu("percentile on GPU only supports literal percentages")
+            case Some(Literal(null, _)) =>
+              willNotWorkOnGpu("percentile on GPU only supports non-null literal percentages")
+            case Some(Literal(a: ArrayData, _)) => {
+              if((0 until a.numElements).exists(a.isNullAt)) {
                 willNotWorkOnGpu(
                   "percentile on GPU does not support percentage arrays containing nulls")
-              case a: ArrayData if a.toDoubleArray()
-                .exists(percentage => percentage < 0.0 || percentage > 1.0) =>
+              }
+              if (a.toDoubleArray().exists(percentage => percentage < 0.0 || percentage > 1.0)) {
                 willNotWorkOnGpu(
                   "percentile requires the input percentages given in the range [0, 1]")
-              case _ => // This is fine.
+              }
             }
-            case _ =>
-              willNotWorkOnGpu("percentile on GPU only supports literal percentages")
+            case Some(_) => // This is fine
           }
         }
 
