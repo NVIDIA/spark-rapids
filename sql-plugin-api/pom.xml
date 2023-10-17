@@ -57,6 +57,29 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <!--
+                 Note that we are using the Spark version for all of the Databricks dependencies as well.
+                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                 This is to make it easier and not have to change version numbers for each individual dependency
+                 and deal with differences between Databricks versions
+            -->
+            <id>dbdeps</id>
+            <activation>
+                <property>
+                    <name>databricks</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-db-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
     </profiles>
     <build>
         <plugins>
