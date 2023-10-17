@@ -209,6 +209,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       requestedAttributes = requestedAttributes,
       maxReaderBatchSizeRows = rapidsConf.maxReadBatchSizeRows,
       maxReaderBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes,
+      maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes,
       metrics = allMetrics,
       params = options
     )
@@ -394,10 +395,12 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 class AlphabeticallyReorderingColumnPartitionReader(fileReader: PartitionReader[ColumnarBatch],
                                                     partitionValues: InternalRow,
                                                     partitionSchema: StructType,
+                                                    maxGpuColumnSizeBytes: Long,
                                                     requestedAttributes: Seq[Attribute])
   extends ColumnarPartitionReaderWithPartitionValues(fileReader,
                                                      partitionValues,
-                                                     partitionSchema) {
+                                                     partitionSchema,
+                                                     maxGpuColumnSizeBytes) {
   override def get(): ColumnarBatch = {
     val fileBatch: ColumnarBatch = super.get()
     if (partitionSchema.isEmpty) {
@@ -439,6 +442,7 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
                                              requestedAttributes: Seq[Attribute],
                                              maxReaderBatchSizeRows: Integer,
                                              maxReaderBatchSizeBytes: Long,
+                                             maxGpuColumnSizeBytes: Long,
                                              metrics: Map[String, GpuMetric],
                                              params: Map[String, String])
   extends ShimFilePartitionReaderFactory(params) {
@@ -462,6 +466,7 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
     new AlphabeticallyReorderingColumnPartitionReader(reader,
                                                       partFile.partitionValues,
                                                       partitionSchema,
+                                                      maxGpuColumnSizeBytes,
                                                       requestedAttributes)
   }
 }

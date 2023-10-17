@@ -63,5 +63,6 @@ class RapidsCsvScanMeta(
       cScan.partitionFilters,
       cScan.dataFilters,
       conf.maxReadBatchSizeRows,
-      conf.maxReadBatchSizeBytes)
+      conf.maxReadBatchSizeBytes,
+      conf.maxGpuColumnSizeBytes)
 }
