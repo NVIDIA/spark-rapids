@@ -27,7 +27,6 @@ import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-// import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows, Stack}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
@@ -63,10 +62,10 @@ class GpuGenerateExecSparkPlanMeta(
       val projections: Seq[Seq[Expression]] = for (row <- 0 until numRows) yield {
         val childExprsGpu = childExprs.filterNot(_.isInstanceOf[GpuStackMeta])
             .map(_.convertToGpu())
-        val a:Seq[Expression] = for (req <- childExprsGpu) yield {
+        val otherProj: Seq[Expression] = for (req <- childExprsGpu) yield {
           req
         }
-        val b:Seq[Expression] = for (col <- 0 until numFields) yield {
+        val stackProj: Seq[Expression] = for (col <- 0 until numFields) yield {
           val index = row * numFields + col
           if (index >= stackMeta.childExprs.tail.length) {
             GpuLiteral(null, NullType)
@@ -74,11 +73,10 @@ class GpuGenerateExecSparkPlanMeta(
             stackMeta.childExprs.tail(index).convertToGpu()
           }
         }
-        a ++ b
+        otherProj ++ stackProj
       }
       val output: Seq[Attribute] = gen.requiredChildOutput ++ gen.generatorOutput.take(numFields)
-      GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(
-          conf.isTieredProjectEnabled)
+      GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(false)
     } else {
       GpuGenerateExec(
         childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],

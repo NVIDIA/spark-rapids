@@ -488,4 +488,43 @@ class GpuGenerateSuite
       checkSplits(splits, batch)
     }
   }
+
+  // test stack function
+  testSparkResultsAreEqual("stack 1",
+    mixedDfWithNulls) {
+    df => {
+      df.selectExpr("*", "stack(2, ints, longs, doubles, 'five', 6, 7L, 8.0D, 'nine')")
+        .orderBy("longs")
+    }
+  }
+
+  testSparkResultsAreEqual("stack 2",
+    booleanDf) {
+    df => df.selectExpr("*", "stack(4, bools, more_bools, bools, false)")
+        .orderBy("bools", "more_bools")
+  }
+
+  testSparkResultsAreEqual("stack 2.5",
+    booleanDf) {
+    df => df.selectExpr("*", "stack(4, false, true, true, false)")
+        .orderBy("bools", "more_bools", "col1", "col2")
+  }
+
+  testSparkResultsAreEqual("stack 3",
+    longsDf) {
+    df => df.selectExpr("*", "stack(3, longs, more_longs, 1L, 2L, 3L, 4L)")
+        .orderBy("longs", "more_longs", "col1", "col2")
+  }
+
+  testSparkResultsAreEqual("stack 3.5",
+    longsDf) {
+    df => df.selectExpr("*", "stack(3, 1L, 2L, 3L, 4L, 5L)")
+        .orderBy("longs", "more_longs")
+  }
+
+  testSparkResultsAreEqual("stack 4",
+    longsDf) {
+    df => df.selectExpr("*", "stack(1, longs, more_longs, 1L, 2L, 3L, 4L)")
+        .orderBy("longs", "more_longs")
+  }
 }
