@@ -207,3 +207,41 @@ def test_parquet_pyarrow_flavor_for_timestamp(
     #
     # So here assert Spark CPU/GPU reads
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(path), conf=_common_rebase_conf)
+
+
+@pyarrow_test
+@ignore_order(local=True)
+@pytest.mark.parametrize('pyarrow_compression_type', ['NONE', 'SNAPPY', 'ZSTD'])
+def test_parquet_pyarrow_1_compression_type(
+        spark_tmp_path,
+        pyarrow_compression_type):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(sub_gens)]
+    pyarrow_write_conf = {'compression': pyarrow_compression_type}
+    assert_gpu_and_pyarrow_are_compatible(spark_tmp_path, gen_list, conf=_common_rebase_conf, pyarrow_write_conf=pyarrow_write_conf)
+
+
+@pyarrow_test
+@ignore_order(local=True)
+@pytest.mark.parametrize('row_group_size, data_page_size', [
+    (1024 * 1024, 1024 * 1024),
+    (1024 * 1024, 1024),
+    (1024, 512),
+])
+def test_parquet_pyarrow_1_group_size_page_size(
+        spark_tmp_path,
+        row_group_size,
+        data_page_size):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(sub_gens)]
+    pyarrow_write_conf = {'row_group_size': row_group_size, 'data_page_size': data_page_size}
+    assert_gpu_and_pyarrow_are_compatible(spark_tmp_path, gen_list, conf=_common_rebase_conf, pyarrow_write_conf=pyarrow_write_conf)
+
+
+@pyarrow_test
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_page_version', ['1.0', '2.0'])
+def test_parquet_pyarrow_1_data_page_version(
+        spark_tmp_path,
+        data_page_version):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(sub_gens)]
+    pyarrow_write_conf = {'data_page_version': data_page_version}
+    assert_gpu_and_pyarrow_are_compatible(spark_tmp_path, gen_list, conf=_common_rebase_conf, pyarrow_write_conf=pyarrow_write_conf)
