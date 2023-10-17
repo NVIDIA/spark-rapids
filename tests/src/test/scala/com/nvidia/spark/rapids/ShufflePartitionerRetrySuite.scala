@@ -17,6 +17,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.SparkConf
@@ -41,8 +42,16 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
       withResource(prebuiltBatch) { batch =>
         // Increase ref count since batch will be closed by rrp
-        val ret = rrp.columnarEvalAny(GpuColumnVector.incRefCounts(batch))
-        assert(partNum === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
+        var ret: Array[(ColumnarBatch, Int)] = null
+        try {
+          ret = rrp.columnarEvalAny(GpuColumnVector.incRefCounts(batch))
+            .asInstanceOf[Array[(ColumnarBatch, Int)]]
+          assert(partNum === ret.size)
+        } finally {
+          if (ret != null) {
+            ret.map(_._1).safeClose()
+          }
+        }
       }
     }
   }
@@ -63,8 +72,15 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       val prebuiltBatch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
       withResource(prebuiltBatch) { batch =>
-        val ret = rp.columnarEvalAny(batch)
-        assert(2 === ret.asInstanceOf[Array[(ColumnarBatch, Int)]].size)
+        var ret: Array[(ColumnarBatch, Int)] = null
+        try {
+          ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+          assert(2 === ret.size)
+        } finally {
+          if (ret != null) {
+            ret.map(_._1).safeClose()
+          }
+        }
       }
     }
   }

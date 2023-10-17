@@ -105,7 +105,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     val random = if (null != TaskContext.get()) {
       new Random(TaskContext.get().partitionId())
     } else {
-      // For unit test purpose where task context where task context does not exist
+      // For unit test purpose where task context does not exist
       new Random
     }
     (random.nextInt(numPartitions) + 1).hashCode % numPartitions
