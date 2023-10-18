@@ -56,15 +56,28 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
-# Psnapshots: snapshots + noSnapshots
-set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
-SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PnoSnapshots: noSnapshots only
-set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
-SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PsnapshotOnly : snapshots only
-set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
-SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+
+if [[ $SCALA_BINARY_VER == "2.13" ]]; then
+    # Psnapshots: snapshots + noSnapshots
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotsScala213
+    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PnoSnapshots: noSnapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshotsScala213
+    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PsnapshotOnly : snapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotScala213Only
+    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+else
+    # Psnapshots: snapshots + noSnapshots
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
+    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PnoSnapshots: noSnapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
+    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PsnapshotOnly : snapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
+    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+fi
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
