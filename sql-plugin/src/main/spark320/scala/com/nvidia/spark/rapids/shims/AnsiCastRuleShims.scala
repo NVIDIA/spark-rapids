@@ -51,6 +51,7 @@ trait AnsiCastRuleShims extends SparkShims {
         override val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
+          .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING

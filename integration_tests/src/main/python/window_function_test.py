@@ -1244,6 +1244,7 @@ def test_window_aggs_for_rows_collect_set():
 @allow_non_gpu("ProjectExec", "SortArray")
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
+        "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
     })
 

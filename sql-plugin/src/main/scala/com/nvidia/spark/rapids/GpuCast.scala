@@ -118,6 +118,11 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
             "to convert floating point data types to decimals and this can produce results that " +
             "slightly differ from the default behavior in Spark.  To enable this operation on " +
             s"the GPU, set ${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
+      case (_: FloatType | _: DoubleType, _: StringType) if !conf.isCastFloatToStringEnabled =>
+        willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
+            "converting floating point data types to strings and this can produce results that " +
+            "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
+            s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
             "that casting from string to float types on the GPU returns incorrect results when " +
@@ -1012,6 +1017,27 @@ object GpuCast {
           doCastStructToString(emptyScalar, nullScalar, sepColumn,
             spaceColumn, leftColumn, rightColumn)
         }
+    }
+  }
+
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+    withResource(input.castTo(DType.STRING)) { cudfCast =>
+
+      // replace "e+" with "E"
+      val replaceExponent = withResource(Scalar.fromString("e+")) { cudfExponent =>
+        withResource(Scalar.fromString("E")) { sparkExponent =>
+          cudfCast.stringReplace(cudfExponent, sparkExponent)
+        }
+      }
+
+      // replace "Inf" with "Infinity"
+      withResource(replaceExponent) { replaceExponent =>
+        withResource(Scalar.fromString("Inf")) { cudfInf =>
+          withResource(Scalar.fromString("Infinity")) { sparkInfinity =>
+            replaceExponent.stringReplace(cudfInf, sparkInfinity)
+          }
+        }
+      }
     }
   }
 

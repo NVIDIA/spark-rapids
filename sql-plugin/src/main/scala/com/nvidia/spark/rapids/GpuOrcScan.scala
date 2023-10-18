@@ -333,8 +333,7 @@ object GpuOrcScan {
         col.castTo(toDt)
 
       // float/double to string
-      // cuDF keep 9 decimal numbers after the decimal point, and CPU keeps more than 10.
-      // So when casting float/double to string, the result of GPU is different from CPU.
+      // When casting float/double to string, the result of GPU is different from CPU.
       // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
       // enable or not.
       case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>

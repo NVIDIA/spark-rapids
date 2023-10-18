@@ -41,6 +41,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
+    .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")

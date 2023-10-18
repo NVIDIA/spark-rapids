@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -146,6 +146,7 @@ _qa_conf = {
         'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
         'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'true',
+        'spark.rapids.sql.castFloatToString.enabled': 'true',
         'spark.rapids.sql.regexp.enabled': 'true'
         }
 
