@@ -483,10 +483,13 @@ object GpuWindowExec {
     val isFuncOkay = func match {
       case _: GpuBatchedRunningWindowWithFixer => true
       case GpuAggregateExpression(_: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => true
-      case GpuNthValue(_, offset, _)
-        if (offset.isInstanceOf[Literal] && offset.asInstanceOf[Literal].value == 1) =>
-        print(offset)
-        true
+      case GpuNthValue(_, offset, _) =>
+        GpuOverrides.extractLit(offset) match {
+          case Some(Literal(value, IntegerType)) if value == 1 =>
+            // FIRST()! Can be solved as batched running window.
+            true
+          case _ => false
+        }
       case _ => false
     }
     isSpecOkay && isFuncOkay
@@ -1533,9 +1536,9 @@ class GpuRunningWindowIterator(
             Some((index, f.newFixer()))
           case GpuAggregateExpression(f: GpuBatchedRunningWindowWithFixer, _, _, _, _) =>
             Some((index, f.newFixer()))
-          case GpuNthValue(child@_, offset, ignoreNulls@_) =>
+          case GpuNthValue(child, offset, ignoreNulls) =>
             GpuOverrides.extractLit(offset) match {
-              case Some(Literal(value@_, IntegerType)) if value == 1 =>
+              case Some(Literal(value, IntegerType)) if value == 1 =>
                 // Piggyback on GpuFirst.
                 Some((index, GpuFirst(child, ignoreNulls).newFixer()))
               case _ => None
