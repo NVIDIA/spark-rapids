@@ -33,7 +33,6 @@ import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     extends RapidsBufferStoreWithoutSpill(StorageTier.DISK) {
@@ -91,14 +90,14 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       stream: Cuda.Stream): (Long, Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
-        val currentPos = if (!path.exists()) {
-          path.createNewFile()
-          path.length()
+        val currentPos = path.length()
+        val option = if (append) {
+          Array(StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } else {
-          path.length()
+          Array(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
         }
         var startOffSet, writtenBytes = 0L
-        withResource(FileChannel.open(Paths.get(path.toURI), StandardOpenOption.APPEND)) { fc =>
+        withResource(FileChannel.open(Paths.get(path.toURI), option: _*)) { fc =>
           startOffSet = fc.position()
           withResource(Channels.newOutputStream(fc)) { os =>
             withResource(diskBlockManager.getSerializerManager()
