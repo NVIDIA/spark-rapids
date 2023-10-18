@@ -184,6 +184,14 @@
             </properties>
         </profile>
         <profile>
+            <id>snapshotsScala213Only</id>
+            <properties>
+                <included_buildvers>
+                    ${snapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>individual</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
