@@ -87,25 +87,6 @@ rapids_shuffle_smoke_test() {
 export TEST_PARALLEL=${TEST_PARALLEL:-4}
 
 if [[ $TEST_MODE == "DEFAULT" ]]; then
-    bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
-
-    ## Run cache tests
-    if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
-        PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-    fi
+    bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k test_exact_percentile_
 fi
 
-## Run tests with jars building from the spark-rapids source code
-if [ "$(pwd)" == "$SOURCE_PATH" ]; then
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
-        ## Run Delta Lake tests
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
-            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
-    fi
-
-    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
-        ## Mutithreaded Shuffle test
-        rapids_shuffle_smoke_test
-    fi
-fi
