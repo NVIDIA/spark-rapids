@@ -368,7 +368,7 @@ Software Requirements:
 for your hardware's minimum driver version.
 
 *For Cloudera and EMR support, please refer to the
-[Distributions](./https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
 ### Download v22.12.0
 * Download the [RAPIDS
