@@ -189,7 +189,7 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
     gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen),
         ('s1', StructGen([['sa', orc_gen]])),
         ('s2', StructGen([['sa', StructGen([['ssa', orc_gen]])]]))]
-    s0 = gen_scalar(orc_gen, force_no_nulls=True)
+    s0 = with_cpu_session(lambda spark: gen_scalar(orc_gen, force_no_nulls=True))
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).orderBy('a').write.orc(data_path))
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
