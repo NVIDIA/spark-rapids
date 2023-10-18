@@ -22,6 +22,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
+import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Column}
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.types.{DataType, StructType}
 
@@ -34,5 +35,9 @@ object ShimTrampolineUtil {
     case _ : HashedRelationBroadcastMode => true
     case IdentityBroadcastMode => true
     case _ => false
+  }
+
+  def v2ColumnsToStructType(columns: Array[Column]): StructType = {
+    CatalogV2Util.v2ColumnsToStructType(columns)
   }
 }

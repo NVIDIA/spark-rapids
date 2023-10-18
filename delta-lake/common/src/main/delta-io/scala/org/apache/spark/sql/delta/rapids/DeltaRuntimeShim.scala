@@ -22,7 +22,9 @@ import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils, VersionUtils}
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
@@ -35,6 +37,8 @@ trait DeltaRuntimeShim {
   def fileFormatFromLog(deltaLog: DeltaLog): FileFormat
 
   def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean
+
+  def getGpuDeltaCatalog(cpuCatalog: DeltaCatalog, rapidsConf: RapidsConf): StagingTableCatalog
 }
 
 object DeltaRuntimeShim {
@@ -81,4 +85,8 @@ object DeltaRuntimeShim {
 
   def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean =
     shimInstance.getTightBoundColumnOnFileInitDisabled(spark)
+
+  def getGpuDeltaCatalog(cpuCatalog: DeltaCatalog, rapidsConf: RapidsConf): StagingTableCatalog = {
+    shimInstance.getGpuDeltaCatalog(cpuCatalog, rapidsConf)
+  }
 }

@@ -107,21 +107,27 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   private var leftValues: Array[InternalRow] = partValues
   private var leftRowNums: Array[Long] = partRowNums
+  private var outputIter: Iterator[ColumnarBatch] = Iterator.empty
 
-  override def hasNext: Boolean = inputIter.hasNext
+  override def hasNext: Boolean = outputIter.hasNext || inputIter.hasNext
 
   override def next(): ColumnarBatch = {
-    if (!hasNext) throw new NoSuchElementException()
-    val hasPartitionCols = partSchema.nonEmpty
-    val batch = inputIter.next()
-    if (hasPartitionCols) {
-      val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
-        computeValuesAndRowNumsForBatch(batch.numRows())
-      }
-      MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch, readPartValues,
-        readPartRows, partSchema)
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    } else if (outputIter.hasNext) {
+      outputIter.next()
     } else {
-      batch
+      val batch = inputIter.next()
+      if (partSchema.nonEmpty) {
+        val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
+          computeValuesAndRowNumsForBatch(batch.numRows())
+        }
+        outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
+          readPartValues, partSchema)
+        outputIter.next()
+      } else {
+        batch
+      }
     }
   }
 

@@ -1829,6 +1829,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val CUDF_COLUMN_SIZE_LIMIT = conf("spark.rapids.cudfColumnSizeLimit")
+    .internal()
+    .doc("Maximum size for cuDF column vector set to 2^31 - 1")
+    .longConf
+    .createWithDefault((1L << 31) - 1)
+
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
     .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
@@ -2615,6 +2621,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val cudfColumnSizeLimit: Long = get(CUDF_COLUMN_SIZE_LIMIT)
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
