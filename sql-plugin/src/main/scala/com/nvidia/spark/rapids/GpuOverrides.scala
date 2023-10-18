@@ -3488,8 +3488,7 @@ object GpuOverrides extends Logging {
           CpuToGpuPercentileBufferConverter(childExprs.head.dataType)
         override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
           GpuToCpuPercentileBufferConverter(childExprs.head.dataType)
-      }).incompat("the GPU implementation of percentile is not bit-for-bit " +
-          s"compatible with Apache Spark"),
+      }),
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.reductionAndGroupByAgg(
