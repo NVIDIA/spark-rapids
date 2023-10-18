@@ -1788,7 +1788,9 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
+  with GpuBatchedRunningWindowWithFixer
   with GpuAggregateWindowFunction
+//  with GpuRunningWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
   with Serializable {
@@ -1839,6 +1841,16 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
     RollingAggregation.nth(0, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
+  override def newFixer(): BatchedRunningWindowFixer = new FirstRunningWindowFixer(ignoreNulls)
+
+  /*
+  // RUNNING WINDOW
+
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
+
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.fi))
+   */
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)

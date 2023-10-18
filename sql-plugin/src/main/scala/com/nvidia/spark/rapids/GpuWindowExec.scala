@@ -30,11 +30,11 @@ import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, Literal, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuFirst, GpuNthValue}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -483,6 +483,10 @@ object GpuWindowExec {
     val isFuncOkay = func match {
       case _: GpuBatchedRunningWindowWithFixer => true
       case GpuAggregateExpression(_: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => true
+      case GpuNthValue(_, offset, _)
+        if (offset.isInstanceOf[Literal] && offset.asInstanceOf[Literal].value == 1) =>
+        print(offset)
+        true
       case _ => false
     }
     isSpecOkay && isFuncOkay
@@ -1529,6 +1533,13 @@ class GpuRunningWindowIterator(
             Some((index, f.newFixer()))
           case GpuAggregateExpression(f: GpuBatchedRunningWindowWithFixer, _, _, _, _) =>
             Some((index, f.newFixer()))
+          case GpuNthValue(child@_, offset, ignoreNulls@_) =>
+            GpuOverrides.extractLit(offset) match {
+              case Some(Literal(value@_, IntegerType)) if value == 1 =>
+                // Piggyback on GpuFirst.
+                Some((index, GpuFirst(child, ignoreNulls).newFixer()))
+              case _ => None
+            }
           case _ => None
         }
       case _ => None

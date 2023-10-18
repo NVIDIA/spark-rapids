@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
+import scala.util.{Left, Right}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -1129,6 +1130,89 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
 
   override def close(): Unit = {
     previousResult.foreach(_.close())
+    previousResult = None
+  }
+}
+
+class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
+  extends BatchedRunningWindowFixer with Logging {
+  private val name = "first"
+  private var previousResult: Option[Scalar] = None
+  private var chkptPreviousResult: Option[Scalar] = None
+  /**
+   * Fix up `windowedColumnOutput` with any stored state from previous batches.
+   * Like all window operations the input data will have been sorted by the partition
+   * by columns and the order by columns.
+   *
+   * @param samePartitionMask    a mask that uses `true` to indicate the row
+   *                             is for the same partition by keys that was the last row in the
+   *                             previous batch or `false` to indicate it is not. If this is known
+   *                             to be all true or all false values a single boolean is used. If
+   *                             it can change for different rows than a column vector is provided.
+   *                             Only values that are for the same partition by keys should be
+   *                             modified. Because the input data is sorted by the partition by
+   *                             columns the boolean values will be grouped together.
+   * @param sameOrderMask        a mask just like `samePartitionMask` but for ordering. This happens
+   *                             for some operations like `rank` and `dense_rank` that use the ordering
+   *                             columns in a row based query. This is not needed for all fixers and is not
+   *                             free to calculate, so you must set `needsOrderMask` to true if you are
+   *                             going to use it.
+   * @param unfixedWindowResults the output of the windowAggregation without anything
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
+   * @return a fixed ColumnVector that was with outputs updated for items that were in the same
+   *         group by key as the last row in the previous batch.
+   */
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+                     sameOrderMask: Option[Either[ColumnVector, Boolean]],
+                     unfixedWindowResults: ColumnView): ColumnVector = {
+    // Ignore `ignoreNulls` for the moment.
+    // Also, `sameOrderMask` is irrelevant for this operation.
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) =>
+        // No previous result. Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(prev), Right(allRowsInSamePartition)) => // Boolean flag.
+        // All the current batch results may be replaced.
+        if (allRowsInSamePartition) {
+          ColumnVector.fromScalar(prev, unfixedWindowResults.getRowCount.toInt)
+        } else {
+          // No rows in the same partition. Current result needs no fixing.
+          incRef(unfixedWindowResults)
+        }
+      case (Some(prev), Left(someRowsInSamePartition)) => // Boolean vector.
+        someRowsInSamePartition.ifElse(prev, unfixedWindowResults)
+    }
+    // Reset previous result.
+    ret
+  }
+
+  /**
+   * Save the state, so it can be restored in the case of a retry.
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def checkpoint(): Unit = chkptPreviousResult = previousResult
+
+  /**
+   * Restore the state that was saved by calling to "checkpoint".
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def restore(): Unit = {
+    // If there is a previous checkpoint result, restore it to previousResult.
+    if (chkptPreviousResult.isDefined) {
+      // Close erstwhile previousResult.
+      previousResult match {
+        case Some(r) if r != chkptPreviousResult.get => r.close()
+        case _ => // Nothing to close if result is None, or matches the checkpoint.
+      }
+    }
+    previousResult = chkptPreviousResult
+    chkptPreviousResult = None
+  }
+
+  override def close(): Unit = {
+    previousResult.foreach(_.close)
     previousResult = None
   }
 }
