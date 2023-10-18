@@ -1152,11 +1152,7 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
    *                             Only values that are for the same partition by keys should be
    *                             modified. Because the input data is sorted by the partition by
    *                             columns the boolean values will be grouped together.
-   * @param sameOrderMask        a mask just like `samePartitionMask` but for ordering. This happens
-   *                             for some operations like `rank` and `dense_rank` that use the ordering
-   *                             columns in a row based query. This is not needed for all fixers and is not
-   *                             free to calculate, so you must set `needsOrderMask` to true if you are
-   *                             going to use it.
+   * @param sameOrderMask        a mask just like `samePartitionMask` but for ordering. Unused for `FIRST`.
    * @param unfixedWindowResults the output of the windowAggregation without anything
    *                             fixed/modified. This should not be closed by `fixUp` as it will be
    *                             handled by the framework.
@@ -1166,8 +1162,7 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
   override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
                      sameOrderMask: Option[Either[ColumnVector, Boolean]],
                      unfixedWindowResults: ColumnView): ColumnVector = {
-    // Ignore `ignoreNulls` for the moment.
-    // Also, `sameOrderMask` is irrelevant for this operation.
+    // `sameOrderMask` is irrelevant for this operation.
     logDebug(s"$name: fix up $previousResult $samePartitionMask")
     val ret = (previousResult, samePartitionMask) match {
       case (None, _) =>
@@ -1176,13 +1171,24 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
       case (Some(prev), Right(allRowsInSamePartition)) => // Boolean flag.
         // All the current batch results may be replaced.
         if (allRowsInSamePartition) {
-          ColumnVector.fromScalar(prev, unfixedWindowResults.getRowCount.toInt)
+          if (!ignoreNulls || prev.isValid) {
+            // If !ignoreNulls, `prev` is the result for all rows.
+            // If ignoreNulls *AND* `prev` isn't null, `prev` is the result for all rows.
+            ColumnVector.fromScalar(prev, unfixedWindowResults.getRowCount.toInt)
+          } else {
+            // If ignoreNulls, *AND* `prev` is null, keep the current result.
+            incRef(unfixedWindowResults)
+          }
         } else {
           // No rows in the same partition. Current result needs no fixing.
           incRef(unfixedWindowResults)
         }
       case (Some(prev), Left(someRowsInSamePartition)) => // Boolean vector.
-        someRowsInSamePartition.ifElse(prev, unfixedWindowResults)
+        if (!ignoreNulls || prev.isValid) {
+          someRowsInSamePartition.ifElse(prev, unfixedWindowResults)
+        } else {
+          incRef(unfixedWindowResults)
+        }
     }
     // Reset previous result.
     ret
