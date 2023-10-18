@@ -81,7 +81,8 @@ jobs:
 
           SCALA_BINARY_VER=2.13
           . jenkins/version-def.sh
-          svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
+          svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
+          svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
           # get private artifact version
           privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
           # do not add empty snapshot versions or when private version is released one (does not include snapshot shims)
