@@ -113,7 +113,18 @@ _common_rebase_conf = {
     'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
     'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
     'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED'
+    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+
+    # disable timestampNTZ for parquet for 3.4+ tests to pass
+    # pyarrow write parquet with isAdjustedToUTC = true
+    #   ParquetMetadata parquetMetadata = ParquetFileReader.readFooter(new Configuration(), new Path(filePath));
+    #   MessageType schema = parquetMetadata.getFileMetaData().getSchema();
+    #   Type timestampColumn = schema.getType("_c9");
+    #   System.out.println(timestampColumn);
+    #       optional int64 _c9 (TIMESTAMP(MICROS,false))
+    #       isAdjustedToUTC: true
+    # Refer to Spark link: https://github.com/apache/spark/blob/v3.5.0/sql/catalyst/src/main/scala/org/apache/spark/sql/internal/SQLConf.scala#L1163
+    'spark.sql.parquet.inferTimestampNTZ.enabled': 'false'
 }
 
 #
