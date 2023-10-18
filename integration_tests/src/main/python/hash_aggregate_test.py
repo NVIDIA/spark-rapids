@@ -924,8 +924,6 @@ def exact_percentile_reduction(df):
         'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'
     )
 
-@incompat
-@approximate_float
 @pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
 def test_exact_percentile_reduction(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -938,8 +936,6 @@ exact_percentile_reduction_cpu_fallback_data_gen = [
       .with_special_case(0, weight=100))]
     for data_gen in [IntegerGen(), DoubleGen()]]
 
-@incompat
-@approximate_float
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
                'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
                'Percentile')
@@ -1002,8 +998,6 @@ def exact_percentile_groupby(df):
         f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')
     )
 
-@incompat
-@approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
 def test_exact_percentile_groupby(data_gen):
@@ -1018,8 +1012,6 @@ exact_percentile_groupby_cpu_fallback_data_gen = [
       .with_special_case(0, weight=100))]
     for data_gen in [IntegerGen(), DoubleGen()]]
 
-@incompat
-@approximate_float
 @ignore_order
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
                'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
