@@ -60,6 +60,9 @@ You can find all available build versions in the top level pom.xml file. If you 
 for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
 the version you want.
 
+See the [scala2.13](scala2.13) directory for instructions on how to build against 
+Scala 2.13.
+
 To get an uber jar with more than 1 version you have to `mvn package` each version
 and then use one of the defined profiles in the dist module, or a comma-separated list of
 build versions. See the next section for more details.
