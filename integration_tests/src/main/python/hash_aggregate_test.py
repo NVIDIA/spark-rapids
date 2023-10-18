@@ -950,7 +950,10 @@ def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_m
     # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
     # set the expected exist_classes according to runtime.
     if is_databricks_runtime():
-        exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
     else:
         exist_clz = cpu_clz + gpu_clz
 
@@ -1023,7 +1026,10 @@ def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode
     # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
     # set the expected exist_classes according to runtime.
     if is_databricks_runtime():
-        exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
     else:
         exist_clz = cpu_clz + gpu_clz
 
