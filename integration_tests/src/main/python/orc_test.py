@@ -19,6 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_an
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from spark_init_internal import spark_version
 from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh, is_spark_340_or_later
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
@@ -820,6 +821,7 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
 
 @allow_non_gpu("ProjectExec")
 @pytest.mark.skipif(is_before_spark_340(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() == "3.4.1", reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):
