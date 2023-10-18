@@ -301,13 +301,15 @@ def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+    
+float_to_string_gens = [FloatGen(), DoubleGen()]
 
-@pytest.mark.parametrize('data_gen', not_matched_gens_for_cast_to_string, ids=idfn)
+@approximate_float
+@pytest.mark.parametrize('data_gen', float_to_string_gens, ids=idfn)
 def test_cast_float_to_string(data_gen):
-    _assert_cast_to_string_equal(
-        data_gen,
-        {}
-    )
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr("cast(cast(a as string) as double)"),
+        conf = {"spark.rapids.sql.castStringToFloat.enabled": "true"})
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])

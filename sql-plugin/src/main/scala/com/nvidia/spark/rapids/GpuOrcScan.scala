@@ -338,7 +338,7 @@ object GpuOrcScan {
       // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
       // enable or not.
       case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
-        CastStrings.fromFloats(col)
+        CastStrings.fromFloat(col)
 
       // float/double -> timestamp
       case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>

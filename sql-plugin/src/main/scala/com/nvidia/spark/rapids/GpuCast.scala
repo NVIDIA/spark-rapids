@@ -721,7 +721,7 @@ object GpuCast {
     case StringType => input.copyToColumnVector()
     case DateType => input.asStrings("%Y-%m-%d")
     case TimestampType => castTimestampToString(input)
-    case FloatType | DoubleType => CastStrings.fromFloats(input)
+    case FloatType | DoubleType => CastStrings.fromFloat(input)
     case BinaryType => castBinToString(input, options)
     case _: DecimalType => GpuCastShims.CastDecimalToString(input, options.useDecimalPlainString)
     case StructType(fields) => castStructToString(input, fields, options)
