@@ -46,7 +46,8 @@ def test_explode_makearray(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_explode_litarray(data_gen):
-    array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
+    array_lit = with_cpu_session(
+        lambda spark: gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False)))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.explode(array_lit)))
@@ -133,7 +134,8 @@ def test_posexplode_makearray(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_posexplode_litarray(data_gen):
-    array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
+    array_lit = with_cpu_session(
+        lambda spark: gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False)))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'),
                 f.posexplode(array_lit)))
