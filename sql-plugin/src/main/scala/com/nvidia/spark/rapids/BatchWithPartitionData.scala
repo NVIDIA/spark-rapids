@@ -156,7 +156,7 @@ class BatchWithPartitionDataIterator(batchesWithPartitionData: Seq[BatchWithPart
 object BatchWithPartitionDataUtils {
   /**
    * Splits partition data (values and row counts) into smaller batches, ensuring that
-   * size of batch is less than the maximum batch size. Then, it utilizes these smaller
+   * size of column is less than the maximum column size. Then, it utilizes these smaller
    * partitioned batches to split the input batch and merges them to generate
    * an Iterator of split ColumnarBatches.
    *
@@ -195,7 +195,7 @@ object BatchWithPartitionDataUtils {
 
   /**
    * Adds a single set of partition values to all rows in a ColumnarBatch ensuring that
-   * size of batch is less than the maximum batch size.
+   * size of column is less than the maximum column size.
    *
    * @return a new columnar batch iterator with partition values
    * @see [[com.nvidia.spark.rapids.BatchWithPartitionDataUtils.addPartitionValuesToBatch]]
@@ -211,7 +211,7 @@ object BatchWithPartitionDataUtils {
 
   /**
    * Splits partitions into smaller batches, ensuring that the batch size
-   * for each column does not exceed the maximum batch size limit.
+   * for each column does not exceed the maximum column size limit.
    *
    * Data structures:
    *  - sizeOfBatch:   Array that stores the size of batches for each column.

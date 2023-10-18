@@ -633,7 +633,7 @@ class GpuAvroPartitionReader(
  * @param partitionSchema Schema of partitions.
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows to be read per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes to be read per batch
- * @param maxGpuColumnSizeBytes target number of bytes for a GPU batch
+ * @param maxGpuColumnSizeBytes maximum number of bytes for a GPU column
  */
 class GpuMultiFileCloudAvroPartitionReader(
     override val conf: Configuration,

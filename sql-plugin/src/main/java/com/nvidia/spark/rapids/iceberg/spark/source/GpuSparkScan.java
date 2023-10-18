@@ -282,7 +282,7 @@ abstract class GpuSparkScan extends GpuScanWrapper
                          boolean queryUsesInputFile) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(), task.getMaxBatchSizeBytes(), task.useChunkedReader(),
+          task.getTargetBatchSizeBytes(), task.getMaxGpuColumnSizeBytes(), task.useChunkedReader(),
           task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
           task.getNumThreads(), task.getMaxNumFileProcessed(),
           useMultiThread, ff, metrics, queryUsesInputFile);
