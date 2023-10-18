@@ -184,7 +184,7 @@
             </properties>
         </profile>
         <profile>
-            <id>snapshotsScala213Only</id>
+            <id>snapshotScala213Only</id>
             <properties>
                 <included_buildvers>
                     ${snapshotScala213.buildvers}
