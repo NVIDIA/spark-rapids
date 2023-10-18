@@ -494,7 +494,9 @@ def test_window_running_no_part(b_gen, batch_size):
             'dense_rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
-            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
+            'FIRST(b) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+            'FIRST(b, TRUE) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls']
     if isinstance(b_gen.data_type, NumericType) and not isinstance(b_gen, FloatGen) and not isinstance(b_gen, DoubleGen):
         query_parts.append('sum(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
 
@@ -595,7 +597,7 @@ def test_window_running_rank(data_gen):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
         [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
-def test_window_running(b_gen, c_gen, batch_size):
+def test_window_running_foo(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -604,7 +606,9 @@ def test_window_running(b_gen, c_gen, batch_size):
             'dense_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
-            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
+            'FIRST(c) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+            'FIRST(c, TRUE) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls']
 
     # Decimal precision can grow too large. Float and Double can get odd results for Inf/-Inf because of ordering
     if isinstance(c_gen.data_type, NumericType) and (not isinstance(c_gen, FloatGen)) and (not isinstance(c_gen, DoubleGen)) and (not isinstance(c_gen, DecimalGen)):

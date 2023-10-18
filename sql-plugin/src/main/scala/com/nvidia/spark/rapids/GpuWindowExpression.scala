@@ -1139,6 +1139,18 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
   private val name = "first"
   private var previousResult: Option[Scalar] = None
   private var chkptPreviousResult: Option[Scalar] = None
+
+  private[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
+    val numRows = finalOutputColumn.getRowCount.toInt
+    if (numRows > 0) {
+      val lastIndex = numRows - 1
+      logDebug(s"$name: updateState from $previousResult to...")
+      previousResult.foreach(_.close)
+      previousResult = Some(finalOutputColumn.getScalarElement(lastIndex))
+      logDebug(s"$name: ... $previousResult")
+    }
+  }
+
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -1191,7 +1203,10 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
         }
     }
     // Reset previous result.
-    ret
+    closeOnExcept(ret) { ret =>
+      resetPrevious(ret)
+      ret
+    }
   }
 
   /**

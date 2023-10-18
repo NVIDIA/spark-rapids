@@ -1842,15 +1842,6 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
         .onColumn(inputs.head._2)
 
   override def newFixer(): BatchedRunningWindowFixer = new FirstRunningWindowFixer(ignoreNulls)
-
-  /*
-  // RUNNING WINDOW
-
-  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.fi))
-   */
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
