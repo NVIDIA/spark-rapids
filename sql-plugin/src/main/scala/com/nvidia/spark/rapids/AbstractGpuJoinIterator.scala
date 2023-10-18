@@ -198,7 +198,7 @@ abstract class SplittableJoinIterator(
   // If the join explodes this holds batches from the stream side split into smaller pieces.
   private val pendingSplits = scala.collection.mutable.Queue[LazySpillableColumnarBatch]()
 
-  protected def computeNumJoinRows(cb: ColumnarBatch): Long
+  protected def computeNumJoinRows(cb: LazySpillableColumnarBatch): Long
 
   /**
    * Create a join gatherer.
@@ -225,7 +225,7 @@ abstract class SplittableJoinIterator(
       }
       opTime.ns {
         withResource(scb) { scb =>
-          val numJoinRows = computeNumJoinRows(scb.getBatch)
+          val numJoinRows = computeNumJoinRows(scb)
 
           // We want the gather maps size to be around the target size. There are two gather maps
           // that are made up of ints, so compute how many rows on the stream side will produce the
