@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.GpuExec
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.connector.catalog.{Identifier, StagingTableCatalog, Table, TableCatalog}
@@ -43,14 +44,15 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * GPU version of AtomicReplaceTableAsSelectExec.
  *
- * Physical plan node for v2 replace table as select when the catalog does not support staging
+ * Physical plan node for v2 replace table as select when the catalog supports staging
  * table replacement.
  *
  * A new table will be created using the schema of the query, and rows from the query are appended.
  * If the table exists, its contents and schema should be replaced with the schema and the contents
- * of the query. This is a non-atomic implementation that drops the table and then runs non-atomic
- * CTAS. For an atomic implementation for catalogs with the appropriate support, see
- * ReplaceTableAsSelectStagingExec.
+ * of the query. This implementation is atomic. The table replacement is staged, and the commit
+ * operation at the end should perform the replacement of the table's metadata and contents. If the
+ * write fails, the table is instructed to roll back staged changes and any previously written table
+ * is left untouched.
  */
 case class GpuAtomicReplaceTableAsSelectExec(
     catalog: StagingTableCatalog,
@@ -67,25 +69,26 @@ case class GpuAtomicReplaceTableAsSelectExec(
   override def supportsColumnar: Boolean = false
 
   override protected def run(): Seq[InternalRow] = {
-    // Note that this operation is potentially unsafe, but these are the strict semantics of
-    // RTAS if the catalog does not support atomic operations.
-    //
-    // There are numerous cases we concede to where the table will be dropped and irrecoverable:
-    //
-    // 1. Creating the new table fails,
-    // 2. Writing to the new table fails,
-    // 3. The table returned by catalog.createTable doesn't support writing.
+    val schema = CharVarcharUtils.getRawSchema(query.schema).asNullable
     if (catalog.tableExists(ident)) {
       val table = catalog.loadTable(ident)
       invalidateCache(catalog, table, ident)
-      catalog.dropTable(ident)
-    } else if (!orCreate) {
+    }
+    val staged = if (orCreate) {
+      catalog.stageCreateOrReplace(
+        ident, schema, partitioning.toArray, properties.asJava)
+    } else if (catalog.tableExists(ident)) {
+      try {
+        catalog.stageReplace(
+          ident, schema, partitioning.toArray, properties.asJava)
+      } catch {
+        case e: NoSuchTableException =>
+          throw QueryCompilationErrors.cannotReplaceMissingTableError(ident, Some(e))
+      }
+    } else {
       throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
     }
-    val schema = CharVarcharUtils.getRawSchema(query.schema).asNullable
-    val table = catalog.createTable(
-      ident, schema, partitioning.toArray, properties.asJava)
-    writeToTable(catalog, table, writeOptions, ident)
+    writeToTable(catalog, staged, writeOptions, ident)
   }
 
   override protected def withNewChildInternal(

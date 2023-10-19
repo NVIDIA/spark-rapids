@@ -2271,4 +2271,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def isCdh321: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 2, 1) == 0
 
   def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
+
+  def isCdh332: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 2) == 0
 }
