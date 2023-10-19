@@ -3231,7 +3231,8 @@ object GpuOverrides extends Logging {
       "Extracts a part from a URL",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
+            TypeEnum.STRING, "only support partToExtract=PROTOCOL"), TypeSig.STRING)),
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {

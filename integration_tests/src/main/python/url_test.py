@@ -29,61 +29,12 @@ url_pattern_with_key = r'((http|https|ftp|file)://)(([a-z]{1,3}\.){0,3}([a-z]{1,
             r'(:[0-9]{1,3}){0,1}(/[a-z]{1,3}){0,3}(\?key=[a-z]{1,3}){0,1}(#([a-z]{1,3})){0,1}'
 
 url_gen = StringGen(url_pattern)
-
-def test_parse_url_host():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen, length=10).selectExpr(
-                "a",
-                "parse_url(a, 'HOST')"
-                ))
-
-def test_parse_url_path():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'PATH')"
-                ))
-    
-def test_parse_url_query():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'QUERY')"
-                ))
-
-def test_parse_url_ref():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'REF')"
-                ))
     
 def test_parse_url_protocol():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, url_gen).selectExpr(
                 "a",
                 "parse_url(a, 'PROTOCOL')"
-                ))
-    
-def test_parse_url_file():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'FILE')"
-                ))
-    
-def test_parse_url_authority():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'AUTHORITY')"
-                ))
-    
-def test_parse_url_userinfo():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'USERINFO')"
                 ))
     
 def test_parse_url_with_no_query_key():
@@ -97,13 +48,6 @@ def test_parse_url_with_no_query_key():
                 "parse_url(a, 'FILE', '')",
                 "parse_url(a, 'AUTHORITY', '')",
                 "parse_url(a, 'USERINFO', '')"
-                ))
-    
-def test_parse_url_with_query_key():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen(url_pattern_with_key)).selectExpr(
-                "a",
-                "parse_url(a, 'QUERY', 'key')"
                 ))
     
 def test_parse_url_too_many_args():
