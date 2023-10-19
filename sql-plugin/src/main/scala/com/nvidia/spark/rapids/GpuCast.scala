@@ -797,7 +797,8 @@ object GpuCast {
     import options._
 
     val emptyStr = ""
-    val spaceStr = " "
+    val spaceStr = if (options.castToJsonString) "" else " "
+
     val sepStr = if (useHexFormatForBinary && castingBinaryData) spaceStr
       else if (useLegacyComplexTypesToString) "," else ", "
 
@@ -805,7 +806,7 @@ object GpuCast {
       Seq(emptyStr, spaceStr, nullString, sepStr).safeMap(Scalar.fromString)
     ) { case Seq(empty, space, nullRep, sep) =>
 
-      val withSpacesIfLegacy = if (!useLegacyComplexTypesToString) {
+      val withSpacesIfLegacy = if (!options.castToJsonString && !useLegacyComplexTypesToString) {
         withResource(input.getChildColumnView(0)) {
           _.replaceNulls(nullRep)
         }
@@ -1054,7 +1055,7 @@ object GpuCast {
           if (needsQuoting) {
             attrColumns += quote.incRefCount()
           }
-          attrColumns += castToString(cv, inputSchema.head.dataType, options)
+          attrColumns += castToString(cv, inputSchema(fieldIndex).dataType, options)
           if (needsQuoting) {
             attrColumns += quote.incRefCount()
           }
@@ -1084,14 +1085,18 @@ object GpuCast {
           val jsonAttrs = withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
             // create one column per attribute, which will either be in the form `"name":value` or
             // empty string for rows that have null values
-            for (i <- 0 until input.getNumChildren) {
-              columns += castToJsonAttribute(i, colon, quote)
+            if (input.getNumChildren == 1) {
+              castToJsonAttribute(0, colon, quote)
+            } else {
+              for (i <- 0 until input.getNumChildren) {
+                columns += castToJsonAttribute(i, colon, quote)
+              }
+              // concatenate the columns into one string
+              withResource(ColumnVector.stringConcatenate(commaScalar,
+                emptyScalar, columns.toArray, false))(
+                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+              )
             }
-            // concatenate the columns into one string
-            withResource(ColumnVector.stringConcatenate(commaScalar,
-              emptyScalar, columns.toArray, false))(
-              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
-            )
           }
           // now wrap the string with `{` and `}`
           withResource(jsonAttrs) { _ =>

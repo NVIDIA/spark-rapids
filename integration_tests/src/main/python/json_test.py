@@ -529,19 +529,22 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
             conf=all_confs)
 
 
-def test_structs_to_json(spark_tmp_path):
-    # TODO test for these types:  struct, array of structs or a map or array of map.
-    # TODO test with strings containing quotes and special characters
-    json_string_gen = StringGen("[A-Z]{1}[a-z]{2,5}", nullable=False)
-
-    gen = StructGen([('my_struct',
-        StructGen([
-            ('a', IntegerGen(nullable=True)),
-            ("b", json_string_gen)], nullable=True)),
-            ("c", FloatGen(nullable=True)),
-            ("d", StructGen([(('int', IntegerGen(nullable=True)))], nullable=True)),
-            ("e", ArrayGen(StructGen([(('child', IntegerGen(nullable=True)))], nullable=True))),
-        ], nullable=False)
+@pytest.mark.parametrize('data_gen', [byte_gen,
+    short_gen,
+    int_gen,
+    long_gen,
+    pytest.param(float_gen, marks=pytest.mark.xfail(reason='TBD - known formatting differences')),
+    pytest.param(double_gen, marks=pytest.mark.xfail(reason='TBD - known formatting differences')),
+    StringGen('[A-Z]{0,10}')], ids=idfn)
+# TODO add full string gen
+def test_structs_to_json(spark_tmp_path, data_gen):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+        # TODO test for these types: array of structs or a map or array of map.
+        # ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True)))
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)
