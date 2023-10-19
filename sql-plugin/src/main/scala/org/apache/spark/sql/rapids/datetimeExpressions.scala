@@ -1045,6 +1045,7 @@ class FromUTCTimestampExprMeta(
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
+    // need timezone support, here check timezone
     extractStringLit(expr.right) match {
       case None =>
         willNotWorkOnGpu("timezone input must be a literal string")

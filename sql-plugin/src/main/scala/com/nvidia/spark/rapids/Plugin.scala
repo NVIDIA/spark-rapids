@@ -374,13 +374,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         case Some(value) => ZoneId.of(value)
         case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
       }
-      if (TypeChecks.areTimestampsSupported(driverTimezone)) {
-        val executorTimezone = ZoneId.systemDefault()
-        if (executorTimezone.normalized() != driverTimezone.normalized()) {
-          throw new RuntimeException(s" Driver and executor timezone mismatch. " +
-              s"Driver timezone is $driverTimezone and executor timezone is " +
-              s"$executorTimezone. Set executor timezone to $driverTimezone.")
-        }
+
+      val executorTimezone = ZoneId.systemDefault()
+      if (executorTimezone.normalized() != driverTimezone.normalized()) {
+        throw new RuntimeException(s" Driver and executor timezone mismatch. " +
+            s"Driver timezone is $driverTimezone and executor timezone is " +
+            s"$executorTimezone. Set executor timezone to $driverTimezone.")
       }
 
       GpuCoreDumpHandler.executorInit(conf, pluginContext)

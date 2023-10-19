@@ -560,7 +560,7 @@ def test_timestamp_micros(data_gen):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))
 
 
-# used for timezone test cases
+# used by timezone test cases
 def get_timezone_df(spark):
     schema = StructType([
         StructField("ts_str_col", StringType()),
@@ -575,38 +575,40 @@ def get_timezone_df(spark):
     ]
     return spark.createDataFrame(SparkContext.getOrCreate().parallelize(data),schema)
 
-# used for timezone test cases, specify all the sqls that will be impacted by non-utc timezone
+# used by timezone test cases, specify all the sqls that will be impacted by non-utc timezone
 time_zone_sql_conf_pairs = [
     ("select minute(ts_col) from tab", {}),
     ("select second(ts_col) from tab", {}),
     ("select hour(ts_col) from tab", {}),
-    ("select date_col + (interval 10 days) from tab", {}), # test GpuDateAddInterval
+    ("select date_col + (interval 10 days 3 seconds) from tab", {}),
     ("select date_format(ts_col, 'yyyy-MM-dd HH:mm:ss') from tab", {}),
-    ("select to_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}), 
-    ("select to_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
-    ("select unix_timestamp() from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}), 
-    ("select unix_timestamp(ts_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
+    ("select unix_timestamp(ts_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}),
     ("select to_unix_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}),
     ("select to_unix_timestamp(ts_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
     ("select to_date(date_str_col, 'yyyy-MM-dd') from tab", {}), # test GpuGetTimestamp
     ("select to_date(date_str_col) from tab", {}),
     ("select from_unixtime(long_col, 'yyyy-MM-dd HH:mm:ss') from tab", {}),
-    ("select from_utc_timestamp(ts_col, '+08:00') from tab", {}),
+    ("select cast(ts_col as string) from tab", {}), # cast
+    ("select cast(ts_col as date) from tab", {}), # cast
+    ("select cast(date_col as TIMESTAMP) from tab", {}), # cast
+    ("select to_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}), 
+    ("select to_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
     ]
 
 
 @allow_non_gpu("ProjectExec")
-@pytest.mark.parametrize('sql, conf', time_zone_sql_conf_pairs)
-def test_timezone_for_operators_with_non_utc(sql, conf):
+@pytest.mark.parametrize('sql, extra_conf', time_zone_sql_conf_pairs)
+def test_timezone_for_operators_with_non_utc(sql, extra_conf):
     # timezone is non-utc, should fallback to CPU
     timezone_conf = {"spark.sql.session.timeZone": "+08:00", 
-            "spark.rapids.sql.hasExtendedYearValues": "false"}
-    conf = copy_and_update(timezone_conf, conf)
+            "spark.rapids.sql.hasExtendedYearValues": "false",
+            "spark.rapids.sql.castStringToTimestamp.enabled": "true"}
+    all_conf = copy_and_update(timezone_conf, extra_conf)
     def gen_sql_df(spark):
         df = get_timezone_df(spark)
         df.createOrReplaceTempView("tab")
         return spark.sql(sql)
-    assert_gpu_fallback_collect(gen_sql_df, "ProjectExec", conf)
+    assert_gpu_fallback_collect(gen_sql_df, "ProjectExec", all_conf)
 
 
 @pytest.mark.parametrize('sql, conf', time_zone_sql_conf_pairs)
@@ -614,10 +616,29 @@ def test_timezone_for_operators_with_utc(sql, conf):
     # timezone is utc, should be supported by GPU
     timezone_conf = {"spark.sql.session.timeZone": "UTC", 
             "spark.rapids.sql.hasExtendedYearValues": "false",
-            "spark.rapids.sql.castStringToTimestamp.enabled": "true"}
+            "spark.rapids.sql.castStringToTimestamp.enabled": "true",}
     conf = copy_and_update(timezone_conf, conf)
     def gen_sql_df(spark):
         df = get_timezone_df(spark)
         df.createOrReplaceTempView("tab")
-        return spark.sql(sql).collect()
-    with_gpu_session(gen_sql_df, conf)
+        return spark.sql(sql)
+    assert_gpu_and_cpu_are_equal_collect(gen_sql_df, conf)
+
+
+@allow_non_gpu("ProjectExec")
+def test_timezone_for_operator_from_utc_timestamp_with_non_utc():
+    # timezone is non-utc, should fallback to CPU
+    def gen_sql_df(spark):
+        df = get_timezone_df(spark)
+        df.createOrReplaceTempView("tab")
+        return spark.sql("select from_utc_timestamp(ts_col, '+08:00') from tab")
+    assert_gpu_fallback_collect(gen_sql_df, "ProjectExec")
+
+
+def test_timezone_for_operator_from_utc_timestamp_with_utc():
+    # timezone is utc, should be supported by GPU
+    def gen_sql_df(spark):
+        df = get_timezone_df(spark)
+        df.createOrReplaceTempView("tab")
+        return spark.sql("select from_utc_timestamp(ts_col, '+00:00') from tab").collect()
+    with_gpu_session(gen_sql_df)

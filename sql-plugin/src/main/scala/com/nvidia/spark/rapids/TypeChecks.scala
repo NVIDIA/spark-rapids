@@ -363,8 +363,7 @@ final class TypeSig private(
       case FloatType => check.contains(TypeEnum.FLOAT)
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
-      case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          TypeChecks.areTimestampsSupported()
+      case TimestampType => check.contains(TypeEnum.TIMESTAMP)
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -840,7 +839,7 @@ object TypeChecks {
     areTimestampsSupported(ZoneId.systemDefault()) &&
       areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
   }
-
+  
   def isTimezoneSensitiveType(dataType: DataType): Boolean = {
     dataType == TimestampType
   }
@@ -1502,7 +1501,20 @@ class CastChecks extends ExprChecks {
 
   def gpuCanCast(from: DataType, to: DataType): Boolean = {
     val (checks, _) = getChecksAndSigs(from)
-    checks.isSupportedByPlugin(to)
+    checks.isSupportedByPlugin(to) && gpuCanCastConsiderTimezone(from, to)
+  }
+
+  def gpuCanCastConsiderTimezone(from: DataType, to: DataType) = {
+    // need timezone support, here check timezone
+    (from, to) match {
+      case (_:StringType, _:TimestampType) => TypeChecks.areTimestampsSupported()
+      case (_:TimestampType, _:StringType) => TypeChecks.areTimestampsSupported()
+      case (_:StringType, _:DateType) => TypeChecks.areTimestampsSupported()
+      case (_:DateType, _:StringType) => TypeChecks.areTimestampsSupported()
+      case (_:TimestampType, _:DateType) => TypeChecks.areTimestampsSupported()
+      case (_:DateType, _:TimestampType) => TypeChecks.areTimestampsSupported()
+      case _ => true
+    }
   }
 }
 

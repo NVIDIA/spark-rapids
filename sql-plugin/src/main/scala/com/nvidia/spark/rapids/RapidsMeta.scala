@@ -1095,11 +1095,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
-    wrapped match {
-      case tzAware: TimeZoneAwareExpression if needTimezoneTagging =>
-        checkTimeZoneId(tzAware.zoneId)
-      case _ => // do nothing
-    }
   }
 
   /**
