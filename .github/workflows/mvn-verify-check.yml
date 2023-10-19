@@ -164,7 +164,7 @@ jobs:
           # verify Scala 2.13 build files
           ./build/make-scala-version-build-files.sh 2.13
           # verify git status
-          if [ -n "$(echo -n $(git status -s | grep 'scala2.13'))" ]; then
+          if ! git diff --exit-code 'scala2.13/*'; then
               echo "Generated Scala 2.13 build files don't match what's in repository"
               exit 1
           fi
