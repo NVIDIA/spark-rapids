@@ -300,7 +300,7 @@ parquet_pred_push_gens = [
 def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
-    s0 = gen_scalar(parquet_gen, force_no_nulls=True)
+    s0 = with_cpu_session(lambda spark: gen_scalar(parquet_gen, force_no_nulls=True))
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).orderBy('a').write.parquet(data_path),
             conf=rebase_write_corrected_conf)

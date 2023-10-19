@@ -22,7 +22,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids.GpuWindowExpression
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 
 object PythonUDFShim {

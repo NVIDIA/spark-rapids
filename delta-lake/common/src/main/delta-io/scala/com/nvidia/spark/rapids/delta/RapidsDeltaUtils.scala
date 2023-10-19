@@ -28,12 +28,13 @@ object RapidsDeltaUtils {
   def tagForDeltaWrite(
       meta: RapidsMeta[_, _, _],
       schema: StructType,
-      deltaLog: DeltaLog,
+      deltaLog: Option[DeltaLog],
       options: Map[String, String],
       spark: SparkSession): Unit = {
     FileFormatChecks.tag(meta, schema, DeltaFormatType, WriteFileOp)
-    val format = DeltaRuntimeShim.fileFormatFromLog(deltaLog)
-    if (format.getClass == classOf[DeltaParquetFileFormat]) {
+    val format = deltaLog.map(log => DeltaRuntimeShim.fileFormatFromLog(log).getClass)
+      .getOrElse(classOf[DeltaParquetFileFormat])
+    if (format == classOf[DeltaParquetFileFormat]) {
       GpuParquetFileFormat.tagGpuSupport(meta, spark, options, schema)
     } else {
       meta.willNotWorkOnGpu(s"file format $format is not supported")
@@ -43,7 +44,7 @@ object RapidsDeltaUtils {
 
   private def checkIncompatibleConfs(
       meta: RapidsMeta[_, _, _],
-      deltaLog: DeltaLog,
+      deltaLog: Option[DeltaLog],
       sqlConf: SQLConf,
       options: Map[String, String]): Unit = {
     def getSQLConf(key: String): Option[String] = {
@@ -58,11 +59,13 @@ object RapidsDeltaUtils {
       val deltaOptions = new DeltaOptions(options, sqlConf)
       deltaOptions.optimizeWrite.orElse {
         getSQLConf("spark.databricks.delta.optimizeWrite.enabled").map(_.toBoolean).orElse {
-          val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).metadata
-          DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
-            metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
-              getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
-            }.map(_.toBoolean)
+          deltaLog.flatMap { log =>
+            val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(log).metadata
+            DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
+              metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
+                getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
+              }.map(_.toBoolean)
+            }
           }
         }
       }.getOrElse(false)
@@ -73,9 +76,11 @@ object RapidsDeltaUtils {
 
     val autoCompactEnabled =
       getSQLConf("spark.databricks.delta.autoCompact.enabled").orElse {
-        val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).metadata
-        metadata.configuration.get("delta.autoOptimize.autoCompact").orElse {
-          getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.autoCompact")
+        deltaLog.flatMap { log =>
+          val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(log).metadata
+          metadata.configuration.get("delta.autoOptimize.autoCompact").orElse {
+            getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.autoCompact")
+          }
         }
       }.exists(_.toBoolean)
     if (autoCompactEnabled) {

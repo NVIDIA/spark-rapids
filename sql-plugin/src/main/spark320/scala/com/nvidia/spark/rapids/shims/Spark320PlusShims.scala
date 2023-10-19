@@ -27,6 +27,7 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
@@ -52,6 +53,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.command._
+import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -61,6 +63,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
@@ -251,6 +254,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     val maps: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+      exec[AtomicCreateTableAsSelectExec](
+        "Create table as select for datasource V2 tables that support staging table creation",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (e, conf, p, r) => new AtomicCreateTableAsSelectExecMeta(e, conf, p, r)),
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
