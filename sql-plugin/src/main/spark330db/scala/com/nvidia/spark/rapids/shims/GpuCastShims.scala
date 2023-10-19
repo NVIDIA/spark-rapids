@@ -22,7 +22,6 @@
 {"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
 import java.math.BigInteger

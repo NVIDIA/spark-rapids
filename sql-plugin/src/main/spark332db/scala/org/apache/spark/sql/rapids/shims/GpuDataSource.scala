@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
 {"spark": "332db"}
 {"spark": "340"}
@@ -20,7 +21,6 @@
 {"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.rapids
 
 import org.apache.hadoop.fs.Path

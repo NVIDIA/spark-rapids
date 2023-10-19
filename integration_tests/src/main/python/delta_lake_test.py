@@ -16,8 +16,7 @@ import pytest
 from pyspark.sql import Row
 from asserts import assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from delta_lake_merge_test import setup_dest_table
-from delta_lake_write_test import delta_meta_allow
+from delta_lake_utils import delta_meta_allow, setup_delta_dest_table
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
@@ -79,9 +78,9 @@ def test_delta_deletion_vector_read_fallback(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true"}
     def setup_tables(spark):
-        setup_dest_table(spark, data_path,
-                         dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                         use_cdf=use_cdf, enable_deletion_vectors=True)
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                               use_cdf=use_cdf, enable_deletion_vectors=True)
         spark.sql("INSERT INTO delta.`{}` VALUES(1)".format(data_path))
         spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
     with_cpu_session(setup_tables, conf=conf)

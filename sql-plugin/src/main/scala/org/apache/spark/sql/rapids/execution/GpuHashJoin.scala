@@ -162,7 +162,17 @@ object GpuHashJoin {
   /**
    * Filter rows from the batch where any of the keys are null.
    */
-  def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
+  def filterNullsWithRetryAndClose(
+      sb: SpillableColumnarBatch,
+      boundKeys: Seq[Expression]): ColumnarBatch = {
+    withRetryNoSplit(sb) { _ =>
+      withResource(sb.getColumnarBatch()) { cb =>
+        filterNulls(cb, boundKeys)
+      }
+    }
+  }
+
+  private def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
     var mask: ai.rapids.cudf.ColumnVector = null
     try {
       withResource(GpuProjectExec.project(cb, boundKeys)) { keys =>
@@ -977,9 +987,9 @@ trait GpuHashJoin extends GpuExec {
     val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
     val nullFiltered = if (builtAnyNullable) {
-      withResource(builtBatch) { _ =>
-        GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
-      }
+      val sb = closeOnExcept(builtBatch)(
+        SpillableColumnarBatch(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      GpuHashJoin.filterNullsWithRetryAndClose(sb, boundBuildKeys)
     } else {
       builtBatch
     }

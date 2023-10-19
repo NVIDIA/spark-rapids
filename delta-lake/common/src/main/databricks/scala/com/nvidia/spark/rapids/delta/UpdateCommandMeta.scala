@@ -35,7 +35,7 @@ class UpdateCommandMeta(
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
     RapidsDeltaUtils.tagForDeltaWrite(this, updateCmd.target.schema,
-      updateCmd.tahoeFileIndex.deltaLog, Map.empty, updateCmd.tahoeFileIndex.spark)
+      Some(updateCmd.tahoeFileIndex.deltaLog), Map.empty, updateCmd.tahoeFileIndex.spark)
   }
 
   override def convertToGpu(): RunnableCommand = {
@@ -62,7 +62,7 @@ class UpdateCommandEdgeMeta(
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
     RapidsDeltaUtils.tagForDeltaWrite(this, updateCmd.target.schema,
-      updateCmd.tahoeFileIndex.deltaLog, Map.empty, updateCmd.tahoeFileIndex.spark)
+      Some(updateCmd.tahoeFileIndex.deltaLog), Map.empty, updateCmd.tahoeFileIndex.spark)
   }
 
   override def convertToGpu(): RunnableCommand = {

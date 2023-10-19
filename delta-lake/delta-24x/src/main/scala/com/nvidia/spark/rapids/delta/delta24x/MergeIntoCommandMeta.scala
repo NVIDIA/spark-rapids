@@ -43,7 +43,8 @@ class MergeIntoCommandMeta(
     }
     val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
     val deltaLog = mergeCmd.targetFileIndex.deltaLog
-    RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, deltaLog, Map.empty, SparkSession.active)
+    RapidsDeltaUtils.tagForDeltaWrite(this, targetSchema, Some(deltaLog),
+      Map.empty, SparkSession.active)
   }
 
   override def convertToGpu(): RunnableCommand = {
