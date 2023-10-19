@@ -16,14 +16,14 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
 
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -72,6 +72,12 @@ trait DeltaProvider {
   def tagForGpu(cpuExec: AppendDataExecV1,meta: AppendDataExecV1Meta): Unit
 
   def convertToGpu(cpuExec: AppendDataExecV1, meta: AppendDataExecV1Meta): GpuExec
+
+  def tagForGpu(cpuExec: OverwriteByExpressionExecV1, meta: OverwriteByExpressionExecV1Meta): Unit
+
+  def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec
 }
 
 object DeltaProvider {
@@ -134,6 +140,18 @@ object NoDeltaProvider extends DeltaProvider {
   }
 
   override def convertToGpu(cpuExec: AppendDataExecV1, meta: AppendDataExecV1Meta): GpuExec = {
+    throw new IllegalStateException("write not supported, should not be called")
+  }
+
+  override def tagForGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): Unit = {
+    throw new IllegalStateException("write not supported, should not be called")
+  }
+
+  override def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec = {
     throw new IllegalStateException("write not supported, should not be called")
   }
 }
