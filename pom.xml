@@ -1361,7 +1361,17 @@
                         <configuration>
                             <skip>${maven.cleanall.skip}</skip>
                             <target>
-                                <dirset dir="${project.basedir}" includes="**/target" id="target.dirs.for.clean"/>
+                                <!-- #if scala-2.12 -->
+                                <dirset dir="${project.basedir}" 
+                                    includes="**/target"
+                                    excludes="scala2.13/**"
+                                    id="target.dirs.for.clean"/>
+                                <!-- #endif scala-2.12 -->
+                                <!-- #if scala-2.13 --><!--
+                                <dirset dir="${project.basedir}" 
+                                    includes="**/target"
+                                    id="target.dirs.for.clean"/>
+                                --><!-- #endif scala-2.13 -->
                                 <pathconvert property="target.dirs.str" pathsep=" ">
                                    <dirset refid="target.dirs.for.clean"/>
                                 </pathconvert>
