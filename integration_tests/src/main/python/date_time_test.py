@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
+
 from data_gen import *
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, assert_spark_exception, with_gpu_session
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
@@ -558,3 +558,66 @@ micros_gens = [LongGen(min_val=-62135510400000000, max_val=253402214400000000), 
 def test_timestamp_micros(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("timestamp_micros(a)"))
+
+
+# used for timezone test cases
+def get_timezone_df(spark):
+    schema = StructType([
+        StructField("ts_str_col", StringType()),
+        StructField("long_col", LongType()),
+        StructField("ts_col", TimestampType()),
+        StructField("date_col", DateType()),
+        StructField("date_str_col", StringType()),
+    ])
+    data = [
+        ('1970-01-01 00:00:00', 0, datetime(1970, 1, 1), date(1970, 1, 1), '1970-01-01'),
+        ('1970-01-01 00:00:00', 0, datetime(1970, 1, 1), date(1970, 1, 1), '1970-01-01'),
+    ]
+    return spark.createDataFrame(SparkContext.getOrCreate().parallelize(data),schema)
+
+# used for timezone test cases, specify all the sqls that will be impacted by non-utc timezone
+time_zone_sql_conf_pairs = [
+    ("select minute(ts_col) from tab", {}),
+    ("select second(ts_col) from tab", {}),
+    ("select hour(ts_col) from tab", {}),
+    ("select date_col + (interval 10 days) from tab", {}), # test GpuDateAddInterval
+    ("select date_format(ts_col, 'yyyy-MM-dd HH:mm:ss') from tab", {}),
+    ("select to_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}), 
+    ("select to_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
+    ("select unix_timestamp() from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}), 
+    ("select unix_timestamp(ts_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
+    ("select to_unix_timestamp(ts_str_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "false"}),
+    ("select to_unix_timestamp(ts_col) from tab", {"spark.rapids.sql.improvedTimeOps.enabled": "true"}), 
+    ("select to_date(date_str_col, 'yyyy-MM-dd') from tab", {}), # test GpuGetTimestamp
+    ("select to_date(date_str_col) from tab", {}),
+    ("select from_unixtime(long_col, 'yyyy-MM-dd HH:mm:ss') from tab", {}),
+    ("select from_utc_timestamp(ts_col, '+08:00') from tab", {}),
+    ]
+
+
+@allow_non_gpu("ProjectExec")
+@pytest.mark.parametrize('sql, conf', time_zone_sql_conf_pairs)
+def test_timezone_for_operators_with_non_utc(sql, conf):
+    # timezone is non-utc, should fallback to CPU
+    timezone_conf = {"spark.sql.session.timeZone": "+08:00", 
+            "spark.rapids.sql.hasExtendedYearValues": "false"}
+    conf = copy_and_update(timezone_conf, conf)
+    def gen_sql_df(spark):
+        df = get_timezone_df(spark)
+        df.createOrReplaceTempView("tab")
+        return spark.sql(sql)
+    assert_gpu_fallback_collect(gen_sql_df, "ProjectExec", conf)
+
+
+@pytest.mark.parametrize('sql, conf', time_zone_sql_conf_pairs)
+def test_timezone_for_operators_with_utc(sql, conf):
+    # timezone is utc, should be supported by GPU
+    timezone_conf = {"spark.sql.session.timeZone": "UTC", 
+            "spark.rapids.sql.hasExtendedYearValues": "false",
+            "spark.rapids.sql.castStringToTimestamp.enabled": "true"}
+    conf = copy_and_update(timezone_conf, conf)
+    def gen_sql_df(spark):
+        df = get_timezone_df(spark)
+        df.createOrReplaceTempView("tab")
+        return spark.sql(sql).collect()
+    with_gpu_session(gen_sql_df, conf)
