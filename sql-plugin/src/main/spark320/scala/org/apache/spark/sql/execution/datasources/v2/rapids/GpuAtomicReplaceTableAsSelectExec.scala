@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.GpuExec
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.connector.catalog.{Identifier, StagingTableCatalog, Table, TableCatalog}
@@ -68,25 +69,26 @@ case class GpuAtomicReplaceTableAsSelectExec(
   override def supportsColumnar: Boolean = false
 
   override protected def run(): Seq[InternalRow] = {
-    // Note that this operation is potentially unsafe, but these are the strict semantics of
-    // RTAS if the catalog does not support atomic operations.
-    //
-    // There are numerous cases we concede to where the table will be dropped and irrecoverable:
-    //
-    // 1. Creating the new table fails,
-    // 2. Writing to the new table fails,
-    // 3. The table returned by catalog.createTable doesn't support writing.
+    val schema = CharVarcharUtils.getRawSchema(query.schema).asNullable
     if (catalog.tableExists(ident)) {
       val table = catalog.loadTable(ident)
       invalidateCache(catalog, table, ident)
-      catalog.dropTable(ident)
-    } else if (!orCreate) {
+    }
+    val staged = if (orCreate) {
+      catalog.stageCreateOrReplace(
+        ident, schema, partitioning.toArray, properties.asJava)
+    } else if (catalog.tableExists(ident)) {
+      try {
+        catalog.stageReplace(
+          ident, schema, partitioning.toArray, properties.asJava)
+      } catch {
+        case e: NoSuchTableException =>
+          throw QueryCompilationErrors.cannotReplaceMissingTableError(ident, Some(e))
+      }
+    } else {
       throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
     }
-    val schema = CharVarcharUtils.getRawSchema(query.schema).asNullable
-    val table = catalog.createTable(
-      ident, schema, partitioning.toArray, properties.asJava)
-    writeToTable(catalog, table, writeOptions, ident)
+    writeToTable(catalog, staged, writeOptions, ident)
   }
 
   override protected def withNewChildInternal(
