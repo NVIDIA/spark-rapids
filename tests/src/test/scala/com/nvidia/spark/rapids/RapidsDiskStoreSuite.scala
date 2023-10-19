@@ -27,9 +27,10 @@ import org.mockito.Mockito.{spy, times, verify, when}
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.storage.{BlockId, ShuffleBlockId}
+
 
 class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
@@ -190,119 +191,116 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     }
   }
 
-  test("Compression for shuffle block") {
-    val conf = new SparkConf()
-    conf.set(RapidsConf.IO_COMPRESSION_CODEC.key, "zstd")
-    conf.set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "true")
-    conf.set(RapidsConf.SPILL_COMPRESSION_ENABLED.key, "true")
-    shuffleReadWriteTest(conf)
-  }
-
-  test("Encryption for shuffle block") {
-    val conf = new SparkConf()
-    conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, "true")
-    shuffleReadWriteTest(conf)
-  }
-
-  test("Encryption and compression for shuffle block") {
-    val conf = new SparkConf()
-    conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, "true")
-    conf.set(RapidsConf.IO_COMPRESSION_CODEC.key, "zstd")
-    conf.set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "true")
-    conf.set(RapidsConf.SPILL_COMPRESSION_ENABLED.key, "true")
-    shuffleReadWriteTest(conf)
-  }
-
-  test("Compression for shuffle blocks in shared path") {
-    val conf = new SparkConf()
-    conf.set(RapidsConf.IO_COMPRESSION_CODEC.key, "zstd")
-    conf.set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "true")
-    conf.set(RapidsConf.SPILL_COMPRESSION_ENABLED.key, "true")
-    testShuffleReadWriteWithSharedPath(conf)
-  }
-
-  test("Encryption for shuffle block in shared path") {
-    val conf = new SparkConf()
-    conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, "true")
-    testShuffleReadWriteWithSharedPath(conf)
-  }
-
-  test("Encryption and compression for shuffle block in shared path") {
-    val conf = new SparkConf()
-    conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, "true")
-    conf.set(RapidsConf.IO_COMPRESSION_CODEC.key, "zstd")
-    conf.set(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, "true")
-    conf.set(RapidsConf.SPILL_COMPRESSION_ENABLED.key, "true")
-    testShuffleReadWriteWithSharedPath(conf)
-  }
-
-  private def shuffleReadWriteTest(conf: SparkConf): Unit = {
-    val blockId = ShuffleBlockId(1, 1, 1)
-    val bufferId = ShuffleBufferId(blockId, 1)
-    val shuffleFile = new File(TEST_FILES_ROOT, s"diskbuffer-${bufferId.tableId}")
-    assert(!shuffleFile.exists)
-
-    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
-    when(mockDiskBlockManager.getSerializerManager())
-      .thenReturn(new RapidsSerializerManager(conf))
-
-    when(mockDiskBlockManager.getFile(bufferId.blockId)).thenReturn(shuffleFile)
-
-    val spillPriority = -7
-    val hostStoreMaxSize = 1L * 1024 * 1024
-    withResource(new RapidsDeviceMemoryStore) { devStore =>
-      val catalog = new RapidsBufferCatalog(devStore)
-      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
-        hostStore =>
-          devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
-            hostStore.setSpillStore(diskStore)
-            val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
-            assert(!handle.id.getDiskPath(mockDiskBlockManager).exists())
-            val expectedBuffer = withResource(catalog.acquireBuffer(handle)) { buffer =>
-              assertResult(StorageTier.DEVICE)(buffer.storageTier)
-              withResource(buffer.getMemoryBuffer) { devbuf =>
-                closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
-                  hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
-                  hostbuf
-                }
-              }
-            }
-            withResource(expectedBuffer) { expectedBuffer =>
-              catalog.synchronousSpill(devStore, 0)
-              catalog.synchronousSpill(hostStore, 0)
-              withResource(catalog.acquireBuffer(handle)) { buffer =>
-                assertResult(StorageTier.DISK)(buffer.storageTier)
-                withResource(buffer.getMemoryBuffer) { actualBuffer =>
-                  assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
-                  val actualHostBuffer = actualBuffer.asInstanceOf[HostMemoryBuffer]
-                  // Both encryption and compression will result in different sizes.
-                  assert(shuffleFile.length() !== actualHostBuffer.asByteBuffer().limit())
-                  assertResult(expectedBuffer.
-                    asByteBuffer.limit())(actualHostBuffer.asByteBuffer.limit())
-                }
-              }
-            }
-          }
-      }
+  test("Compression on with or without encryption for spill block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply())
     }
   }
 
-  private def testShuffleReadWriteWithSharedPath(conf: SparkConf) = {
-    val blockId1 = ShuffleBlockId(1, 1, 1)
-    val bufferId1 = ShuffleBufferId(blockId1, 1)
+  test("Compression off with or without encryption for spill block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply())
+    }
+  }
 
-    val blockId2 = ShuffleBlockId(2, 2, 2)
-    val bufferId2 = ShuffleBufferId(blockId2, 1)
-    val bufferPath = new File(TEST_FILES_ROOT, s"diskbuffer-${bufferId1.tableId}")
-    assert(!bufferPath.exists)
+  test("Compression on with or without encryption for spill block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply(), TempSpillBufferId.apply())
+    }
+  }
 
+  test("Compression off with or without encryption for spill block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply(), TempSpillBufferId.apply())
+    }
+  }
+
+  // ===== Tests for shuffle block =====
+
+  test("Compression on with or without encryption for shuffle block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf, ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1))
+    }
+  }
+
+  test("Compression off with or without encryption for shuffle block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf, ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1))
+    }
+  }
+
+  test("Compression on with or without encryption for shuffle block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf,
+        ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1), ShuffleBufferId(ShuffleBlockId(2, 2, 2), 2))
+    }
+  }
+
+  test("Compression off with or without encryption for shuffle block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf,
+        ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1), ShuffleBufferId(ShuffleBlockId(2, 2, 2), 2))
+    }
+  }
+
+  test("No encryption and compression for shuffle block using multiple batches") {
+    readWriteTestWithBatches(new SparkConf(),
+      ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1), ShuffleBufferId(ShuffleBlockId(2, 2, 2), 2))
+  }
+
+  private def readWriteTestWithBatches(conf: SparkConf, bufferIds: RapidsBufferId*) = {
+    assert(bufferIds.size != 0)
     val mockDiskBlockManager = mock[RapidsDiskBlockManager]
     when(mockDiskBlockManager.getSerializerManager())
       .thenReturn(new RapidsSerializerManager(conf))
 
-    // Return the same path
-    when(mockDiskBlockManager.getFile(any[BlockId]())).thenReturn(bufferPath)
+    if (bufferIds(0).canShareDiskPaths) {
+      // Return the same path
+      val bufferPath = new File(TEST_FILES_ROOT, s"diskbuffer-${bufferIds(0).tableId}")
+      when(mockDiskBlockManager.getFile(any[BlockId]())).thenReturn(bufferPath)
+      if (bufferPath.exists) bufferPath.delete()
+    } else {
+      when(mockDiskBlockManager.getFile(any[BlockId]()))
+        .thenAnswer { invocation =>
+          new File(TEST_FILES_ROOT, s"diskbuffer-${invocation.getArgument[BlockId](0).name}")
+        }
+    }
 
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
@@ -313,50 +311,27 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             hostStore.setSpillStore(diskStore)
-            val (_, handle1) = addContiguousTableToCatalog(catalog, bufferId1, spillPriority)
-            val (_, handle2) = addContiguousTableToCatalog(catalog, bufferId2, spillPriority)
-            assert(!handle1.id.getDiskPath(mockDiskBlockManager).exists())
-            val expectedBuffer1 = withResource(catalog.acquireBuffer(handle1)) { buffer =>
-              assertResult(StorageTier.DEVICE)(buffer.storageTier)
-              withResource(buffer.getMemoryBuffer) { devbuf =>
-                closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
-                  hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
-                  hostbuf
+            bufferIds.foreach { bufferId =>
+              val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
+              val expectedBuffer = withResource(catalog.acquireBuffer(handle)) { buffer =>
+                assertResult(StorageTier.DEVICE)(buffer.storageTier)
+                withResource(buffer.getMemoryBuffer) { devbuf =>
+                  closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
+                    hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
+                    hostbuf
+                  }
                 }
               }
-            }
-            val expectedBuffer2 = withResource(catalog.acquireBuffer(handle2)) { buffer =>
-              assertResult(StorageTier.DEVICE)(buffer.storageTier)
-              withResource(buffer.getMemoryBuffer) { devbuf =>
-                closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
-                  hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
-                  hostbuf
-                }
-              }
-            }
-            withResource(expectedBuffer1) { expectedBuffer =>
-              catalog.synchronousSpill(devStore, 0)
-              catalog.synchronousSpill(hostStore, 0)
-              withResource(catalog.acquireBuffer(handle1)) { buffer =>
-                assertResult(StorageTier.DISK)(buffer.storageTier)
-                withResource(buffer.getMemoryBuffer) { actualBuffer =>
-                  assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
-                  val actualHostBuffer = actualBuffer.asInstanceOf[HostMemoryBuffer]
-                  assertResult(expectedBuffer.
-                    asByteBuffer.limit())(actualHostBuffer.asByteBuffer.limit())
-                }
-              }
-            }
-            withResource(expectedBuffer2) { expectedBuffer =>
-              catalog.synchronousSpill(devStore, 0)
-              catalog.synchronousSpill(hostStore, 0)
-              withResource(catalog.acquireBuffer(handle2)) { buffer =>
-                assertResult(StorageTier.DISK)(buffer.storageTier)
-                withResource(buffer.getMemoryBuffer) { actualBuffer =>
-                  assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
-                  val actualHostBuffer = actualBuffer.asInstanceOf[HostMemoryBuffer]
-                  assertResult(expectedBuffer.
-                    asByteBuffer.limit())(actualHostBuffer.asByteBuffer.limit())
+              withResource(expectedBuffer) { expectedBuffer =>
+                catalog.synchronousSpill(devStore, 0)
+                catalog.synchronousSpill(hostStore, 0)
+                withResource(catalog.acquireBuffer(handle)) { buffer =>
+                  assertResult(StorageTier.DISK)(buffer.storageTier)
+                  withResource(buffer.getMemoryBuffer) { actualBuffer =>
+                    assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
+                    val actualHostBuffer = actualBuffer.asInstanceOf[HostMemoryBuffer]
+                    assertResult(expectedBuffer.asByteBuffer)(actualHostBuffer.asByteBuffer)
+                  }
                 }
               }
             }

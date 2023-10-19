@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.io.{InputStream, OutputStream}
 
-import org.apache.spark.{SparkConf, SparkEnv}
+import org.apache.spark.SparkConf
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 
 /**
- * It's an adaptor to Spark's SerializerManager, which supports compression and encryption
+ * It's a wrapper of Spark's SerializerManager, which supports compression and encryption
  * on data streams.
  * For compression, it's turned on/off via seperated Rapids configurations and the underlying
  * compression codec uses existing Spark's.
@@ -33,9 +33,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * @param conf
  */
 class RapidsSerializerManager (conf: SparkConf) {
-  private lazy val compressShuffle = conf
-    .getBoolean(RapidsConf.SHUFFLE_COMPRESSION_ENABLED.key, false)
-  private lazy val compressSpill = conf.getBoolean(RapidsConf.SPILL_COMPRESSION_ENABLED.key, false)
+  private lazy val compressSpill = TrampolineUtil.isCompressSpill(conf)
 
   private lazy val serializerManager = if (conf
     .getBoolean(RapidsConf.TEST_IO_ENCRYPTION.key,false)) {
@@ -44,12 +42,7 @@ class RapidsSerializerManager (conf: SparkConf) {
     TrampolineUtil.getSerializerManager
   }
 
-  private lazy val compressionCodec: CompressionCodec = if (SparkEnv.get != null) {
-    TrampolineUtil.createCodec(conf, conf.get(RapidsConf.IO_COMPRESSION_CODEC.key, "lz4"))
-  } else {
-    TrampolineUtil.createCodec(
-      new SparkConf(), conf.get(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "lz4"))
-  }
+  private lazy val compressionCodec: CompressionCodec = TrampolineUtil.createCodec(conf)
 
   def wrapStream(bufferId: RapidsBufferId, s: OutputStream): OutputStream = {
     wrapForCompression(bufferId, wrapForEncryption(s))
@@ -77,8 +70,8 @@ class RapidsSerializerManager (conf: SparkConf) {
 
   private def shouldCompress(bufferId: RapidsBufferId): Boolean = {
     bufferId match {
-      case _: ShuffleBufferId | _: ShuffleReceivedBufferId => compressShuffle
       case _: TempSpillBufferId => compressSpill
+      case _: ShuffleBufferId | _: ShuffleReceivedBufferId => false
       case _ => false
     }
   }

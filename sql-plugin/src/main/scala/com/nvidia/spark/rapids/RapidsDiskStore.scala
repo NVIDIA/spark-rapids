@@ -18,8 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, FileInputStream}
 import java.nio.channels.{Channels, FileChannel}
-import java.nio.channels.FileChannel.MapMode
-import java.nio.file.{Paths, StandardOpenOption}
+import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.{Cuda, HostMemoryBuffer, MemoryBuffer}
@@ -96,9 +95,8 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         } else {
           Array(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
         }
-        var startOffSet, writtenBytes = 0L
-        withResource(FileChannel.open(Paths.get(path.toURI), option: _*)) { fc =>
-          startOffSet = fc.position()
+        var writtenBytes = 0L
+        withResource(FileChannel.open(path.toPath, option: _*)) { fc =>
           withResource(Channels.newOutputStream(fc)) { os =>
             withResource(diskBlockManager.getSerializerManager()
               .wrapStream(incoming.id, os)) { cos =>
@@ -106,7 +104,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
               writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
             }
           }
-          (startOffSet, writtenBytes, path.length() - currentPos)
+          (currentPos, writtenBytes, path.length() - currentPos)
         }
       case other =>
         throw new IllegalStateException(
@@ -139,11 +137,11 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           s"$this attempted an invalid 0-byte mmap of a file")
         val path = id.getDiskPath(diskBlockManager)
         val memBuffer = closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
-          withResource(HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset
-            , compressedSize)) { compressed =>
-            withResource(new HostMemoryInputStream(compressed, compressedSize)) { hmbStream =>
+          withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
+            c.position(fileOffset)
+            withResource(Channels.newInputStream(c)) { compressed =>
               withResource(diskBlockManager.getSerializerManager()
-                .wrapStream(id, hmbStream)) { in =>
+                .wrapStream(id, compressed)) { in =>
                 withResource(new HostMemoryOutputStream(decompressed)) { out =>
                   IOUtils.copy(in, out)
                 }
