@@ -18,7 +18,7 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
-## Release v23.08.1
+## Release v23.10.0
 ### Hardware Requirements:
 
 The plugin is tested on the following architectures:
@@ -40,9 +40,8 @@ The plugin is tested on the following architectures:
 		Please be aware that we do not currently support Spark builds with Scala 2.13.
 
 	Supported Spark versions:
-		Apache Spark 3.1.1, 3.1.2, 3.1.3 
 		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
-		Apache Spark 3.3.0, 3.3.1, 3.3.2
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3
 		Apache Spark 3.4.0, 3.4.1
 		Apache Spark 3.5.0
 	
@@ -61,38 +60,41 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
 
-### Download v23.08.1
+#### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download v23.10.0
 * Download the [RAPIDS
-  Accelerator for Apache Spark 23.08.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar)
+  Accelerator for Apache Spark 23.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar)
 
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
 
-Note that v23.08.0 is deprecated.
-
 ### Verify signature
-* Download the [RAPIDS Accelerator for Apache Spark 23.08.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar)
-  and [RAPIDS Accelerator for Apache Spark 23.08.1 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.08.1/rapids-4-spark_2.12-23.08.1.jar.asc)
+* Download the [RAPIDS Accelerator for Apache Spark 23.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar)
+  and [RAPIDS Accelerator for Apache Spark 23.10.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.10.0/rapids-4-spark_2.12-23.10.0.jar.asc)
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
-* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.08.1.jar.asc rapids-4-spark_2.12-23.08.1.jar`
+* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.10.0.jar.asc rapids-4-spark_2.12-23.10.0.jar`
 
-The output if signature verify:
+The output of signature verify:
 
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Compatibility with Databricks AWS & Azure 12.2 ML LTS.
-* Enhanced stability and support for ORC and Parquet.
-* Reduction of out-of-memory (OOM) occurrences.
-* Corner case evaluation for data formats, operators and expressions
+* Introduced support for Spark 3.5.0.
+* Improved memory management for better control in YARN and K8s on CSP.
+* Strengthened Parquet and ORC tests for enhanced stability and support.
+* Reduce GPU out-of-memory (OOM) occurrences.
+* Enhanced driver log with actionable insights.
 * Qualification and Profiling tool:
-  * Profiling tool now supports Azure Databricks and AWS Databricks.
-  * Qualification tool can provide advice on unaccelerated operations.
-  * Improve user experience through CLI design.
-  * Qualification tool provides configuration and migration recommendations for Dataproc and EMR.
-  
+	* Enhanced user experience with the availability of the 'ascli' tool for qualification and 
+	profiling across all platforms.
+	* The qualification tool now accommodates CPU-fallback transitions and broadens the speedup factor coverage.
+	* Extended diagnostic support for user tools to cover EMR, Databricks AWS, and Databricks Azure.
+	* Introduced support for cluster configuration recommendations in the profiling tool for supported platforms.
+
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 

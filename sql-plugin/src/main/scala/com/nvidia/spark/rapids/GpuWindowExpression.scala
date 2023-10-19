@@ -31,7 +31,8 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, CollectSet, Count, Max, Min, Sum}
-import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuCount}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval

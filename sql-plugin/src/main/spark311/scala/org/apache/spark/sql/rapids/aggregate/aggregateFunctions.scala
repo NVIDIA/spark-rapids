@@ -29,13 +29,15 @@
 {"spark": "330cdh"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql.rapids.aggregate
 
 import com.nvidia.spark.rapids.{GpuCast, GpuWindowExpression, GpuWindowSpecDefinition}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.rapids.GpuDecimalDivide
 import org.apache.spark.sql.types.DecimalType
 
 abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
