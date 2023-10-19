@@ -967,9 +967,7 @@ object GpuCast {
 
     import options._
 
-    val castToJsonString = true // TODO
-
-    if (castToJsonString) {
+    if (options.castToJsonString) {
       return castStructToJsonString(input, inputSchema, options)
     }
 
