@@ -19,7 +19,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_340
 
 # regex to generate limit length urls with HOST, PATH, QUERY, REF, PROTOCOL, FILE, AUTHORITY, USERINFO
 url_pattern = r'((http|https|ftp)://)(([a-zA-Z][a-zA-Z0-9]{0,2}\.){0,3}([a-zA-Z][a-zA-Z0-9]{0,2})\.([a-zA-Z][a-zA-Z0-9]{0,2}))' \
@@ -51,8 +51,11 @@ def test_parse_url_with_no_query_key():
                 ))
     
 def test_parse_url_too_many_args():
+    error_message = 'parse_url function requires two or three arguments'  \
+        if is_before_spark_340() else  \
+        '[WRONG_NUM_ARGS.WITHOUT_SUGGESTION] The `parse_url` requires [2, 3] parameters'
     assert_gpu_and_cpu_error(
             lambda spark : unary_op_df(spark, StringGen()).selectExpr(
                 "a","parse_url(a, 'USERINFO', 'key', 'value')").collect(),
             conf={},
-            error_message='parse_url function requires two or three arguments')
+            error_message=error_message)

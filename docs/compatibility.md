@@ -453,17 +453,14 @@ will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
 ## URL parsing
 
-In Spark, parse_url is based on java's URI library, while the implementation in the RAPIDS Accelerator is based on regex extraction. Therefore, the results may be different in some edge cases.
+`parse_url` can produce different results on the GPU compared to the CPU. 
 
-These are the known cases where running on the GPU will produce different results to the CPU:
-
-- Spark allow an empty authority component only when it's followed by a non-empty path, 
-  query component, or fragment component. But in plugin, parse_url just simply allow empty 
-  authority component without checking if it is followed something or not. So `parse_url('http://', 'HOST')` will
-  return `null` in Spark, but return `""` in plugin.
-- If input url has a invalid Ipv6 address, Spark will return `null` for all components, but plugin will parse other
-  components except `HOST` as normal. So `http://userinfo@[1:2:3:4:5:6:7:8:9:10]/path?query=1#Ref`'s result will be 
-  `[null,/path,query=1,Ref,http,/path?query=1,userinfo@[1:2:3:4:5:6:7:8:9:10],userinfo]`
+Known issues for PROTOCOL parsing:
+- If urls containing utf-8 special characters, PROTOCOL results on GPU will be null.
+- If urls containing ipv6 host, GPU will return null for PROTOCOL.
+- GPU will still try to parse the PROTOCOL instead of returning null for some edge invalid cases,
+  such as urls containing multiple '#' in REF (http://##) or empty authority component followed by 
+  a empty path (http://).
 
 ## Windowing
 
