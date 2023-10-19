@@ -15,7 +15,7 @@
 import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
 from data_gen import copy_and_update
-from delta_lake_write_test import delta_meta_allow
+from delta_lake_utils import delta_meta_allow
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
 from spark_session import is_databricks104_or_later
