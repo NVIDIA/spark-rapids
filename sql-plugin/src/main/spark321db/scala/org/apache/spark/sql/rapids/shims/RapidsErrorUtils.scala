@@ -20,6 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
@@ -82,5 +83,9 @@ object RapidsErrorUtils {
 
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
+  }
+
+  def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
+    Some(TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments"))
   }
 }

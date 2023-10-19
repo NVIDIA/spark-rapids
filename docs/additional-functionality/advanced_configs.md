@@ -300,6 +300,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.NthValue"></a>spark.rapids.sql.expression.NthValue|`nth_value`|nth window operator|true|None|
 <a name="sql.expression.OctetLength"></a>spark.rapids.sql.expression.OctetLength|`octet_length`|The byte length of string data|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
+<a name="sql.expression.ParseUrl"></a>spark.rapids.sql.expression.ParseUrl|`parse_url`|Extracts a part from a URL|true|None|
 <a name="sql.expression.PercentRank"></a>spark.rapids.sql.expression.PercentRank|`percent_rank`|Window function that returns the percent rank value within the aggregation window|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|`pmod`|Pmod|true|None|
 <a name="sql.expression.PosExplode"></a>spark.rapids.sql.expression.PosExplode|`posexplode_outer`, `posexplode`|Given an input array produces a sequence of rows for each value in the array|true|None|
