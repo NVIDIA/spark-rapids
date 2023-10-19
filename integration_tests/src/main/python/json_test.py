@@ -527,3 +527,26 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(gen.data_type).json(data_path).selectExpr(col_name),
             conf=all_confs)
+
+
+def test_structs_to_json(spark_tmp_path):
+    # TODO test for these types:  struct, array of structs or a map or array of map.
+    # TODO test with strings containing quotes and special characters
+    json_string_gen = StringGen("[A-Z]{1}[a-z]{2,5}", nullable=False)
+
+    gen = StructGen([('my_struct',
+        StructGen([
+            ('a', IntegerGen(nullable=True)),
+            ("b", json_string_gen)], nullable=True)),
+            ("c", FloatGen(nullable=True)),
+            ("d", StructGen([(('int', IntegerGen(nullable=True)))], nullable=True)),
+            ("e", ArrayGen(StructGen([(('child', IntegerGen(nullable=True)))], nullable=True))),
+        ], nullable=False)
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct")).drop("my_struct")
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : struct_to_json(spark),
+        conf=_enable_all_types_conf)
