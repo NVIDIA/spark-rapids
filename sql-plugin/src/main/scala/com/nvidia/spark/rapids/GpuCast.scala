@@ -1033,11 +1033,6 @@ object GpuCast {
    *
    * - Struct field names are included
    * - Null fields are omitted
-   *
-   * @param input
-   * @param inputSchema
-   * @param options
-   * @return
    */
   def castStructToJsonString(input: ColumnView,
       inputSchema: Array[StructField],
@@ -1045,15 +1040,14 @@ object GpuCast {
 
     val rowCount = input.getRowCount.toInt
 
-    def processAttribute(columns: ArrayBuffer[ColumnVector],
-        i: Int,
+    def castToJsonAttribute(fieldIndex: Int,
         colon: ColumnVector,
-        quote: ColumnVector): Unit = {
-      val needsQuoting = inputSchema(i).dataType == DataTypes.StringType
-      withResource(input.getChildColumnView(i)) { cv =>
+        quote: ColumnVector): ColumnVector = {
+      val needsQuoting = inputSchema(fieldIndex).dataType == DataTypes.StringType
+      withResource(input.getChildColumnView(fieldIndex)) { cv =>
         withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
           // prefix with quoted column name followed by colon
-          withResource(Scalar.fromString("\"" + inputSchema(i).name + "\"")) { name =>
+          withResource(Scalar.fromString("\"" + inputSchema(fieldIndex).name + "\"")) { name =>
             attrColumns += ColumnVector.fromScalar(name, rowCount)
             attrColumns += colon.incRefCount()
           }
@@ -1078,30 +1072,26 @@ object GpuCast {
               }
             }
           }
-          columns += jsonAttrOrEmptyString
+          jsonAttrOrEmptyString
         }
       }
     }
 
-    withResource(Seq(":", "\"", "{", "}").safeMap(Scalar.fromString)) {
-      case Seq(scalars@_*) => withResource(scalars.safeMap(s =>
-          ColumnVector.fromScalar(s, rowCount))) {
+    withResource(Seq("", ",", ":", "\"", "{", "}").safeMap(Scalar.fromString)) {
+      case Seq(emptyScalar, commaScalar, columnScalars@_*) =>
+            withResource(columnScalars.safeMap(s => ColumnVector.fromScalar(s, rowCount))) {
         case Seq(colon, quote, leftBrace, rightBrace) =>
           val jsonAttrs = withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
             // create one column per attribute, which will either be in the form `"name":value` or
             // empty string for rows that have null values
             for (i <- 0 until input.getNumChildren) {
-              processAttribute(columns, i, colon, quote)
+              columns += castToJsonAttribute(i, colon, quote)
             }
             // concatenate the columns into one string
-            withResource(Scalar.fromString(",")) { sepScalar =>
-              withResource(Scalar.fromString("")) { nullScalar =>
-                withResource(ColumnVector.stringConcatenate(sepScalar,
-                  nullScalar, columns.toArray, false))(
-                  _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
-                )
-              }
-            }
+            withResource(ColumnVector.stringConcatenate(commaScalar,
+              emptyScalar, columns.toArray, false))(
+              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+            )
           }
           // now wrap the string with `{` and `}`
           withResource(jsonAttrs) { _ =>
@@ -1109,12 +1099,10 @@ object GpuCast {
               columns += leftBrace.incRefCount()
               columns += jsonAttrs.incRefCount()
               columns += rightBrace.incRefCount()
-              withResource(Scalar.fromString("")) { emptyScalar =>
-                withResource(ColumnVector.stringConcatenate(emptyScalar,
-                  emptyScalar, columns.toArray, false))(
-                  _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
-                )
-              }
+              withResource(ColumnVector.stringConcatenate(emptyScalar,
+                emptyScalar, columns.toArray, false))(
+                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+              )
             }
           }
       }
