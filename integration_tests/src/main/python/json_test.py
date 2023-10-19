@@ -541,8 +541,8 @@ def test_structs_to_json(spark_tmp_path, data_gen):
     struct_gen = StructGen([
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
+        ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
         # TODO test for these types: array of structs or a map or array of map.
-        # ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True)))
     ], nullable=False)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 

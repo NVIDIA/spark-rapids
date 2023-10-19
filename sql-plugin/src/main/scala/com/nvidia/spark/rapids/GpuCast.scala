@@ -799,8 +799,9 @@ object GpuCast {
     val emptyStr = ""
     val spaceStr = if (options.castToJsonString) "" else " "
 
+    // TODO this seems overly complex - I will see if I can simplify this
     val sepStr = if (useHexFormatForBinary && castingBinaryData) spaceStr
-      else if (useLegacyComplexTypesToString) "," else ", "
+      else if (useLegacyComplexTypesToString || options.castToJsonString) "," else ", "
 
     withResource(
       Seq(emptyStr, spaceStr, nullString, sepStr).safeMap(Scalar.fromString)
