@@ -53,7 +53,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.command._
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -261,6 +261,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
         (e, conf, p, r) => new AtomicCreateTableAsSelectExecMeta(e, conf, p, r)),
+      exec[AtomicReplaceTableAsSelectExec](
+        "Replace table as select for datasource V2 tables that support staging table creation",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
+          GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
+          TypeSig.all),
+        (e, conf, p, r) => new AtomicReplaceTableAsSelectExecMeta(e, conf, p, r)),
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +

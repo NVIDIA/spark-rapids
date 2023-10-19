@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta.delta20x
 
-import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, GpuExec, GpuOverrides, GpuReadParquetFileFormat, RunnableCommandRule, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuOverrides, GpuReadParquetFileFormat, RunnableCommandRule, SparkPlanMeta}
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
@@ -26,8 +26,8 @@ import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
-import org.apache.spark.sql.execution.datasources.v2.rapids.GpuAtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
 object Delta20xProvider extends DeltaIOProvider {
 
@@ -76,5 +76,21 @@ object Delta20xProvider extends DeltaIOProvider {
       cpuExec.properties,
       cpuExec.writeOptions,
       cpuExec.ifNotExists)
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
+    val cpuCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
+    GpuAtomicReplaceTableAsSelectExec(
+      DeltaRuntimeShim.getGpuDeltaCatalog(cpuCatalog, meta.conf),
+      cpuExec.ident,
+      cpuExec.partitioning,
+      cpuExec.plan,
+      meta.childPlans.head.convertIfNeeded(),
+      cpuExec.properties,
+      cpuExec.writeOptions,
+      cpuExec.orCreate,
+      cpuExec.invalidateCache)
   }
 }
