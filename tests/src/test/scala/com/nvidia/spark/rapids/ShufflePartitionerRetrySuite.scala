@@ -38,19 +38,16 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
   private def testRoundRobinPartitioner(partNum: Int) = {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
       val rrp = GpuRoundRobinPartitioning(partNum)
-      val prebuiltBatch = buildBatch
+      // batch will be closed within columnarEvalAny
+      val batch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-      withResource(prebuiltBatch) { batch =>
-        // Increase ref count since batch will be closed by rrp
-        var ret: Array[(ColumnarBatch, Int)] = null
-        try {
-          ret = rrp.columnarEvalAny(GpuColumnVector.incRefCounts(batch))
-            .asInstanceOf[Array[(ColumnarBatch, Int)]]
-          assert(partNum === ret.size)
-        } finally {
-          if (ret != null) {
-            ret.map(_._1).safeClose()
-          }
+      var ret: Array[(ColumnarBatch, Int)] = null
+      try {
+        ret = rrp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+        assert(partNum === ret.size)
+      } finally {
+        if (ret != null) {
+          ret.map(_._1).safeClose()
         }
       }
     }
@@ -69,17 +66,16 @@ class ShufflePartitionerRetrySuite extends RmmSparkRetrySuiteBase {
       val gpuSorter = new GpuSorter(Seq(sortOrder), Array(attrs))
 
       val rp = GpuRangePartitioner(Array.apply(bounds), gpuSorter)
-      val prebuiltBatch = buildBatch
+      // batch will be closed within columnarEvalAny
+      val batch = buildBatch
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-      withResource(prebuiltBatch) { batch =>
-        var ret: Array[(ColumnarBatch, Int)] = null
-        try {
-          ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-          assert(2 === ret.size)
-        } finally {
-          if (ret != null) {
-            ret.map(_._1).safeClose()
-          }
+      var ret: Array[(ColumnarBatch, Int)] = null
+      try {
+        ret = rp.columnarEvalAny(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+        assert(ret.length === 2)
+      } finally {
+        if (ret != null) {
+          ret.map(_._1).safeClose()
         }
       }
     }

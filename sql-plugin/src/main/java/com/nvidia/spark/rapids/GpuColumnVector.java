@@ -992,7 +992,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     cudfCv.incRefCount();
     return this;
   }
-
   @Override
   public final void close() {
     // Just pass through the reference counting
