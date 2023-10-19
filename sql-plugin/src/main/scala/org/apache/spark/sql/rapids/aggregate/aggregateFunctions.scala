@@ -1522,7 +1522,6 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
   with GpuBatchedRunningWindowWithFixer
   with GpuAggregateWindowFunction
-//  with GpuRunningWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
   with Serializable {

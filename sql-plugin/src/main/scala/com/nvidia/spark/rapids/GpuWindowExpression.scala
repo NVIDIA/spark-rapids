@@ -1165,7 +1165,7 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
    *                             Only values that are for the same partition by keys should be
    *                             modified. Because the input data is sorted by the partition by
    *                             columns the boolean values will be grouped together.
-   * @param sameOrderMask        a mask just like `samePartitionMask` but for ordering. Unused for `FIRST`.
+   * @param sameOrderMask        Similar mask for ordering. Unused for `FIRST`.
    * @param unfixedWindowResults the output of the windowAggregation without anything
    *                             fixed/modified. This should not be closed by `fixUp` as it will be
    *                             handled by the framework.
