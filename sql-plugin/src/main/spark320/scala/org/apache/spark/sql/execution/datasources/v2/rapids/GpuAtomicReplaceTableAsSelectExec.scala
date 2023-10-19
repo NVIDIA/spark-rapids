@@ -43,14 +43,15 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * GPU version of AtomicReplaceTableAsSelectExec.
  *
- * Physical plan node for v2 replace table as select when the catalog does not support staging
+ * Physical plan node for v2 replace table as select when the catalog supports staging
  * table replacement.
  *
  * A new table will be created using the schema of the query, and rows from the query are appended.
  * If the table exists, its contents and schema should be replaced with the schema and the contents
- * of the query. This is a non-atomic implementation that drops the table and then runs non-atomic
- * CTAS. For an atomic implementation for catalogs with the appropriate support, see
- * ReplaceTableAsSelectStagingExec.
+ * of the query. This implementation is atomic. The table replacement is staged, and the commit
+ * operation at the end should perform the replacement of the table's metadata and contents. If the
+ * write fails, the table is instructed to roll back staged changes and any previously written table
+ * is left untouched.
  */
 case class GpuAtomicReplaceTableAsSelectExec(
     catalog: StagingTableCatalog,
