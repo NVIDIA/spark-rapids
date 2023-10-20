@@ -536,10 +536,33 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     long_gen,
     pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
+    pytest.param(date_gen, marks=pytest.mark.xfail(reason='not implemented yet - could fallback for now')),
+    pytest.param(timestamp_gen, marks=pytest.mark.xfail(reason='not implemented yet - could fallback for now')),
     StringGen("[A-Za-z0-9]{0,10}", nullable=True),
     pytest.param(StringGen(nullable=True), marks=pytest.mark.xfail(reason='We do not have support for escaping strings yet')),
     ], ids=idfn)
-def test_structs_to_json(spark_tmp_path, data_gen):
+@pytest.mark.parametrize('ignore_null_fields', [
+    True,
+    pytest.param(False, marks=pytest.mark.xfail(reason='not implemented yet'))
+])
+# TODO: test all of these options or fallback as appropriate
+# @pytest.mark.parametrize('primitivesAsString', [True, False])
+# @pytest.mark.parametrize('prefersDecimal', [True, False])
+# @pytest.mark.parametrize('allowComments', [True, False])
+# @pytest.mark.parametrize('allowUnquotedFieldNames', [True, False])
+# @pytest.mark.parametrize('allowSingleQuotes', [True, False])
+# @pytest.mark.parametrize('allowNumericLeadingZeros', [True, False])
+# @pytest.mark.parametrize('allowBackslashEscapingAnyCharacter', [True, False])
+# @pytest.mark.parametrize('mode', ['PERMISSIVE', 'DROPMALFORMED', 'FAILFAST'])
+# @pytest.mark.parametrize('dateFormat', ['yyyy-MM-dd', 'dd/MM/yyyy'])
+# @pytest.mark.parametrize('timestampFormat', ['yyyy-MM-dd\'T\'HH:mm:ss[.SSS][XXX]', 'yyyy-MM-dd\'T\'HH:mm:ss'])
+# @pytest.mark.parametrize('timestampNTZFormat', ['yyyy-MM-dd\'T\'HH:mm:ss[.SSS]', 'yyyy-MM-dd\'T\'HH:mm:ss'])
+# @pytest.mark.parametrize('enableDateTimeParsingFallback', [True, False])
+# @pytest.mark.parametrize('allowUnquotedControlChars', [True, False])
+# @pytest.mark.parametrize('lineSep', ['\n', '\r\n'])
+# @pytest.mark.parametrize('allowNonNumericNumbers', [True, False])
+# @pytest.mark.parametrize('pretty', [True, False])
+def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields):
     struct_gen = StructGen([
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
@@ -550,9 +573,11 @@ def test_structs_to_json(spark_tmp_path, data_gen):
     ], nullable=False)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
+    options = { 'ignoreNullFields': ignore_null_fields }
+
     def struct_to_json(spark):
         df = gen_df(spark, gen)
-        return df.withColumn("my_json", f.to_json("my_struct")).drop("my_struct")
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
 
     conf = copy_and_update(_enable_all_types_conf,
         { 'spark.rapids.sql.expression.StructsToJson': True })
