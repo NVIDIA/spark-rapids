@@ -81,7 +81,19 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     Some(buff)
   }
 
-  /** Copy a host buffer to a file, returning the file offset at which the data was written. */
+  /**
+   * Copy a host buffer to a file. It leverages [[RapidsSerializerManager]] from
+   * [[RapidsDiskBlockManager]] to do compression or encryption if needed.
+   *
+   * @param incoming the rapid buffer to be written into a file
+   * @param path     file path
+   * @param append   whether to append or written into the beginning of the file
+   * @param stream   cuda stream
+   * @return a tuple of file offset, memory byte size and written size on disk. File offset is where
+   *         buffer starts in the targeted file path. Memory byte size is the size of byte buffer
+   *         occupied in memory before writing to disk. Written size on disk is actual byte size
+   *         written to disk.
+   */
   private def writeToFile(
       incoming: RapidsBuffer,
       path: File,
@@ -89,14 +101,14 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       stream: Cuda.Stream): (Long, Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
-        val currentPos = path.length()
         val option = if (append) {
           Array(StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } else {
           Array(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
         }
-        var writtenBytes = 0L
+        var currentPos, writtenBytes = 0L
         withResource(FileChannel.open(path.toPath, option: _*)) { fc =>
+          currentPos = fc.position()
           withResource(Channels.newOutputStream(fc)) { os =>
             withResource(diskBlockManager.getSerializerManager()
               .wrapStream(incoming.id, os)) { cos =>
@@ -127,6 +139,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         id, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
+    // TODO: Need to be clean up. Tracked in https://github.com/NVIDIA/spark-rapids/issues/9496
     override val memoryUsedBytes: Long = uncompressedSize
 
     override val storageTier: StorageTier = StorageTier.DISK
@@ -214,11 +227,14 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           "paths on disk")
       val path = id.getDiskPath(diskBlockManager)
       withResource(new FileInputStream(path)) { fis =>
-        val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(fis)
-        val hostCols = withResource(hostBuffer) { _ =>
-          SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+        withResource(diskBlockManager.getSerializerManager()
+          .wrapStream(id, fis)) { fs =>
+          val (header, hostBuffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(fs)
+          val hostCols = withResource(hostBuffer) { _ =>
+            SerializedHostTableUtils.buildHostColumns(header, hostBuffer, sparkTypes)
+          }
+          new ColumnarBatch(hostCols.toArray, header.getNumRows)
         }
-        new ColumnarBatch(hostCols.toArray, header.getNumRows)
       }
     }
   }
