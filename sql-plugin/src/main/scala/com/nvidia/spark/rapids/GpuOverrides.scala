@@ -3231,8 +3231,7 @@ object GpuOverrides extends Logging {
       "Extracts a part from a URL",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
-            TypeEnum.STRING, "only support partToExtract=PROTOCOL"), TypeSig.STRING)),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
@@ -3241,6 +3240,13 @@ object GpuOverrides extends Logging {
         override def tagExprForGpu(): Unit = {
           if (failOnError) {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
+          }
+          val partToExtract = childExprs(1).convertToGpu()
+              .asInstanceOf[GpuLiteral].value.asInstanceOf[UTF8String].toString
+          partToExtract.toUpperCase match {
+            case "PROTOCOL" =>
+            case _ =>
+              willNotWorkOnGpu(s"Part to extract $partToExtract is not supported on GPU")
           }
         }
 

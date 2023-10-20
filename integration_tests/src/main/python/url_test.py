@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -28,6 +28,122 @@ url_pattern = r'((http|https|ftp)://)(([a-zA-Z][a-zA-Z0-9]{0,2}\.){0,3}([a-zA-Z]
 url_pattern_with_key = r'((http|https|ftp|file)://)(([a-z]{1,3}\.){0,3}([a-z]{1,3})\.([a-z]{1,3}))' \
             r'(:[0-9]{1,3}){0,1}(/[a-z]{1,3}){0,3}(\?key=[a-z]{1,3}){0,1}(#([a-z]{1,3})){0,1}'
 
+edge_cases = [
+    "http://foo.com/blah_blah",
+    "http://foo.com/blah_blah/",
+    "http://foo.com/blah_blah_(wikipedia)",
+    "http://foo.com/blah_blah_(wikipedia)_(again)",
+    "http://www.example.com/wpstyle/?p=364",
+    "https://www.example.com/foo/?bar=baz&inga=42&quux",
+    # "http://✪df.ws/123",
+    "http://userid:password@example.com:8080",
+    "http://userid:password@example.com:8080/",
+    "http://userid:password@example.com",
+    "http://userid:password@example.com/",
+    "http://142.42.1.1/",
+    "http://142.42.1.1:8080/",
+    # "http://➡.ws/䨹",
+    # "http://⌘.ws",
+    # "http://⌘.ws/",
+    "http://foo.com/blah_(wikipedia)#cite-1",
+    "http://foo.com/blah_(wikipedia)_blah#cite-1",
+    # "http://foo.com/unicode_(✪)_in_parens",
+    "http://foo.com/(something)?after=parens",
+    # "http://☺.damowmow.com/",
+    "http://code.google.com/events/#&product=browser",
+    "http://j.mp",
+    "ftp://foo.bar/baz",
+    r"http://foo.bar/?q=Test%20URL-encoded%20stuff",
+    # "http://مثال.إختبار",
+    # "http://例子.测试",
+    # "http://उदाहरण.परीक्षा",
+    # "http://-.~_!$&'()*+,;=:%40:80%2f::::::@example.com",
+    "http://1337.net",
+    "http://a.b-c.de",
+    "http://223.255.255.254",
+    "https://foo_bar.example.com/",
+    # "http:# ",
+    "http://.",
+    "http://..",
+    "http://../",
+    "http://?",
+    "http://??",
+    "http://??/",
+    "http://#",
+    # "http://##",
+    # "http://##/",
+    "http://foo.bar?q=Spaces should be encoded",
+    "# ",
+    "//a",
+    "///a",
+    "/# ",
+    "http:///a",
+    "foo.com",
+    "rdar://1234",
+    "h://test",
+    "http:// shouldfail.com",
+    ":// should fail",
+    "http://foo.bar/foo(bar)baz quux",
+    "ftps://foo.bar/",
+    "http://-error-.invalid/",
+    "http://a.b--c.de/",
+    "http://-a.b.co",
+    "http://a.b-.co",
+    "http://0.0.0.0",
+    "http://10.1.1.0",
+    "http://10.1.1.255",
+    "http://224.1.1.1",
+    "http://1.1.1.1.1",
+    "http://123.123.123",
+    "http://3628126748",
+    "http://.www.foo.bar/",
+    "http://www.foo.bar./", 
+    "http://.www.foo.bar./",
+    "http://10.1.1.1",
+    "http://10.1.1.254",
+    "http://userinfo@spark.apache.org/path?query=1#Ref",
+    r"https://use%20r:pas%20s@example.com/dir%20/pa%20th.HTML?query=x%20y&q2=2#Ref%20two",
+    "http://user:pass@host",
+    "http://user:pass@host/",
+    "http://user:pass@host/?#",
+    "http://user:pass@host/file;param?query;p2",
+    "inva lid://user:pass@host/file;param?query;p2",
+    # "http://[1:2:3:4:5:6:7:8]",
+    # "http://[1::]",
+    # "http://[1:2:3:4:5:6:7::]",
+    # "http://[1::8]",
+    # "http://[1:2:3:4:5:6::8]",
+    # "http://[1:2:3:4:5:6::8]",
+    # "http://[1::7:8]",
+    # "http://[1:2:3:4:5::7:8]",
+    # "http://[1:2:3:4:5::8]",
+    # "http://[1::6:7:8]",
+    # "http://[1:2:3:4::6:7:8]",
+    # "http://[1:2:3:4::8]",
+    # "http://[1::5:6:7:8]",
+    # "http://[1:2:3::5:6:7:8]",
+    # "http://[1:2:3::8]",
+    # "http://[1::4:5:6:7:8]",
+    # "http://[1:2::4:5:6:7:8]",
+    # "http://[1:2::8]",
+    # "http://[1::3:4:5:6:7:8]",
+    # "http://[1::3:4:5:6:7:8]",
+    # "http://[1::8]",
+    # "http://[::2:3:4:5:6:7:8]",
+    # "http://[::2:3:4:5:6:7:8]",
+    # "http://[::8]",
+    # "http://[::]",
+    # "http://[fe80::7:8%eth0]",
+    # "http://[fe80::7:8%1]",
+    # "http://[::255.255.255.255]",
+    # "http://[::ffff:255.255.255.255]",
+    # "http://[::ffff:0:255.255.255.255]",
+    # "http://[2001:db8:3:4::192.0.2.33]",
+    # "http://[64:ff9b::192.0.2.33]"
+]
+
+edge_cases_gen = SetValuesGen(StringType(), edge_cases)
+
 url_gen = StringGen(url_pattern)
     
 def test_parse_url_protocol():
@@ -37,18 +153,75 @@ def test_parse_url_protocol():
                 "parse_url(a, 'PROTOCOL')"
                 ))
     
-def test_parse_url_with_no_query_key():
+def test_parse_url_protocol_edge_cases():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen, length=100).selectExpr(
+            lambda spark : unary_op_df(spark, edge_cases_gen).selectExpr(
                 "a",
-                "parse_url(a, 'HOST', '')",
-                "parse_url(a, 'PATH', '')",
-                "parse_url(a, 'REF', '')",
-                "parse_url(a, 'PROTOCOL', '')",
-                "parse_url(a, 'FILE', '')",
-                "parse_url(a, 'AUTHORITY', '')",
-                "parse_url(a, 'USERINFO', '')"
+                "parse_url(a, 'PROTOCOL')"
                 ))
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+def test_parse_url_host_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'HOST')"
+                ),
+            'ParseUrl')
+    
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+def test_parse_url_path_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'PATH')"
+                ),
+            'ParseUrl')
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+def test_parse_url_query_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'QUERY')"
+                ),
+            'ParseUrl')
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')   
+def test_parse_url_ref_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'REF')"
+                ),
+            'ParseUrl')
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')  
+def test_parse_url_file_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'FILE')"
+                ),
+            'ParseUrl')
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')
+def test_parse_url_authority_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'AUTHORITY')"
+                ),
+            'ParseUrl')
+
+@allow_non_gpu('ProjectExec', 'ParseUrl')    
+def test_parse_url_userinfo_fallback():
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+                "a",
+                "parse_url(a, 'USERINFO')"
+                ),
+            'ParseUrl')
     
 def test_parse_url_too_many_args():
     error_message = 'parse_url function requires two or three arguments'  \
@@ -56,6 +229,6 @@ def test_parse_url_too_many_args():
         '[WRONG_NUM_ARGS.WITHOUT_SUGGESTION] The `parse_url` requires [2, 3] parameters'
     assert_gpu_and_cpu_error(
             lambda spark : unary_op_df(spark, StringGen()).selectExpr(
-                "a","parse_url(a, 'USERINFO', 'key', 'value')").collect(),
+                "a","parse_url(a, 'PROTOCOL', 'key', 'value')").collect(),
             conf={},
             error_message=error_message)
