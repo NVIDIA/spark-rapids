@@ -35,7 +35,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "FileSourceScanExec,CollectLimitExec,DeserializeToObjectExec")
     withGpuSparkSession(spark => {
-      spark.read.csv("src/test/resources/strings.csv").createTempView("t")
+      spark.read.csv(getClass.getClassLoader.getResource("strings.csv").getPath).createTempView("t")
       val df = spark.sql("SELECT t._c0, regexp_extract(t._c0, '(.*) (.*) (.*)', 2) FROM t")
       df.collect()
       val planString = df.queryExecution.executedPlan.toString()

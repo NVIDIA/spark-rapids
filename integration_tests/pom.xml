@@ -266,7 +266,7 @@
                         </goals>
                         <configuration>
                             <executable>${spark.rapids.source.basedir}/${rapids.module}/run_pyspark_from_build.sh</executable>
-                            <workingDirectory>./</workingDirectory>
+                            <workingDirectory>${spark.rapids.source.basedir}</workingDirectory>
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>

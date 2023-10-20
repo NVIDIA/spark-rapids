@@ -1499,6 +1499,25 @@
                             </sources>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>add-test-resources</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>add-test-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <!-- #if scala-2.12 --><!--
+                                    <directory>${project.basedir}/src/test/resources</directory>
+                                    --><!-- #endif scala-2.12 -->
+                                    <!-- #if scala-2.13 -->
+                                    <directory>${project.basedir}/../../${rapids.module}/src/test/resources</directory>
+                                    <!-- #endif scala-2.13 -->
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
