@@ -306,11 +306,17 @@ float_to_string_gens = [FloatGen(), DoubleGen()]
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', float_to_string_gens, ids=idfn)
-def test_cast_float_to_string(data_gen):
+def test_cast_float_to_string_to_float(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr("cast(cast(a as string) as double)"),
         conf = {"spark.rapids.sql.castStringToFloat.enabled": True,
                 "spark.rapids.sql.castFloatToString.enabled": True})
+    
+@pytest.mark.parametrize('data_gen', float_to_string_gens, ids=idfn)
+def test_cast_float_to_string_failed(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=100).select(f.col('a').cast("STRING")),
+        conf = {"spark.rapids.sql.castFloatToString.enabled": True})
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
