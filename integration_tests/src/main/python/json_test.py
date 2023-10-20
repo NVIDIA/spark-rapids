@@ -533,8 +533,8 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     short_gen,
     int_gen,
     long_gen,
-    # pytest.param(float_gen, marks=pytest.mark.xfail(reason='TBD - known formatting differences')),
-    # pytest.param(double_gen, marks=pytest.mark.xfail(reason='TBD - known formatting differences')),
+    pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
+    pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     StringGen('[A-Z]{0,10}')], ids=idfn)
 # TODO add full string gen
 def test_structs_to_json(spark_tmp_path, data_gen):
@@ -542,7 +542,7 @@ def test_structs_to_json(spark_tmp_path, data_gen):
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
         ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
-        # TODO: test with other key types / maybe move to separate test
+        # TODO: test with other Map key types / maybe move to separate test
         ("d", MapGen(LongGen(nullable=False), data_gen)),
         ("e", ArrayGen(MapGen(LongGen(nullable=False), data_gen), nullable=True)),
     ], nullable=False)
