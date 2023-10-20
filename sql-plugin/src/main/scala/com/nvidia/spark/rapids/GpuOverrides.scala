@@ -3513,15 +3513,15 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING,
         TypeSig.STRING,
-        //TODO need correct checks here
+        //TODO need correct checks here (no timestamps for example)
         Seq(ParamCheck("struct", TypeSig.all.nested(), TypeSig.all.nested()))),
       (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {}
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuStructsToJson(a.options, child, a.timeZoneId)
-      }).disabledByDefault("There are some known compatibility issues, such " +
-      "as differences in formatting of floating-point numbers"),
+      }).disabledByDefault("to_json support is experimental. See compatibility " +
+          "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",

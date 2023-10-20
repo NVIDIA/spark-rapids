@@ -350,6 +350,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|`trim`|StringTrim operator|true|None|
 <a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|`ltrim`|StringTrimLeft operator|true|None|
 <a name="sql.expression.StringTrimRight"></a>spark.rapids.sql.expression.StringTrimRight|`rtrim`|StringTrimRight operator|true|None|
+<a name="sql.expression.StructsToJson"></a>spark.rapids.sql.expression.StructsToJson|`to_json`|Converts structs to JSON text format|false|This is disabled by default because to_json support is experimental. See compatibility guide for more information.|
 <a name="sql.expression.Substring"></a>spark.rapids.sql.expression.Substring|`substr`, `substring`|Substring operator|true|None|
 <a name="sql.expression.SubstringIndex"></a>spark.rapids.sql.expression.SubstringIndex|`substring_index`|substring_index operator|true|None|
 <a name="sql.expression.Subtract"></a>spark.rapids.sql.expression.Subtract|`-`|Subtraction|true|None|
