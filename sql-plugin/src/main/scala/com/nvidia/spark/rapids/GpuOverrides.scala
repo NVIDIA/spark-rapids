@@ -3591,6 +3591,9 @@ object GpuOverrides extends Logging {
           if (a.options.get("ignoreNullFields").exists(_.equalsIgnoreCase("false"))) {
             willNotWorkOnGpu("to_json option ignore_null_fields=false is not supported")
           }
+          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
+            willNotWorkOnGpu("to_json option pretty=true is not supported")
+          }
         }
 
         override def convertToGpu(child: Expression): GpuExpression =
