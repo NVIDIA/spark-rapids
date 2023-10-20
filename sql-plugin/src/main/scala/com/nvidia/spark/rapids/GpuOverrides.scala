@@ -3509,7 +3509,7 @@ object GpuOverrides extends Logging {
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
     expr[StructsToJson](
-      "TODO",
+      "Converts structs to JSON text format",
       ExprChecks.projectOnly(
         TypeSig.STRING,
         TypeSig.STRING,
@@ -3520,7 +3520,8 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuStructsToJson(a.options, child, a.timeZoneId)
-      }), //.disabledByDefault("TODO"),
+      }).disabledByDefault("There are some known compatibility issues, such " +
+      "as differences in formatting of floating-point numbers"),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",

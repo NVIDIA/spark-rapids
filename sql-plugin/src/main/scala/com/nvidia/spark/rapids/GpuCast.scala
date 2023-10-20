@@ -896,6 +896,10 @@ object GpuCast {
       from: MapType,
       options: CastOptions): ColumnVector = {
 
+    if (options.castToJsonString) {
+      return castMapToJsonString(input, from, options)
+    }
+
     val numRows = input.getRowCount.toInt
     val (arrowStr, emptyStr, spaceStr) = ("->", "", " ")
 
@@ -912,6 +916,119 @@ object GpuCast {
       (strKey, strValue)
     }
 
+    import options._
+    // concatenate the key-value pairs to string
+    // Example: ("key", "value") -> "key -> value"
+    withResource(
+      Seq(leftBracket,
+        rightBracket,
+        arrowStr,
+        emptyStr,
+        nullString,
+        spaceStr).safeMap(Scalar.fromString)
+    ) { case Seq(leftScalar, rightScalar, arrowScalar, emptyScalar, nullScalar, spaceScalar) =>
+      val strElements = withResource(Seq(strKey, strValue)) { case Seq(strKey, strValue) =>
+        val numElements = strKey.getRowCount.toInt
+        withResource(Seq(spaceScalar, arrowScalar).safeMap(ColumnVector.fromScalar(_, numElements))
+        ) { case Seq(spaceCol, arrowCol) =>
+          if (useLegacyComplexTypesToString) {
+            withResource(
+              spaceCol.mergeAndSetValidity(BinaryOp.BITWISE_AND, strValue)
+            ) { spaceBetweenSepAndVal =>
+              ColumnVector.stringConcatenate(
+                emptyScalar, nullScalar,
+                Array(strKey, spaceCol, arrowCol, spaceBetweenSepAndVal, strValue))
+            }
+          } else {
+            ColumnVector.stringConcatenate(
+              emptyScalar, nullScalar, Array(strKey, spaceCol, arrowCol, spaceCol, strValue))
+          }
+        }
+      }
+
+      // concatenate elements
+      val strCol = withResource(strElements) { _ =>
+        withResource(input.replaceListChild(strElements)) {
+          concatenateStringArrayElements(_, options)
+        }
+      }
+      val resPreValidityFix = withResource(strCol) { _ =>
+        withResource(
+          Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftCol, rightCol) =>
+          ColumnVector.stringConcatenate(
+            emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))
+        }
+      }
+      withResource(resPreValidityFix) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+      }
+    }
+  }
+
+  private def castMapToJsonString(
+      input: ColumnView,
+      from: MapType,
+      options: CastOptions): ColumnVector = {
+
+    val numRows = input.getRowCount.toInt
+    val (arrowStr, emptyStr, spaceStr) = (":", "", "")
+
+    // cast the key column and value column to string columns
+    val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
+      val strKey: ColumnVector = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
+        withResource(castToString(keyColumn, from.keyType, options)) { key =>
+          withResource(ArrayBuffer.empty[ColumnVector]) { keyCols =>
+            withResource(Scalar.fromString("\"")) { quote =>
+              withResource(ColumnVector.fromScalar(quote, keyColumn.getRowCount.toInt)) {
+                  quoteScalar =>
+                keyCols += quoteScalar.incRefCount()
+                keyCols += key.incRefCount()
+                keyCols += quoteScalar.incRefCount()
+              }
+            }
+            withResource(Scalar.fromString("")) { emptyScalar =>
+              ColumnVector.stringConcatenate(emptyScalar, emptyScalar, keyCols.toArray)
+            }
+          }
+        }
+      }
+      val strValue = closeOnExcept(strKey) { _ =>
+        withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
+          val valueStr = if (valueColumn.getType == DType.STRING) {
+            // TODO this is largely copy-and-pasted from above and should be
+            //  refactored to a common method
+            withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
+              withResource(ArrayBuffer.empty[ColumnVector]) { keyCols =>
+                withResource(Scalar.fromString("\"")) { quote =>
+                  withResource(ColumnVector.fromScalar(quote, valueColumn.getRowCount.toInt)) {
+                    quoteScalar =>
+                      keyCols += quoteScalar.incRefCount()
+                      keyCols += valueStr.incRefCount()
+                      keyCols += quoteScalar.incRefCount()
+                  }
+                }
+                withResource(Scalar.fromString("")) { emptyScalar =>
+                  ColumnVector.stringConcatenate(emptyScalar, emptyScalar, keyCols.toArray)
+                }
+              }
+            }
+          } else {
+            castToString(valueColumn, from.valueType, options)
+          }
+          withResource(valueStr) { _ =>
+            withResource(Scalar.fromString("null")) { nullScalar =>
+              withResource(valueColumn.isNull) { isNull =>
+                isNull.ifElse(nullScalar, valueStr)
+              }
+            }
+          }
+        }
+      }
+      (strKey, strValue)
+    }
+
+    // TODO the rest of this code is identical to castMapToString so needs factoring out
     import options._
     // concatenate the key-value pairs to string
     // Example: ("key", "value") -> "key -> value"
