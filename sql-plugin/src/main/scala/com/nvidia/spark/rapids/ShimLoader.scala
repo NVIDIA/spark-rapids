@@ -220,6 +220,7 @@ object ShimLoader extends Logging {
     val sparkVersion = getSparkVersion
     logInfo(s"Loading shim for Spark version: $sparkVersion")
     logInfo("Complete Spark build info: " + sparkBuildInfo.mkString(", "))
+    logInfo("Scala version: " + util.Properties.versionString)
 
     val thisClassLoader = getClass.getClassLoader
 
