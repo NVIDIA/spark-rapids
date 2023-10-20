@@ -3513,10 +3513,18 @@ object GpuOverrides extends Logging {
       ExprChecks.projectOnly(
         TypeSig.STRING,
         TypeSig.STRING,
-        //TODO need correct checks here (no timestamps for example)
-        Seq(ParamCheck("struct", TypeSig.all.nested(), TypeSig.all.nested()))),
+        Seq(ParamCheck("struct",
+          (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
+            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
+            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+        ))),
       (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {}
+        override def tagExprForGpu(): Unit = {
+          if (a.options.get("ignoreNullFields").exists(_.equalsIgnoreCase("false"))) {
+            willNotWorkOnGpu("to_json option ignore_null_fields=false is not supported")
+          }
+        }
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuStructsToJson(a.options, child, a.timeZoneId)

@@ -536,16 +536,16 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     long_gen,
     pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
-    pytest.param(date_gen, marks=pytest.mark.xfail(reason='not implemented yet - could fallback for now')),
-    pytest.param(timestamp_gen, marks=pytest.mark.xfail(reason='not implemented yet - could fallback for now')),
-    StringGen("[A-Za-z0-9]{0,10}", nullable=True),
+    pytest.param(date_gen, marks=pytest.mark.xfail(reason='we currently fallback to cpu for this type')),
+    pytest.param(timestamp_gen, marks=pytest.mark.xfail(reason='we currently fallback to cpu for this type')),
+    StringGen('[A-Za-z0-9]{0,10}', nullable=True),
     pytest.param(StringGen(nullable=True), marks=pytest.mark.xfail(reason='We do not have support for escaping strings yet')),
-    ], ids=idfn)
+], ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [
     True,
-    pytest.param(False, marks=pytest.mark.xfail(reason='not implemented yet'))
+    pytest.param(False, marks=pytest.mark.xfail(reason='we currently fallback to cpu for this option'))
 ])
-# TODO: test all of these options or fallback as appropriate
+# TODO: test all of these options or fallback & document as appropriate
 # @pytest.mark.parametrize('primitivesAsString', [True, False])
 # @pytest.mark.parametrize('prefersDecimal', [True, False])
 # @pytest.mark.parametrize('allowComments', [True, False])
@@ -567,8 +567,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields):
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
         ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
-        # TODO: test with other Map key types / maybe move to separate test
         ("d", MapGen(LongGen(nullable=False), data_gen)),
+        ("d", MapGen(StringGen('[A-Za-z0-9]{0,10}', nullable=False), data_gen)),
         ("e", ArrayGen(MapGen(LongGen(nullable=False), data_gen), nullable=True)),
     ], nullable=False)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
