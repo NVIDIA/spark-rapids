@@ -219,7 +219,7 @@ class OrcQuerySuite extends SparkQueryCompareTestSuite {
     // Cdh321, Cdh330 does not support ZSTD, refer to the Cdh Class:
     // org.apache.spark.sql.execution.datasources.orc.OrcOptions
     // Spark 31x do not support lz4, zstd
-    if (isCdh321 || isCdh330 || !VersionUtils.isSpark320OrLater) {
+    if (isCdh321 || isCdh330 || isCdh332 || !VersionUtils.isSpark320OrLater) {
       supportedWriteCompressType -= "ZSTD"
     }
     supportedWriteCompressType

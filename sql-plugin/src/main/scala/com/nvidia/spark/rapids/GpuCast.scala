@@ -211,6 +211,7 @@ object CastOptions {
  * @param legacyCastComplexTypesToString If we should use legacy casting method
  * @param ansiMode                       Whether the cast should be ANSI compliant
  * @param stringToDateAnsiMode           Whether to cast String to Date using ANSI compliance
+ * @param castToJsonString               Whether to use JSON format when casting to String
  */
 class CastOptions(
     legacyCastComplexTypesToString: Boolean,
@@ -799,7 +800,6 @@ object GpuCast {
     val emptyStr = ""
     val spaceStr = if (options.castToJsonString) "" else " "
 
-    // TODO this seems overly complex - I will see if I can simplify this
     val sepStr = if (useHexFormatForBinary && castingBinaryData) spaceStr
       else if (useLegacyComplexTypesToString || options.castToJsonString) "," else ", "
 
