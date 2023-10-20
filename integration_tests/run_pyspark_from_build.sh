@@ -312,6 +312,12 @@ EOF
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     if [[ "$SPARK_SHELL_SMOKE_TEST" != "0" ]]; then
         echo "Running spark-shell smoke test..."
+        # NOTE grep is used not only for checking the output but also
+        # to workaround the fact that spark-shell catches all failures.
+        # In this test it exits not because of the failure but because it encounters
+        # an EOF on stdin and injects a ":quit" command. Without a grep check
+        # the exit code would be success 0 regardless of the exceptions.
+        #
         <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
             "$SPARK_HOME"/bin/spark-shell \
                 --master local-cluster[1,1,1024] \
