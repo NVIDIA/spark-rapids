@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
@@ -897,13 +898,14 @@ object GpuCast {
 
     val numRows = input.getRowCount.toInt
 
+    /** Create a new column with quotes around the supplied string column */
     def addQuotes(column: ColumnVector, rowCount: Int): ColumnVector = {
       withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
         withResource(Scalar.fromString("\"")) { quote =>
           withResource(ColumnVector.fromScalar(quote, rowCount)) {
             quoteScalar =>
               columns += quoteScalar.incRefCount()
-              columns += column.incRefCount()
+              columns += escapeJsonString(column)
               columns += quoteScalar.incRefCount()
           }
         }
@@ -919,7 +921,7 @@ object GpuCast {
         // keys must have quotes around them in JSON mode
         val strKey: ColumnVector = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
           withResource(castToString(keyColumn, from.keyType, options)) { key =>
-            addQuotes(key, keyColumn.getRowCount.toInt)
+            addQuotes(key.incRefCount(), keyColumn.getRowCount.toInt)
           }
         }
         // string values must have quotes around them in JSON mode, and null values need
@@ -928,7 +930,7 @@ object GpuCast {
           withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
             val valueStr = if (valueColumn.getType == DType.STRING) {
               withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
-                addQuotes(valueStr, valueColumn.getRowCount.toInt)
+                addQuotes(valueStr.incRefCount(), valueColumn.getRowCount.toInt)
               }
             } else {
               castToString(valueColumn, from.valueType, options)
@@ -1099,16 +1101,18 @@ object GpuCast {
       withResource(input.getChildColumnView(fieldIndex)) { cv =>
         withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
           // prefix with quoted column name followed by colon
-          withResource(Scalar.fromString("\"" + inputSchema(fieldIndex).name + "\"")) { name =>
+          val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
+          withResource(Scalar.fromString("\"" + jsonName + "\"")) { name =>
             attrColumns += ColumnVector.fromScalar(name, rowCount)
             attrColumns += colon.incRefCount()
           }
           if (needsQuoting) {
             attrColumns += quote.incRefCount()
-          }
-          attrColumns += castToString(cv, inputSchema(fieldIndex).dataType, options)
-          if (needsQuoting) {
+            attrColumns += escapeJsonString(castToString(cv,
+              inputSchema(fieldIndex).dataType, options))
             attrColumns += quote.incRefCount()
+          } else {
+            attrColumns += castToString(cv, inputSchema(fieldIndex).dataType, options)
           }
           // now concatenate
           val jsonAttr = withResource(Scalar.fromString("")) { sepScalar =>
@@ -1163,6 +1167,16 @@ object GpuCast {
           }
       }
     }
+  }
+
+  private def escapeJsonString(cv: ColumnVector): ColumnVector = {
+    // TODO string escaping is tricky because we can't use backrefs directly to insert an escape
+    // character before the backref with the pattern `\\1` because cuDF will not parse this
+    // correctly. We hit the same issue in `GpuTextBasedPartitionReader.castStringToTimestamp`
+    // and found a workaround, but that workaround will not work here.
+    // Another challenge is that we do not want to escape something that is already escaped, so
+    // we really need a regex way of doing this.
+    cv
   }
 
   private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {

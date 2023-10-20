@@ -530,13 +530,15 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen,
+    boolean_gen,
     short_gen,
     int_gen,
     long_gen,
     pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
-    StringGen('[A-Z]{0,10}')], ids=idfn)
-# TODO add full string gen
+    StringGen("[A-Za-z0-9]{0,10}", nullable=True),
+    pytest.param(StringGen(nullable=True), marks=pytest.mark.xfail(reason='We do not have support for escaping strings yet')),
+    ], ids=idfn)
 def test_structs_to_json(spark_tmp_path, data_gen):
     struct_gen = StructGen([
         ('a', data_gen),
