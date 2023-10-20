@@ -88,6 +88,7 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
+    SPARK_SHELL_SMOKE_TEST=1 ./integration_tests/run_pyspark_from_build.sh
 }
 
 rapids_shuffle_smoke_test() {

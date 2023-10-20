@@ -309,7 +309,18 @@ EOF
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
-    if ((${#TEST_PARALLEL_OPTS[@]} > 0));
+    SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
+    if [[ "$SPARK_SHELL_SMOKE_TEST" != "0" ]]; then
+        echo "Running spark-shell smoke test..."
+        <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+            "$SPARK_HOME"/bin/spark-shell \
+                --master local-cluster[1,1,1024] \
+                --jars "${PYSP_TEST_spark_jars}" \
+                --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+                --conf spark.deploy.maxExecutorRetries=0 2>/dev/null \
+            | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
+        echo "SUCCESS spark-shell smoke test..."
+    elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else

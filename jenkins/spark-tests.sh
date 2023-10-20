@@ -270,6 +270,8 @@ TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
 
+  SPARK_SHELL_SMOKE_TEST=1 ./integration_tests/run_pyspark_from_build.sh
+
   # ParquetCachedBatchSerializer cache_test
   PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer \
     ./run_pyspark_from_build.sh -k cache_test
