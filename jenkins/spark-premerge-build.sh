@@ -61,10 +61,25 @@ mvn_verify() {
     # enable UTF-8 for regular expression tests
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
+        echo "Spark version (regex): $version"
         env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
           -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
+
+    # build Scala 2.13 versions
+    cd scala2.13
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
+        echo "Spark version (Scala 2.13): $version"
+        env -u SPARK_HOME \
+            $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
+        # Run filecache tests
+        env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
+            $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+            -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
+    do
+    done
+    cd ..
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.

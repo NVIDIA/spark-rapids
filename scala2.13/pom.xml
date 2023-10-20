@@ -736,6 +736,10 @@
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
+        <premergeScala213.buildvers>
+            332,
+            340
+        </premergeScala213.buildvers>
         <jdk11.buildvers>
             312,
             321,
@@ -1497,6 +1501,25 @@
                                 <source>${spark.shim.dest}/test/scala</source>
                                 <source>${spark.shim.dest}/test/java</source>
                             </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>add-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <!-- #if scala-2.12 --><!--
+                                    <directory>${project.basedir}/src/main/resources</directory>
+                                    --><!-- #endif scala-2.12 -->
+                                    <!-- #if scala-2.13 -->
+                                    <directory>${project.basedir}/../../${rapids.module}/src/main/resources</directory>
+                                    <!-- #endif scala-2.13 -->
+                                </resource>
+                            </resources>
                         </configuration>
                     </execution>
                     <execution>
