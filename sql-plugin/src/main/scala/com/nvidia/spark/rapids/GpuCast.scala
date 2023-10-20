@@ -898,45 +898,38 @@ object GpuCast {
 
     val numRows = input.getRowCount.toInt
 
+    def addQuotes(column: ColumnVector, rowCount: Int): ColumnVector = {
+      withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+        withResource(Scalar.fromString("\"")) { quote =>
+          withResource(ColumnVector.fromScalar(quote, rowCount)) {
+            quoteScalar =>
+              columns += quoteScalar.incRefCount()
+              columns += column.incRefCount()
+              columns += quoteScalar.incRefCount()
+          }
+        }
+        withResource(Scalar.fromString("")) { emptyScalar =>
+          ColumnVector.stringConcatenate(emptyScalar, emptyScalar, columns.toArray)
+        }
+      }
+    }
+
     // cast the key column and value column to string columns
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
       if (options.castToJsonString) {
+        // keys must have quotes around them in JSON mode
         val strKey: ColumnVector = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
           withResource(castToString(keyColumn, from.keyType, options)) { key =>
-            withResource(ArrayBuffer.empty[ColumnVector]) { keyCols =>
-              withResource(Scalar.fromString("\"")) { quote =>
-                withResource(ColumnVector.fromScalar(quote, keyColumn.getRowCount.toInt)) {
-                  quoteScalar =>
-                    keyCols += quoteScalar.incRefCount()
-                    keyCols += key.incRefCount()
-                    keyCols += quoteScalar.incRefCount()
-                }
-              }
-              withResource(Scalar.fromString("")) { emptyScalar =>
-                ColumnVector.stringConcatenate(emptyScalar, emptyScalar, keyCols.toArray)
-              }
-            }
+            addQuotes(key, keyColumn.getRowCount.toInt)
           }
         }
+        // string values must have quotes around them in JSON mode, and null values need
+        // to be represented by the string literal `null`
         val strValue = closeOnExcept(strKey) { _ =>
           withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
             val valueStr = if (valueColumn.getType == DType.STRING) {
-              // TODO this is largely copy-and-pasted from above and should be
-              //  refactored to a common method
               withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
-                withResource(ArrayBuffer.empty[ColumnVector]) { keyCols =>
-                  withResource(Scalar.fromString("\"")) { quote =>
-                    withResource(ColumnVector.fromScalar(quote, valueColumn.getRowCount.toInt)) {
-                      quoteScalar =>
-                        keyCols += quoteScalar.incRefCount()
-                        keyCols += valueStr.incRefCount()
-                        keyCols += quoteScalar.incRefCount()
-                    }
-                  }
-                  withResource(Scalar.fromString("")) { emptyScalar =>
-                    ColumnVector.stringConcatenate(emptyScalar, emptyScalar, keyCols.toArray)
-                  }
-                }
+                addQuotes(valueStr, valueColumn.getRowCount.toInt)
               }
             } else {
               castToString(valueColumn, from.valueType, options)
