@@ -41,23 +41,24 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
 
   override def dataType: DataType = IntegerType
 
-  def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
+  private def partitionInternalWithClose(
+      batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val sparkTypes = GpuColumnVector.extractTypes(batch)
     if (1 == numPartitions) {
       // Skip retry since partition number = 1
-      withResource(GpuColumnVector.from(batch)) { table =>
-        val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
-          case (idx, sparkType) =>
-            GpuColumnVector
-              .from(table.getColumn(idx).incRefCount(), sparkType)
-        }.toArray
-        (Array(0), columns)
+      withResource(batch) { batch =>
+        withResource(GpuColumnVector.from(batch)) { table =>
+          val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
+            case (idx, sparkType) =>
+              GpuColumnVector
+                .from(table.getColumn(idx).incRefCount(), sparkType)
+          }.toArray
+          (Array(0), columns)
+        }
       }
     } else {
-      // Increase ref count since the caller will close the batch.
-      val spillableBatch = SpillableColumnarBatch(
-        GpuColumnVector.incRefCounts(batch), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-      withRetryNoSplit(spillableBatch) { sb =>
+      withRetryNoSplit(
+        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
         withResource(sb.getColumnarBatch()) { b =>
           withResource(GpuColumnVector.from(b)) { table =>
             withResource(table.
@@ -86,9 +87,8 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
       val (partitionIndexes, partitionColumns) = {
         val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
         try {
-          partitionInternal(batch)
+          partitionInternalWithClose(batch)
         } finally {
-          batch.close()
           partitionRange.close()
         }
       }
