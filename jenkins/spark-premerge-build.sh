@@ -78,7 +78,6 @@ mvn_verify() {
         env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
             $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
             -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
-    do
     done
     cd ..
 
