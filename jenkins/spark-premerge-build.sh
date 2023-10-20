@@ -70,6 +70,7 @@ mvn_verify() {
     # build Scala 2.13 versions
     cd scala2.13
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
+    do
         echo "Spark version (Scala 2.13): $version"
         env -u SPARK_HOME \
             $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
