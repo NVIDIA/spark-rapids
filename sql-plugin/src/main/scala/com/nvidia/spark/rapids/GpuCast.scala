@@ -200,7 +200,6 @@ object CastOptions {
     override val useDecimalPlainString: Boolean = true
 
     override val useHexFormatForBinary: Boolean = true
-
   }
 }
 
@@ -1013,7 +1012,7 @@ object GpuCast {
     }
   }
 
-  def castStructToString(
+  private def castStructToString(
       input: ColumnView,
       inputSchema: Array[StructField],
       options: CastOptions): ColumnVector = {

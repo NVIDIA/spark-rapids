@@ -27,7 +27,7 @@ case class GpuStructsToJson(
   child: Expression,
   timeZoneId: Option[String] = None) extends GpuUnaryExpression {
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    GpuCast.castStructToString(input.getBase, child.dataType.asInstanceOf[StructType].fields,
+    GpuCast.castStructToJsonString(input.getBase, child.dataType.asInstanceOf[StructType].fields,
       new CastOptions(false, false, false, true))
   }
 
