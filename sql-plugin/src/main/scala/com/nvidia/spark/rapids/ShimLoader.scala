@@ -149,7 +149,10 @@ object ShimLoader extends Logging {
         // fast path
         logInfo(s"findURLClassLoader found a URLClassLoader $urlCl")
         Option(urlCl)
-      case replCl if replCl.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" =>
+      case replCl if replCl.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" ||
+          replCl.getClass.getName == "org.apache.spark.executor.ExecutorClassLoader" =>
+        // Spark 3.5.0 changed the package of ExecutorClassLoader so we check for it being
+        // either old package name or new one.
         // https://issues.apache.org/jira/browse/SPARK-18646
         val parentLoader = MethodUtils.invokeMethod(replCl, true, "parentLoader")
           .asInstanceOf[ClassLoader]
