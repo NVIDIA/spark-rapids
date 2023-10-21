@@ -15,9 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "321db"}
-{"spark": "330db"}
-{"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
@@ -34,8 +32,8 @@ import org.apache.spark.sql.catalyst.util.CharVarcharUtils
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, StagingTableCatalog, Table, TableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
-import org.apache.spark.sql.execution.datasources.v2.{AtomicReplaceTableAsSelectExec, TableWriteExecHelper}
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.v2.{AtomicReplaceTableAsSelectExec, V2CreateTableAsSelectBaseExec}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -54,14 +52,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuAtomicReplaceTableAsSelectExec(
     cpuExec: AtomicReplaceTableAsSelectExec,
     catalog: StagingTableCatalog,
-    query: SparkPlan) extends TableWriteExecHelper with GpuExec with ColumnarToRowTransition {
+    query: SparkPlan) extends V2CreateTableAsSelectBaseExec with GpuExec {
 
   override val output: Seq[Attribute] = cpuExec.output
   val ident: Identifier = cpuExec.ident
   val partitioning: Seq[Transform] = cpuExec.partitioning
-  val plan: LogicalPlan = cpuExec.plan
+  val plan: LogicalPlan = cpuExec.query
   val tableSpec: TableSpec = cpuExec.tableSpec
-  val writeOptions = cpuExec.writeOptions
+  val writeOptions: Map[String, String] = cpuExec.writeOptions
   val orCreate: Boolean = cpuExec.orCreate
   val invalidateCache: (TableCatalog, Table, Identifier) => Unit = cpuExec.invalidateCache
 
@@ -89,11 +87,8 @@ case class GpuAtomicReplaceTableAsSelectExec(
     } else {
       throw QueryCompilationErrors.cannotReplaceMissingTableError(ident)
     }
-    writeToTable(catalog, staged, writeOptions, ident)
+    writeToTable(catalog, staged, writeOptions, ident, plan)
   }
-
-  override protected def withNewChildInternal(
-      newChild: SparkPlan): GpuAtomicReplaceTableAsSelectExec = copy(query = newChild)
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] =
     throw new IllegalStateException("Columnar execution not supported")

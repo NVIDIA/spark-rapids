@@ -42,6 +42,7 @@ import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTabl
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 /**
  * Common implementation of the DeltaProvider interface for all Databricks versions.
@@ -116,6 +117,15 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
     catalogClass == classOf[DeltaCatalog] || catalogClass == classOf[UnityCatalogV2Proxy]
   }
 
+  private def getWriteOptions(options: Any): Map[String, String] = {
+    // For Databricks 13.3 AtomicCreateTableAsSelectExec writeOptions is a Map[String, String]
+    // while in all the other versions it's a CaseInsensitiveMap
+    options match {
+      case c: CaseInsensitiveStringMap => c.asCaseSensitiveMap().asScala.toMap
+      case _ => options.asInstanceOf[Map[String, String]]
+    }
+  }
+
   override def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): Unit = {
@@ -131,22 +141,17 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+      getWriteOptions(cpuExec), cpuExec.session)
   }
 
   override def convertToGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
     GpuAtomicCreateTableAsSelectExec(
-      cpuExec.output,
+      cpuExec,
       new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.ifNotExists)
+      meta.childPlans.head.convertIfNeeded()
+    )
   }
 
   override def tagForGpu(
@@ -164,23 +169,17 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
+      getWriteOptions(cpuExec), cpuExec.session)
   }
 
   override def convertToGpu(
       cpuExec: AtomicReplaceTableAsSelectExec,
       meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
     GpuAtomicReplaceTableAsSelectExec(
-      cpuExec.output,
+      cpuExec,
       new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.orCreate,
-      cpuExec.invalidateCache)
+      meta.childPlans.head.convertIfNeeded()
+    )
   }
 
   private case class DeltaWriteV1Config(
