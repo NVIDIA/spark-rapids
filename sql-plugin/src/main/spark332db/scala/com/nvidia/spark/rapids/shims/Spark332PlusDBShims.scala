@@ -39,15 +39,15 @@ trait Spark332PlusDBShims extends Spark321PlusDBShims {
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
   override def getParquetFilters(
-                                  schema: MessageType,
-                                  pushDownDate: Boolean,
-                                  pushDownTimestamp: Boolean,
-                                  pushDownDecimal: Boolean,
-                                  pushDownStartWith: Boolean,
-                                  pushDownInFilterThreshold: Int,
-                                  caseSensitive: Boolean,
-                                  lookupFileMeta: String => String,
-                                  dateTimeRebaseModeFromConf: String): ParquetFilters = {
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      lookupFileMeta: String => String,
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
     val datetimeRebaseMode = DataSourceUtils
       .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
