@@ -196,6 +196,32 @@
                 </property>
             </activation>
         </profile>
+        <profile>
+            <id>release341db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341db</value>
+                </property>
+            </activation>
+            <properties>
+                <included_buildvers>${buildver}</included_buildvers>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-common-utils_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql-api_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
     </profiles>
 
     <build>
