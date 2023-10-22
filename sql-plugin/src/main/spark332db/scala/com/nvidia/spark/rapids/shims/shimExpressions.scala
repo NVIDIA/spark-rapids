@@ -15,8 +15,25 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "332db"}
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark341PlusDBShims
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.trees.TreePattern._
+
+trait ShimGetArrayStructFields extends ExtractValue {
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq(EXTRACT_ARRAY_SUBFIELDS)
+}
+
+trait ShimGetArrayItem extends ExtractValue {
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_ARRAY_ITEM)
+}
+
+trait ShimGetStructField extends ExtractValue {
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_STRUCT_FIELD)
+}
+
+// Fallback to the default definition of `deterministic`
+trait GpuDeterministicFirstLastCollectShim extends Expression

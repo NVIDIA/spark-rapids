@@ -22,7 +22,6 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.datasources.V1WritesUtils.Empty2Null
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
@@ -43,18 +42,3 @@ object SparkShimImpl extends Spark332PlusDBShims {
     super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 }
-
-trait ShimGetArrayStructFields extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq(EXTRACT_ARRAY_SUBFIELDS)
-}
-
-trait ShimGetArrayItem extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_ARRAY_ITEM)
-}
-
-trait ShimGetStructField extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_STRUCT_FIELD)
-}
-
-// Fallback to the default definition of `deterministic`
-trait GpuDeterministicFirstLastCollectShim extends Expression
