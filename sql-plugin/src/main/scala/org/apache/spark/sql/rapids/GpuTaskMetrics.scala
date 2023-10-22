@@ -80,21 +80,22 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
 
 class GpuTaskMetrics extends Serializable {
   private val semWaitTimeNs = new NanoSecondAccumulator
-  private val spillBlockTimeNs = new NanoSecondAccumulator
   private val readSpillTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
   private val splitAndRetryCount = new LongAccumulator
   private val retryBlockTime = new NanoSecondAccumulator
   private val retryComputationTime = new NanoSecondAccumulator
+  private val spillGpu2HostTimeNs = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
-    "gpuSpillBlockTime" -> spillBlockTimeNs,
     "gpuReadSpillTime" -> readSpillTimeNs,
     "gpuRetryCount" -> retryCount,
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
     "gpuRetryBlockTime" -> retryBlockTime,
-    "gpuRetryComputationTime" -> retryComputationTime)
+    "gpuRetryComputationTime" -> retryComputationTime,
+    "gpuSpillDevice2HostTime" -> spillGpu2HostTimeNs
+  )
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -132,9 +133,11 @@ class GpuTaskMetrics extends Serializable {
 
   def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, "Acquire GPU", NvtxColor.RED, f)
 
-  def spillTime[A](f: => A): A = timeIt(spillBlockTimeNs, "OnAllocFailure", NvtxColor.RED, f)
-
   def readSpillTime[A](f: => A): A = timeIt(readSpillTimeNs, "Read Spill", NvtxColor.ORANGE, f)
+
+  def spillGpu2HostTime[A](f: => A): A = {
+    timeIt(spillGpu2HostTimeNs, "spillGpu2HostTime", NvtxColor.RED, f)
+  }
 
   def updateRetry(taskAttemptId: Long): Unit = {
     val rc = RmmSpark.getAndResetNumRetryThrow(taskAttemptId)
