@@ -28,7 +28,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -152,6 +152,28 @@ object ExternalSource extends Logging {
   def convertToGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"catalog ${cpuExec.catalog.getClass} is not supported")
+    }
+  }
+
+  def convertToGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
     val catalogClass = cpuExec.catalog.getClass
     if (deltaProvider.isSupportedCatalog(catalogClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)

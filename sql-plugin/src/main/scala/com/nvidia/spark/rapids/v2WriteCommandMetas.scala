@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.execution.datasources.v2.AtomicCreateTableAsSelectExec
+import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.ExternalSource
 
 class AtomicCreateTableAsSelectExecMeta(
@@ -25,6 +25,22 @@ class AtomicCreateTableAsSelectExecMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[AtomicCreateTableAsSelectExec](wrapped, conf, parent, rule) {
+
+  override def tagPlanForGpu(): Unit = {
+    ExternalSource.tagForGpu(wrapped, this)
+  }
+
+  override def convertToGpu(): GpuExec = {
+    ExternalSource.convertToGpu(wrapped, this)
+  }
+}
+
+class AtomicReplaceTableAsSelectExecMeta(
+    wrapped: AtomicReplaceTableAsSelectExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[AtomicReplaceTableAsSelectExec](wrapped, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
     ExternalSource.tagForGpu(wrapped, this)
