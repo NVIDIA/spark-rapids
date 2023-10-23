@@ -549,11 +549,6 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='we currently fallback to cpu for this option')),
     False
 ])
-# TODO: test all of these options or fallback & document as appropriate .. also some of these options
-# may not be applicable to to_json
-# @pytest.mark.parametrize('dateFormat', ['yyyy-MM-dd', 'dd/MM/yyyy'])
-# @pytest.mark.parametrize('timestampFormat', ['yyyy-MM-dd\'T\'HH:mm:ss[.SSS][XXX]', 'yyyy-MM-dd\'T\'HH:mm:ss'])
-# @pytest.mark.parametrize('timestampNTZFormat', ['yyyy-MM-dd\'T\'HH:mm:ss[.SSS]', 'yyyy-MM-dd\'T\'HH:mm:ss'])
 def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
     struct_gen = StructGen([
         ('a', data_gen),
