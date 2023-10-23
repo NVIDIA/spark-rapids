@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, Shim
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ImplicitCastInputTypes, Literal, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
@@ -332,8 +332,8 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
     RollingAggregation.min().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
-  override def newFixer(): BatchedRunningWindowFixer =
-    new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min")
+  override def newFixer(): Option[BatchedRunningWindowFixer] =
+    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min"))
 
   // UNBOUNDED TO UNBOUNDED WINDOW
   override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
@@ -516,8 +516,8 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
     RollingAggregation.max().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
-  override def newFixer(): BatchedRunningWindowFixer =
-    new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max")
+  override def newFixer(): Option[BatchedRunningWindowFixer] =
+    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max"))
 
   // UNBOUNDED TO UNBOUNDED WINDOW
   override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
@@ -928,8 +928,8 @@ abstract class GpuSum(
   override def windowOutput(result: ColumnVector): ColumnVector = result.incRefCount()
 
   // RUNNING WINDOW
-  override def newFixer(): BatchedRunningWindowFixer =
-    new SumBinaryFixer(resultType, failOnErrorOverride)
+  override def newFixer(): Option[BatchedRunningWindowFixer] =
+    Some(new SumBinaryFixer(resultType, failOnErrorOverride))
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     windowInputProjection
@@ -1286,8 +1286,8 @@ case class GpuCount(children: Seq[Expression],
   }
 
   // RUNNING WINDOW
-  override def newFixer(): BatchedRunningWindowFixer =
-    new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "count")
+  override def newFixer(): Option[BatchedRunningWindowFixer] =
+    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "count"))
 
   // Scan and group by scan do not support COUNT with nulls excluded.
   // one of them does not even support count at all, so we are going to SUM
@@ -1572,7 +1572,8 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
     RollingAggregation.nth(0, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
-  override def newFixer(): BatchedRunningWindowFixer = new FirstRunningWindowFixer(ignoreNulls)
+  override def newFixer(): Option[BatchedRunningWindowFixer] =
+    Some(new FirstRunningWindowFixer(ignoreNulls))
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
@@ -1630,6 +1631,7 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
 
 case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boolean)
   extends GpuAggregateWindowFunction
+        with GpuBatchedRunningWindowWithFixer  // Only if the N == 1.
         with ImplicitCastInputTypes
         with Serializable {
 
@@ -1662,6 +1664,14 @@ case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boole
     RollingAggregation.nth(offsetVal - 1,
       if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
+
+  override def newFixer(): Option[BatchedRunningWindowFixer] = {
+    GpuOverrides.extractLit(offset) match {
+      case Some(Literal(value, IntegerType)) if value == 1 =>
+        Some(new FirstRunningWindowFixer(ignoreNulls))
+      case _ => None
+    }
+  }
 }
 
 trait GpuCollectBase

@@ -950,7 +950,7 @@ trait GpuBatchedRunningWindowWithFixer {
   /**
    * Get a new class that can be used to fix up batched running window operations.
    */
-  def newFixer(): BatchedRunningWindowFixer
+  def newFixer(): Option[BatchedRunningWindowFixer]
 }
 
 /**
@@ -1832,7 +1832,7 @@ case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
     }
   }
 
-  override def newFixer(): BatchedRunningWindowFixer = new RankFixer()
+  override def newFixer(): Option[BatchedRunningWindowFixer] = Some(new RankFixer())
 }
 
 /**
@@ -1873,7 +1873,7 @@ case class GpuDenseRank(children: Seq[Expression]) extends GpuRunningWindowFunct
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
     Seq(AggAndReplace(ScanAggregation.denseRank(), None))
 
-  override def newFixer(): BatchedRunningWindowFixer = new DenseRankFixer()
+  override def newFixer(): Option[BatchedRunningWindowFixer] = Some(new DenseRankFixer())
 }
 
 /**
@@ -1887,8 +1887,8 @@ case object GpuRowNumber extends GpuRunningWindowFunction
 
   override def children: Seq[Expression] = Nil
 
-  override def newFixer(): BatchedRunningWindowFixer =
-    new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
+  override def newFixer(): Option[BatchedRunningWindowFixer] =
+    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number"))
 
   // For group by scans cudf does not support ROW_NUMBER so we will do a SUM
   // on a column of 1s. We could do a COUNT_ALL too, but it would not be as consistent

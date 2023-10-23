@@ -30,11 +30,11 @@ import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, Literal, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuFirst, GpuNthValue}
+import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -481,15 +481,8 @@ object GpuWindowExec {
   def isBatchedRunningFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean = {
     val isSpecOkay = isRunningWindow(spec)
     val isFuncOkay = func match {
-      case _: GpuBatchedRunningWindowWithFixer => true
+      case f: GpuBatchedRunningWindowWithFixer => f.newFixer().isDefined
       case GpuAggregateExpression(_: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => true
-      case GpuNthValue(_, offset, _) =>
-        GpuOverrides.extractLit(offset) match {
-          case Some(Literal(value, IntegerType)) if value == 1 =>
-            // FIRST()! Can be solved as batched running window.
-            true
-          case _ => false
-        }
       case _ => false
     }
     isSpecOkay && isFuncOkay
@@ -1533,16 +1526,9 @@ class GpuRunningWindowIterator(
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
         func match {
           case f: GpuBatchedRunningWindowWithFixer =>
-            Some((index, f.newFixer()))
+            f.newFixer().map(fixer => (index, fixer))
           case GpuAggregateExpression(f: GpuBatchedRunningWindowWithFixer, _, _, _, _) =>
-            Some((index, f.newFixer()))
-          case GpuNthValue(child, offset, ignoreNulls) =>
-            GpuOverrides.extractLit(offset) match {
-              case Some(Literal(value, IntegerType)) if value == 1 =>
-                // Piggyback on GpuFirst.
-                Some((index, GpuFirst(child, ignoreNulls).newFixer()))
-              case _ => None
-            }
+            f.newFixer().map(fixer => (index, fixer))
           case _ => None
         }
       case _ => None
