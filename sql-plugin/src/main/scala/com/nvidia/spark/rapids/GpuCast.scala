@@ -1170,12 +1170,8 @@ object GpuCast {
   }
 
   private def escapeJsonString(cv: ColumnVector): ColumnVector = {
-    // TODO string escaping is tricky because we can't use backrefs directly to insert an escape
-    // character before the backref with the pattern `\\1` because cuDF will not parse this
-    // correctly. We hit the same issue in `GpuTextBasedPartitionReader.castStringToTimestamp`
-    // and found a workaround, but that workaround will not work here.
-    // Another challenge is that we do not want to escape something that is already escaped, so
-    // we really need a regex way of doing this.
+    // this is a placeholder for implementing string escaping
+    // https://github.com/NVIDIA/spark-rapids/issues/9514
     cv
   }
 
