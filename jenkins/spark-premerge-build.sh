@@ -180,7 +180,7 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-ln -sf scala2.13/jenkins jenkins
+ln -sf jenkins scala2.13/jenkins
 
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
 
