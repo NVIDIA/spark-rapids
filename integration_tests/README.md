@@ -101,6 +101,9 @@ For manual installation, you need to setup your environment:
   tests across multiple CPUs to speed up test execution
 - findspark
   : Adds pyspark to sys.path at runtime
+- [fastparquet](https://fastparquet.readthedocs.io)
+  : A Python library (independent of Apache Spark) for reading/writing Parquet. Used in the
+  integration tests for checking Parquet read/write compatibility with the RAPIDS plugin.
 
 You can install all the dependencies using `pip` by running the following command:
 
@@ -453,6 +456,12 @@ The marks you care about are all in marks.py
 
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
+
+All data generation and Spark function calls should occur within a Spark session. Typically 
+this is done by passing a lambda to functions in `asserts.py` such as 
+`assert_gpu_and_cpu_are_equal_collect`. However, for scalar generation like `gen_scalars`, you 
+may need to put it in a `with_cpu_session`. It is because negative scale decimals can have 
+problems when calling `f.lit` from outside of `with_spark_session`.
 
 ## Guidelines for Testing
 

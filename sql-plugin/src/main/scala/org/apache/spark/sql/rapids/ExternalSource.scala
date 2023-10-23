@@ -24,10 +24,12 @@ import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -80,6 +82,10 @@ object ExternalSource extends Logging {
     } else {
       false
     }
+  }
+
+  def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
+    deltaProvider.isSupportedWrite(write)
   }
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -135,5 +141,71 @@ object ExternalSource extends Logging {
     require(desc != null)
     require(doWrap != null)
     new CreatableRelationProviderRule[INPUT](doWrap, desc, tag)
+  }
+
+  def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"catalog $catalogClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
+    val catalogClass = cpuExec.catalog.getClass
+    if (deltaProvider.isSupportedCatalog(catalogClass)) {
+      deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+      cpuExec: AppendDataExecV1,
+      meta: AppendDataExecV1Meta): Unit = {
+    val writeClass = cpuExec.table.getClass
+    if (deltaProvider.isSupportedWrite(writeClass)) {
+      deltaProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"catalog $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+      cpuExec: AppendDataExecV1,
+      meta: AppendDataExecV1Meta): GpuExec = {
+    val writeClass = cpuExec.table.getClass
+    if (deltaProvider.isSupportedWrite(writeClass)) {
+      deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
   }
 }

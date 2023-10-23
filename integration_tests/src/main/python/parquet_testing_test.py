@@ -59,7 +59,6 @@ _xfail_files = {
     "hadoop_lz4_compressed.parquet": "cudf does not support Hadoop LZ4 format",
     "hadoop_lz4_compressed_larger.parquet": "cudf does not support Hadoop LZ4 format",
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
-    "repeated_no_annotation.parquet": "https://github.com/NVIDIA/spark-rapids/issues/8631",
 }
 if is_before_spark_330():
     _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"

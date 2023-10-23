@@ -21,7 +21,7 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc, is_before_spark_340
+from spark_session import is_tz_utc, is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
 from conftest import skip_unless_precommit_tests
@@ -596,11 +596,12 @@ class TimestampGen(DataGen):
         self._epoch = datetime(1970, 1, 1, tzinfo=tzinfo)
         self._start_time = self._to_us_since_epoch(start)
         self._end_time = self._to_us_since_epoch(end)
+        self._tzinfo = tzinfo
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
     def _cache_repr(self):
-        return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + ')'
+        return super()._cache_repr() + '(' + str(self._start_time) + ',' + str(self._end_time) + ',' + str(self._tzinfo) + ')'
 
     _us = timedelta(microseconds=1)
 
@@ -1172,4 +1173,3 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
-
