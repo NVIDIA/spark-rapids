@@ -611,6 +611,10 @@ private case class GpuParquetFileFilterHandler(
       withResource(new NvtxRange("ReadFooterBytes", NvtxColor.YELLOW)) { _ =>
         inputStream.seek(footerLengthIndex)
         val footerLength = readIntLittleEndian(inputStream)
+        metrics.get(FOOTER_SIZE).foreach {
+          _ += footerLength
+        }
+
         val magic = new Array[Byte](MAGIC.length)
         inputStream.readFully(magic)
         if (!util.Arrays.equals(MAGIC, magic)) {
@@ -655,7 +659,13 @@ private case class GpuParquetFileFilterHandler(
       readDataSchema: StructType,
       filePath: Path): ParquetFooter = {
     val footerSchema = convertToFooterSchema(readDataSchema)
+    val startTime = System.nanoTime()
     val footerBuffer = getFooterBuffer(filePath, conf, metrics)
+    val footerFetchTime = System.nanoTime() - startTime
+    metrics.get(FOOTER_FETCH_TIME).foreach {
+      _ += footerFetchTime
+    }
+
     withResource(footerBuffer) { footerBuffer =>
       withResource(new NvtxRange("Parse and filter footer by range", NvtxColor.RED)) { _ =>
         // In the future, if we know we're going to read the entire file,
@@ -664,8 +674,14 @@ private case class GpuParquetFileFilterHandler(
         // skip the row group filtering.
         val len = file.length
 
-        ParquetFooter.readAndFilter(footerBuffer, file.start, len,
+        val startTime = System.nanoTime()
+        val ret = ParquetFooter.readAndFilter(footerBuffer, file.start, len,
           footerSchema, !isCaseSensitive)
+        val footerFilterTime = System.nanoTime() - startTime
+        metrics.get(FOOTER_FILTER_TIME).foreach {
+          _ += footerFilterTime
+        }
+        ret
       }
     }
   }
@@ -680,12 +696,24 @@ private case class GpuParquetFileFilterHandler(
     //noinspection ScalaDeprecation
     withResource(new NvtxRange("readFooter", NvtxColor.YELLOW)) { _ =>
       val filePathString = filePath.toString
-      FileCache.get.getFooter(filePathString, conf).map { hmb =>
+      val startTime = System.nanoTime()
+      val footerMap = FileCache.get.getFooter(filePathString, conf)
+      val footerFetchTime = System.nanoTime() - startTime
+      metrics.get(FOOTER_FETCH_TIME).foreach {
+        _ += footerFetchTime
+      }
+      footerMap.map { hmb =>
         withResource(hmb) { _ =>
           metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS, NoopMetric) += 1
           metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS_SIZE, NoopMetric) += hmb.getLength
-          ParquetFileReader.readFooter(new HMBInputFile(hmb),
+          val startFilterTime = System.nanoTime()
+          val ret = ParquetFileReader.readFooter(new HMBInputFile(hmb),
             ParquetMetadataConverter.range(file.start, file.start + file.length))
+          val footerFilterTime = System.nanoTime() - startFilterTime
+          metrics.get(FOOTER_FILTER_TIME).foreach {
+            _ += footerFilterTime
+          }
+          ret
         }
       }.getOrElse {
         metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES, NoopMetric) += 1
@@ -697,12 +725,24 @@ private case class GpuParquetFileFilterHandler(
         cacheToken.map { token =>
           var needTokenCancel = true
           try {
-            withResource(readFooterBuffer(filePath, conf)) { hmb =>
+            val startTime = System.nanoTime()
+            val footerBuffer = readFooterBuffer(filePath, conf)
+            val footerFetchTime = System.nanoTime() - startTime
+            metrics.get(FOOTER_FETCH_TIME).foreach {
+              _ += footerFetchTime
+            }
+            withResource(footerBuffer) { hmb =>
               metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES_SIZE, NoopMetric) += hmb.getLength
               token.complete(hmb.slice(0, hmb.getLength))
               needTokenCancel = false
-              ParquetFileReader.readFooter(new HMBInputFile(hmb),
+              val startFilterTime = System.nanoTime()
+              val ret = ParquetFileReader.readFooter(new HMBInputFile(hmb),
                 ParquetMetadataConverter.range(file.start, file.start + file.length))
+              val footerFilterTime = System.nanoTime() - startFilterTime
+              metrics.get(FOOTER_FILTER_TIME).foreach {
+                _ += footerFilterTime
+              }
+              ret
             }
           } finally {
             if (needTokenCancel) {
@@ -736,6 +776,7 @@ private case class GpuParquetFileFilterHandler(
       }
       val fileHadoopConf =
         ReaderUtils.getHadoopConfForReaderThread(new Path(file.filePath.toString), conf)
+      val startTime = System.nanoTime()
       val footer = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>

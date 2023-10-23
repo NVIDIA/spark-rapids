@@ -26,7 +26,7 @@ import scala.collection.mutable
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_FOOTER_FETCH_TIME, DESCRIPTION_FOOTER_FILTER_TIME, DESCRIPTION_FOOTER_SIZE, DESCRIPTION_GPU_DECODE_TIME, ESSENTIAL_LEVEL, FILTER_TIME, FOOTER_FETCH_TIME, FOOTER_FILTER_TIME, FOOTER_SIZE, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
@@ -176,6 +176,9 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
+    FOOTER_FETCH_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FOOTER_FETCH_TIME),
+    FOOTER_FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FOOTER_FILTER_TIME),
+    FOOTER_SIZE -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_FOOTER_SIZE),
     "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time")
   )
 
