@@ -66,6 +66,7 @@ pipeline {
     environment {
         JENKINS_ROOT = 'jenkins'
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
+        MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
         GITHUB_TOKEN = credentials("github-token")
@@ -73,7 +74,6 @@ pipeline {
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
-        MVN_URM_MIRROR = "-s ${CUSTOM_WORKSPACE}/jenkins/settings.xml -P mirror-apache-to-urm"
         CUDA_CLASSIFIER = 'cuda11'
     }
 
