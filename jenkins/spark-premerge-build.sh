@@ -180,6 +180,8 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
+ln -sf scala2.13/jenkins jenkins
+
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
 
 ARTF_ROOT="$WORKSPACE/.download"
