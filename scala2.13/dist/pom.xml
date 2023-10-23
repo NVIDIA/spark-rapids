@@ -89,6 +89,14 @@
             </properties>
         </profile>
         <profile>
+            <id>premergeScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>jdk11-test</id>
             <properties>
                 <included_buildvers>
