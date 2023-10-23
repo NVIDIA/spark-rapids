@@ -115,7 +115,7 @@ trait Spark332PlusDBShims extends Spark321PlusDBShims {
   }
 
   override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
-                                                           sqse: ShuffleQueryStageExec): SparkPlan = {
+      sqse: ShuffleQueryStageExec): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
       case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
