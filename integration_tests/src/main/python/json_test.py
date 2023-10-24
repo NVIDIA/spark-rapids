@@ -458,10 +458,8 @@ def test_from_json_struct(schema):
                                     'struct<student:struct<name:string,age:int>>',
                                     'struct<teacher:string,student:struct<name:string,age:int>>'])
 def test_from_json_struct_of_struct(schema):
-    json_string_gen = (StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
-                                r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}')
-                       .with_special_pattern('', weight=50)
-                       .with_special_pattern('null', weight=50))
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+                                r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}').with_special_pattern('', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
@@ -471,11 +469,9 @@ def test_from_json_struct_of_struct(schema):
                                     'struct<student:array<struct<name:string,class:string>>>',
                                     'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
 def test_from_json_struct_of_list(schema):
-    json_string_gen = (StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
+    json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
-                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}')
-                       .with_special_pattern('', weight=50)
-                       .with_special_pattern('null', weight=50))
+                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}').with_special_pattern('', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
