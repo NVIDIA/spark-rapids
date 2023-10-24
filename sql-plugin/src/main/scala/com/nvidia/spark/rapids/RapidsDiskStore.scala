@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
-import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
 import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -85,16 +85,23 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       stream: Cuda.Stream): (Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
+        val metricFn = incoming.storageTier match {
+          case StorageTier.DEVICE => GpuTaskMetrics.get.spillGpu2Disk[(Long, Long)] _
+          case StorageTier.HOST => GpuTaskMetrics.get.spillHost2Disk[(Long, Long)] _
+          case unknown => sys.error("INFEASIBLE spilling to Disk from storage tier: " + unknown)
+        }
         withResource(new FileOutputStream(path, append)) { fos =>
-          withResource(fos.getChannel) { outputChannel =>
-            val startOffset = outputChannel.position()
-            val writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
-            if (writtenBytes == 0) {
-              throw new IllegalStateException(
-                s"Buffer ${fileWritable} wrote 0 bytes disk on spill. This is not supported!"
-              )
+          metricFn {
+            withResource(fos.getChannel) { outputChannel =>
+              val startOffset = outputChannel.position()
+              val writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
+              if (writtenBytes == 0) {
+                throw new IllegalStateException(
+                  s"Buffer ${fileWritable} wrote 0 bytes disk on spill. This is not supported!"
+                )
+              }
+              (startOffset, writtenBytes)
             }
-            (startOffset, writtenBytes)
           }
         }
       case other =>
