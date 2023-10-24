@@ -23,7 +23,6 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
@@ -81,9 +80,5 @@ object RapidsErrorUtils {
 
   def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
     throw new AnalysisException(s"$tableIdentifier already exists.")
-  }
-
-  def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
-    Some(TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments"))
   }
 }

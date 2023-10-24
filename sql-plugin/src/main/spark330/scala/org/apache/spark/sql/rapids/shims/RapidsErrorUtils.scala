@@ -25,7 +25,6 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.SparkDateTimeException
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
@@ -80,9 +79,5 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
 
   def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
-  }
-
-  def parseUrlWrongNumArgs(actual: Int): Option[TypeCheckResult] = {
-    Some(TypeCheckResult.TypeCheckFailure(s"parse_url function requires two or three arguments"))
   }
 }

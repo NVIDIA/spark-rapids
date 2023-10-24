@@ -23,9 +23,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParseURI
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -50,16 +48,6 @@ case class GpuParseUrl(children: Seq[Expression])
   override def prettyName: String = "parse_url"
 
   import GpuParseUrl._
-  
-  def checkInputDataTypesUseless(): TypeCheckResult = {
-    if (children.size > 3 || children.size < 2) {
-      RapidsErrorUtils.parseUrlWrongNumArgs(children.size) match {
-        case res: Some[TypeCheckResult] => return res.get
-        case _ => // error message has been thrown
-      }
-    }
-    super[ExpectsInputTypes].checkInputDataTypes()
-  }
 
   def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar): ColumnVector = {
     val part = partToExtract.getValue.asInstanceOf[UTF8String].toString

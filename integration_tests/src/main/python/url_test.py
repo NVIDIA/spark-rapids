@@ -165,13 +165,3 @@ def test_parse_url_host_fallback(part):
                 "parse_url(a, '" + part + "')"
                 ),
             'ParseUrl')
-    
-def test_parse_url_too_many_args():
-    error_message = 'parse_url function requires two or three arguments'  \
-        if is_before_spark_340() else  \
-        '[WRONG_NUM_ARGS.WITHOUT_SUGGESTION] The `parse_url` requires [2, 3] parameters'
-    assert_gpu_and_cpu_error(
-            lambda spark : unary_op_df(spark, StringGen()).selectExpr(
-                "a","parse_url(a, 'PROTOCOL', 'key', 'value')").collect(),
-            conf={},
-            error_message=error_message)
