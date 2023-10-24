@@ -599,7 +599,7 @@ def test_window_running_rank(data_gen):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
         [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
-def test_window_running(b_gen, c_gen, batch_size):
+def test_window_running_foo(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}

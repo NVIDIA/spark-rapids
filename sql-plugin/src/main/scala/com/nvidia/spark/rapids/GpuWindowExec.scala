@@ -17,17 +17,14 @@
 package com.nvidia.spark.rapids
 
 import java.util.concurrent.TimeUnit
-
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
@@ -36,7 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
@@ -464,11 +461,21 @@ object GpuWindowExec {
   }
 
   def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RowFrame,
-    GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))) => true
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RowFrame,
-    GpuSpecialFrameBoundary(UnboundedPreceding), GpuLiteral(value, _))) if value == 0 => true
-    case _ => false
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                         RowFrame,
+                                         GpuSpecialFrameBoundary(UnboundedPreceding),
+                                         GpuSpecialFrameBoundary(CurrentRow))) => true
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                         RowFrame,
+                                         GpuSpecialFrameBoundary(UnboundedPreceding), GpuLiteral(value, _))) if value == 0 => true
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                         RangeFrame,
+                                         GpuSpecialFrameBoundary(UnboundedPreceding),
+                                         GpuSpecialFrameBoundary(CurrentRow))) => true
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                         RangeFrame,
+                                         GpuSpecialFrameBoundary(UnboundedPreceding), GpuLiteral(value, _))) if value == 0 => true
+     case _ => false
   }
 
   def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
@@ -1667,6 +1674,39 @@ case class GpuRunningWindowExec(
     override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
+
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
+
+  override def outputBatching: CoalesceGoal = {
+    val isRangeFrame = windowOps.exists {
+      // TODO: Also handle case where it's not a GpuAlias?
+      case GpuAlias(GpuWindowExpression(_,
+                      GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RangeFrame, _, _))),
+                    _) => true
+      case _ => false
+    }
+    if (!isRangeFrame) {
+      return null // NO batching restrictions on ROW frames.
+    }
+    if (gpuPartitionSpec.isEmpty) {
+      // windowOps
+      //   .filter( GpuWindowExpression OR GpuAlias for GpuWindowExpression where windowFunction is
+      //            GpuFirst or NthValue(1))
+      //   .filter( window-frame.type == RowFrame && boundaries == [UNB_PREC, CURRENT] )
+      // Then, BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
+      /*
+      windowOps.withFilter( e => e match {
+        case GpuWindowExpression(winFoo: Expression, _) if winFoo.isInstanceOf[GpuNthValue] => true
+        case _ => false
+      })
+      */
+      BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
+    } else {
+      // BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
+      // Same as for unpartitioned, but include gpu/cpuPartitionOrdering.
+      BatchedByKey(gpuPartitionOrdering ++ gpuOrderSpec)(cpuPartitionOrdering ++ cpuOrderSpec)
+    }
+  }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
