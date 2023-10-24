@@ -60,7 +60,12 @@
             <id>noSnapshots</id>
             <properties>
                 <included_buildvers>
+                    <!-- #if scala-2.12 --><!--
                     ${noSnapshot.buildvers}
+                    --><!-- #endif scala-2.12 -->
+                    <!-- #if scala-2.13 -->
+                    ${noSnapshotScala213.buildvers}
+                    <!-- #endif scala-2.13 -->
                 </included_buildvers>
             </properties>
         </profile>
