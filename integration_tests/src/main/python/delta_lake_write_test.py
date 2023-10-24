@@ -25,6 +25,8 @@ from parquet_write_test import parquet_part_write_gens, parquet_write_gens_list,
 from pyspark.sql.types import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, with_cpu_session
 
+delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
+
 def get_last_operation_metrics(path):
     from delta.tables import DeltaTable
     return with_cpu_session(lambda spark: DeltaTable.forPath(spark, path)\
@@ -52,10 +54,9 @@ def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("gens", parquet_write_gens_list, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_write_round_trip_unmanaged(spark_tmp_path, gens):
-    gen_list = [("c" + str(i), gen) for i, gen in enumerate(gens)]
+def test_delta_write_round_trip_unmanaged(spark_tmp_path):
+    gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta").save(path),
@@ -136,7 +137,7 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
     gen_list = [("c" + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs = copy_and_update(writer_confs, delta_writes_enabled_conf)
-    path_to_table= {}
+    path_to_table = {}
     def do_write(spark, path):
         table = spark_tmp_table_factory.get()
         path_to_table[path] = table
@@ -154,17 +155,35 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("gens", parquet_write_gens_list, ids=idfn)
-def test_delta_atomic_create_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path):
-    _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
+def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path):
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.parametrize("gens", parquet_write_gens_list, ids=idfn)
-def test_delta_atomic_replace_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path):
-    _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
+def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path):
+    _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf):
+    gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def setup_tables(spark):
+        setup_delta_dest_tables(spark, data_path,
+                                lambda spark: gen_df(spark, gen_list).coalesce(1), use_cdf)
+    with_cpu_session(setup_tables, writer_confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1)\
+            .write.format("delta").mode("append").saveAsTable(f"delta.`{path}`"),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -704,8 +723,7 @@ def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
         "spark.sql.execution.sortBeforeRepartition": "true",
         "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
     })
-    genlist = [ SetValuesGen(StringType(), ["a", "b", "c"]) ] + \
-              [ x for sublist in parquet_write_gens_list for x in sublist ]
+    genlist = [ SetValuesGen(StringType(), ["a", "b", "c"]) ] + delta_write_gens
     gens = [("c" + str(i), gen) for i, gen in enumerate(genlist)]
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gens) \

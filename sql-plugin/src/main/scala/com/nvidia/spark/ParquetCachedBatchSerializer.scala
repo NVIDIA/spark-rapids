@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.ShimLoaderTemp
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -41,7 +41,8 @@ trait GpuCachedBatchSerializer extends CachedBatchSerializer {
  */
 class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Proxy {
 
-  override lazy val self: GpuCachedBatchSerializer = ShimLoader.newParquetCachedBatchSerializer()
+  override lazy val self: GpuCachedBatchSerializer =
+    ShimLoaderTemp.newParquetCachedBatchSerializer()
 
   /**
    * Can `convertColumnarBatchToCachedBatch()` be called instead of

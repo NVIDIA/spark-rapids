@@ -315,7 +315,35 @@ EOF
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
-    if ((${#TEST_PARALLEL_OPTS[@]} > 0));
+    SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
+    if [[ "${SPARK_SHELL_SMOKE_TEST}" != "0" ]]; then
+        echo "Running spark-shell smoke test..."
+        SPARK_SHELL_ARGS_ARR=(
+            --master local-cluster[1,2,1024]
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --conf spark.deploy.maxExecutorRetries=0
+        )
+        if [[ "${PYSP_TEST_spark_shuffle_manager}" != "" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(
+                --conf spark.shuffle.manager="${PYSP_TEST_spark_shuffle_manager}"
+                --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
+                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
+            )
+        else
+            SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
+        fi
+
+        # NOTE grep is used not only for checking the output but also
+        # to workaround the fact that spark-shell catches all failures.
+        # In this test it exits not because of the failure but because it encounters
+        # an EOF on stdin and injects a ":quit" command. Without a grep check
+        # the exit code would be success 0 regardless of the exceptions.
+        #
+        <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+            "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
+            | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
+        echo "SUCCESS spark-shell smoke test"
+    elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else

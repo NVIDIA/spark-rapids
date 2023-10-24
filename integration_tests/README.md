@@ -406,6 +406,10 @@ If Spark has been configured to support Delta Lake then these tests can be enabl
 Some tests are testing large data which will take a long time. By default, these tests are disabled.
 These tests can be enabled by adding the `--large_data_test` option to the command.
 
+### Enabling Pyarrow tests
+Some tests require that Pyarrow is installed. By default, these tests are disabled.
+These tests can be enabled by adding the `--pyarrow_test` option to the command.
+
 ## Writing tests
 
 There are a number of libraries provided to help someone write new tests.
