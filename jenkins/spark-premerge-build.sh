@@ -103,9 +103,6 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
-    SPARK_SHELL_SMOKE_TEST=1 \
-    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
-        ./integration_tests/run_pyspark_from_build.sh
 }
 
 rapids_shuffle_smoke_test() {
@@ -163,7 +160,30 @@ ci_2() {
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
-    ./integration_tests/run_pyspark_from_build.sh --pyarrow_test
+    ./integration_tests/run_pyspark_from_build.sh
+    # enable avro test separately
+    INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
+    # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
+    LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    # put some mvn tests here to balance durations of parallel stages
+    echo "Run mvn package..."
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
+    do
+        env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
+          -Dpytest.TEST_TAGS=''
+    done
+}
+
+ci_scala213() {
+    echo "Run premerge ci (Scala 2.13) testing..."
+    cd scala2.13
+    $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
+    cd ..
+    export TEST_TAGS="not premerge_ci_1"
+    export TEST_TYPE="pre-commit"
+    export TEST_PARALLEL=5
+    ./integration_tests/run_pyspark_from_build.sh
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
@@ -220,6 +240,7 @@ case $BUILD_TYPE in
         echo "Run all testings..."
         mvn_verify
         ci_2
+        ci_scala213
         ;;
 
     mvn_verify)
@@ -228,6 +249,10 @@ case $BUILD_TYPE in
 
     ci_2 )
         ci_2
+        ;;
+
+    ci_scala213 )
+        ci_scala213
         ;;
 
     *)
