@@ -31,3 +31,4 @@ fuzz_test = pytest.mark.fuzz_test
 iceberg = pytest.mark.iceberg
 delta_lake = pytest.mark.delta_lake
 large_data_test = pytest.mark.large_data_test
+pyarrow_test = pytest.mark.pyarrow_test
