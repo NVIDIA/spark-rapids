@@ -42,7 +42,7 @@ trait RapidsShuffleManagerLike {
 class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
-) extends RapidsShuffleManagerLike with Proxy {
+) extends RapidsShuffleManagerLike with Proxy with ShuffleManager {
 
   // touched in the plugin code after the shim initialization
   // is complete
