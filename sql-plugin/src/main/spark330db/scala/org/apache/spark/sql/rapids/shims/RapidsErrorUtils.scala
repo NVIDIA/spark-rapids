@@ -25,7 +25,6 @@ import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
-import org.apache.spark.unsafe.types.UTF8String
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
 

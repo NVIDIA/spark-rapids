@@ -23,7 +23,7 @@ package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.SparkDateTimeException
 import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
-import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
