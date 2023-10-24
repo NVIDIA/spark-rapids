@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
+import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
@@ -68,27 +69,36 @@ case class GpuJsonToStructs(
           }
         }
         closeOnExcept(isNullOrEmptyInput) { _ =>
-          withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { cleaned =>
-            withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-              withResource(cudf.Scalar.fromString("\r")) { returnSep =>
-                withResource(cleaned.stringContains(lineSep)) { inputHas =>
-                  withResource(inputHas.any()) { anyLineSep =>
-                    if (anyLineSep.isValid && anyLineSep.getBoolean) {
-                      throw new IllegalArgumentException("We cannot currently support parsing " +
-                          "JSON that contains a line separator in it")
+          withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { nullsReplaced =>
+            val isLiteralNull = withResource(Scalar.fromString("null")) { literalNull =>
+              nullsReplaced.equalTo(literalNull)
+            }
+            withResource(isLiteralNull) { _ =>
+              withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
+                withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                  withResource(cudf.Scalar.fromString("\r")) { returnSep =>
+                    withResource(cleaned.stringContains(lineSep)) { inputHas =>
+                      withResource(inputHas.any()) { anyLineSep =>
+                        if (anyLineSep.isValid && anyLineSep.getBoolean) {
+                          throw new IllegalArgumentException(
+                            "We cannot currently support parsing " +
+                            "JSON that contains a line separator in it")
+                        }
+                      }
+                    }
+                    withResource(cleaned.stringContains(returnSep)) { inputHas =>
+                      withResource(inputHas.any()) { anyReturnSep =>
+                        if (anyReturnSep.isValid && anyReturnSep.getBoolean) {
+                          throw new IllegalArgumentException(
+                            "We cannot currently support parsing " +
+                            "JSON that contains a carriage return in it")
+                        }
+                      }
                     }
                   }
-                }
-                withResource(cleaned.stringContains(returnSep)) { inputHas =>
-                  withResource(inputHas.any()) { anyReturnSep =>
-                    if (anyReturnSep.isValid && anyReturnSep.getBoolean) {
-                      throw new IllegalArgumentException("We cannot currently support parsing " +
-                          "JSON that contains a carriage return in it")
-                    }
-                  }
+                  (isNullOrEmptyInput, cleaned.joinStrings(lineSep, emptyRow))
                 }
               }
-              (isNullOrEmptyInput, cleaned.joinStrings(lineSep, emptyRow))
             }
           }
         }
