@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-10-16
+Generated on 2023-10-24
 
 ## Release 23.10
 
@@ -27,6 +27,8 @@ Generated on 2023-10-16
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9485](https://github.com/NVIDIA/spark-rapids/issues/9485)|[BUG] GpuSemaphore can deadlock if there are multiple threads per task|
+|[#9498](https://github.com/NVIDIA/spark-rapids/issues/9498)|[BUG] spark 3.5.0 shim spark-shell is broken in spark-rapids 23.10 and 23.12|
 |[#9060](https://github.com/NVIDIA/spark-rapids/issues/9060)|[BUG] OOM error in split and retry with multifile coalesce reader with parquet data|
 |[#8916](https://github.com/NVIDIA/spark-rapids/issues/8916)|[BUG] Databricks - move init scripts off DBFS|
 |[#9416](https://github.com/NVIDIA/spark-rapids/issues/9416)|[BUG] CDH build failed due to missing dependencies|
@@ -81,6 +83,10 @@ Generated on 2023-10-16
 ### PRs
 |||
 |:---|:---|
+|[#9501](https://github.com/NVIDIA/spark-rapids/pull/9501)|Fix GpuSemaphore to support multiple threads per task|
+|[#9500](https://github.com/NVIDIA/spark-rapids/pull/9500)|Fix Spark 3.5.0 shell classloader issue with the plugin|
+|[#9427](https://github.com/NVIDIA/spark-rapids/pull/9427)|[DOC] Update docs for 23.10.0 release [skip ci]|
+|[#9421](https://github.com/NVIDIA/spark-rapids/pull/9421)|Init changelog of 23.10 [skip ci]|
 |[#9445](https://github.com/NVIDIA/spark-rapids/pull/9445)|Only run test_csv_infer_schema_timestamp_ntz tests with PySpark >= 3.4.1|
 |[#9420](https://github.com/NVIDIA/spark-rapids/pull/9420)|Update private and jni dep version to released 23.10.0|
 |[#9415](https://github.com/NVIDIA/spark-rapids/pull/9415)|[BUG] fix docker modified check in premerge [skip ci]|
