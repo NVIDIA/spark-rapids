@@ -276,7 +276,7 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
 
   SPARK_SHELL_SMOKE_TEST=1 \
   PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
-    ./integration_tests/run_pyspark_from_build.sh
+    ./run_pyspark_from_build.sh
 
   # ParquetCachedBatchSerializer cache_test
   PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer \

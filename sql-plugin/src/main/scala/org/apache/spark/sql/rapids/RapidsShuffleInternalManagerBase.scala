@@ -966,7 +966,7 @@ class RapidsCachingWriter[K, V](
           bytesWritten += partSize
           // if the size is 0 and we have rows, we are in a case where there are columns
           // but the type is such that there isn't a buffer in the GPU backing it.
-          // For example, a Struct column without any members. We treat such a case as if it 
+          // For example, a Struct column without any members. We treat such a case as if it
           // were a degenerate table.
           if (partSize == 0 && batch.numRows() > 0) {
             sizes(partId) += DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT
@@ -1044,7 +1044,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
+class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)

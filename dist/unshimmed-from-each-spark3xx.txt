@@ -1,4 +1,4 @@
-com/nvidia/spark/rapids/*/RapidsShuffleManager*
+com/nvidia/spark/rapids/*/RapidsShuffleManager.class
 com/nvidia/spark/rapids/AvroProvider.class
 com/nvidia/spark/rapids/HiveProvider.class
 com/nvidia/spark/rapids/iceberg/IcebergProvider.class
@@ -6,5 +6,4 @@ com/nvidia/spark/rapids/delta/DeltaProbe.class
 com/nvidia/spark/rapids/delta/DeltaProvider.class
 com/nvidia/spark/rapids/delta/DeltaProvider$.class
 com/nvidia/spark/rapids/PlanShims*
-org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
 spark-*-info.properties
