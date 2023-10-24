@@ -86,8 +86,8 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
         val metricFn = incoming.storageTier match {
-          case StorageTier.DEVICE => GpuTaskMetrics.get.spillGpu2Disk[(Long, Long)] _
-          case StorageTier.HOST => GpuTaskMetrics.get.spillHost2Disk[(Long, Long)] _
+          case StorageTier.DEVICE => GpuTaskMetrics.get.spillGpu2DiskTime[(Long, Long)] _
+          case StorageTier.HOST => GpuTaskMetrics.get.spillHost2DiskTime[(Long, Long)] _
           case unknown => sys.error("INFEASIBLE spilling to Disk from storage tier: " + unknown)
         }
         withResource(new FileOutputStream(path, append)) { fos =>

@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -64,10 +65,12 @@ class RapidsDeviceMemoryStore(
         memoryBuffer match {
           case d: DeviceMemoryBuffer => d
           case h: HostMemoryBuffer =>
-            closeOnExcept(DeviceMemoryBuffer.allocate(memoryBuffer.getLength)) { deviceBuffer =>
-              logDebug(s"copying from host $h to device $deviceBuffer")
-              deviceBuffer.copyFromHostBuffer(h, stream)
-              deviceBuffer
+            GpuTaskMetrics.get.unspillHost2GpuTime {
+              closeOnExcept(DeviceMemoryBuffer.allocate(memoryBuffer.getLength)) { deviceBuffer =>
+                logDebug(s"copying from host $h to device $deviceBuffer")
+                deviceBuffer.copyFromHostBuffer(h, stream)
+                deviceBuffer
+              }
             }
           case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
         }

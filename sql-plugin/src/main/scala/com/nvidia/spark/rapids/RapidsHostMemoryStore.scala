@@ -19,10 +19,12 @@ package com.nvidia.spark.rapids
 import java.io.DataOutputStream
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util.concurrent.ConcurrentHashMap
+
 import scala.collection.mutable
+
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostColumnVector, HostMemoryBuffer, JCudfSerialization, MemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, freeOnExcept, withResource}
-import com.nvidia.spark.rapids.SpillPriorities.{HOST_MEMORY_BUFFER_SPILL_OFFSET, applyPriorityOffset}
+import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_SPILL_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
