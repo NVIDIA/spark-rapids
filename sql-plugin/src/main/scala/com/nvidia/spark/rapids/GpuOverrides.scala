@@ -3231,27 +3231,28 @@ object GpuOverrides extends Logging {
       "Extracts a part from a URL",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("url", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+          ParamCheck("partToExtract", TypeSig.lit(TypeEnum.STRING).withPsNote(
+            TypeEnum.STRING, "only support partToExtract=PROTOCOL"), TypeSig.STRING)),
           // Should really be an OptionalParam
           Some(RepeatingParamCheck("key", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[ParseUrl](a, conf, p, r) {
-        val failOnError = a.failOnError
-
         override def tagExprForGpu(): Unit = {
-          if (failOnError) {
+          if (a.failOnError) {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
-          val partToExtract = childExprs(1).convertToGpu()
-              .asInstanceOf[GpuLiteral].value.asInstanceOf[UTF8String].toString
-          partToExtract.toUpperCase match {
-            case "PROTOCOL" =>
-            case _ =>
-              willNotWorkOnGpu(s"Part to extract $partToExtract is not supported on GPU")
+
+          extractStringLit(childExprs(1).convertToCpu()).map(_.toUpperCase) match {
+            case Some(GpuParseUrl.PROTOCOL) =>
+            case Some(other) =>
+              willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
+            case None =>
+              // Should never get here, but just in case
+              willNotWorkOnGpu("GPU only supports a literal for the part to extract")
           }
         }
 
         override def convertToGpu(): GpuExpression = {
-          GpuParseUrl(childExprs.map(_.convertToGpu()), failOnError)
+          GpuParseUrl(childExprs.map(_.convertToGpu()))
         }
       }),
     expr[Length](

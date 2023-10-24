@@ -146,80 +146,23 @@ edge_cases_gen = SetValuesGen(StringType(), edge_cases)
 
 url_gen = StringGen(url_pattern)
     
-def test_parse_url_protocol():
+@pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
+def test_parse_url_protocol(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 "a",
                 "parse_url(a, 'PROTOCOL')"
                 ))
     
-def test_parse_url_protocol_edge_cases():
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, edge_cases_gen).selectExpr(
-                "a",
-                "parse_url(a, 'PROTOCOL')"
-                ))
+unsupported_part = ['HOST', 'PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')
-def test_parse_url_host_fallback():
+@pytest.mark.parametrize('part', unsupported_part, ids=idfn)
+def test_parse_url_host_fallback(part):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, url_gen).selectExpr(
                 "a",
-                "parse_url(a, 'HOST')"
-                ),
-            'ParseUrl')
-    
-@allow_non_gpu('ProjectExec', 'ParseUrl')
-def test_parse_url_path_fallback():
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'PATH')"
-                ),
-            'ParseUrl')
-
-@allow_non_gpu('ProjectExec', 'ParseUrl')
-def test_parse_url_query_fallback():
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'QUERY')"
-                ),
-            'ParseUrl')
-
-@allow_non_gpu('ProjectExec', 'ParseUrl')   
-def test_parse_url_ref_fallback():
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'REF')"
-                ),
-            'ParseUrl')
-
-@allow_non_gpu('ProjectExec', 'ParseUrl')  
-def test_parse_url_file_fallback():
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'FILE')"
-                ),
-            'ParseUrl')
-
-@allow_non_gpu('ProjectExec', 'ParseUrl')
-def test_parse_url_authority_fallback():
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'AUTHORITY')"
-                ),
-            'ParseUrl')
-
-@allow_non_gpu('ProjectExec', 'ParseUrl')    
-def test_parse_url_userinfo_fallback():
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, url_gen).selectExpr(
-                "a",
-                "parse_url(a, 'USERINFO')"
+                "parse_url(a, '" + part + "')"
                 ),
             'ParseUrl')
     

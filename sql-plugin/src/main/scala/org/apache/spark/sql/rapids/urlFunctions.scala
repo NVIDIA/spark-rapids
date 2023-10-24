@@ -25,28 +25,24 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 object GpuParseUrl {
-  private val HOST = "HOST"
-  private val PATH = "PATH"
-  private val QUERY = "QUERY"
-  private val REF = "REF"
-  private val PROTOCOL = "PROTOCOL"
-  private val FILE = "FILE"
-  private val AUTHORITY = "AUTHORITY"
-  private val USERINFO = "USERINFO"
+  val HOST = "HOST"
+  val PATH = "PATH"
+  val QUERY = "QUERY"
+  val REF = "REF"
+  val PROTOCOL = "PROTOCOL"
+  val FILE = "FILE"
+  val AUTHORITY = "AUTHORITY"
+  val USERINFO = "USERINFO"
 }
 
-case class GpuParseUrl(children: Seq[Expression], 
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled) 
+case class GpuParseUrl(children: Seq[Expression]) 
   extends GpuExpression with ShimExpression with ExpectsInputTypes {
-
-  def this(children: Seq[Expression]) = this(children, SQLConf.get.ansiEnabled)
 
   override def nullable: Boolean = true
   override def inputTypes: Seq[DataType] = Seq.fill(children.size)(StringType)
@@ -55,7 +51,7 @@ case class GpuParseUrl(children: Seq[Expression],
 
   import GpuParseUrl._
   
-  override def checkInputDataTypes(): TypeCheckResult = {
+  def checkInputDataTypesUseless(): TypeCheckResult = {
     if (children.size > 3 || children.size < 2) {
       RapidsErrorUtils.parseUrlWrongNumArgs(children.size) match {
         case res: Some[TypeCheckResult] => return res.get
@@ -63,12 +59,6 @@ case class GpuParseUrl(children: Seq[Expression],
       }
     }
     super[ExpectsInputTypes].checkInputDataTypes()
-  }
-
-  def doColumnar(numRows: Int, url: GpuScalar, partToExtract: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(url, numRows, StringType)) { urlCol =>
-      doColumnar(urlCol, partToExtract)
-    }
   }
 
   def doColumnar(url: GpuColumnVector, partToExtract: GpuScalar): ColumnVector = {
@@ -95,13 +85,14 @@ case class GpuParseUrl(children: Seq[Expression],
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (children.size == 2) {
       val Seq(url, partToExtract) = children
-      withResourceIfAllowed(url.columnarEvalAny(batch)) { val0 =>
-        withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { val1 =>
-          (val0, val1) match {
-            case (v0: GpuColumnVector, v1: GpuScalar) =>
-              GpuColumnVector.from(doColumnar(v0, v1), dataType)
+      withResourceIfAllowed(url.columnarEval(batch)) { urls =>
+        withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { parts =>
+          (urls, parts) match {
+            case (urlCv: GpuColumnVector, partScalar: GpuScalar) =>
+              GpuColumnVector.from(doColumnar(urlCv, partScalar), dataType)
             case _ =>
-              throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+              throw new 
+                  UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
           }
         }
       }
@@ -109,12 +100,12 @@ case class GpuParseUrl(children: Seq[Expression],
       // 3-arg, i.e. QUERY with key
       assert(children.size == 3)
       val Seq(url, partToExtract, key) = children
-      withResourceIfAllowed(url.columnarEvalAny(batch)) { val0 =>
-        withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { val1 =>
-          withResourceIfAllowed(key.columnarEvalAny(batch)) { val2 =>
-            (val0, val1, val2) match {
-              case (v0: GpuColumnVector, v1: GpuScalar, v2: GpuScalar) =>
-                GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+      withResourceIfAllowed(url.columnarEval(batch)) { urls =>
+        withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { parts =>
+          withResourceIfAllowed(key.columnarEvalAny(batch)) { keys =>
+            (urls, parts, keys) match {
+              case (urlCv: GpuColumnVector, partScalar: GpuScalar, keyScalar: GpuScalar) =>
+                GpuColumnVector.from(doColumnar(urlCv, partScalar, keyScalar), dataType)
               case _ =>
                 throw new 
                     UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
