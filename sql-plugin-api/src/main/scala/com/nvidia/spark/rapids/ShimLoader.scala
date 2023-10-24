@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+
 import java.net.URL
 
-import scala.annotation.tailrec
-import scala.collection.JavaConverters._
+import scala.collection.JavaConverters.enumerationAsScalaIteratorConverter
 import scala.util.Try
 
 import org.apache.commons.lang3.reflect.MethodUtils
@@ -38,32 +38,22 @@ import org.apache.spark.util.MutableURLClassLoader
 /*
     Plugin jar uses non-standard class file layout. It consists of three types of areas,
     "parallel worlds" in the JDK's com.sun.istack.internal.tools.ParallelWorldClassLoader parlance
-
     1. a few publicly documented classes in the conventional layout at the top
     2. a large fraction of classes whose bytecode is identical under all supported Spark versions
        in spark3xx-common
     3. a smaller fraction of classes that differ under one of the supported Spark versions
-
     com/nvidia/spark/SQLPlugin.class
-
     spark3xx-common/com/nvidia/spark/rapids/CastExprMeta.class
-
     spark311/org/apache/spark/sql/rapids/GpuUnaryMinus.class
     spark320/org/apache/spark/sql/rapids/GpuUnaryMinus.class
-
     Each shim can see a consistent parallel world without conflicts by referencing
     only one conflicting directory.
-
     E.g., Spark 3.2.0 Shim will use
-
     jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark3xx-common/
     jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark320/
-
     Spark 3.1.1 will use
-
     jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark3xx-common/
     jar:file:/home/spark/rapids-4-spark_2.12-23.12.0.jar!/spark311/
-
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
@@ -124,7 +114,12 @@ object ShimLoader extends Logging {
     s"com.nvidia.spark.rapids.$shimId.RapidsShuffleManager"
   }
 
-  @tailrec
+  def getRapidsShuffleInternalClass: String = {
+    initShimProviderIfNeeded()
+    s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
+  }
+
+  @scala.annotation.tailrec
   private def findURLClassLoader(classLoader: ClassLoader): Option[ClassLoader] = {
     // walk up the classloader hierarchy until we hit a classloader we can mutate
     // in the upstream Spark, non-REPL/batch mode serdeClassLoader is already mutable
@@ -140,14 +135,17 @@ object ShimLoader extends Logging {
         // fast path
         logInfo(s"findURLClassLoader found a URLClassLoader $urlCl")
         Option(urlCl)
-      case replCl if replCl.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" =>
+      case replCl if replCl.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" ||
+          replCl.getClass.getName == "org.apache.spark.executor.ExecutorClassLoader" =>
+        // Spark 3.5.0 changed the package of ExecutorClassLoader so we check for it being
+        // either old package name or new one.
         // https://issues.apache.org/jira/browse/SPARK-18646
         val parentLoader = MethodUtils.invokeMethod(replCl, true, "parentLoader")
           .asInstanceOf[ClassLoader]
         logInfo(s"findURLClassLoader found $replCl, trying parentLoader=$parentLoader")
         findURLClassLoader(parentLoader)
       case urlAddable: ClassLoader if null != MethodUtils.getMatchingMethod(
-          urlAddable.getClass, "addURL", classOf[java.net.URL]) =>
+        urlAddable.getClass, "addURL", classOf[java.net.URL]) =>
         // slow defensive path
         logInfo(s"findURLClassLoader found a urLAddable classloader $urlAddable")
         Option(urlAddable)
@@ -196,8 +194,8 @@ object ShimLoader extends Logging {
         tmpClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
           getClass.getClassLoader)
         logWarning("Found an unexpected context classloader " +
-            s"${Thread.currentThread().getContextClassLoader}. We will try to recover from this, " +
-            "but it may cause class loading problems.")
+          s"${Thread.currentThread().getContextClassLoader}. We will try to recover from this, " +
+          "but it may cause class loading problems.")
       }
       tmpClassLoader
     } else {
@@ -245,7 +243,7 @@ object ShimLoader extends Logging {
       }
 
     assert(serviceProviderList.nonEmpty, "Classpath should contain the resource for " +
-        serviceProviderListPath)
+      serviceProviderListPath)
 
     val numShimServiceProviders = serviceProviderList.size
     val (matchingProviders, restProviders) = serviceProviderList.flatMap { shimServiceProviderStr =>
@@ -281,13 +279,13 @@ object ShimLoader extends Logging {
       // this class will be loaded again by the real executor classloader
       provider.getClass.getName
     }.getOrElse {
-        val supportedVersions = restProviders.map {
-          case (p, _) =>
-            val buildVer = shimIdFromPackageName(p.getClass.getName).drop("spark".length)
-            s"${p.getShimVersion} {buildver=${buildVer}}"
-        }.mkString(", ")
-        throw new IllegalArgumentException(
-          s"This RAPIDS Plugin build does not support Spark build ${sparkVersion}. " +
+      val supportedVersions = restProviders.map {
+        case (p, _) =>
+          val buildVer = shimIdFromPackageName(p.getClass.getName).drop("spark".length)
+          s"${p.getShimVersion} {buildver=${buildVer}}"
+      }.mkString(", ")
+      throw new IllegalArgumentException(
+        s"This RAPIDS Plugin build does not support Spark build ${sparkVersion}. " +
           s"Supported Spark versions: ${supportedVersions}. " +
           "Consult the Release documentation at " +
           "https://nvidia.github.io/spark-rapids/docs/download.html")
@@ -328,16 +326,12 @@ object ShimLoader extends Logging {
     SPARK_BUILD_DATE
   )
 
-  //
-  // Reflection-based API with Spark to switch the classloader used by the caller
-  //
-
   def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): Any = {
     val shuffleClassLoader = getShimClassLoader()
-    val shuffleClassName = "org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase"
+    val shuffleClassName = getRapidsShuffleInternalClass
     val shuffleClass = shuffleClassLoader.loadClass(shuffleClassName)
     shuffleClass.getConstructor(classOf[SparkConf], java.lang.Boolean.TYPE)
-        .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
+      .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
   }
 
   def newDriverPlugin(): DriverPlugin = {
