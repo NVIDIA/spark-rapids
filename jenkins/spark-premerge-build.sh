@@ -88,6 +88,9 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
+    SPARK_SHELL_SMOKE_TEST=1 \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
+        ./integration_tests/run_pyspark_from_build.sh
 }
 
 rapids_shuffle_smoke_test() {
@@ -145,7 +148,7 @@ ci_2() {
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
-    ./integration_tests/run_pyspark_from_build.sh
+    ./integration_tests/run_pyspark_from_build.sh --pyarrow_test
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled

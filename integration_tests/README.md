@@ -101,6 +101,9 @@ For manual installation, you need to setup your environment:
   tests across multiple CPUs to speed up test execution
 - findspark
   : Adds pyspark to sys.path at runtime
+- [fastparquet](https://fastparquet.readthedocs.io)
+  : A Python library (independent of Apache Spark) for reading/writing Parquet. Used in the
+  integration tests for checking Parquet read/write compatibility with the RAPIDS plugin.
 
 You can install all the dependencies using `pip` by running the following command:
 
@@ -401,6 +404,10 @@ If Spark has been configured to support Delta Lake then these tests can be enabl
 ### Enabling large data tests
 Some tests are testing large data which will take a long time. By default, these tests are disabled.
 These tests can be enabled by adding the `--large_data_test` option to the command.
+
+### Enabling Pyarrow tests
+Some tests require that Pyarrow is installed. By default, these tests are disabled.
+These tests can be enabled by adding the `--pyarrow_test` option to the command.
 
 ## Writing tests
 

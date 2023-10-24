@@ -4313,7 +4313,7 @@ object GpuOverrides extends Logging {
       // is impacted by forcing operators onto CPU due to other rules that we have
       wrap.runAfterTagRules()
       val optimizer = try {
-        ShimLoader.newOptimizerClass(conf.optimizerClassName)
+        ShimLoaderTemp.newOptimizerClass(conf.optimizerClassName)
       } catch {
         case e: Exception =>
           throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
