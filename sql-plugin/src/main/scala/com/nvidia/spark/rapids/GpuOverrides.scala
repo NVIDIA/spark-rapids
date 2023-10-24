@@ -3348,13 +3348,13 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+          TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL +
-              TypeSig.STRUCT +
-              TypeSig.ARRAY).nested(),
+            TypeSig.NULL +
+            TypeSig.STRUCT +
+            TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
@@ -3421,6 +3421,73 @@ object GpuOverrides extends Logging {
           val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
           GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
         }
+      }),
+    expr[Percentile](
+      "Aggregation computing exact percentile",
+      ExprChecks.reductionAndGroupByAgg(
+        // The output can be a single number or array depending on whether percentiles param
+        // is a single number or an array.
+        TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+        TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+        Seq(
+          // ANSI interval types are new in Spark 3.2.0 and are not yet supported by the
+          // current GPU implementation.
+          ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.integral + TypeSig.fp),
+          ParamCheck("percentage",
+            TypeSig.lit(TypeEnum.DOUBLE) + TypeSig.ARRAY.nested(TypeSig.lit(TypeEnum.DOUBLE)),
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
+          ParamCheck("frequency",
+            TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG),
+            TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          // Check if the input percentage can be supported on GPU.
+          GpuOverrides.extractLit(childExprs(1).wrapped.asInstanceOf[Expression]) match {
+            case None =>
+              willNotWorkOnGpu("percentile on GPU only supports literal percentages")
+            case Some(Literal(null, _)) =>
+              willNotWorkOnGpu("percentile on GPU only supports non-null literal percentages")
+            case Some(Literal(a: ArrayData, _)) => {
+              if((0 until a.numElements).exists(a.isNullAt)) {
+                willNotWorkOnGpu(
+                  "percentile on GPU does not support percentage arrays containing nulls")
+              }
+              if (a.toDoubleArray().exists(percentage => percentage < 0.0 || percentage > 1.0)) {
+                willNotWorkOnGpu(
+                  "percentile requires the input percentages given in the range [0, 1]")
+              }
+            }
+            case Some(_) => // This is fine
+          }
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val exprMeta = p.get.asInstanceOf[BaseExprMeta[_]]
+          val isReduction = exprMeta.context match {
+            case ReductionAggExprContext => true
+            case GroupByAggExprContext => false
+            case _ => throw new IllegalStateException(
+              s"Invalid aggregation context: ${exprMeta.context}")
+          }
+          GpuPercentile(childExprs.head, childExprs(1).asInstanceOf[GpuLiteral], childExprs(2),
+            isReduction)
+        }
+        // Declare the data type of the internal buffer so it can be serialized and
+        // deserialized correctly during shuffling.
+        override def aggBufferAttribute: AttributeReference = {
+          val aggBuffer = c.aggBufferAttributes.head
+          val dataType: DataType = ArrayType(StructType(Seq(
+            StructField("value", childExprs.head.dataType),
+            StructField("frequency", LongType))), containsNull = false)
+          aggBuffer.copy(dataType = dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+        }
+
+        override val needsAnsiCheck: Boolean = false
+        override val supportBufferConversion: Boolean = true
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+          CpuToGpuPercentileBufferConverter(childExprs.head.dataType)
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+          GpuToCpuPercentileBufferConverter(childExprs.head.dataType)
       }),
     expr[ApproximatePercentile](
       "Approximate percentile",
@@ -4221,7 +4288,7 @@ object GpuOverrides extends Logging {
       // is impacted by forcing operators onto CPU due to other rules that we have
       wrap.runAfterTagRules()
       val optimizer = try {
-        ShimLoader.newOptimizerClass(conf.optimizerClassName)
+        ShimLoaderTemp.newOptimizerClass(conf.optimizerClassName)
       } catch {
         case e: Exception =>
           throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
