@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, RunnableCommandRule, ShimLoader, ShimReflectionUtils}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, RunnableCommandRule, ShimLoaderTemp, ShimReflectionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
@@ -35,7 +35,7 @@ object GpuHiveOverrides {
 
   private lazy val hiveProvider: HiveProvider = {
     if (isSparkHiveAvailable) {
-      ShimLoader.newHiveProvider()
+      ShimLoaderTemp.newHiveProvider()
     } else {
       new HiveProvider() {
         override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],

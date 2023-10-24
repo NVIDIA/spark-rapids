@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, RunnableCommandRule, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
 
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
@@ -76,7 +76,7 @@ trait DeltaProvider {
 
 object DeltaProvider {
   private lazy val provider = {
-    ShimLoader.newDeltaProbe().getDeltaProvider
+    ShimLoaderTemp.newDeltaProbe().getDeltaProvider
   }
 
   def apply(): DeltaProvider = provider
