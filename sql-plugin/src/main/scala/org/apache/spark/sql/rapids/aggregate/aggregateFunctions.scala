@@ -332,8 +332,8 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
     RollingAggregation.min().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
-  override def newFixer(): Option[BatchedRunningWindowFixer] =
-    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min"))
+  override def newFixer(): BatchedRunningWindowFixer =
+    new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min")
 
   // UNBOUNDED TO UNBOUNDED WINDOW
   override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
@@ -516,8 +516,8 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
     RollingAggregation.max().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
-  override def newFixer(): Option[BatchedRunningWindowFixer] =
-    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max"))
+  override def newFixer(): BatchedRunningWindowFixer =
+    new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max")
 
   // UNBOUNDED TO UNBOUNDED WINDOW
   override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
@@ -928,8 +928,8 @@ abstract class GpuSum(
   override def windowOutput(result: ColumnVector): ColumnVector = result.incRefCount()
 
   // RUNNING WINDOW
-  override def newFixer(): Option[BatchedRunningWindowFixer] =
-    Some(new SumBinaryFixer(resultType, failOnErrorOverride))
+  override def newFixer(): BatchedRunningWindowFixer =
+    new SumBinaryFixer(resultType, failOnErrorOverride)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     windowInputProjection
@@ -1286,8 +1286,8 @@ case class GpuCount(children: Seq[Expression],
   }
 
   // RUNNING WINDOW
-  override def newFixer(): Option[BatchedRunningWindowFixer] =
-    Some(new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "count"))
+  override def newFixer(): BatchedRunningWindowFixer =
+    new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "count")
 
   // Scan and group by scan do not support COUNT with nulls excluded.
   // one of them does not even support count at all, so we are going to SUM
@@ -1572,8 +1572,8 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
     RollingAggregation.nth(0, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
-  override def newFixer(): Option[BatchedRunningWindowFixer] =
-    Some(new FirstRunningWindowFixer(ignoreNulls))
+  override def newFixer(): BatchedRunningWindowFixer =
+    new FirstRunningWindowFixer(ignoreNulls)
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
@@ -1665,12 +1665,16 @@ case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boole
       if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
-  override def newFixer(): Option[BatchedRunningWindowFixer] = {
+  override def canFixUp: Boolean = {
     GpuOverrides.extractLit(offset) match {
-      case Some(Literal(value, IntegerType)) if value == 1 =>
-        Some(new FirstRunningWindowFixer(ignoreNulls))
-      case _ => None
+      case Some(Literal(value, IntegerType)) if value == 1 => true // Only FIRST() is supported.
+      case _ => false
     }
+  }
+
+  override def newFixer(): BatchedRunningWindowFixer = {
+    assert(canFixUp, "NthValue fixup cannot be done when offset != 1.")
+    new FirstRunningWindowFixer(ignoreNulls)
   }
 }
 
