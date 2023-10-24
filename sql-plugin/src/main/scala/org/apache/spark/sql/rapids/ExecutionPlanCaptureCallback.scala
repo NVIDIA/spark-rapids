@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.ShimLoaderTemp
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
@@ -46,7 +46,7 @@ trait ExecutionPlanCaptureCallbackBase {
 }
 
 object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
-  lazy val impl = ShimLoader.newExecutionPlanCaptureCallbackBase()
+  lazy val impl = ShimLoaderTemp.newExecutionPlanCaptureCallbackBase()
 
   override def captureIfNeeded(qe: QueryExecution): Unit =
     impl.captureIfNeeded(qe)

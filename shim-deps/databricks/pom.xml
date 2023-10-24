@@ -37,6 +37,13 @@
 
         This module is going to be used as a provided dependncy. The dependencies below
         are compile-scope so they are propagated to dependents as provided
+
+        Note that we are using the custom Databricks Spark version for all of the Databricks
+        dependencies as well.
+
+        The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+        This is to make it easier and not have to change version numbers for each individual dependency
+        and deal with differences between Databricks versions
     -->
     <dependencies>
         <dependency>
