@@ -1520,11 +1520,6 @@ class GpuRunningWindowIterator(
       fixerIndexMap.values.foreach(_.close())
       saveLastParts(Array.empty)
       saveLastOrder(Array.empty)
-      maybeSplitIter match {
-        case closeable: AutoCloseable => closeable.close()
-        case _ => // noop
-      }
-      maybeSplitIter = Iterator.empty
       cachedBatch.foreach(_.close())
       cachedBatch = None
     }
