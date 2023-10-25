@@ -41,7 +41,7 @@ case class GpuBatchScanExec(
     @transient table: Table,
     reusesFileListingResultsSourceNode: Option[BatchScanExec])
     extends GpuBatchScanExecBase(scan, runtimeFilters) {
-  @transient lazy val batch: Batch = scan.toBatch
+  @transient override lazy val batch: Batch = scan.toBatch
 
   // All expressions are filter expressions used on the CPU.
   override def gpuExpressions: Seq[Expression] = Nil
