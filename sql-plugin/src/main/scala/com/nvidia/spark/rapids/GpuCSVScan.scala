@@ -209,7 +209,8 @@ case class GpuCSVScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
-    maxReaderBatchSizeBytes: Long)
+    maxReaderBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long)
   extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: CSVOptions = new CSVOptions(
@@ -240,7 +241,7 @@ case class GpuCSVScan(
 
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
+      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
   }
 
   // overrides nothing in 330
@@ -254,7 +255,8 @@ case class GpuCSVScan(
     case c: GpuCSVScan =>
       super.equals(c) && dataSchema == c.dataSchema && options == c.options &&
       maxReaderBatchSizeRows == c.maxReaderBatchSizeRows &&
-      maxReaderBatchSizeBytes == c.maxReaderBatchSizeBytes
+      maxReaderBatchSizeBytes == c.maxReaderBatchSizeBytes &&
+        maxGpuColumnSizeBytes == c.maxGpuColumnSizeBytes
     case _ => false
   }
 
@@ -271,6 +273,7 @@ case class GpuCSVPartitionReaderFactory(
     parsedOptions: CSVOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
     @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
@@ -282,7 +285,8 @@ case class GpuCSVPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val reader = new PartitionReaderWithBytesRead(new CSVPartitionReader(conf, partFile, dataSchema,
       readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes, metrics))
-    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
+    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
+      maxGpuColumnSizeBytes)
   }
 }
 
