@@ -67,20 +67,6 @@ mvn_verify() {
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
 
-    # build Scala 2.13 versions
-    cd scala2.13
-    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
-    do
-        echo "Spark version (Scala 2.13): $version"
-        env -u SPARK_HOME \
-            $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
-        # Run filecache tests
-        env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
-            $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
-            -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
-    done
-    cd ..
-
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
@@ -177,33 +163,62 @@ ci_2() {
 
 ci_scala213() {
     echo "Run premerge ci (Scala 2.13) testing..."
+    ln -sf jenkins scala2.13/jenkins
+
+    # Download a Scala 2.13 version of Spark
+    . jenkins/hadoop-def.sh $SPARK_VER_213 2.13
+    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER_213/spark-$SPARK_VER_213-$BIN_HADOOP_VER.tgz
+    SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER_213-$BIN_HADOOP_VER"
+    PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
+    tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
+        rm -f $SPARK_HOME.tgz
+    # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
+    TMP_PYTHON=/tmp/$(date +"%Y%m%d")
+    rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
+    PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$TMP_PYTHON/python/lib/py4j-0.10.9-src.zip
+
+    # build Scala 2.13 versions
     cd scala2.13
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
+    do
+        echo "Spark version (Scala 2.13): $version"
+        env -u SPARK_HOME \
+            $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
+        # Run filecache tests
+        env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
+            $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+            -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
+    done
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     cd ..
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
-    ./integration_tests/run_pyspark_from_build.sh
+    # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
+    SPARK_HOME=$SPARK_HOME PATH=$PATH PYTHONPATH=$PYTHONPATH \
+        ./integration_tests/run_pyspark_from_build.sh
     # enable avro test separately
-    INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
+    SPARK_HOME=$SPARK_HOME PATH=$PATH PYTHONPATH=$PYTHONPATH \
+        INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
-    LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+    SPARK_HOME=$SPARK_HOME PATH=$PATH PYTHONPATH=$PYTHONPATH \
+        LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
     # put some mvn tests here to balance durations of parallel stages
     echo "Run mvn package..."
+    cd scala2.13
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
     do
         env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
           -Dpytest.TEST_TAGS=''
     done
+    cd ..
 }
 
 
 nvidia-smi
 
 . jenkins/version-def.sh
-
-ln -sf jenkins scala2.13/jenkins
 
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
 

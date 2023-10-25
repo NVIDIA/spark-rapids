@@ -31,6 +31,7 @@ CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 PROJECT_VER=${PROJECT_VER:-"23.12.0-SNAPSHOT"}
 PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.12.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
+SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
 # cloudera, and others) may not be a simple as just the version number, so
