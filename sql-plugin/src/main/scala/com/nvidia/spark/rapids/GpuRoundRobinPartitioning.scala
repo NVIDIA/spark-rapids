@@ -20,6 +20,7 @@ import java.util.Random
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.TaskContext
@@ -40,23 +41,38 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
 
   override def dataType: DataType = IntegerType
 
-  def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
+  private def partitionInternalWithClose(
+      batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val sparkTypes = GpuColumnVector.extractTypes(batch)
-    withResource(GpuColumnVector.from(batch)) { table =>
-      if (numPartitions == 1) {
-        val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
-          case(idx, sparkType) =>
-            GpuColumnVector.from(table.getColumn(idx).incRefCount(), sparkType)
-        }.toArray
-        return (Array(0), columns)
+    if (1 == numPartitions) {
+      // Skip retry since partition number = 1
+      withResource(batch) { batch =>
+        withResource(GpuColumnVector.from(batch)) { table =>
+          val columns = (0 until table.getNumberOfColumns).zip(sparkTypes).map {
+            case (idx, sparkType) =>
+              GpuColumnVector
+                .from(table.getColumn(idx).incRefCount(), sparkType)
+          }.toArray
+          (Array(0), columns)
+        }
       }
-      withResource(table.roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
-        val parts = partedTable.getPartitions
-        val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
-          case(idx, sparkType) =>
-            GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
-        }.toArray
-        (parts, columns)
+    } else {
+      withRetryNoSplit(
+        SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
+        withResource(sb.getColumnarBatch()) { b =>
+          withResource(GpuColumnVector.from(b)) { table =>
+            withResource(table.
+              roundRobinPartition(numPartitions, getStartPartition)) { partedTable =>
+              val parts = partedTable.getPartitions
+              val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(sparkTypes).map {
+                case (idx, sparkType) =>
+                  GpuColumnVector
+                    .from(partedTable.getColumn(idx).incRefCount(), sparkType)
+              }.toArray
+              (parts, columns)
+            }
+          }
+        }
       }
     }
   }
@@ -71,9 +87,8 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
       val (partitionIndexes, partitionColumns) = {
         val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
         try {
-          partitionInternal(batch)
+          partitionInternalWithClose(batch)
         } finally {
-          batch.close()
           partitionRange.close()
         }
       }
@@ -83,12 +98,16 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
     }
   }
 
-  private def getStartPartition : Int = {
+  private def getStartPartition: Int = {
     // Follow Spark's way of getting the randomized position to pass to the round robin,
     // which starts at randomNumber + 1 and we do the same here to maintain compatibility.
     // See ShuffleExchangeExec.getPartitionKeyExtractor for reference.
-    val position = new Random(TaskContext.get().partitionId()).nextInt(numPartitions) + 1
-    val partId = position.hashCode % numPartitions
-    partId
+    val random = if (null != TaskContext.get()) {
+      new Random(TaskContext.get().partitionId())
+    } else {
+      // For unit test purpose where task context does not exist
+      new Random
+    }
+    (random.nextInt(numPartitions) + 1).hashCode % numPartitions
   }
 }
