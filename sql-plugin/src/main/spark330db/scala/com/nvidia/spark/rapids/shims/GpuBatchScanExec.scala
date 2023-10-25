@@ -26,7 +26,7 @@ import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
-import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowSet}
+import org.apache.spark.sql.catalyst.util.InternalRowSet
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils

@@ -20,7 +20,6 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
@@ -28,8 +27,6 @@ import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
