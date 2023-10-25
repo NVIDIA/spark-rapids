@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.api.python._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
+import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateFunction}
 import org.apache.spark.sql.types._
 
 /**

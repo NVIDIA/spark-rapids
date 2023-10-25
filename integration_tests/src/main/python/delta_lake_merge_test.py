@@ -18,10 +18,10 @@ import string
 
 from asserts import *
 from data_gen import *
+from delta_lake_utils import *
 from marks import *
-from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, spark_version
+from spark_session import is_before_spark_320, is_databricks_runtime, spark_version
 
 # Databricks changes the number of files being written, so we cannot compare logs
 num_slices_to_test = [10] if is_databricks_runtime() else [1, 10]
@@ -30,51 +30,9 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
                                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true"})
 
-delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
-delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
-
-def read_delta_path(spark, path):
-    return spark.read.format("delta").load(path)
-
-def read_delta_path_with_cdf(spark, path):
-    return spark.read.format("delta") \
-        .option("readChangeDataFeed", "true").option("startingVersion", 0) \
-        .load(path).drop("_commit_timestamp")
-
-def schema_to_ddl(spark, schema):
-    return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
-
 def make_df(spark, gen, num_slices):
     return three_col_df(spark, gen, SetValuesGen(StringType(), string.ascii_lowercase),
                         SetValuesGen(StringType(), string.ascii_uppercase), num_slices=num_slices)
-
-def setup_dest_table(spark, path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
-    dest_df = dest_table_func(spark)
-    writer = dest_df.write.format("delta")
-    ddl = schema_to_ddl(spark, dest_df.schema)
-    table_properties = {}
-    if use_cdf:
-        table_properties['delta.enableChangeDataFeed'] = 'true'
-    if enable_deletion_vectors:
-        table_properties['delta.enableDeletionVectors'] = 'true'
-    if len(table_properties) > 0:
-        # if any table properties are specified then we need to use SQL to define the table
-        sql_text = "CREATE TABLE delta.`{path}` ({ddl}) USING DELTA".format(path=path, ddl=ddl)
-        if partition_columns:
-            sql_text += " PARTITIONED BY ({})".format(",".join(partition_columns))
-        properties = ', '.join(key + ' = ' + value for key, value in table_properties.items())
-        sql_text += " TBLPROPERTIES ({})".format(properties)
-        spark.sql(sql_text)
-    elif partition_columns:
-        writer = writer.partitionBy(*partition_columns)
-    if use_cdf or enable_deletion_vectors:
-        writer = writer.mode("append")
-    writer.save(path)
-
-def setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns=None, enable_deletion_vectors=False):
-    for name in ["CPU", "GPU"]:
-        path = "{}/{}".format(data_path, name)
-        setup_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
 
 def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                          src_table_func, dest_table_func, merge_sql, check_func,
@@ -82,7 +40,7 @@ def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
+        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
         src_table_func(spark).createOrReplaceTempView(src_table)
     def do_merge(spark, path):
         dest_table = spark_tmp_table_factory.get()
@@ -327,7 +285,7 @@ def test_delta_merge_dataframe_api(spark_tmp_path, use_cdf, num_slices):
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"
     dest_table_func = lambda spark: two_col_df(spark, SetValuesGen(IntegerType(), [None] + list(range(100))), string_gen, seed=1, num_slices=num_slices)
-    with_cpu_session(lambda spark: setup_dest_tables(spark, data_path, dest_table_func, use_cdf))
+    with_cpu_session(lambda spark: setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf))
     def do_merge(spark, path):
         # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
         src_df = two_col_df(spark, int_gen, string_gen, num_slices=num_slices).groupBy("a").agg(f.max("b").alias("b"))

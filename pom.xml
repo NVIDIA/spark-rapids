@@ -189,25 +189,8 @@
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
+                <cloudera.repo.enabled>true</cloudera.repo.enabled>
             </properties>
-            <repositories>
-                <repository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-            </repositories>
-            <pluginRepositories>
-                <pluginRepository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                </pluginRepository>
-            </pluginRepositories>
             <modules>
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-20x</module>
@@ -281,12 +264,6 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark321db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
                 <spark.version>${spark321db.version}</spark.version>
                 <spark.test.version>${spark321db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -371,7 +348,6 @@
                 <spark.version>${spark333.version}</spark.version>
                 <spark.test.version>${spark333.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark333.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
@@ -433,25 +409,30 @@
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <cloudera.repo.enabled>true</cloudera.repo.enabled>
             </properties>
-            <repositories>
-                <repository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                    </snapshots>
-                </repository>
-            </repositories>
-            <pluginRepositories>
-                <pluginRepository>
-                    <id>cloudera-repo</id>
-                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
-                </pluginRepository>
-            </pluginRepositories>
+            <modules>
+                <module>shim-deps/cloudera</module>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release332cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332cdh</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>332cdh</buildver>
+                <spark.version>${spark332cdh.version}</spark.version>
+                <spark.test.version>${spark332cdh.version}</spark.test.version>
+                <parquet.hadoop.version>1.10.99.7.1.9.0-387</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <cloudera.repo.enabled>true</cloudera.repo.enabled>
+            </properties>
             <modules>
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
@@ -472,12 +453,6 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark330db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
                 <spark.version>${spark330db.version}</spark.version>
                 <spark.test.version>${spark330db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -504,12 +479,6 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark332db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
                 <spark.version>${spark332db.version}</spark.version>
                 <spark.test.version>${spark332db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -535,7 +504,6 @@
                 <spark.version>${spark350.version}</spark.version>
                 <spark.test.version>${spark350.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark350.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -654,6 +622,7 @@
         <spark340.version>3.4.0</spark340.version>
         <spark341.version>3.4.1</spark341.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
+        <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark350.version>3.5.0</spark350.version>
@@ -699,6 +668,7 @@
             332,
             333,
             330cdh,
+            332cdh,
             340,
             341,
             350
@@ -760,6 +730,7 @@
             --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
+        <cloudera.repo.enabled>false</cloudera.repo.enabled>
     </properties>
 
     <dependencyManagement>
@@ -1411,6 +1382,16 @@
                 <enabled>false</enabled>
             </snapshots>
         </repository>
+        <repository>
+            <id>cloudera-repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </snapshots>
+        </repository>
     </repositories>
     <pluginRepositories>
         <pluginRepository>
@@ -1418,6 +1399,16 @@
             <url>https://repo1.maven.org/maven2</url>
             <snapshots>
                 <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>cloudera-repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+            <releases>
+                <enabled>${cloudera.repo.enabled}</enabled>
+            </releases>
+            <snapshots>
+                <enabled>${cloudera.repo.enabled}</enabled>
             </snapshots>
         </pluginRepository>
     </pluginRepositories>

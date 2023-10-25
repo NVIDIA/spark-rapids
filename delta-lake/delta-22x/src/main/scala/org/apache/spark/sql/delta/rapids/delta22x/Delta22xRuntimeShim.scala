@@ -21,7 +21,9 @@ import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.delta.delta22x.Delta22xProvider
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -49,4 +51,10 @@ class Delta22xRuntimeShim extends DeltaRuntimeShim {
     deltaLog.fileFormat()
 
   override def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = false
+
+  override def getGpuDeltaCatalog(
+      cpuCatalog: DeltaCatalog,
+      rapidsConf: RapidsConf): StagingTableCatalog = {
+    new GpuDeltaCatalog(cpuCatalog, rapidsConf)
+  }
 }

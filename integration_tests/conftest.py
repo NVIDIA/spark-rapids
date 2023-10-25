@@ -59,3 +59,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--large_data_test", action='store_true', default=False, help="if enable tests with large data"
     )
+    parser.addoption(
+        "--pyarrow_test", action='store_true', default=False, help="if enable pyarrow tests"
+    )
