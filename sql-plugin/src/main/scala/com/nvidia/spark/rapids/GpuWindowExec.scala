@@ -1520,7 +1520,10 @@ class GpuRunningWindowIterator(
       fixerIndexMap.values.foreach(_.close())
       saveLastParts(Array.empty)
       saveLastOrder(Array.empty)
-      maybeSplitIter.foreach(_.close())
+      maybeSplitIter match {
+        case closeable: AutoCloseable => closeable.close()
+        case _ => // noop
+      }
       maybeSplitIter = Iterator.empty
       cachedBatch.foreach(_.close())
       cachedBatch = None
@@ -1649,7 +1652,7 @@ class GpuRunningWindowIterator(
   override def next(): ColumnarBatch = {
     if (!maybeSplitIter.hasNext) {
       maybeSplitIter = computeRunningAndClose(readNextInputBatch())
-      assert(maybeSplitIter.hasNext)
+      // maybeSplitIter is not empty here
     }
     withResource(new NvtxWithMetrics("RunningWindow", NvtxColor.CYAN, opTime)) { _ =>
       val ret = maybeSplitIter.next()
