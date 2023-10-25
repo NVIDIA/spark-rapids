@@ -1097,28 +1097,27 @@ object GpuCast {
     def castToJsonAttribute(fieldIndex: Int,
         colon: ColumnVector,
         quote: ColumnVector): ColumnVector = {
+      val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
       val needsQuoting = inputSchema(fieldIndex).dataType == DataTypes.StringType
       withResource(input.getChildColumnView(fieldIndex)) { cv =>
         withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
           // prefix with quoted column name followed by colon
-          val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
           withResource(Scalar.fromString("\"" + jsonName + "\"")) { name =>
             attrColumns += ColumnVector.fromScalar(name, rowCount)
             attrColumns += colon.incRefCount()
           }
+          // write the value
+          val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
           if (needsQuoting) {
             attrColumns += quote.incRefCount()
-            attrColumns += escapeJsonString(castToString(cv,
-              inputSchema(fieldIndex).dataType, options))
+            attrColumns += escapeJsonString(attrValue)
             attrColumns += quote.incRefCount()
           } else {
-            attrColumns += castToString(cv, inputSchema(fieldIndex).dataType, options)
+            attrColumns += attrValue
           }
           // now concatenate
-          val jsonAttr = withResource(Scalar.fromString("")) { sepScalar =>
-            withResource(Scalar.fromString("")) { nullScalar =>
-              ColumnVector.stringConcatenate(sepScalar, nullScalar, attrColumns.toArray)
-            }
+          val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
+            ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
           }
           // add an empty string or the attribute
           val jsonAttrOrEmptyString = withResource(jsonAttr) { _ =>
