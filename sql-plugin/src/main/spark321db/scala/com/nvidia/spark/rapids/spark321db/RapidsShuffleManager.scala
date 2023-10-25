@@ -20,9 +20,10 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.spark321db
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark321db.ProxyRapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(
     conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver)
+    isDriver: Boolean
+) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)

@@ -97,12 +97,14 @@ class SingleGpuColumnarBatchIterator(private var batch: ColumnarBatch)
  * @param partRowNums row numbers collected from all the batches in the input iterator, it
  *                    should have the same size with "partValues".
  * @param partSchema the partition schema
+ * @param maxGpuColumnSizeBytes maximum number of bytes for a GPU column
  */
 class GpuColumnarBatchWithPartitionValuesIterator(
     inputIter: Iterator[ColumnarBatch],
     partValues: Array[InternalRow],
     partRowNums: Array[Long],
-    partSchema: StructType) extends Iterator[ColumnarBatch] {
+    partSchema: StructType,
+    maxGpuColumnSizeBytes: Long) extends Iterator[ColumnarBatch] {
   assert(partValues.length == partRowNums.length)
 
   private var leftValues: Array[InternalRow] = partValues
@@ -123,7 +125,7 @@ class GpuColumnarBatchWithPartitionValuesIterator(
           computeValuesAndRowNumsForBatch(batch.numRows())
         }
         outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(batch, readPartRows,
-          readPartValues, partSchema)
+          readPartValues, partSchema, maxGpuColumnSizeBytes)
         outputIter.next()
       } else {
         batch

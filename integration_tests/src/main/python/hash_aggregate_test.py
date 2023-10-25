@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,\
@@ -882,6 +883,170 @@ def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
     from table
     group by a""",
         conf=conf)
+
+
+exact_percentile_data_gen = [ByteGen(), ShortGen(), IntegerGen(), LongGen(), FloatGen(), DoubleGen(),
+                             RepeatSeqGen(ByteGen(), length=100),
+                             RepeatSeqGen(ShortGen(), length=100),
+                             RepeatSeqGen(IntegerGen(), length=100),
+                             RepeatSeqGen(LongGen(), length=100),
+                             RepeatSeqGen(FloatGen(), length=100),
+                             RepeatSeqGen(DoubleGen(), length=100),
+                             FloatGen().with_special_case(math.nan, 500.0)
+                             .with_special_case(math.inf, 500.0),
+                             DoubleGen().with_special_case(math.nan, 500.0)
+                             .with_special_case(math.inf, 500.0)]
+
+exact_percentile_reduction_data_gen = [
+    [('val', data_gen),
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+                     .with_special_case(0, weight=100))]
+    for data_gen in exact_percentile_data_gen]
+
+def exact_percentile_reduction(df):
+    return df.selectExpr(
+        'percentile(val, 0.1)',
+        'percentile(val, 0)',
+        'percentile(val, 1)',
+        'percentile(val, array(0.1))',
+        'percentile(val, array())',
+        'percentile(val, array(0.1, 0.5, 0.9))',
+        'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))',
+        # There is issue with python data generation that still produces negative values for freq.
+        # See https://github.com/NVIDIA/spark-rapids/issues/9452.
+        # Thus, freq needs to be wrapped in abs.
+        'percentile(val, 0.1, abs(freq))',
+        'percentile(val, 0, abs(freq))',
+        'percentile(val, 1, abs(freq))',
+        'percentile(val, array(0.1), abs(freq))',
+        'percentile(val, array(), abs(freq))',
+        'percentile(val, array(0.1, 0.5, 0.9), abs(freq))',
+        'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'
+    )
+
+@pytest.mark.parametrize('data_gen', exact_percentile_reduction_data_gen, ids=idfn)
+def test_exact_percentile_reduction(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_reduction(gen_df(spark, data_gen))
+    )
+
+exact_percentile_reduction_cpu_fallback_data_gen = [
+    [('val', data_gen),
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+      .with_special_case(0, weight=100))]
+    for data_gen in [IntegerGen(), DoubleGen()]]
+
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
+               'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
+               'Percentile')
+@pytest.mark.parametrize('data_gen', exact_percentile_reduction_cpu_fallback_data_gen, ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9494')
+def test_exact_percentile_reduction_partial_fallback_to_cpu(data_gen,  replace_mode,
+                                                            use_obj_hash_agg):
+    cpu_clz, gpu_clz = ['Percentile'], ['GpuPercentileDefault']
+    exist_clz, non_exist_clz = [], []
+    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
+    # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
+    # set the expected exist_classes according to runtime.
+    if is_databricks_runtime():
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
+    else:
+        exist_clz = cpu_clz + gpu_clz
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen).selectExpr(
+            'percentile(val, 0.1)',
+            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))',
+            'percentile(val, 0.1, abs(freq))',
+            'percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))'),
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+              'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
+    )
+
+
+exact_percentile_groupby_data_gen = [
+    [('key', RepeatSeqGen(IntegerGen(), length=100)),
+     ('val', data_gen),
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+                     .with_special_case(0, weight=100))]
+    for data_gen in exact_percentile_data_gen]
+
+def exact_percentile_groupby(df):
+    return df.groupby('key').agg(
+        f.expr('percentile(val, 0.1)'),
+        f.expr('percentile(val, 0)'),
+        f.expr('percentile(val, 1)'),
+        f.expr('percentile(val, array(0.1))'),
+        f.expr('percentile(val, array())'),
+        f.expr('percentile(val, array(0.1, 0.5, 0.9))'),
+        f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
+        # There is issue with python data generation that still produces negative values for freq.
+        # See https://github.com/NVIDIA/spark-rapids/issues/9452.
+        # Thus, freq needs to be wrapped in abs.
+        f.expr('percentile(val, 0.1, abs(freq))'),
+        f.expr('percentile(val, 0, abs(freq))'),
+        f.expr('percentile(val, 1, abs(freq))'),
+        f.expr('percentile(val, array(0.1), abs(freq))'),
+        f.expr('percentile(val, array(), abs(freq))'),
+        f.expr('percentile(val, array(0.1, 0.5, 0.9), abs(freq))'),
+        f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')
+    )
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', exact_percentile_groupby_data_gen, ids=idfn)
+def test_exact_percentile_groupby(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: exact_percentile_groupby(gen_df(spark, data_gen))
+    )
+
+exact_percentile_groupby_cpu_fallback_data_gen = [
+    [('key', RepeatSeqGen(IntegerGen(), length=100)),
+     ('val', data_gen),
+     ('freq', LongGen(min_val=0, max_val=1000000, nullable=False)
+      .with_special_case(0, weight=100))]
+    for data_gen in [IntegerGen(), DoubleGen()]]
+
+@ignore_order
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
+               'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec',
+               'Percentile')
+@pytest.mark.parametrize('data_gen', exact_percentile_groupby_cpu_fallback_data_gen, ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['partial', 'final|complete'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9494')
+def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode, use_obj_hash_agg):
+    cpu_clz, gpu_clz = ['Percentile'], ['GpuPercentileDefault']
+    exist_clz, non_exist_clz = [], []
+    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
+    # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
+    # set the expected exist_classes according to runtime.
+    if is_databricks_runtime():
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
+    else:
+        exist_clz = cpu_clz + gpu_clz
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen).groupby('key').agg(
+            f.expr('percentile(val, 0.1)'),
+            f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1))'),
+            f.expr('percentile(val, 0.1, abs(freq))'),
+            f.expr('percentile(val, array(0, 0.0001, 0.5, 0.9999, 1), abs(freq))')),
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf={'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+              'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
+    )
+
 
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
