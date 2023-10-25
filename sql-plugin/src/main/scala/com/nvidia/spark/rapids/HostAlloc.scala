@@ -22,6 +22,7 @@ import ai.rapids.cudf.{ColumnView, HostMemoryBuffer, HostMemoryReservation, Memo
 import com.nvidia.spark.rapids.HostAlloc.align
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 private class HostAlloc(nonPinnedLimit: Long) {
   private var currentNonPinnedAllocated: Long = 0L
@@ -415,7 +416,9 @@ object HostAlloc {
   }
 
   def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
-    getSingleton.alloc(amount, preferPinned)
+    GpuTaskMetrics.get.hostAllocTime {
+      getSingleton.alloc(amount, preferPinned)
+    }
   }
 
   /**

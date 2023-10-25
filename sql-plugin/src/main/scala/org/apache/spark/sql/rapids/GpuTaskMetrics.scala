@@ -91,9 +91,9 @@ class GpuTaskMetrics extends Serializable {
   private val spillHost2DiskTimeNs = new NanoSecondAccumulator
 
   // Reverse Spill
-  private val unspillHost2GpuTimeNs = new NanoSecondAccumulator
-  private val unspillDisk2GpuTimeNs = new NanoSecondAccumulator
-  private val unspillDisk2HostTimeNs = new NanoSecondAccumulator
+  private val readSpillHost2GpuTimeNs = new NanoSecondAccumulator
+  private val readSpillDisk2GpuTimeNs = new NanoSecondAccumulator
+  private val readSpillDisk2HostTimeNs = new NanoSecondAccumulator
 
   private val hostAllocWaitTimeNs = new NanoSecondAccumulator
 
@@ -106,9 +106,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillDevice2HostTime" -> spillGpu2HostTimeNs,
     "gpuSpillDevice2DiskTime" -> spillGpu2DiskTimeNs,
     "gpuSpillHost2DiskTime" -> spillHost2DiskTimeNs,
-    "gpuUnspillHost2DeviceTime" -> unspillHost2GpuTimeNs,
-    "gpuUnspillDisk2DeviceTime" -> unspillDisk2GpuTimeNs,
-    "gpuUnspillDisk2HostTime" -> unspillDisk2HostTimeNs,
+    "gpuUnspillHost2DeviceTime" -> readSpillHost2GpuTimeNs,
+    "gpuUnspillDisk2DeviceTime" -> readSpillDisk2GpuTimeNs,
+    "gpuUnspillDisk2HostTime" -> readSpillDisk2HostTimeNs,
     "gpuHostAllocationWaitTime" -> hostAllocWaitTimeNs
   )
 
@@ -160,16 +160,16 @@ class GpuTaskMetrics extends Serializable {
     timeIt(spillHost2DiskTimeNs, "spillHost2DiskTime", NvtxColor.RED, f)
   }
 
-  def unspillHost2GpuTime[A](f: => A): A = {
-    timeIt(unspillHost2GpuTimeNs, "unspillHost2GpuTime", NvtxColor.ORANGE, f)
+  def readSpillHost2GpuTime[A](f: => A): A = {
+    timeIt(readSpillHost2GpuTimeNs, "readSpillHost2GpuTimeNs", NvtxColor.ORANGE, f)
   }
 
-  def unspillDisk2GpuTime[A](f: => A): A = {
-    timeIt(unspillDisk2GpuTimeNs, "unspillDisk2GpuTime", NvtxColor.ORANGE, f)
+  def readSpillDisk2GpuTime[A](f: => A): A = {
+    timeIt(readSpillDisk2GpuTimeNs, "readSpillDisk2GpuTimeNs", NvtxColor.ORANGE, f)
   }
 
-  def unspillDisk2HostTime[A](f: => A): A = {
-    timeIt(unspillDisk2HostTimeNs, "unspillDisk2HostTime", NvtxColor.ORANGE, f)
+  def readSpillDisk2HostTime[A](f: => A): A = {
+    timeIt(readSpillDisk2HostTimeNs, "readSpillDisk2HostTime", NvtxColor.ORANGE, f)
   }
 
   def hostAllocTime[A](f: => A): A = {

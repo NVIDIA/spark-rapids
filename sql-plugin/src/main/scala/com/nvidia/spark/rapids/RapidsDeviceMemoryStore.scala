@@ -65,7 +65,7 @@ class RapidsDeviceMemoryStore(
         memoryBuffer match {
           case d: DeviceMemoryBuffer => d
           case h: HostMemoryBuffer =>
-            GpuTaskMetrics.get.unspillHost2GpuTime {
+            GpuTaskMetrics.get.readSpillHost2GpuTime {
               closeOnExcept(DeviceMemoryBuffer.allocate(memoryBuffer.getLength)) { deviceBuffer =>
                 logDebug(s"copying from host $h to device $deviceBuffer")
                 deviceBuffer.copyFromHostBuffer(h, stream)
