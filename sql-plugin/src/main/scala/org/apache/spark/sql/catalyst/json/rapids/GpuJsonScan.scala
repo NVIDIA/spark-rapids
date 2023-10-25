@@ -197,7 +197,8 @@ case class GpuJsonScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
-    maxReaderBatchSizeBytes: Long)
+    maxReaderBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long)
   extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: JSONOptions = new JSONOptions(
@@ -220,7 +221,7 @@ case class GpuJsonScan(
 
     GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
+      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
   }
 
   override def withInputFile(): GpuScan = this
@@ -236,6 +237,7 @@ case class GpuJsonPartitionReaderFactory(
     parsedOptions: JSONOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
     @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
@@ -248,7 +250,8 @@ case class GpuJsonPartitionReaderFactory(
     val reader = new PartitionReaderWithBytesRead(new JsonPartitionReader(conf, partFile,
       dataSchema, readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes,
       metrics))
-    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
+    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
+      maxGpuColumnSizeBytes)
   }
 }
 

@@ -3716,7 +3716,8 @@ object GpuOverrides extends Logging {
             a.partitionFilters,
             a.dataFilters,
             conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
+            conf.maxReadBatchSizeBytes,
+            conf.maxGpuColumnSizeBytes)
       }),
     GpuOverrides.scan[JsonScan](
       "Json parsing",
@@ -3733,7 +3734,8 @@ object GpuOverrides extends Logging {
             a.partitionFilters,
             a.dataFilters,
             conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
+            conf.maxReadBatchSizeBytes,
+            conf.maxGpuColumnSizeBytes)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
