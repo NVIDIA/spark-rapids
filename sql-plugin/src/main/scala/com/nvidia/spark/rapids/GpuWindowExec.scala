@@ -1679,31 +1679,20 @@ case class GpuRunningWindowExec(
 
   override def outputBatching: CoalesceGoal = {
     val isRangeFrame = windowOps.exists {
-      // TODO: Also handle case where it's not a GpuAlias?
-      case GpuAlias(GpuWindowExpression(_,
-                      GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RangeFrame, _, _))),
-                    _) => true
+      case GpuAlias(
+             GpuWindowExpression(
+               _, GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RangeFrame, _, _))),
+           _) => true
       case _ => false
     }
     if (!isRangeFrame) {
       return null // NO batching restrictions on ROW frames.
     }
     if (gpuPartitionSpec.isEmpty) {
-      // windowOps
-      //   .filter( GpuWindowExpression OR GpuAlias for GpuWindowExpression where windowFunction is
-      //            GpuFirst or NthValue(1))
-      //   .filter( window-frame.type == RowFrame && boundaries == [UNB_PREC, CURRENT] )
-      // Then, BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
-      /*
-      windowOps.withFilter( e => e match {
-        case GpuWindowExpression(winFoo: Expression, _) if winFoo.isInstanceOf[GpuNthValue] => true
-        case _ => false
-      })
-      */
+      // If unpartitioned, batch on the order-by column.
       BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
     } else {
-      // BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
-      // Same as for unpartitioned, but include gpu/cpuPartitionOrdering.
+      // If partitioned, batch on partition-columns + order-by columns.
       BatchedByKey(gpuPartitionOrdering ++ gpuOrderSpec)(cpuPartitionOrdering ++ cpuOrderSpec)
     }
   }
