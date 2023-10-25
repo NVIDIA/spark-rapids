@@ -15,20 +15,17 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.hive.rapids.shims
 
-import com.nvidia.spark.rapids._
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
-import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
-import org.apache.spark.sql.hive.execution.InsertIntoHiveTable
 
-trait HiveProviderCmdShims extends HiveProvider {
-
+trait CreateFunctions {
   def createFunction(a: HiveSimpleUDF): UDF = {
     a.funcWrapper.createFunction[UDF]()
   }
@@ -36,20 +33,4 @@ trait HiveProviderCmdShims extends HiveProvider {
   def createFunction(a: HiveGenericUDF): GenericUDF = {
     a.funcWrapper.createFunction[GenericUDF]()
   }
-
-  /**
-   * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.
-   */
-  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-    DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
-
-    GpuOverrides.dataWriteCmd[InsertIntoHiveTable](
-      desc = "Command to write to Hive tables",
-      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule))
-
-  ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
-
-  override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
-    RunnableCommandRule[_ <: RunnableCommand]] =
-    Map.empty
 }
