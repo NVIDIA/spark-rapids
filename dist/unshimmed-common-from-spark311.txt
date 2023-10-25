@@ -12,7 +12,6 @@ com/nvidia/spark/rapids/GpuColumnVectorUtils*
 com/nvidia/spark/rapids/ExplainPlan.class
 com/nvidia/spark/rapids/ExplainPlan$.class
 com/nvidia/spark/rapids/ExplainPlanBase.class
-com/nvidia/spark/rapids/GpuKryoRegistrator*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/SQLExecPlugin*
 com/nvidia/spark/rapids/ShimLoaderTemp*
