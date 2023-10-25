@@ -335,6 +335,20 @@ scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
 +----------+
 ```
 
+### `to_json` function
+
+The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
+with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsToJson=true`.
+
+Known issues are:
+
+- String escaping is not implemented, so strings containing quotes, newlines, and other special characters will 
+  not produce valid JSON
+- There is no support for timestamp types
+- There can be rounding differences when formatting floating-point numbers as strings. For example, Spark may
+  produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
+- Not all JSON options are respected
+
 ### JSON Floating Point
 
 Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
