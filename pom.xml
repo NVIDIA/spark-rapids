@@ -75,7 +75,6 @@
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
-        <module>shim-deps</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
