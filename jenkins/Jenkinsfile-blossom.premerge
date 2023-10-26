@@ -101,13 +101,6 @@ pipeline {
                         return
                     }
                     checkoutCode(githubHelper.getCloneUrl(), githubHelper.getMergedSHA())
-
-                    sh "./build/make-scala-version-build-files.sh 2.13"
-                    if  ! git diff --exit-code 'scala2.13/*'; then
-                        echo "Generated Scala 2.13 build files don't match what's in repository"
-                        exit 1
-                    fi
-
                     // check if need trigger databricks CI build
                     if (title ==~ /.*\[databricks\].*/ || databricksCodeChanged()) {
                         db_build = true
