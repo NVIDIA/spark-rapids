@@ -442,6 +442,8 @@ case class GpuProjectAstExec(
         if (!maybeSplittedItr.hasNext) {
           val spillable = SpillableColumnarBatch(
             input.next(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          // AST currently doesn't support non-deterministic expressions so it's not needed
+          // to check whether compiled expressions are retryable.
           maybeSplittedItr = withRetry(spillable, splitSpillableInHalfByRows) { spillable =>
             withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
               withResource(spillable.getColumnarBatch()) { cb =>
@@ -457,13 +459,12 @@ case class GpuProjectAstExec(
               }
             }
           }
-          spillable.getColumnarBatch()
         }
 
-        val batch = maybeSplittedItr.next()
+        val ret = maybeSplittedItr.next()
         numOutputBatches += 1
-        numOutputRows += batch.numRows()
-        batch
+        numOutputRows += ret.numRows()
+        ret
       }
 
       override def doClose(): Unit = {

@@ -139,8 +139,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       when(mockPlan.output).thenReturn(Seq(a, b))
       val ast = GpuProjectAstExec(List(expr.asInstanceOf[Expression]), mockPlan)
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
-      withResource(sb.getColumnarBatch) { cb =>
-        withResource(ast.buildRetryableAstIterator(Seq(cb).iterator)) { result =>
+      withResource(sb) { sb =>
+        withResource(ast.buildRetryableAstIterator(Seq(sb.getColumnarBatch).iterator)) { result =>
           withResource(result.next()) { cb =>
             assertResult(2)(cb.numRows)
             assertResult(1)(cb.numCols)
