@@ -147,7 +147,7 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite {
   }
 
   test("test all time zones") {
-    assume(true,
+    assume(false,
       "It's time consuming for test all time zones, by default it's disabled")
     //    val zones = ZoneId.getAvailableZoneIds.asScala.toList.map(z => ZoneId.of(z)).filter { z =>
     //      val rules = z.getRules
