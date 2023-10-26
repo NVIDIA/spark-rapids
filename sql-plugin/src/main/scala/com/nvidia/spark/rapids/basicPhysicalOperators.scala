@@ -26,7 +26,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
 
@@ -414,13 +413,13 @@ case class GpuProjectAstExec(
   }
 
   def buildRetryableAstIterator(
-      input: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] with AutoCloseable = {
+      input: Iterator[ColumnarBatch]): GpuColumnarBatchIterator = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val outputTypes = output.map(_.dataType).toArray
-    new Iterator[ColumnarBatch] with AutoCloseable {
+    new GpuColumnarBatchIterator(true) {
       private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
       private[this] var compiledAstExprs =
         withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
@@ -429,13 +428,6 @@ case class GpuProjectAstExec(
             expr.convertToAst(Int.MaxValue).compile()
           }
         }
-
-      // Don't install the callback if in a unit test
-      Option(TaskContext.get()).foreach { tc =>
-        onTaskCompletion(tc) {
-          close()
-        }
-      }
 
       override def hasNext: Boolean = maybeSplittedItr.hasNext || {
         if (input.hasNext) {
@@ -451,29 +443,30 @@ case class GpuProjectAstExec(
           val spillable = SpillableColumnarBatch(
             input.next(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           maybeSplittedItr = withRetry(spillable, splitSpillableInHalfByRows) { spillable =>
-            withResource(spillable.getColumnarBatch()) { cb =>
-              val projectedTable = withResource(tableFromBatch(cb)) { table =>
-                withResource(
-                  compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
-                  new Table(projectedColumns: _*)
+            withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
+              withResource(spillable.getColumnarBatch()) { cb =>
+                val projectedTable = withResource(tableFromBatch(cb)) { table =>
+                  withResource(
+                    compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
+                    new Table(projectedColumns: _*)
+                  }
                 }
-              }
-              withResource(projectedTable) { _ =>
-                GpuColumnVector.from(projectedTable, outputTypes)
+                withResource(projectedTable) { _ =>
+                  GpuColumnVector.from(projectedTable, outputTypes)
+                }
               }
             }
           }
+          spillable.getColumnarBatch()
         }
 
-        withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
-          val batch = maybeSplittedItr.next()
-          numOutputBatches += 1
-          numOutputRows += batch.numRows()
-          batch
-        }
+        val batch = maybeSplittedItr.next()
+        numOutputBatches += 1
+        numOutputRows += batch.numRows()
+        batch
       }
 
-      override def close(): Unit = {
+      override def doClose(): Unit = {
         compiledAstExprs.safeClose()
         compiledAstExprs = Nil
       }
