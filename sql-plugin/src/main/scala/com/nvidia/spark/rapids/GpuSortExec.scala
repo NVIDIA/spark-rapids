@@ -450,7 +450,7 @@ case class GpuOutOfCoreSortIterator(
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
       var bytesLeftToFetch = targetSize
-      val pendingSort = CollectionHelper.createStack[SpillableColumnarBatch]()
+      val pendingSort = new ScalaStack[SpillableColumnarBatch]()
       closeOnExcept(pendingSort) { _ =>
         while (!pending.isEmpty &&
             (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {

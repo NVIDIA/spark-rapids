@@ -16,10 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayStack
+import scala.collection.mutable.Stack
 
-object CollectionHelper {
-  def createStack[T](): ArrayStack[T] = {
-    new ArrayStack[T]()
-  } 
-}
+class ScalaStack[T] extends Stack[T]
