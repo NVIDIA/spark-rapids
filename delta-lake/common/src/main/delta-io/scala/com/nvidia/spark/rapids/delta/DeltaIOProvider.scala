@@ -34,7 +34,7 @@ import org.apache.spark.sql.delta.commands.WriteIntoDelta
 import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuDeltaLog, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.sources.{DeltaDataSource, DeltaSourceUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
@@ -174,34 +174,41 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
       case Some(c: DeltaWriteV1Config) => c
       case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
     }
-    val deltaLog = writeConfig.deltaLog
-    val gpuWrite = new V1Write {
-      override def toInsertableRelation(): InsertableRelation = {
-        new InsertableRelation {
-          override def insert(data: DataFrame, overwrite: Boolean): Unit = {
-            val session = data.sparkSession
-
-            // TODO: Get the config from WriteIntoDelta's txn.
-            val cpuWrite = WriteIntoDelta(
-              deltaLog,
-              if (writeConfig.forceOverwrite) SaveMode.Overwrite else SaveMode.Append,
-              new DeltaOptions(writeConfig.options.toMap, session.sessionState.conf),
-              Nil,
-              DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).metadata.configuration,
-              data)
-            val gpuWrite = GpuWriteIntoDelta(new GpuDeltaLog(deltaLog, meta.conf), cpuWrite)
-            gpuWrite.run(session)
-
-            // TODO: Push this to Apache Spark
-            // Re-cache all cached plans(including this relation itself, if it's cached) that refer
-            // to this data source relation. This is the behavior for InsertInto
-            session.sharedState.cacheManager.recacheByPlan(
-              session, LogicalRelation(deltaLog.createRelation()))
-          }
-        }
-      }
-    }
+    val gpuWrite = toGpuWrite(writeConfig, meta.conf)
     GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
+  }
+
+  override def tagForGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): Unit = {
+    if (!meta.conf.isDeltaWriteEnabled) {
+      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+    val deltaTable = cpuExec.table.asInstanceOf[DeltaTableV2]
+    val tablePath = if (deltaTable.catalogTable.isDefined) {
+      new Path(deltaTable.catalogTable.get.location)
+    } else {
+      DeltaDataSource.parsePathIdentifier(cpuExec.session, deltaTable.path.toString,
+        deltaTable.options)._1
+    }
+    val deltaLog = DeltaLog.forTable(cpuExec.session, tablePath, deltaTable.options)
+    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
+      deltaTable.options, cpuExec.session)
+    extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
+      meta.setCustomTaggingData(writeConfig)
+    }
+  }
+
+  override def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec = {
+    val writeConfig = meta.getCustomTaggingData match {
+      case Some(c: DeltaWriteV1Config) => c
+      case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+    }
+    val gpuWrite = toGpuWrite(writeConfig, meta.conf)
+    GpuOverwriteByExpressionExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
   private def checkDeltaProvider(
@@ -211,6 +218,36 @@ abstract class DeltaIOProvider extends DeltaProviderImplBase {
     val provider = properties.getOrElse("provider", conf.getConf(SQLConf.DEFAULT_DATA_SOURCE_NAME))
     if (!DeltaSourceUtils.isDeltaDataSourceName(provider)) {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
+    }
+  }
+
+  private def toGpuWrite(
+      writeConfig: DeltaWriteV1Config,
+      rapidsConf: RapidsConf): V1Write = new V1Write {
+    override def toInsertableRelation(): InsertableRelation = {
+      new InsertableRelation {
+        override def insert(data: DataFrame, overwrite: Boolean): Unit = {
+          val session = data.sparkSession
+          val deltaLog = writeConfig.deltaLog
+
+          // TODO: Get the config from WriteIntoDelta's txn.
+          val cpuWrite = WriteIntoDelta(
+            deltaLog,
+            if (writeConfig.forceOverwrite) SaveMode.Overwrite else SaveMode.Append,
+            new DeltaOptions(writeConfig.options.toMap, session.sessionState.conf),
+            Nil,
+            DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).metadata.configuration,
+            data)
+          val gpuWrite = GpuWriteIntoDelta(new GpuDeltaLog(deltaLog, rapidsConf), cpuWrite)
+          gpuWrite.run(session)
+
+          // TODO: Push this to Apache Spark
+          // Re-cache all cached plans(including this relation itself, if it's cached) that refer
+          // to this data source relation. This is the behavior for InsertInto
+          session.sharedState.cacheManager.recacheByPlan(
+            session, LogicalRelation(deltaLog.createRelation()))
+        }
+      }
     }
   }
 }

@@ -58,6 +58,25 @@ case class GpuAppendDataExecV1(
     refreshCache: () => Unit,
     write: V1Write) extends GpuV1FallbackWriters
 
+/**
+ * GPU version of OverwriteByExpressionExecV1
+ *
+ * Physical plan node for overwrite into a v2 table with V1 write interfaces. Note that when this
+ * interface is used, the atomicity of the operation depends solely on the target data source.
+ *
+ * Overwrites data in a table matched by a set of filters. Rows matching all of the filters will be
+ * deleted and rows in the output data set are appended.
+ *
+ * This plan is used to implement SaveMode.Overwrite. The behavior of SaveMode.Overwrite is to
+ * truncate the table -- delete all rows -- and append the output data set. This uses the filter
+ * AlwaysTrue to delete all rows.
+ */
+case class GpuOverwriteByExpressionExecV1(
+    table: SupportsWrite,
+    plan: LogicalPlan,
+    refreshCache: () => Unit,
+    write: V1Write) extends GpuV1FallbackWriters
+
 /** GPU version of V1FallbackWriters */
 trait GpuV1FallbackWriters extends LeafV2CommandExec with SupportsV1Write with GpuExec {
   override def supportsColumnar: Boolean = false
