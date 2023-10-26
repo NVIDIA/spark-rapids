@@ -1112,8 +1112,22 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
 
     if (aggPattern.nonEmpty && strPatternToReplace != "all") {
-      val aggPatternsCanReplace = 
-          GpuBaseAggregateHelper.getAggPatternsCanReplace(strPatternToReplace)
+
+      /*
+      * Type inferencing by the Scala compiler will choose the most specific return type
+      * something like Array[Set[Product with Serializable with AggregateMode]] or with 
+      * slight differences depending on Scala version. Here we ensure this is 
+      * Array[Set[AggregateMode]] to perform the subsequent Set and Array operations properly.
+      */
+      val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
+        subPattern.split("&").map {
+          case "partial" => Partial
+          case "partialmerge" => PartialMerge
+          case "final" => Final
+          case "complete" => Complete
+          case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
+        }.toSet
+      }.asInstanceOf[Array[Set[AggregateMode]]]
 
       if (!aggPatternsCanReplace.contains(aggPattern)) {
         val message = aggPattern.map(_.toString).mkString(",")
