@@ -32,7 +32,7 @@ object CpuTimeZoneDB {
    *
    * @return
    */
-  def convertToUTC(inputVector: ColumnVector, currentTimeZone: ZoneId): ColumnVector = {
+  def fromTimestampToUtcTimestamp(inputVector: ColumnVector, currentTimeZone: ZoneId): ColumnVector = {
     assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
     val zoneStr = currentTimeZone.getId
     val rowCount = inputVector.getRowCount.toInt
@@ -60,7 +60,7 @@ object CpuTimeZoneDB {
    * @param desiredTimeZone desired time zone
    * @return timestamp in the `desiredTimeZone`
    */
-  def convertFromUTC(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
+  def fromUtcTimestampToTimestamp(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
     assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
     val zoneStr = desiredTimeZone.getId
     val rowCount = inputVector.getRowCount.toInt
@@ -71,6 +71,58 @@ object CpuTimeZoneDB {
           val origin = input.getLong(currRow)
           // Spark implementation
           val dist = DateTimeUtils.fromUTCTime(origin, zoneStr)
+          builder.append(dist)
+          currRow += 1
+        }
+        withResource(builder.build()) { b =>
+          b.copyToDevice()
+        }
+      }
+    }
+  }
+
+  /**
+   * Converts timesamp to date since 1970-01-01 at the given zone ID.
+   *
+   * @return
+   */
+  def fromTimestampToDate(inputVector: ColumnVector, currentTimeZone: ZoneId): ColumnVector = {
+    assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
+    val rowCount = inputVector.getRowCount.toInt
+    withResource(inputVector.copyToHost()) { input =>
+      withResource(HostColumnVector.builder(DType.TIMESTAMP_DAYS, rowCount)) { builder =>
+        var currRow = 0
+        while (currRow < rowCount) {
+          val origin = input.getLong(currRow)
+          // Spark implementation
+          val dist = DateTimeUtils.microsToDays(origin, currentTimeZone)
+          builder.append(dist)
+          currRow += 1
+        }
+        withResource(builder.build()) { b =>
+          b.copyToDevice()
+        }
+      }
+    }
+  }
+
+  /**
+   * Converts date at the given zone ID to microseconds since 1970-01-01 00:00:00Z.
+   *
+   * @param inputVector     UTC timestamp
+   * @param desiredTimeZone desired time zone
+   * @return timestamp in the `desiredTimeZone`
+   */
+  def fromDateToTimestap(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
+    assert(inputVector.getType == DType.TIMESTAMP_DAYS)
+    val rowCount = inputVector.getRowCount.toInt
+    withResource(inputVector.copyToHost()) { input =>
+      withResource(HostColumnVector.builder(DType.INT64, rowCount)) { builder =>
+        var currRow = 0
+        while (currRow < rowCount) {
+          val origin = input.getInt(currRow)
+          // Spark implementation
+          val dist = DateTimeUtils.daysToMicros(origin, desiredTimeZone)
           builder.append(dist)
           currRow += 1
         }
