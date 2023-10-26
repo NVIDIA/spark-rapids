@@ -22,54 +22,45 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
-import org.apache.spark.sql.catalyst.util.DateTimeUtils.daysToLocalDate
 
 object CpuTimeZoneDB {
 
   def cacheDatabase(): Unit = {}
 
   /**
-   * convert date or timestamp vector in a time zone to UTC timestamp
+   * Interprate a timestamp as a time in the given time zone, and renders that time as a timestamp in UTC
    *
    * @return
    */
   def convertToUTC(inputVector: ColumnVector, currentTimeZone: ZoneId): ColumnVector = {
-    if (inputVector.getType == DType.TIMESTAMP_DAYS) {
-      val rowCount = inputVector.getRowCount.toInt
-      withResource(inputVector.copyToHost()) { input =>
-        withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
-          var currRow = 0
-          while (currRow < rowCount) {
-            val origin = input.getLong(currRow)
-
-            // copied from Spark ToTimestamp
-            val instant = daysToLocalDate(origin.toInt).atStartOfDay(currentTimeZone).toInstant
-            val dist = DateTimeUtils.instantToMicros(instant)
-            builder.append(dist)
-            currRow += 1
-          }
-          withResource(builder.build()) { b =>
-            b.copyToDevice()
-          }
-          }
+    assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
+    val zoneStr = currentTimeZone.getId
+    val rowCount = inputVector.getRowCount.toInt
+    withResource(inputVector.copyToHost()) { input =>
+      withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
+        var currRow = 0
+        while (currRow < rowCount) {
+          val origin = input.getLong(currRow)
+          // Spark implementation
+          val dist = DateTimeUtils.toUTCTime(origin, zoneStr)
+          builder.append(dist)
+          currRow += 1
+        }
+        withResource(builder.build()) { b =>
+          b.copyToDevice()
+        }
       }
-    } else if (inputVector.getType == DType.TIMESTAMP_MICROSECONDS) {
-      // Spark always save UTC time, refer to Spark TimestampType
-      inputVector.incRefCount()
-    } else {
-      throw new IllegalArgumentException("Unsupported vector type: " + inputVector.getType)
     }
   }
 
   /**
-   * Convert timestamp in UTC to timestamp in the `desiredTimeZone`
+   * Renders a timestamp in UTC time zone as a timestamp in `desiredTimeZone` time zone
    *
    * @param inputVector     UTC timestamp
    * @param desiredTimeZone desired time zone
    * @return timestamp in the `desiredTimeZone`
    */
   def convertFromUTC(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
-    // only test UTC timestamp to timestamp within desiredTimeZone
     assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
     val zoneStr = desiredTimeZone.getId
     val rowCount = inputVector.getRowCount.toInt
@@ -78,6 +69,7 @@ object CpuTimeZoneDB {
         var currRow = 0
         while (currRow < rowCount) {
           val origin = input.getLong(currRow)
+          // Spark implementation
           val dist = DateTimeUtils.fromUTCTime(origin, zoneStr)
           builder.append(dist)
           currRow += 1
