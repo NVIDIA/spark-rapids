@@ -42,7 +42,6 @@ case class GpuBatchScanExec(
     runtimeFilters: Seq[Expression] = Seq.empty,
     keyGroupedPartitioning: Option[Seq[Expression]] = None)
   extends GpuBatchScanExecBase(scan, runtimeFilters) {
-  @transient override lazy val batch: Batch = scan.toBatch
 
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
