@@ -236,6 +236,7 @@ StringTranslate,4
 StringTrim,4
 StringTrimLeft,4
 StringTrimRight,4
+StructsToJson,4
 Substring,4
 SubstringIndex,4
 Subtract,4
