@@ -26,7 +26,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
 
@@ -409,71 +408,79 @@ case class GpuProjectAstExec(
     projectList.collect { case ne: NamedExpression => ne.toAttribute }
   }
 
-  override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    child.executeColumnar().mapPartitions(buildRetryableAstIterator)
+  }
+
+  def buildRetryableAstIterator(
+      input: Iterator[ColumnarBatch]): GpuColumnarBatchIterator = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val outputTypes = output.map(_.dataType).toArray
-    val rdd = child.executeColumnar()
-    rdd.mapPartitions { cbIter =>
-      new Iterator[ColumnarBatch] with AutoCloseable {
-        private[this] var compiledAstExprs =
-          withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
-            boundProjectList.safeMap { expr =>
-              // Use intmax for the left table column count since there's only one input table here.
-              expr.convertToAst(Int.MaxValue).compile()
-            }
-          }
-
-        // Don't install the callback if in a unit test
-        Option(TaskContext.get()).foreach { tc =>
-          onTaskCompletion(tc) {
-            close()
+    new GpuColumnarBatchIterator(true) {
+      private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
+      private[this] var compiledAstExprs =
+        withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
+          boundProjectList.safeMap { expr =>
+            // Use intmax for the left table column count since there's only one input table here.
+            expr.convertToAst(Int.MaxValue).compile()
           }
         }
 
-        override def hasNext: Boolean = {
-          if (cbIter.hasNext) {
-            true
-          } else {
-            close()
-            false
-          }
+      override def hasNext: Boolean = maybeSplittedItr.hasNext || {
+        if (input.hasNext) {
+          true
+        } else {
+          close()
+          false
         }
+      }
 
-        override def next(): ColumnarBatch = {
-          withResource(cbIter.next()) { cb =>
+      override def next(): ColumnarBatch = {
+        if (!maybeSplittedItr.hasNext) {
+          val spillable = SpillableColumnarBatch(
+            input.next(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          // AST currently doesn't support non-deterministic expressions so it's not needed
+          // to check whether compiled expressions are retryable.
+          maybeSplittedItr = withRetry(spillable, splitSpillableInHalfByRows) { spillable =>
             withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
-              numOutputBatches += 1
-              numOutputRows += cb.numRows()
-              val projectedTable = withResource(tableFromBatch(cb)) { table =>
-                withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
-                  new Table(projectedColumns:_*)
+              withResource(spillable.getColumnarBatch()) { cb =>
+                val projectedTable = withResource(tableFromBatch(cb)) { table =>
+                  withResource(
+                    compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
+                    new Table(projectedColumns: _*)
+                  }
+                }
+                withResource(projectedTable) { _ =>
+                  GpuColumnVector.from(projectedTable, outputTypes)
                 }
               }
-              withResource(projectedTable) { _ =>
-                GpuColumnVector.from(projectedTable, outputTypes)
-              }
             }
           }
         }
 
-        override def close(): Unit = {
-          compiledAstExprs.safeClose()
-          compiledAstExprs = Nil
-        }
+        val ret = maybeSplittedItr.next()
+        numOutputBatches += 1
+        numOutputRows += ret.numRows()
+        ret
+      }
 
-        private def tableFromBatch(cb: ColumnarBatch): Table = {
-          if (cb.numCols != 0) {
-            GpuColumnVector.from(cb)
-          } else {
-            // Count-only batch but cudf Table cannot be created with no columns.
-            // Create the cheapest table we can to evaluate the AST expression.
-            withResource(Scalar.fromBool(false)) { falseScalar =>
-              withResource(cudf.ColumnVector.fromScalar(falseScalar, cb.numRows())) { falseColumn =>
-                new Table(falseColumn)
-              }
+      override def doClose(): Unit = {
+        compiledAstExprs.safeClose()
+        compiledAstExprs = Nil
+      }
+
+      private def tableFromBatch(cb: ColumnarBatch): Table = {
+        if (cb.numCols != 0) {
+          GpuColumnVector.from(cb)
+        } else {
+          // Count-only batch but cudf Table cannot be created with no columns.
+          // Create the cheapest table we can to evaluate the AST expression.
+          withResource(Scalar.fromBool(false)) { falseScalar =>
+            withResource(cudf.ColumnVector.fromScalar(falseScalar, cb.numRows())) { falseColumn =>
+              new Table(falseColumn)
             }
           }
         }
