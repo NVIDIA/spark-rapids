@@ -60,7 +60,7 @@ You can find all available build versions in the top level pom.xml file. If you 
 for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
 the version you want.
 
-Note that we build against both Scala 2.12 and Scala 2.13. Any contribution you make to the 
+Note that we build against both Scala 2.12 and 2.13. Any contribution you make to the 
 codebase should compile with both Scala 2.12 and 2.13 for Apache Spark versions 3.3.0 and
 higher. 
 

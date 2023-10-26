@@ -5,6 +5,20 @@ Apache Spark versions 3.3.0 and higher. It does **not** support Cloudera or Data
 distributions of Apache Spark. You can only use the Scala 2.13 plugin JAR with an Apache Spark 
 distribution compiled with Scala 2.13.
 
+## Notes on source organization
+
+For some parts of the code, we need to have specific versions of Scala code for both Scala 2.12 and 
+2.13. You will see these organized using the following directory pattern:
+
+```
+spark-rapids/<module>/src/main/scala-<scala_version>/<path to package>/Source.scala
+```
+
+This is necessary in a handful of cases where there are distinct differences in the language 
+requirements needed. First, try to ensure the same code compiles with both Scala 2.12 and 2.13. If 
+you must diverge the code for supporting the different languages, please ensure that you refactor
+the code as much as possible to avoid any code duplication that might occur.
+
 ## Building with Scala 2.13
 
 You can use Maven to build the plugin. Like with Scala 2.12, we recommend building up to the `verify`
