@@ -69,7 +69,7 @@ if os.environ.get('INCLUDE_SPARK_AVRO_JAR', 'false') == 'true':
     file_formats = file_formats + ['avro']
 
 conf = {
-    'spark.rapids.cudfColumnSizeLimit': 1000,
+    'spark.rapids.sql.columnSizeBytes': 1000,
     'spark.sql.orc.impl': 'hive',  # null type column is not supported on native
     'spark.rapids.sql.format.avro.enabled': 'true',
     'spark.rapids.sql.format.avro.read.enabled': 'true'
