@@ -1112,15 +1112,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
 
     if (aggPattern.nonEmpty && strPatternToReplace != "all") {
-      // val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
-      //   subPattern.split("&").map {
-      //     case "partial" => Partial
-      //     case "partialmerge" => PartialMerge
-      //     case "final" => Final
-      //     case "complete" => Complete
-      //     case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
-      //   }.toSet
-      // }
       val aggPatternsCanReplace = 
           GpuBaseAggregateHelper.getAggPatternsCanReplace(strPatternToReplace)
 

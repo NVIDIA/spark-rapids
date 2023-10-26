@@ -22,7 +22,7 @@ import scala.util.control.ControlThrowable
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 /** Implementation of the automatic-resource-management pattern */
-trait ArmScalaFixes {
+trait ArmScalaSpecificImpl {
 
   /** Executes the provided code block and then closes the list buffer of resources */
   def withResource[T <: AutoCloseable, V](r: ListBuffer[T])(block: ListBuffer[T] => V): V = {

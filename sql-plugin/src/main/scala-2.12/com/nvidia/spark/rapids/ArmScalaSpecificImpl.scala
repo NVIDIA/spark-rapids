@@ -20,7 +20,7 @@ import scala.util.control.ControlThrowable
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 /** Implementation of the automatic-resource-management pattern */
-trait ArmScalaFixes {
+trait ArmScalaSpecificImpl {
 
   /** Executes the provided code block, closing the resources only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V](r: Seq[T])(block: Seq[T] => V): V = {
