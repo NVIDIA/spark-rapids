@@ -12,12 +12,7 @@ com/nvidia/spark/rapids/GpuColumnVectorUtils*
 com/nvidia/spark/rapids/ExplainPlan.class
 com/nvidia/spark/rapids/ExplainPlan$.class
 com/nvidia/spark/rapids/ExplainPlanBase.class
-com/nvidia/spark/rapids/GpuKryoRegistrator*
 com/nvidia/spark/rapids/PlanUtils*
-com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
-com/nvidia/spark/rapids/RapidsExecutorStartupMsg*
-com/nvidia/spark/rapids/RapidsExecutorUpdateMsg*
-com/nvidia/spark/rapids/RapidsShuffleHeartbeatHandler*
 com/nvidia/spark/rapids/SQLExecPlugin*
 com/nvidia/spark/rapids/ShimLoaderTemp*
 com/nvidia/spark/rapids/SparkShims*
