@@ -41,9 +41,6 @@ case class GpuBatchScanExec(
     runtimeFilters: Seq[Expression] = Seq.empty)
     extends GpuBatchScanExecBase(scan, runtimeFilters) {
 
-  // All expressions are filter expressions used on the CPU.
-  override def gpuExpressions: Seq[Expression] = Nil
-
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
     case other: GpuBatchScanExec =>
@@ -71,7 +68,6 @@ case class GpuBatchScanExec(
 
       // call toBatch again to get filtered partitions
       val newPartitions = scan.toBatch.planInputPartitions()
-
       originalPartitioning match {
         case p: DataSourcePartitioning if p.numPartitions != newPartitions.size =>
           throw new SparkException(

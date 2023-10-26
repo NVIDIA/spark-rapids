@@ -52,6 +52,10 @@ abstract class GpuBatchScanExecBase(
     @transient scan: GpuScan,
     runtimeFilters: Seq[Expression] = Seq.empty)
   extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics with FilteredPartitions {
+
+  // All expressions are filter expressions used on the CPU.
+  override def gpuExpressions: Seq[Expression] = Nil
+
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   @transient lazy val batch: Batch = scan.toBatch

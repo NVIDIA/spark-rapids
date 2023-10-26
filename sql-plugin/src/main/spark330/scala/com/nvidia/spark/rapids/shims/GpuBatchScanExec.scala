@@ -44,9 +44,6 @@ case class GpuBatchScanExec(
   extends GpuBatchScanExecBase(scan, runtimeFilters) {
   @transient override lazy val batch: Batch = scan.toBatch
 
-  // All expressions are filter expressions used on the CPU.
-  override def gpuExpressions: Seq[Expression] = Nil
-
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
     case other: BatchScanExec =>
@@ -59,7 +56,7 @@ case class GpuBatchScanExec(
 
   @transient override lazy val inputPartitions: Seq[InputPartition] = batch.planInputPartitions()
 
-  @transient protected lazy val filteredPartitions: Seq[Seq[InputPartition]] = {
+  @transient override protected lazy val filteredPartitions: Seq[Seq[InputPartition]] = {
     val dataSourceFilters = runtimeFilters.flatMap {
       case DynamicPruningExpression(e) => DataSourceStrategyUtils.translateRuntimeFilter(e)
       case _ => None
