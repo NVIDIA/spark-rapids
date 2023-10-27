@@ -32,6 +32,7 @@
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -63,5 +64,6 @@ class RapidsCsvScanMeta(
       cScan.partitionFilters,
       cScan.dataFilters,
       conf.maxReadBatchSizeRows,
-      conf.maxReadBatchSizeBytes)
+      conf.maxReadBatchSizeBytes,
+      conf.maxGpuColumnSizeBytes)
 }

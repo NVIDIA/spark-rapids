@@ -17,6 +17,7 @@
 package org.apache.spark.sql.delta.rapids
 
 import com.nvidia.spark.rapids.RapidsConf
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction}
@@ -68,6 +69,14 @@ object GpuDeltaLog {
       options: Map[String, String],
       rapidsConf: RapidsConf): GpuDeltaLog = {
     val deltaLog = DeltaLog.forTable(spark, dataPath, options)
+    new GpuDeltaLog(deltaLog, rapidsConf)
+  }
+
+  def forTable(
+      spark: SparkSession,
+      tableLocation: Path,
+      rapidsConf: RapidsConf): GpuDeltaLog = {
+    val deltaLog = DeltaLog.forTable(spark, tableLocation)
     new GpuDeltaLog(deltaLog, rapidsConf)
   }
 }

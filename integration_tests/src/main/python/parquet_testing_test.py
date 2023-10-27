@@ -40,7 +40,7 @@ _java_reader_confs = copy_and_update(
 # by providing the error string and xfail reason.
 _error_files = {
     "large_string_map.brotli.parquet": "Exception",
-    "nation.dict-malformed.parquet": ("Exception", "https://github.com/NVIDIA/spark-rapids/issues/8644"),
+    "nation.dict-malformed.parquet": "Exception",
     "non_hadoop_lz4_compressed.parquet": "Exception",
     "PARQUET-1481.parquet": "Exception",
 }

@@ -16,14 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.Scalar
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
 
 /**
  * A wrapper reader that always appends partition values to the ColumnarBatch produced by the input
@@ -32,86 +30,37 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 class ColumnarPartitionReaderWithPartitionValues(
     fileReader: PartitionReader[ColumnarBatch],
-    partitionValues: Array[Scalar],
-    partValueTypes: Array[DataType]) extends PartitionReader[ColumnarBatch] {
+    partitionValues: InternalRow,
+    partitionSchema: StructType,
+    maxGpuColumnSizeBytes: Long) extends PartitionReader[ColumnarBatch] {
   override def next(): Boolean = fileReader.next()
+  private var outputIter: Iterator[ColumnarBatch] = Iterator.empty
+
 
   override def get(): ColumnarBatch = {
-    if (partitionValues.isEmpty) {
+    if (partitionSchema.isEmpty) {
       fileReader.get()
+    } else if (outputIter.hasNext) {
+      outputIter.next()
     } else {
       val fileBatch: ColumnarBatch = fileReader.get()
-      ColumnarPartitionReaderWithPartitionValues.addPartitionValues(fileBatch,
-        partitionValues, partValueTypes)
+      outputIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(fileBatch,
+        Array(fileBatch.numRows), Array(partitionValues), partitionSchema, maxGpuColumnSizeBytes)
+      outputIter.next()
     }
   }
 
   override def close(): Unit = {
     fileReader.close()
-    partitionValues.foreach(_.close())
   }
 }
 
 object ColumnarPartitionReaderWithPartitionValues {
   def newReader(partFile: PartitionedFile,
       baseReader: PartitionReader[ColumnarBatch],
-      partitionSchema: StructType): PartitionReader[ColumnarBatch] = {
-    val partitionValues = partFile.partitionValues.toSeq(partitionSchema)
-    val partitionScalars = createPartitionValues(partitionValues, partitionSchema)
-    new ColumnarPartitionReaderWithPartitionValues(baseReader, partitionScalars,
-      GpuColumnVector.extractTypes(partitionSchema))
-  }
-
-  def createPartitionValues(
-      partitionValues: Seq[Any],
-      partitionSchema: StructType): Array[Scalar] = {
-    val partitionScalarTypes = partitionSchema.fields.map(_.dataType)
-    partitionValues.zip(partitionScalarTypes).safeMap {
-      case (v, t) => GpuScalar.from(v, t)
-    }.toArray
-  }
-
-  def addPartitionValues(
-      fileBatch: ColumnarBatch,
-      partitionValues: Array[Scalar],
-      sparkTypes: Array[DataType]): ColumnarBatch = {
-    withResource(fileBatch) { _ =>
-      closeOnExcept(buildPartitionColumns(fileBatch.numRows, partitionValues, sparkTypes)) {
-        partitionColumns => addGpuColumVectorsToBatch(fileBatch, partitionColumns)
-      }
-    }
-  }
-
-  /**
-   * The caller is responsible for closing the fileBatch passed in.
-   */
-  def addGpuColumVectorsToBatch(
-      fileBatch: ColumnarBatch,
-      partitionColumns: Array[GpuColumnVector]): ColumnarBatch = {
-    val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
-    val resultCols = fileBatchCols ++ partitionColumns
-    val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
-    fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-    result
-  }
-
-  private def buildPartitionColumns(
-      numRows: Int,
-      partitionValues: Array[Scalar],
-      sparkTypes: Array[DataType]): Array[GpuColumnVector] = {
-    var succeeded = false
-    val result = new Array[GpuColumnVector](partitionValues.length)
-    try {
-      for (i <- result.indices) {
-        result(i) = GpuColumnVector.from(
-          ai.rapids.cudf.ColumnVector.fromScalar(partitionValues(i), numRows), sparkTypes(i))
-      }
-      succeeded = true
-      result
-    } finally {
-      if (!succeeded) {
-        result.filter(_ != null).safeClose()
-      }
-    }
+      partitionSchema: StructType,
+      maxGpuColumnSizeBytes: Long): PartitionReader[ColumnarBatch] = {
+    new ColumnarPartitionReaderWithPartitionValues(baseReader, partFile.partitionValues,
+      partitionSchema, maxGpuColumnSizeBytes)
   }
 }

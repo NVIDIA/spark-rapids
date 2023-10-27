@@ -346,7 +346,7 @@ def test_unsupported_fallback_endswith():
 
 def test_concat_ws_basic():
     gen = StringGen(nullable=True)
-    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: binary_op_df(spark, gen).select(
                 f.concat_ws("-"),
@@ -365,7 +365,7 @@ def test_concat_ws_basic():
 
 def test_concat_ws_arrays():
     gen = ArrayGen(StringGen(nullable=True), nullable=True)
-    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: binary_op_df(spark, gen).select(
                 f.concat_ws("*", f.array(f.lit('2'), f.lit(''), f.lit('3'), f.lit('Z'))),
@@ -536,7 +536,7 @@ def test_ephemeral_substring():
 def test_repeat_scalar_and_column():
     gen_s = StringGen(nullable=False)
     gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0], nullable=True)
-    (s,) = gen_scalars_for_sql(gen_s, 1)
+    (s,) = with_cpu_session(lambda spark: gen_scalars_for_sql(gen_s, 1))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen_r).selectExpr(
                 'repeat({}, a)'.format(s),
