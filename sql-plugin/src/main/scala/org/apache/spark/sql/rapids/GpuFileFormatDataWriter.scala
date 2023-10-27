@@ -555,14 +555,14 @@ class GpuDynamicPartitionDataSingleWriter(
       // so this concatenated result could be split later, which is not efficient. However,
       // the concurrent writers are default off in Spark, so it is not clear if this
       // code path is worth optimizing.
-      val concat =
+      val concat: Table =
         withResource(savedStatus.get.tableCaches) { subSpillableBatches =>
           val toConcat = subSpillableBatches :+ partBatch
 
           // clear the caches
           savedStatus.get.tableCaches.clear()
 
-          withRetryNoSplit(toConcat) { spillables =>
+          withRetryNoSplit(toConcat.toSeq) { spillables =>
             withResource(spillables.safeMap(_.getColumnarBatch())) { batches =>
               withResource(batches.map(GpuColumnVector.from)) { subTables =>
                 Table.concatenate(subTables: _*)
@@ -889,7 +889,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
     // 2. group by the partition columns
     // get sub-groups for each partition and get unique keys for each partition
-    val groupsAndKeys = withResource(new Table(columnsWithPartition: _*)) { colsWithPartitionTbl =>
+    val groupsAndKeys = withResource(
+        new Table(columnsWithPartition.toSeq: _*)) { colsWithPartitionTbl =>
       // [0, partition columns number - 1]
       val partitionIndices = description.partitionColumns.indices
 
@@ -959,7 +960,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
             for (i <- description.partitionColumns.length until groupTable.getNumberOfColumns) {
               dataColumns += groupTable.getColumn(i)
             }
-            withResource(new Table(dataColumns: _*)) { dataTable =>
+            withResource(new Table(dataColumns.toSeq: _*)) { dataTable =>
               withResource(GpuColumnVector.from(dataTable, dataTypes)) { cb =>
                 val outputCb = getOutputCb(cb)
                 // convert to spillable cache and add to the pending cache
@@ -997,7 +998,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     // get concat table or the single table
     val spillableToWrite = if (status.tableCaches.length >= 2) {
       // concat the sub batches to write in once.
-      val concatted = withRetryNoSplit(status.tableCaches) { spillableSubBatches =>
+      val concatted = withRetryNoSplit(status.tableCaches.toSeq) { spillableSubBatches =>
         withResource(spillableSubBatches.safeMap(_.getColumnarBatch())) { subBatches =>
           withResource(subBatches.map(GpuColumnVector.from)) { subTables =>
             Table.concatenate(subTables: _*)

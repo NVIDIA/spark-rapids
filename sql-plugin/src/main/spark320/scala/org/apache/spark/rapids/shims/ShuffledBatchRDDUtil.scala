@@ -37,6 +37,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
+import scala.collection
+
 import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, SparkEnv, TaskContext}
 import org.apache.spark.shuffle.ShuffleReader
 import org.apache.spark.sql.execution.{CoalescedMapperPartitionSpec, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec}
@@ -75,7 +77,7 @@ object ShuffledBatchRDDUtil {
   }
 
   private def getPartitionSize(
-      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]): Long = {
+      blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])]): Long = {
     blocksByAddress.flatMap { case (_, blockInfos) =>
       blockInfos.map { case (_, size, _) => size }
     }.sum

@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
+from fastparquet_utils import get_fastparquet_result_canonicalizer
 from spark_session import spark_version, with_cpu_session, with_gpu_session
 
 
@@ -101,17 +102,9 @@ def read_parquet(data_path):
         ArrayGen(child_gen=IntegerGen(nullable=False), nullable=False),
         marks=pytest.mark.xfail(reason="Conversion from Pandas dataframe (read with fastparquet) to Spark dataframe "
                                        "fails: \"Unable to infer the type of the field a\".")),
-    pytest.param(
-        StructGen(children=[("first", IntegerGen(nullable=False)),
-                            ("second", FloatGen(nullable=False))], nullable=False),
-        marks=pytest.mark.xfail(reason="Values are correct, but struct row representations differ between "
-                                       "fastparquet and Spark. E.g.:\n"
-                                       "--- CPU OUTPUT\n"
-                                       "+++ GPU OUTPUT\n"
-                                       "@@ -1 +1 @@\n"
-                                       "-Row(a.first=123, a.second=456)\n"
-                                       "+Row(a=Row(first=123, second=456))\n"
-                                       "See https://github.com/NVIDIA/spark-rapids/issues/9399."))
+
+    StructGen(children=[("first", IntegerGen(nullable=False)),
+                        ("second", FloatGen(nullable=False))], nullable=False)
 ], ids=idfn)
 def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     """
@@ -129,7 +122,7 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
         conf=rebase_write_corrected_conf
     )
     # Read Parquet with CPU (fastparquet) and GPU (plugin), and compare records.
-    assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path), result_canonicalize_func_before_compare=get_fastparquet_result_canonicalizer())
 
 
 @pytest.mark.skipif(condition=fastparquet_unavailable(),

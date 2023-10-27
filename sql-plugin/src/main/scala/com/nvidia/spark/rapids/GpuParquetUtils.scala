@@ -49,7 +49,7 @@ object GpuParquetUtils extends Logging {
     } else {
       columnPaths.map(cp => cp.toDotString.toLowerCase(Locale.ROOT)).toSet
     }
-    blocks.asScala.map { oldBlock =>
+    blocks.asScala.toSeq.map { oldBlock =>
       //noinspection ScalaDeprecation
       val newColumns = if (isCaseSensitive) {
         oldBlock.getColumns.asScala.filter(c => pathSet.contains(c.getPath.toDotString))
@@ -57,7 +57,7 @@ object GpuParquetUtils extends Logging {
         oldBlock.getColumns.asScala.filter(c =>
           pathSet.contains(c.getPath.toDotString.toLowerCase(Locale.ROOT)))
       }
-      newBlockMeta(oldBlock.getRowCount, newColumns)
+      newBlockMeta(oldBlock.getRowCount, newColumns.toSeq)
     }
   }
 

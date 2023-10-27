@@ -49,4 +49,8 @@ PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sy
 # Set the path of python site-packages, and install packages here.
 PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
 # Use "python -m pip install" to make sure pip matches with python.
-$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order fastparquet
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
+
+# Install fastparquet (and numpy as its dependency).
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES numpy
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES fastparquet

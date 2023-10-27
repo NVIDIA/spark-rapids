@@ -123,17 +123,17 @@ class GpuKeyBatchingIterator(
     pending.clear()
     pendingSize = 0
     spillableBuffers.appendAll(last)
-    RmmRapidsRetryIterator.withRetryNoSplit(spillableBuffers) { spillableBuffers =>
+    RmmRapidsRetryIterator.withRetryNoSplit(spillableBuffers.toSeq) { attempt =>
       withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
         withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
-          spillableBuffers.foreach { spillable =>
+          attempt.foreach { spillable =>
             withResource(spillable.getColumnarBatch()) { cb =>
               toConcat.append(GpuColumnVector.from(cb))
             }
           }
 
           if (toConcat.length > 1) {
-            withResource(Table.concatenate(toConcat: _*)) { concated =>
+            withResource(Table.concatenate(toConcat.toSeq: _*)) { concated =>
               GpuColumnVector.from(concated, types)
             }
           } else if (toConcat.nonEmpty) {

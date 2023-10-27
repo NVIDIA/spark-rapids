@@ -171,7 +171,7 @@ object ShimLoader extends Logging {
                   s"classloader $urlCl although addURL succeeded, maybe pushed up to the " +
                   s"parent classloader ${urlCl.getParent}")
               }
-            case _ => Unit
+            case _ => ()
           }
         }
       }
@@ -204,6 +204,7 @@ object ShimLoader extends Logging {
     val sparkVersion = getSparkVersion
     logInfo(s"Loading shim for Spark version: $sparkVersion")
     logInfo("Complete Spark build info: " + sparkBuildInfo.mkString(", "))
+    logInfo("Scala version: " + util.Properties.versionString)
 
     val thisClassLoader = getClass.getClassLoader
 

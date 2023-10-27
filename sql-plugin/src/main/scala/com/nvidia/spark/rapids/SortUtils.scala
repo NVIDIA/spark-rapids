@@ -242,7 +242,7 @@ class GpuSorter(
    * @return the sorted data.
    */
   final def mergeSortAndCloseWithRetry(
-      spillableBatches: mutable.ArrayStack[SpillableColumnarBatch],
+      spillableBatches: ScalaStack[SpillableColumnarBatch],
       sortTime: GpuMetric): SpillableColumnarBatch = {
     closeOnExcept(spillableBatches) { _ =>
       assert(spillableBatches.nonEmpty)
@@ -258,8 +258,8 @@ class GpuSorter(
         if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
           // so as a work around we concatenate all of the data together and then sort it.
           // It is slower, but it works
-          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches) { _ =>
-            val tablesToMerge = spillableBatches.safeMap { sb =>
+          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
+            val tablesToMerge = attempt.safeMap { sb =>
               withResource(sb.getColumnarBatch()) { cb =>
                 GpuColumnVector.from(cb)
               }
@@ -278,7 +278,7 @@ class GpuSorter(
           }
         } else {
           closeOnExcept(spillableBatches) { _ =>
-            val batchesToMerge = new mutable.ArrayStack[SpillableColumnarBatch]()
+            val batchesToMerge = new ScalaStack[SpillableColumnarBatch]()
             closeOnExcept(batchesToMerge) { _ =>
               while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
                 // pop a spillable batch if there is one, and add it to `batchesToMerge`.
@@ -287,7 +287,7 @@ class GpuSorter(
                 }
                 if (batchesToMerge.size > 1) {
                   val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-                    val tablesToMerge = batchesToMerge.safeMap { sb =>
+                    val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
                       withResource(sb.getColumnarBatch()) { cb =>
                         GpuColumnVector.from(cb)
                       }

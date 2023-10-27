@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,18 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
+spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids.shuffle
 
 import java.nio.ByteBuffer
 import java.util.concurrent.Executor
 
+import scala.collection
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
@@ -229,8 +236,8 @@ object RapidsShuffleTestHelper extends MockitoSugar {
       tableMeta
     }
 
-  def getShuffleBlocks: Seq[(ShuffleBlockBatchId, Long, Int)] = {
-    Seq(
+  def getShuffleBlocks: collection.Seq[(ShuffleBlockBatchId, Long, Int)] = {
+    collection.Seq(
       (ShuffleBlockBatchId(1,1,1,1), 123L, 1),
       (ShuffleBlockBatchId(2,2,2,2), 456L, 2),
       (ShuffleBlockBatchId(3,3,3,3), 456L, 3)
@@ -244,8 +251,8 @@ object RapidsShuffleTestHelper extends MockitoSugar {
     bmId
   }
 
-  def getBlocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    val blocksByAddress = new ArrayBuffer[(BlockManagerId, Seq[(BlockId, Long, Int)])]()
+  def getBlocksByAddress: Array[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])] = {
+    val blocksByAddress = new ArrayBuffer[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])]()
     val blocks = getShuffleBlocks
     blocksByAddress.append((makeMockBlockManager("2", "2"), blocks))
     blocksByAddress.toArray

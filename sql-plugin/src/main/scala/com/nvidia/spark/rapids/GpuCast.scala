@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuCastShims, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
@@ -189,7 +190,8 @@ object CastOptions {
   def getArithmeticCastOptions(failOnError: Boolean): CastOptions = 
     if (failOnError) ARITH_ANSI_OPTIONS else DEFAULT_CAST_OPTIONS
 
-  object ToPrettyStringOptions extends CastOptions(false, false, false) {
+  object ToPrettyStringOptions extends CastOptions(false, false, false,
+      castToJsonString = false) {
     override val leftBracket: String = "{"
 
     override val rightBracket: String = "}"
@@ -209,11 +211,13 @@ object CastOptions {
  * @param legacyCastComplexTypesToString If we should use legacy casting method
  * @param ansiMode                       Whether the cast should be ANSI compliant
  * @param stringToDateAnsiMode           Whether to cast String to Date using ANSI compliance
+ * @param castToJsonString               Whether to use JSON format when casting to String
  */
 class CastOptions(
     legacyCastComplexTypesToString: Boolean,
     ansiMode: Boolean,
-    stringToDateAnsiMode: Boolean) extends Serializable {
+    stringToDateAnsiMode: Boolean,
+    val castToJsonString: Boolean = false) extends Serializable {
 
   /**
    * Retuns the left bracket to use when surrounding brackets when converting
@@ -264,7 +268,7 @@ class CastOptions(
   val useAnsiStringToDateMode: Boolean = stringToDateAnsiMode
 
   /**
-   * Returns whether we should use legacy behavior to convert complex types 
+   * Returns whether we should use legacy behavior to convert complex types
    * like structs/maps to a String
    */
   val useLegacyComplexTypesToString: Boolean = legacyCastComplexTypesToString
@@ -794,15 +798,16 @@ object GpuCast {
     import options._
 
     val emptyStr = ""
-    val spaceStr = " "
+    val spaceStr = if (options.castToJsonString) "" else " "
+
     val sepStr = if (useHexFormatForBinary && castingBinaryData) spaceStr
-      else if (useLegacyComplexTypesToString) "," else ", "
+      else if (useLegacyComplexTypesToString || options.castToJsonString) "," else ", "
 
     withResource(
       Seq(emptyStr, spaceStr, nullString, sepStr).safeMap(Scalar.fromString)
     ) { case Seq(empty, space, nullRep, sep) =>
 
-      val withSpacesIfLegacy = if (!useLegacyComplexTypesToString) {
+      val withSpacesIfLegacy = if (!options.castToJsonString && !useLegacyComplexTypesToString) {
         withResource(input.getChildColumnView(0)) {
           _.replaceNulls(nullRep)
         }
@@ -852,7 +857,7 @@ object GpuCast {
       elementType: DataType,
       options: CastOptions,
       castingBinaryData: Boolean = false): ColumnVector = {
-    // We use square brackets for arrays regardless 
+    // We use square brackets for arrays regardless
     val (leftStr, rightStr) = ("[", "]")
     val emptyStr = ""
     val numRows = input.getRowCount.toInt
@@ -892,19 +897,71 @@ object GpuCast {
       options: CastOptions): ColumnVector = {
 
     val numRows = input.getRowCount.toInt
-    val (arrowStr, emptyStr, spaceStr) = ("->", "", " ")
+
+    /** Create a new column with quotes around the supplied string column */
+    def addQuotes(column: ColumnVector, rowCount: Int): ColumnVector = {
+      withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+        withResource(Scalar.fromString("\"")) { quote =>
+          withResource(ColumnVector.fromScalar(quote, rowCount)) {
+            quoteScalar =>
+              columns += quoteScalar.incRefCount()
+              columns += escapeJsonString(column)
+              columns += quoteScalar.incRefCount()
+          }
+        }
+        withResource(Scalar.fromString("")) { emptyScalar =>
+          ColumnVector.stringConcatenate(emptyScalar, emptyScalar, columns.toArray)
+        }
+      }
+    }
 
     // cast the key column and value column to string columns
     val (strKey, strValue) = withResource(input.getChildColumnView(0)) { kvStructColumn =>
-      val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        castToString(keyColumn, from.keyType, options)
-      }
-      val strValue = closeOnExcept(strKey) { _ =>
-        withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          castToString(valueColumn, from.valueType, options)
+      if (options.castToJsonString) {
+        // keys must have quotes around them in JSON mode
+        val strKey: ColumnVector = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
+          withResource(castToString(keyColumn, from.keyType, options)) { key =>
+            addQuotes(key.incRefCount(), keyColumn.getRowCount.toInt)
+          }
         }
+        // string values must have quotes around them in JSON mode, and null values need
+        // to be represented by the string literal `null`
+        val strValue = closeOnExcept(strKey) { _ =>
+          withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
+            val valueStr = if (valueColumn.getType == DType.STRING) {
+              withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
+                addQuotes(valueStr.incRefCount(), valueColumn.getRowCount.toInt)
+              }
+            } else {
+              castToString(valueColumn, from.valueType, options)
+            }
+            withResource(valueStr) { _ =>
+              withResource(Scalar.fromString("null")) { nullScalar =>
+                withResource(valueColumn.isNull) { isNull =>
+                  isNull.ifElse(nullScalar, valueStr)
+                }
+              }
+            }
+          }
+        }
+        (strKey, strValue)
+      } else {
+        val strKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
+          castToString(keyColumn, from.keyType, options)
+        }
+        val strValue = closeOnExcept(strKey) { _ =>
+          withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
+            castToString(valueColumn, from.valueType, options)
+          }
+        }
+        (strKey, strValue)
       }
-      (strKey, strValue)
+    }
+
+    val (arrowStr, emptyStr, spaceStr) = if (options.castToJsonString) {
+      (":", "", "")
+    } else {
+      ("->", "", " ")
     }
 
     import options._
@@ -964,6 +1021,10 @@ object GpuCast {
 
     import options._
 
+    if (options.castToJsonString) {
+      return castStructToJsonString(input, inputSchema, options)
+    }
+
     val emptyStr = ""
     val separatorStr = if (useLegacyComplexTypesToString) "," else ", "
     val spaceStr = " "
@@ -1018,6 +1079,99 @@ object GpuCast {
             spaceColumn, leftColumn, rightColumn)
         }
     }
+  }
+
+  /**
+   * This is a specialized version of castStructToString that uses JSON format.
+   * The main differences are:
+   *
+   * - Struct field names are included
+   * - Null fields are omitted
+   */
+  def castStructToJsonString(input: ColumnView,
+      inputSchema: Array[StructField],
+      options: CastOptions): ColumnVector = {
+
+    val rowCount = input.getRowCount.toInt
+
+    def castToJsonAttribute(fieldIndex: Int,
+        colon: ColumnVector,
+        quote: ColumnVector): ColumnVector = {
+      val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
+      val needsQuoting = inputSchema(fieldIndex).dataType == DataTypes.StringType
+      withResource(input.getChildColumnView(fieldIndex)) { cv =>
+        withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
+          // prefix with quoted column name followed by colon
+          withResource(Scalar.fromString("\"" + jsonName + "\"")) { name =>
+            attrColumns += ColumnVector.fromScalar(name, rowCount)
+            attrColumns += colon.incRefCount()
+          }
+          // write the value
+          val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
+          if (needsQuoting) {
+            attrColumns += quote.incRefCount()
+            attrColumns += escapeJsonString(attrValue)
+            attrColumns += quote.incRefCount()
+          } else {
+            attrColumns += attrValue
+          }
+          // now concatenate
+          val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
+            ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
+          }
+          // add an empty string or the attribute
+          val jsonAttrOrEmptyString = withResource(jsonAttr) { _ =>
+            withResource(cv.isNull) { isNull =>
+              withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+                isNull.ifElse(nullScalar, jsonAttr)
+              }
+            }
+          }
+          jsonAttrOrEmptyString
+        }
+      }
+    }
+
+    withResource(Seq("", ",", ":", "\"", "{", "}").safeMap(Scalar.fromString)) {
+      case Seq(emptyScalar, commaScalar, columnScalars@_*) =>
+            withResource(columnScalars.safeMap(s => ColumnVector.fromScalar(s, rowCount))) {
+        case Seq(colon, quote, leftBrace, rightBrace) =>
+          val jsonAttrs = withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+            // create one column per attribute, which will either be in the form `"name":value` or
+            // empty string for rows that have null values
+            if (input.getNumChildren == 1) {
+              castToJsonAttribute(0, colon, quote)
+            } else {
+              for (i <- 0 until input.getNumChildren) {
+                columns += castToJsonAttribute(i, colon, quote)
+              }
+              // concatenate the columns into one string
+              withResource(ColumnVector.stringConcatenate(commaScalar,
+                emptyScalar, columns.toArray, false))(
+                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+              )
+            }
+          }
+          // now wrap the string with `{` and `}`
+          withResource(jsonAttrs) { _ =>
+            withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+              columns += leftBrace.incRefCount()
+              columns += jsonAttrs.incRefCount()
+              columns += rightBrace.incRefCount()
+              withResource(ColumnVector.stringConcatenate(emptyScalar,
+                emptyScalar, columns.toArray, false))(
+                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+              )
+            }
+          }
+      }
+    }
+  }
+
+  private def escapeJsonString(cv: ColumnVector): ColumnVector = {
+    // this is a placeholder for implementing string escaping
+    // https://github.com/NVIDIA/spark-rapids/issues/9514
+    cv
   }
 
   private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
@@ -1353,7 +1507,7 @@ object GpuCast {
           from(index).dataType,
           to(index).dataType, options)
       }
-      withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
+      withResource(ColumnView.makeStructView(childColumns.toSeq: _*)) { casted =>
         if (input.getNullCount == 0) {
           casted.copyToColumnVector()
         } else {

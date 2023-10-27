@@ -156,7 +156,8 @@ Tests will run as a part of the maven build if you have the environment variable
 The suggested way to run these tests is to use the shell-script file located in the
  integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes
 care of some of the flags that are required to run the tests which will have to be set for the
-plugin to work. It will be very useful to read the contents of the
+plugin to work. It will also automatically detect the Scala version used by the Spark located
+at `$SPARK_HOME`.  It will be very useful to read the contents of the
 [run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight
 into what is needed as we constantly keep working on to improve and expand the plugin-support.
 
@@ -234,7 +235,7 @@ For example, `spark.sql.catalog.spark_catalog` is represented by the environment
 
 We also have a large number of integration tests that currently run as a part of the unit tests
 using scala test. Those are in the `src/test/scala` sub-directory and depend on the testing
-framework from the `rapids-4-spark-tests_2.12` test jar.
+framework from the `rapids-4-spark-tests_2.x` test jar.
 
 You can run these tests against a cluster similar to how you can run `pytests` against an
 existing cluster. To do this you need to launch a cluster with the plugin jars on the
@@ -273,7 +274,7 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
 If you just want to verify the SQL replacement is working you will need to add the
 `rapids-4-spark` jar to your `spark-submit` command. Note the following example
-assumes CUDA 11.0 is being used.
+assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
 $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-23.12.0-SNAPSHOT-cuda11.jar" ./runtests.py
