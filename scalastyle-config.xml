@@ -109,6 +109,18 @@ You can also disable only one rule, by specifying its rule id, as specified in:
     <!--       rules for enforcing cross-build between Scala 2.12 and 2.13                -->
     <!-- ================================================================================ -->
 
+    <check level="error" class="org.scalastyle.scalariform.IllegalImportsChecker" enabled="true">
+        <parameters><parameter name="illegalImports"><![CDATA[scala.collection.Seq,scala.collection.IndexedSeq]]></parameter></parameters>
+        <customMessage><![CDATA[
+        Don't import scala.collection.Seq and scala.collection.IndexedSeq as it may bring some problems with cross-build between Scala 2.12 and 2.13.
+
+        Please refer below page to see the details of changes around Seq / IndexedSeq.
+        https://docs.scala-lang.org/overviews/core/collections-migration-213.html
+
+        If you really need to use scala.collection.Seq or scala.collection.IndexedSeq, please use the fully-qualified name instead.
+        ]]></customMessage>
+    </check>
+
     <check level="error" class="org.scalastyle.file.RegexChecker" enabled="true">
         <parameters>
             <parameter name="regex">def this\((.*)\) \{</parameter>
@@ -119,6 +131,27 @@ You can also disable only one rule, by specifying its rule id, as specified in:
 
     <check level="error" class="org.scalastyle.scalariform.ProcedureDeclarationChecker" enabled="true">
         <customMessage>procedure syntax is deprecated in Scala 2.13: add return type `: Unit` and `=`</customMessage>
+    </check>
+
+    <check level="error" class="org.scalastyle.file.RegexChecker" enabled="true">
+        <parameters>
+            <parameter name="regex">ArrayBuilder.make\[(.+)\]\(\)</parameter>
+            <parameter name="line">false</parameter>
+        </parameters>
+        <customMessage>ArrayBuilder.make does not accept parens anymore in Scala 2.13</customMessage>
+    </check>
+
+    <check level="warning" class="org.scalastyle.file.RegexChecker" enabled="false">
+        <parameters>
+            <parameter name="regex">(: |\[)(Indexed)?Seq\[[A-Za-z0-9_]+\]</parameter>
+            <parameter name="line">false</parameter>
+        </parameters>
+        <customMessage><![CDATA[NOTE: Scala 2.12 defaults scala.(Indexed)Seq to scala.collection.(Indexed)Seq while Scala 2.13 defaults
+        scala.(Indexed)Seq to scala.collection.immutable.(Indexed)Seq
+
+        Please refer below page to see the details of changes around Seq / IndexedSeq.
+        https://docs.scala-lang.org/overviews/core/collections-migration-213.html
+        ]]></customMessage>
     </check>
 
     <!-- ================================================================================ -->

@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330, is_spark_350_or_later, is_before_spark_340
+from spark_session import with_cpu_session, is_before_spark_330, is_spark_350_or_later, is_before_spark_340, is_before_spark_341
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -561,7 +561,7 @@ def test_csv_read_count(spark_tmp_path):
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize("timestamp_type", [
@@ -572,7 +572,7 @@ def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part,
 
 @allow_non_gpu('BatchScanExec', 'FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9325")
-@pytest.mark.skipif(is_before_spark_340(), reason='`TIMESTAMP_NTZ` is only supported in Spark 340+')
+@pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize("timestamp_type", [

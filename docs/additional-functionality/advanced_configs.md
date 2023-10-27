@@ -350,6 +350,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StringTrim"></a>spark.rapids.sql.expression.StringTrim|`trim`|StringTrim operator|true|None|
 <a name="sql.expression.StringTrimLeft"></a>spark.rapids.sql.expression.StringTrimLeft|`ltrim`|StringTrimLeft operator|true|None|
 <a name="sql.expression.StringTrimRight"></a>spark.rapids.sql.expression.StringTrimRight|`rtrim`|StringTrimRight operator|true|None|
+<a name="sql.expression.StructsToJson"></a>spark.rapids.sql.expression.StructsToJson|`to_json`|Converts structs to JSON text format|false|This is disabled by default because to_json support is experimental. See compatibility guide for more information.|
 <a name="sql.expression.Substring"></a>spark.rapids.sql.expression.Substring|`substr`, `substring`|Substring operator|true|None|
 <a name="sql.expression.SubstringIndex"></a>spark.rapids.sql.expression.SubstringIndex|`substring_index`|substring_index operator|true|None|
 <a name="sql.expression.Subtract"></a>spark.rapids.sql.expression.Subtract|`-`|Subtraction|true|None|
@@ -383,6 +384,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last`, `last_value`|last aggregate operator|true|None|
 <a name="sql.expression.Max"></a>spark.rapids.sql.expression.Max|`max`|Max aggregate operator|true|None|
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|`min`|Min aggregate operator|true|None|
+<a name="sql.expression.Percentile"></a>spark.rapids.sql.expression.Percentile|`percentile`|Aggregation computing exact percentile|true|None|
 <a name="sql.expression.PivotFirst"></a>spark.rapids.sql.expression.PivotFirst| |PivotFirst operator|true|None|
 <a name="sql.expression.StddevPop"></a>spark.rapids.sql.expression.StddevPop|`stddev_pop`|Aggregation computing population standard deviation|true|None|
 <a name="sql.expression.StddevSamp"></a>spark.rapids.sql.expression.StddevSamp|`stddev_samp`, `std`, `stddev`|Aggregation computing sample standard deviation|true|None|

@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
@@ -69,7 +69,7 @@ class GpuCoalesceBatchesRetrySuite
       injectRetry,
       injectSplitAndRetry,
       mockInjectSplitAndRetry))
-    ab
+    ab.toSeq
   }
 
   def getHostIter(
@@ -118,15 +118,10 @@ class GpuCoalesceBatchesRetrySuite
     }
   }
 
-  // this is a placeholder test. The HostToGpuCoalesceIterator is going to
-  // need a change in cuDF to make it retriable, so we are asserting here
-  // that the exception we could handle `RetryOOM` is being thrown.
   test("coalesce gpu batches with retry host iter") {
     val iter = getHostIter(injectRetry = 1)
-    assertThrows[RetryOOM] {
-      withResource(iter.next()) { coalesced =>
-        assertResult(10)(coalesced.numRows())
-      }
+    withResource(iter.next()) { coalesced =>
+      assertResult(10)(coalesced.numRows())
     }
     // ensure that this iterator _did not close_ the incoming batches
     // as that is the semantics of the HostToGpuCoalesceIterator

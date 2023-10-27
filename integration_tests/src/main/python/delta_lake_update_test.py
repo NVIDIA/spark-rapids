@@ -16,24 +16,20 @@ import pytest
 
 from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from data_gen import *
-from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
-from delta_lake_merge_test import read_delta_path, read_delta_path_with_cdf, setup_dest_tables
+from delta_lake_utils import *
 from marks import *
-from spark_session import is_before_spark_320, is_databricks_runtime, is_databricks122_or_later, \
+from spark_session import is_before_spark_320, is_databricks_runtime, \
     supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
                                              "spark.rapids.sql.command.UpdateCommandEdge": "true"})
 
-delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
-delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
-
 def delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql,
                           check_func, partition_columns=None, enable_deletion_vectors=False):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
+        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
     def do_update(spark, path):
         return spark.sql(update_sql.format(path=path))
     with_cpu_session(setup_tables)
@@ -78,9 +74,9 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
 def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path,
-                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                          use_cdf=False)
+        setup_delta_dest_tables(spark, data_path,
+                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                                use_cdf=False)
     def write_func(spark, path):
         update_sql="UPDATE delta.`{}` SET a = 0".format(path)
         spark.sql(update_sql)
@@ -173,7 +169,7 @@ def test_delta_update_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
                             SetValuesGen(IntegerType(), range(5)),
                             SetValuesGen(StringType(), "abcdefg"),
                             string_gen, num_slices=num_slices_to_test)
-    with_cpu_session(lambda spark: setup_dest_tables(spark, data_path, generate_dest_data, use_cdf, partition_columns))
+    with_cpu_session(lambda spark: setup_delta_dest_tables(spark, data_path, generate_dest_data, use_cdf, partition_columns))
     def do_update(spark, path):
         dest_table = DeltaTable.forPath(spark, path)
         dest_table.update(condition="b > 'c'", set={"c": f.col("b"), "a": f.lit(1)})

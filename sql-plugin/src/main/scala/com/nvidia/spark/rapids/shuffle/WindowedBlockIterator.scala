@@ -154,7 +154,7 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
     }
     val lastBlock = blockRangesInWindow.last
     BlocksForWindow(lastBlockIndex,
-      blockRangesInWindow,
+      blockRangesInWindow.toSeq,
       !continue || !lastBlock.isComplete())
   }
 

@@ -149,8 +149,11 @@ class GroupingIterator(
                 val splitBatches = tables.safeMap { table =>
                   GpuColumnVectorFromBuffer.from(table, GpuColumnVector.extractTypes(batch))
                 }
-                groupBatches.enqueue(splitBatches.tail.map(sb =>
-                  SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)): _*)
+                splitBatches.tail.foreach { sb =>
+                  groupBatches.enqueue(
+                    SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+                  )
+                }
                 splitBatches.head
               }
             }
@@ -498,7 +501,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
       val queue: BatchQueue = new BatchQueue()
       onTaskCompletion(context)(queue.close())
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs.toSeq, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,

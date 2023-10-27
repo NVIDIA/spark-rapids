@@ -21,8 +21,9 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
+        <artifactId>rapids-4-spark-parent_2.12</artifactId>
         <version>23.12.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
@@ -30,6 +31,7 @@
     <version>23.12.0-SNAPSHOT</version>
 
     <properties>
+        <rapids.module>sql-plugin</rapids.module>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
@@ -140,6 +142,24 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release332cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-cdh-bom</artifactId>
+                    <version>${project.version}</version>
+                    <type>pom</type>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release330db</id>
             <activation>
                 <property>
@@ -174,12 +194,6 @@
             </dependencies>
         </profile>
         <profile>
-            <!--
-                 Note that we are using the Spark version for all of the Databricks dependencies as well.
-                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                 This is to make it easier and not have to change version numbers for each individual dependency
-                 and deal with differences between Databricks versions
-            -->
             <id>dbdeps</id>
             <activation>
                 <property>
@@ -223,20 +237,37 @@
             <directory>${project.build.directory}/extra-resources</directory>
             <filtering>true</filtering>
           </resource>
-          <resource>
-            <directory>${project.basedir}/..</directory>
-            <targetPath>META-INF</targetPath>
-            <includes>
-              <!-- The NOTICE will be taken care of by the antrun task below -->
-              <include>LICENSE</include>
-            </includes>
-          </resource>
-          <resource>
-            <!-- Include python files for Python UDF support. -->
-            <directory>${project.basedir}/../python/</directory>
-          </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-license-notice-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>add-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <directory>${spark.rapids.source.basedir}</directory>
+                                    <targetPath>META-INF</targetPath>
+                                    <includes>
+                                        <!-- The NOTICE will be taken care of by the antrun task below -->
+                                        <include>LICENSE</include>
+                                        <include>NOTICE</include>
+                                    </includes>
+                                </resource>
+                                <resource>
+                                    <directory>${spark.rapids.source.basedir}/python</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
@@ -252,7 +283,7 @@
                       <copy
                           todir="${project.build.directory}/classes/META-INF/"
                           verbose="true">
-                        <fileset dir="${project.basedir}/..">
+                        <fileset dir="${spark.rapids.source.basedir}">
                           <include name="NOTICE-binary"/>
                         </fileset>
                         <mapper type="glob" from="*-binary" to="*"/>

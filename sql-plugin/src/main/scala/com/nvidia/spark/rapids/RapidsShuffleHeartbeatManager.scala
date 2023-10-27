@@ -29,24 +29,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 import org.apache.spark.storage.BlockManagerId
 
-/**
- * This is the first message sent from the executor to the driver.
- * @param id `BlockManagerId` for the executor
- */
-case class RapidsExecutorStartupMsg(id: BlockManagerId)
-
-/**
- * Executor heartbeat message.
- * This gives the driver an opportunity to respond with `RapidsExecutorUpdateMsg`
- */
-case class RapidsExecutorHeartbeatMsg(id: BlockManagerId)
-
-/**
- * Driver response to an startup or heartbeat message, with new (to the peer) executors
- * from the last heartbeat.
- */
-case class RapidsExecutorUpdateMsg(ids: Array[BlockManagerId])
-
 class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
                                     heartbeatTimeoutMillis: Long) extends Logging {
   require(heartbeatIntervalMillis > 0,
@@ -177,11 +159,6 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
       executors = aliveExecutors
     }
   }
-}
-
-trait RapidsShuffleHeartbeatHandler {
-  /** Called when a new peer is seen via heartbeats */
-  def addPeer(peer: BlockManagerId): Unit
 }
 
 class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsConf)
