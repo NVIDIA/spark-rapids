@@ -21,6 +21,7 @@ from string_test import mk_str_gen
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 from spark_session import with_cpu_session, with_gpu_session
+from conftest import get_datagen_seed
 
 nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_128bit),
                StructGen([("a", LongGen()), ("b", decimal_gen_128bit)]),
@@ -258,7 +259,11 @@ def test_sequence_without_step(start_gen, stop_gen):
 
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
+    # Get the datagen seed we use for all datagens, since we need to call start
+    # on step_gen
+    data_gen_seed = get_datagen_seed()
     # Get a step scalar from the 'step_gen' which follows the rules.
+    step_gen.start(random.Random(data_gen_seed))
     step_lit = step_gen.gen()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
