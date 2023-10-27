@@ -27,6 +27,8 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import org.apache.arrow.vector.VectorSchemaRoot
+import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
@@ -34,6 +36,7 @@ import org.apache.spark.rapids.shims.api.python.ShimBasePythonRunner
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
@@ -241,6 +244,21 @@ abstract class GpuArrowPythonRunnerBase(
       }
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
+        if (inputIterator.nonEmpty) {
+          writeNonEmptyIteratorOnGpu(dataOut)
+        } else { // Partition is empty.
+          // In this case CPU will still send the schema to Python workers by calling
+          // the "start" API of the Java Arrow writer, but GPU will send out nothing,
+          // leading to the IPC error. And it is not easy to do as what Spark does on
+          // GPU, because the C++ Arrow writer used by GPU will only send out the schema
+          // iff there is some data. Besides, it does not expose a "start" API to do this.
+          // So here we leverage the Java Arrow writer to do similar things as Spark.
+          // It is OK because sending out schema has nothing to do with GPU.
+          writeEmptyIteratorOnCpu(dataOut)
+        }
+      }
+
+      private def writeNonEmptyIteratorOnGpu(dataOut: DataOutputStream): Unit = {
         val writer = {
           val builder = ArrowIPCWriterOptions.builder()
           builder.withMaxChunkSize(batchSize)
@@ -250,11 +268,11 @@ abstract class GpuArrowPythonRunnerBase(
           })
           // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
           GpuArrowPythonRunner.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
-              if (nullable) {
-                builder.withColumnNames(name)
-              } else {
-                builder.withNotNullableColumnNames(name)
-              }
+            if (nullable) {
+              builder.withColumnNames(name)
+            } else {
+              builder.withNotNullableColumnNames(name)
+            }
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
@@ -277,6 +295,28 @@ abstract class GpuArrowPythonRunnerBase(
           if (onDataWriteFinished != null) onDataWriteFinished()
         }
       }
+
+      private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Unit = {
+        // most code is copied from Spark
+        val arrowSchema = ArrowUtils.toArrowSchema(pythonInSchema, timeZoneId)
+        val allocator = ArrowUtils.rootAllocator.newChildAllocator(
+          s"stdout writer for empty partition", 0, Long.MaxValue)
+        val root = VectorSchemaRoot.create(arrowSchema, allocator)
+
+        Utils.tryWithSafeFinally {
+          val writer = new ArrowStreamWriter(root, null, dataOut)
+          writer.start()
+          // No data to write
+          writer.end()
+          // The iterator can grab the semaphore even on an empty batch
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        } {
+          root.close()
+          allocator.close()
+          if (onDataWriteFinished != null) onDataWriteFinished()
+        }
+      }
+
     }
   }
 }
