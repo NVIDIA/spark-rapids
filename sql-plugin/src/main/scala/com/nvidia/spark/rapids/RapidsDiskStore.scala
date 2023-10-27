@@ -133,7 +133,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       id: RapidsBufferId,
       fileOffset: Long,
       uncompressedSize: Long,
-      onDisksizeInBytes: Long,
+      onDiskSizeInBytes: Long,
       meta: TableMeta,
       spillPriority: Long)
       extends RapidsBufferBase(id, meta, spillPriority) {
@@ -146,7 +146,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
-        require(onDisksizeInBytes > 0,
+        require(onDiskSizeInBytes > 0,
           s"$this attempted an invalid 0-byte mmap of a file")
         val path = id.getDiskPath(diskBlockManager)
         val serializerManager = diskBlockManager.getSerializerManager()
@@ -168,7 +168,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         } else {
           // Reserved mmap read fashion for UCX shuffle path. Also it's skipping encryption and
           // compression.
-          HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset, onDisksizeInBytes)
+          HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset, onDiskSizeInBytes)
         }
         hostBuffer = Some(memBuffer)
       }
