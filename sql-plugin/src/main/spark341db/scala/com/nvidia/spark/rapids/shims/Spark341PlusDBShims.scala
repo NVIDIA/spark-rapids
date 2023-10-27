@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
 trait Spark341PlusDBShims extends Spark332PlusDBShims {
