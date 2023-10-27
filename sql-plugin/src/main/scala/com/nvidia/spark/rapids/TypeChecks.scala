@@ -839,10 +839,6 @@ object TypeChecks {
     areTimestampsSupported(ZoneId.systemDefault()) &&
       areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
   }
-  
-  def isTimezoneSensitiveType(dataType: DataType): Boolean = {
-    dataType == TimestampType
-  }
 
   def timezoneNotSupportedString(dataType: DataType): String = {
     s"$dataType is not supported with timezone settings: (JVM:" +
@@ -1505,7 +1501,7 @@ class CastChecks extends ExprChecks {
   }
 
   def gpuCanCastConsiderTimezone(from: DataType, to: DataType) = {
-    // need timezone support, here check timezone
+    // remove this check after non UTC timezone is supported for cast
     (from, to) match {
       case (_:StringType, _:TimestampType) => TypeChecks.areTimestampsSupported()
       case (_:TimestampType, _:StringType) => TypeChecks.areTimestampsSupported()

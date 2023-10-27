@@ -1653,9 +1653,6 @@ object GpuOverrides extends Logging {
                 willNotWorkOnGpu("interval months isn't supported")
               }
             }
-
-            // need timezone support, here check timezone
-            checkTimeZoneId(dateAddInterval.zoneId)
           }
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1669,12 +1666,6 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[DateFormatClass](a, conf, p, r) {
-
-        override def tagExprForGpu(): Unit = {
-          // need timezone support, here check timezone
-          checkTimeZoneId(a.zoneId)
-        }
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDateFormatClass(lhs, rhs, strfFormat)
       }
@@ -1689,12 +1680,6 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
-
-        override def tagExprForGpu(): Unit = {
-          // need timezone support, here check timezone
-          checkTimeZoneId(a.zoneId)
-        }
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
@@ -1714,12 +1699,6 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
-
-        override def tagExprForGpu(): Unit = {
-          // need timezone support, here check timezone
-          checkTimeZoneId(a.zoneId)
-        }
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
@@ -1734,12 +1713,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
-       
-        override def tagExprForGpu(): Unit = {
-          // need timezone support, here check timezone
-          checkTimeZoneId(hour.zoneId)
-        }
-
         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
       }),
     expr[Minute](
@@ -1747,12 +1720,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
-
-        override def tagExprForGpu(): Unit = {
-          // need timezone support, here check timezone
-          checkTimeZoneId(minute.zoneId)
-        }
-
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuMinute(expr)
       }),
@@ -1761,12 +1728,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
-
-       override def tagExprForGpu(): Unit = {
-         // need timezone support, here check timezone
-         checkTimeZoneId(second.zoneId)
-       }
-
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuSecond(expr)
       }),
@@ -1801,12 +1762,6 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
-
-        override def tagExprForGpu(): Unit = {
-          // need timezone support, here check timezone
-          checkTimeZoneId(a.zoneId)
-        }
-
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           // passing the already converted strf string for a little optimization
           GpuFromUnixTime(lhs, rhs, strfFormat)

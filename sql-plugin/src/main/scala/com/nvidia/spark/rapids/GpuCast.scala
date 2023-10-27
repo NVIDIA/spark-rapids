@@ -90,6 +90,9 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
     recursiveTagExprForGpuCheck()
   }
 
+  // tag time zone by Cast itself, do not delegate to parent class
+  override def tagTimeZoneBySelf: Boolean = true
+
   protected def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,
       toDataType: DataType = toType,
@@ -177,9 +180,6 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
   def buildTagMessage(entry: ConfEntry[_]): String = {
     s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
   }
-
-  // timezone tagging in type checks is good enough, so always false
-  override protected val needTimezoneTagging: Boolean = false
 }
 
 object CastOptions {

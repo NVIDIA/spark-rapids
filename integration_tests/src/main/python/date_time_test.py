@@ -570,8 +570,8 @@ def get_timezone_df(spark):
         StructField("date_str_col", StringType()),
     ])
     data = [
-        ('1970-01-01 00:00:00', 0, datetime(1970, 1, 1), date(1970, 1, 1), '1970-01-01'),
-        ('1970-01-01 00:00:00', 0, datetime(1970, 1, 1), date(1970, 1, 1), '1970-01-01'),
+        ('1970-01-01 00:00:00', 0, datetime(1971, 1, 1), date(1971, 1, 1), '1971-01-01'),
+        ('1970-01-01 00:00:00', 0, datetime(1971, 1, 1), date(1971, 1, 1), '1971-01-01'),
     ]
     return spark.createDataFrame(SparkContext.getOrCreate().parallelize(data),schema)
 

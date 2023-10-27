@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -1071,23 +1071,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
-  /**
-   * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
-   * is done.
-   * By default a TimeZoneAwareExpression always requires the timezone tagging, but
-   * there are some exceptions, e.g. 'Cast', who requires timezone tagging only when it
-   * has timezone sensitive type as input or output.
-   *
-   * Override this to match special cases.
-   */
-  protected def needTimezoneTagging: Boolean = {
-    // A TimeZoneAwareExpression with no timezone sensitive types as input/output will
-    // escape from the timezone tagging in the prior type checks. So ask for tagging here.
-    // e.g. 'UnixTimestamp' with 'DateType' as the input, timezone will be taken into
-    // account when converting a Date to a Long.
-    !(dataType +: childExprs.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
-  }
-
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
       willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
@@ -1095,7 +1078,29 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
+
+    // if expr is time zone aware and GPU does not support non UTC tz for this expr yet,
+    // ensure it's in UTC tz
+    if (!tagTimeZoneBySelf && isTimeZoneAwareExpr && !supportsNonUTCTimeZone) {
+      checkTimeZoneId(expr.asInstanceOf[TimeZoneAwareExpression].zoneId)
+    }
   }
+
+  // if the wrapped expression is time zone aware
+  private final def isTimeZoneAwareExpr: Boolean = expr.isInstanceOf[TimeZoneAwareExpression]
+
+  /**
+   * whether the GPU supports non UTC time zone, for each expression that supports non UTC time
+   * zone, should override this method to return true
+   */
+  def supportsNonUTCTimeZone: Boolean = false
+
+  /**
+   * For cast expr or might other exprs, it's time zone aware, but time zone check can be skipped
+   * for some input/output types, like cast(int as long). For this kind of expr, should override
+   * this method and return true which means this Expr Meta should check time zone itself
+   */
+  def tagTimeZoneBySelf: Boolean = false
 
   /**
    * Called to verify that this expression will work on the GPU. For most expressions without
