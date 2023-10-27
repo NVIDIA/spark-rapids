@@ -13,22 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.spark341db
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
-import org.apache.spark.sql.catalyst.util.InternalRowComparableWrapper
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.shims.ProxyRapidsShuffleInternalManagerBase
 
-object KeyGroupedPartitioningShim {
-  def getUniquePartitions(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValues
-      .map(InternalRowComparableWrapper(_, p.expressions))
-      .distinct
-      .map(_.row)
-  }
-}
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)

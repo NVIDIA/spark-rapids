@@ -13,22 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark341db
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
-import org.apache.spark.sql.catalyst.util.InternalRowComparableWrapper
+import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
 
-object KeyGroupedPartitioningShim {
-  def getUniquePartitions(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValues
-      .map(InternalRowComparableWrapper(_, p.expressions))
-      .distinct
-      .map(_.row)
+import org.apache.spark.SparkEnv
+
+object SparkShimServiceProvider {
+  val VERSION = DatabricksShimVersion(3, 4, 1)
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  def matchesVersion(version: String): Boolean = {
+    SparkEnv.get.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "").startsWith("13.3.")
   }
 }

@@ -13,22 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
-{"spark": "340"}
-{"spark": "341"}
 {"spark": "341db"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.hive.rapids.shims
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
-import org.apache.spark.sql.catalyst.util.InternalRowComparableWrapper
+import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
-object KeyGroupedPartitioningShim {
-  def getUniquePartitions(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValues
-      .map(InternalRowComparableWrapper(_, p.expressions))
-      .distinct
-      .map(_.row)
+import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+
+trait CreateFunctions {
+  def createFunction(a: HiveSimpleUDF): UDF = {
+    a.funcWrapper.createFunction[UDF]()
+  }
+
+  def createFunction(a: HiveGenericUDF): GenericUDF = {
+    a.funcWrapper.createFunction[GenericUDF]()
   }
 }
