@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, FileInputStream}
 import java.nio.channels.{Channels, FileChannel}
+import java.nio.channels.FileChannel.MapMode
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 
@@ -132,36 +133,42 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       id: RapidsBufferId,
       fileOffset: Long,
       uncompressedSize: Long,
-      compressedSize: Long,
+      onDisksizeInBytes: Long,
       meta: TableMeta,
       spillPriority: Long)
-      extends RapidsBufferBase(
-        id, meta, spillPriority) {
+      extends RapidsBufferBase(id, meta, spillPriority) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
-    // TODO: Need to be clean up. Tracked in https://github.com/NVIDIA/spark-rapids/issues/9496
+    // FIXME: Need to be clean up. Tracked in https://github.com/NVIDIA/spark-rapids/issues/9496
     override val memoryUsedBytes: Long = uncompressedSize
 
     override val storageTier: StorageTier = StorageTier.DISK
 
     override def getMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
-        require(compressedSize > 0,
+        require(onDisksizeInBytes > 0,
           s"$this attempted an invalid 0-byte mmap of a file")
         val path = id.getDiskPath(diskBlockManager)
-        val memBuffer = closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
-          withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
-            c.position(fileOffset)
-            withResource(Channels.newInputStream(c)) { compressed =>
-              withResource(diskBlockManager.getSerializerManager()
-                .wrapStream(id, compressed)) { in =>
-                withResource(new HostMemoryOutputStream(decompressed)) { out =>
-                  IOUtils.copy(in, out)
+        val serializerManager = diskBlockManager.getSerializerManager()
+        val memBuffer = if (serializerManager.isRapidsSpill(id)) {
+          // Only go through serializerManager's stream wrapper for spill case
+          closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
+            withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
+              c.position(fileOffset)
+              withResource(Channels.newInputStream(c)) { compressed =>
+                withResource(serializerManager.wrapStream(id, compressed)) { in =>
+                  withResource(new HostMemoryOutputStream(decompressed)) { out =>
+                    IOUtils.copy(in, out)
+                  }
+                  decompressed
                 }
-                decompressed
               }
             }
           }
+        } else {
+          // Reserved mmap read fashion for UCX shuffle path. Also it's skipping encryption and
+          // compression.
+          HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE, fileOffset, onDisksizeInBytes)
         }
         hostBuffer = Some(memBuffer)
       }

@@ -44,31 +44,40 @@ class RapidsSerializerManager (conf: SparkConf) {
 
   private lazy val compressionCodec: CompressionCodec = TrampolineUtil.createCodec(conf)
 
+  // Whether it really goes through crypto streams replies on Spark configuration
+  // (e.g., `` `spark.io.encryption.enabled` ``) and the existence of crypto keys.
   def wrapStream(bufferId: RapidsBufferId, s: OutputStream): OutputStream = {
-    wrapForCompression(bufferId, wrapForEncryption(s))
+    if(isRapidsSpill(bufferId)) wrapForCompression(bufferId, wrapForEncryption(s)) else s
   }
 
   def wrapStream(bufferId: RapidsBufferId, s: InputStream): InputStream = {
-    wrapForCompression(bufferId, wrapForEncryption(s))
+    if(isRapidsSpill(bufferId)) wrapForCompression(bufferId, wrapForEncryption(s)) else s
   }
 
-  def wrapForCompression(bufferId: RapidsBufferId, s: InputStream): InputStream = {
+  private[this] def wrapForCompression(bufferId: RapidsBufferId, s: InputStream): InputStream = {
     if (shouldCompress(bufferId)) compressionCodec.compressedInputStream(s) else s
   }
 
-  def wrapForCompression(bufferId: RapidsBufferId, s: OutputStream): OutputStream = {
+  private[this] def wrapForCompression(bufferId: RapidsBufferId, s: OutputStream): OutputStream = {
     if (shouldCompress(bufferId)) compressionCodec.compressedOutputStream(s) else s
   }
 
-  def wrapForEncryption(s: InputStream): InputStream = {
+  private[this] def wrapForEncryption(s: InputStream): InputStream = {
     if (serializerManager != null) serializerManager.wrapForEncryption(s) else s
   }
 
-  def wrapForEncryption(s: OutputStream): OutputStream = {
+  private[this] def wrapForEncryption(s: OutputStream): OutputStream = {
     if (serializerManager != null) serializerManager.wrapForEncryption(s) else s
   }
 
-  private def shouldCompress(bufferId: RapidsBufferId): Boolean = {
+  def isRapidsSpill(bufferId: RapidsBufferId): Boolean = {
+    bufferId match {
+      case _: TempSpillBufferId => true
+      case _ => false
+    }
+  }
+
+  private[this] def shouldCompress(bufferId: RapidsBufferId): Boolean = {
     bufferId match {
       case _: TempSpillBufferId => compressSpill
       case _: ShuffleBufferId | _: ShuffleReceivedBufferId => false
