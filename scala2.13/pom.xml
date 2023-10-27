@@ -78,9 +78,10 @@
 
         <!--
             not a real module, workaround to enforce the build order
-            ROOT -> shim
+            ROOT -> jdk-profiles -> shim-deps -> ...
         -->
         <module>shim-deps</module>
+        <module>jdk-profiles</module>
 
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
@@ -542,24 +543,6 @@
                     </plugin>
                 </plugins>
             </build>
-        </profile>
-        <profile>
-            <id>jdk11</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>11</maven.compiler.release>
-                <maven.compiler.source>11</maven.compiler.source>
-                <maven.compiler.target>11</maven.compiler.target>
-            </properties>
-        </profile>
-        <profile>
-            <id>jdk17</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>17</maven.compiler.release>
-                <maven.compiler.source>17</maven.compiler.source>
-                <maven.compiler.target>17</maven.compiler.target>
-            </properties>
         </profile>
         <profile>
             <id>scala-2.12</id>
