@@ -562,7 +562,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           newColumns += exploded.getColumn(index).incRefCount()
         }
       }
-      new Table(newColumns: _*)
+      new Table(newColumns.toSeq: _*)
     }
   }
 

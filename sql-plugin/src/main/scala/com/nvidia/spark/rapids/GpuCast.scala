@@ -1507,7 +1507,7 @@ object GpuCast {
           from(index).dataType,
           to(index).dataType, options)
       }
-      withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
+      withResource(ColumnView.makeStructView(childColumns.toSeq: _*)) { casted =>
         if (input.getNullCount == 0) {
           casted.copyToColumnVector()
         } else {

@@ -49,7 +49,7 @@ class InMemoryTableScanMeta(
     val unsupportedTypes: Map[DataType, Set[String]] = imts.relation.output
         .filterNot(attr => supportedTypeSig.check.isSupportedByPlugin(attr.dataType))
         .groupBy(_.dataType)
-        .mapValues(_.map(_.name).toSet)
+        .mapValues(_.map(_.name).toSet).toMap
 
     val msgFormat = "unsupported data types in output: %s"
     if (unsupportedTypes.nonEmpty) {

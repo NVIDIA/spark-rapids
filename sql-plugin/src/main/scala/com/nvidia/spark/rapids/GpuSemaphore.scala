@@ -170,7 +170,7 @@ private final class SemaphoreTaskInfo() extends Logging {
     activeThreads.forEach { item =>
       ret += item
     }
-    ret
+    ret.toSeq
   }
 
   private def moveToActive(t: Thread): Unit = synchronized {

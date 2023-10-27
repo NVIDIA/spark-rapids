@@ -74,7 +74,7 @@
         <scriptdef
             name="doCopyDependencies"
             language="jython"
-            src="${project.basedir}/build/package-parallel-worlds.py">
+            src="${spark.rapids.source.basedir}/${rapids.module}/build/package-parallel-worlds.py">
             <attribute name="artifact_csv"/>
         </scriptdef>
         <doCopyDependencies artifact_csv="sql-plugin-api,aggregator"/>
@@ -88,7 +88,7 @@
         </concat>
 
         <!-- check shims revisions -->
-        <exec executable="${project.basedir}/scripts/check-shims-revisions.sh"
+        <exec executable="${spark.rapids.source.basedir}/${rapids.module}/scripts/check-shims-revisions.sh"
               dir="${project.build.directory}"
               resultproperty="build-parallel-worlds.checkRevisionsExitCode"
               errorproperty="build-parallel-worlds.checkRevisionsErrorMsg"
@@ -116,7 +116,7 @@
             </ac:then>
         </ac:if>
 
-        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+        <exec executable="${spark.rapids.source.basedir}/${rapids.module}/scripts/binary-dedupe.sh"
               dir="${project.build.directory}"
               resultproperty="build-parallel-worlds.dedupeExitCode"
               errorproperty="build-parallel-worlds.dedupeErrorMsg"
@@ -132,7 +132,7 @@
         <!-- Remove the explicily unshimmed files from the common directory -->
         <delete>
             <fileset dir="${project.build.directory}/parallel-world/spark3xx-common"
-                     includesfile="${project.basedir}/unshimmed-common-from-spark311.txt"/>
+                     includesfile="${spark.rapids.source.basedir}/${rapids.module}/unshimmed-common-from-spark311.txt"/>
         </delete>
     </target>
     <target name="remove-dependencies-from-pom" depends="build-parallel-worlds">
