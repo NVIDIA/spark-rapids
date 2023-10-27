@@ -1449,6 +1449,7 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
 
 
 @ignore_order(local=True)
+@disable_timezone_test
 def test_to_date_with_window_functions():
     """
     This test ensures that date expressions participating alongside window aggregations

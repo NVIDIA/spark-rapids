@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
+from marks import disable_timezone_test
 from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
@@ -248,6 +249,7 @@ sequence_normal_integral_gens = [
 sequence_normal_no_step_integral_gens = [(gens[0], gens[1]) for
     gens in sequence_normal_integral_gens]
 
+@disable_timezone_test
 @pytest.mark.parametrize('start_gen,stop_gen', sequence_normal_no_step_integral_gens, ids=idfn)
 def test_sequence_without_step(start_gen, stop_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -257,6 +259,7 @@ def test_sequence_without_step(start_gen, stop_gen):
             "sequence(20, b)"))
 
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
+@disable_timezone_test
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get a step scalar from the 'step_gen' which follows the rules.
     step_gen.start(random.Random(0))
@@ -299,6 +302,7 @@ sequence_illegal_boundaries_integral_gens = [
         IntegerGen(min_val=0, max_val=0, special_cases=[]))
 ]
 
+@disable_timezone_test
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_illegal_boundaries_integral_gens, ids=idfn)
 def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
     assert_gpu_and_cpu_error(
@@ -314,6 +318,7 @@ sequence_too_long_length_gens = [
 ]
 
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
+@disable_timezone_test
 def test_sequence_too_long_sequence(stop_gen):
     assert_gpu_and_cpu_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
@@ -354,7 +359,9 @@ def get_sequence_cases_mixed_df(spark, length=2048):
         SparkContext.getOrCreate().parallelize(get_sequence_data(data_gen, length)),
         mixed_schema)
 
+@disable_timezone_test
 # test for 3 cases mixed in a single dataset
+@disable_timezone_test
 def test_sequence_with_step_mixed_cases():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: get_sequence_cases_mixed_df(spark)

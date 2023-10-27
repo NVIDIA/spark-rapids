@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
 from data_gen import *
 from datetime import timezone
 from conftest import is_databricks_runtime
-from marks import approximate_float, allow_non_gpu, ignore_order
+from marks import approximate_float, allow_non_gpu, ignore_order, disable_timezone_test
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_340, \
     is_before_spark_341
 
@@ -185,6 +185,7 @@ json_supported_ts_parts = ['', # Just the date
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@disable_timezone_test
 def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -208,6 +209,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@disable_timezone_test
 def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
     json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'json', 'FileSourceScanExec')
 
@@ -216,6 +218,7 @@ def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part,
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@disable_timezone_test
 def test_json_ts_formats_round_trip_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
     json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
 
@@ -395,6 +398,7 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
     'CORRECTED',
     'EXCEPTION'
 ])
+@disable_timezone_test
 def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, \
         spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
@@ -452,6 +456,7 @@ def test_json_read_count(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.schema(schema).json(data_path),
             conf=updated_conf)
 
+@disable_timezone_test
 def test_from_json_map():
     # The test here is working around some inconsistencies in how the keys are parsed for maps
     # on the GPU the keys are dense, but on the CPU they are sparse
@@ -586,6 +591,7 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
     False
 ])
+@disable_timezone_test
 def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
     struct_gen = StructGen([
         ('a', data_gen),

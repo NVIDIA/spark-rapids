@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_iterator
-from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limit
+from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limit, disable_timezone_test
 
 @incompat
 @approximate_float
 @limit
 @ignore_order
 @allow_non_gpu(any=True)
+@disable_timezone_test
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))

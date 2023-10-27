@@ -32,3 +32,4 @@ iceberg = pytest.mark.iceberg
 delta_lake = pytest.mark.delta_lake
 large_data_test = pytest.mark.large_data_test
 pyarrow_test = pytest.mark.pyarrow_test
+disable_timezone_test = pytest.mark.disable_timezone_test

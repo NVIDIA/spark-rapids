@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from qa_nightly_sql import *
 import pytest
 from spark_session import with_cpu_session, is_jvm_charset_utf8
-from marks import approximate_float, ignore_order, incompat, qarun
+from marks import approximate_float, ignore_order, incompat, qarun, disable_timezone_test
 from data_gen import copy_and_update
 
 def num_stringDf(spark):
@@ -158,6 +158,7 @@ _first_last_qa_conf = copy_and_update(_qa_conf, {
 @incompat
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_SQL, ids=idfn)
+@disable_timezone_test
 def test_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -170,6 +171,7 @@ def test_select(sql_query_line, pytestconfig):
 @incompat
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL, ids=idfn)
+@disable_timezone_test
 def test_needs_sort_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:

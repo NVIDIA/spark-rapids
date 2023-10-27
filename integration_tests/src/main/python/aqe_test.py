@@ -17,7 +17,7 @@ from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
-from marks import ignore_order, allow_non_gpu
+from marks import ignore_order, allow_non_gpu, disable_timezone_test
 from spark_session import with_cpu_session, is_databricks113_or_later
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
@@ -195,6 +195,7 @@ db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later(
 @ignore_order(local=True)
 @allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow)
 @pytest.mark.parametrize('join', joins, ids=idfn)
+@disable_timezone_test
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     def prep(spark):

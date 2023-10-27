@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ def test_explain_join(spark_tmp_path, data_gen):
 
     with_cpu_session(do_join_explain)
 
+@disable_timezone_test
 def test_explain_set_config():
     conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
             'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}

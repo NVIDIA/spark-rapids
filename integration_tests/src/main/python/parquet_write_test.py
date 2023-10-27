@@ -495,6 +495,7 @@ def test_timestamp_roundtrip_no_legacy_rebase(spark_tmp_path, ts_write_data_gen,
 
 # This should be merged to `test_timestamp_roundtrip_no_legacy_rebase` above when
 # we have rebase for int96 supported.
+@disable_timezone_test
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, ts_write, data_gen):

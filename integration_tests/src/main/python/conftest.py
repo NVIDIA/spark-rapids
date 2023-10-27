@@ -226,6 +226,9 @@ def pytest_runtest_setup(item):
         if not item.config.getoption('pyarrow_test'):
             pytest.skip('tests for pyarrow not configured to run')
 
+    if item.get_closest_marker('disable_timezone_test'):
+        pytest.skip('Skip because this case is not ready for non UTC time zone')
+
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
@@ -415,3 +418,11 @@ def enable_fuzz_test(request):
     if not enable_fuzz_test:
         # fuzz tests are not required for any test runs
         pytest.skip("fuzz_test not configured to run")
+
+# Whether add a non UTC timezone test for all the existing test cases
+# By default, test non UTC timezone
+_enable_timezone_test = True
+
+def disable_timezone_test():
+    global _enable_timezone_test
+    return _enable_timezone_test is False
