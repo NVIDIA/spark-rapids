@@ -26,6 +26,7 @@ import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
+import scala.collection
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
@@ -379,7 +380,7 @@ object GpuParquetPartitionReaderFactoryBase {
 }
 
 // contains meta about all the blocks in a file
-case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
+case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     isCorrectedInt96RebaseMode: Boolean, isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean)
@@ -1310,7 +1311,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     metrics.get("scanTime").foreach {
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
-    new MultiFileParquetPartitionReader(conf, files, clippedBlocks, isCaseSensitive,
+    new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, useChunkedReader, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes, metrics, partitionSchema,
       numThreads, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
@@ -1561,9 +1562,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           column.getTotalUncompressedSize)
         totalBytesToCopy += columnSize
       }
-      outputBlocks += GpuParquetUtils.newBlockMeta(block.getRowCount, outputColumns)
+      outputBlocks += GpuParquetUtils.newBlockMeta(block.getRowCount, outputColumns.toSeq)
     }
-    outputBlocks
+    outputBlocks.toSeq
   }
 
   /**
@@ -1609,7 +1610,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         localItem.close()
       }
     }
-    copyRemoteBlocksData(remoteItems.asInstanceOf[Seq[CopyRange]], filePath,
+    copyRemoteBlocksData(remoteItems.toSeq, filePath,
       filePathString, out, metrics)
     // fixup output pos after blocks were copied possibly out of order
     out.seek(startPos + totalBytesToCopy)
@@ -1677,7 +1678,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       }
     }
     addCurrentRange()
-    coalesced
+    coalesced.toSeq
   }
 
   private def copyLocal(
@@ -1750,7 +1751,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     readNextBatch()
     logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
       s"Estimated GPU bytes: $numBytes")
-    currentChunk
+    currentChunk.toSeq
   }
 
   /**
@@ -1938,7 +1939,7 @@ class MultiFileParquetPartitionReader(
         val startBytesRead = fileSystemBytesRead()
         val outputBlocks = withResource(outhmb) { _ =>
           withResource(new HostMemoryOutputStream(outhmb)) { out =>
-            copyBlocksData(file, out, blocks, offset, metrics)
+            copyBlocksData(file, out, blocks.toSeq, offset, metrics)
           }
         }
         val bytesRead = fileSystemBytesRead() - startBytesRead
@@ -2031,9 +2032,9 @@ class MultiFileParquetPartitionReader(
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], bContext: BatchContext): Long = {
+      blocks: collection.Seq[DataBlockBase], bContext: BatchContext): Long = {
 
-    val actualFooterSize = calculateParquetFooterSize(blocks, bContext.schema)
+    val actualFooterSize = calculateParquetFooterSize(blocks.toSeq, bContext.schema)
     // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
     footerOffset + actualFooterSize + 4 + 4
   }
@@ -2197,7 +2198,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       // using all of the actual combined output blocks meta calculate what the footer size
       // will really be
-      val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, schemaToUse)
+      val actualFooterSize = calculateParquetFooterSize(allOutputBlocks.toSeq, schemaToUse)
       var buf: HostMemoryBuffer = combinedHmb
       val totalBufferSize = if ((initTotalSize - offset) < actualFooterSize) {
         val newBufferSize = offset + actualFooterSize + 4 + 4
@@ -2222,7 +2223,7 @@ class MultiFileCloudParquetPartitionReader(
 
       withResource(buf.slice(offset, (totalBufferSize - offset))) { footerHmbSlice =>
         withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
-          writeFooter(footerOut, allOutputBlocks, schemaToUse)
+          writeFooter(footerOut, allOutputBlocks.toSeq, schemaToUse)
           BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
           footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
           offset += footerOut.getPos

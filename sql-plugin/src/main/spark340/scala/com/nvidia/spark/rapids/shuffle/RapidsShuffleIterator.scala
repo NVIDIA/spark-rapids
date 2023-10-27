@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,17 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "350"}
+spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 
+import scala.collection
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
@@ -53,7 +60,7 @@ class RapidsShuffleIterator(
     localBlockManagerId: BlockManagerId,
     rapidsConf: RapidsConf,
     transport: RapidsShuffleTransport,
-    blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+    blocksByAddress: Array[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
     sparkTypes: Array[DataType],
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
