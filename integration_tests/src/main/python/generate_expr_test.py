@@ -215,28 +215,18 @@ def test_generate_outer_fallback():
             .repartition(1).selectExpr("inline_outer(x)"),
         "GenerateExec")
 
+# stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True) 
 def test_stack():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.range(100).selectExpr('*', 'stack(3, id, 2L, 3L, 4L, 5L, 6L)'))
-    
+
+# stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True)
 def test_stack_mixed_types():
-    data_gen = StructGen([
-        ('ints', int_gen),
-        ('longs', long_gen),
-        ('strings', string_gen),
-        ('bools', boolean_gen),
-        ('dates', date_gen),
-        ('timestamps', timestamp_gen),
-        ('decimals', DecimalGen(precision=2, scale=1)),
-        ('doubles', double_gen),
-        ('floats', float_gen),
-        ('bytes', byte_gen),
-        ('shorts', short_gen),
-        ('nulls', null_gen)
-    ], nullable=False)
+    data_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)], nullable=False)
+    print([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100)
-                .selectExpr('*', 'stack(2, ints, longs, strings, bools, dates, timestamps, decimals, doubles, floats, bytes, shorts, nulls, ' +
-                            '1, 2L, "3", true, to_date("2019-01-01"), to_timestamp("2019-01-01 00:00:00"), 1.0, 2.0d, 3.0f, 4Y, 5S, null)'))
+                .selectExpr('*', 'stack(2, child1, child2, child3, child4, child5, child6, child7, child8, child9, child10,' + 
+                            '1Y, 2S, 3, 4L, 5.0f, 6.0d, "7", false, to_date("2009-01-01"), to_timestamp("2010-01-01 00:00:00"), null)'))
