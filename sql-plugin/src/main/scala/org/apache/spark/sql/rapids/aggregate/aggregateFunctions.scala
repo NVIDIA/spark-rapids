@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, Shim
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ImplicitCastInputTypes, Literal, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
@@ -1520,6 +1520,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
+  with GpuBatchedRunningWindowWithFixer
   with GpuAggregateWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
@@ -1571,6 +1572,8 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
     RollingAggregation.nth(0, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
+  override def newFixer(): BatchedRunningWindowFixer =
+    new FirstRunningWindowFixer(ignoreNulls)
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
@@ -1628,6 +1631,7 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
 
 case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boolean)
   extends GpuAggregateWindowFunction
+        with GpuBatchedRunningWindowWithFixer  // Only if the N == 1.
         with ImplicitCastInputTypes
         with Serializable {
 
@@ -1660,6 +1664,18 @@ case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boole
     RollingAggregation.nth(offsetVal - 1,
       if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
+
+  override def canFixUp: Boolean = {
+    GpuOverrides.extractLit(offset) match {
+      case Some(Literal(value, IntegerType)) if value == 1 => true // Only FIRST() is supported.
+      case _ => false
+    }
+  }
+
+  override def newFixer(): BatchedRunningWindowFixer = {
+    assert(canFixUp, "NthValue fixup cannot be done when offset != 1.")
+    new FirstRunningWindowFixer(ignoreNulls)
+  }
 }
 
 trait GpuCollectBase
