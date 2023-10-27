@@ -75,6 +75,13 @@
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
+
+        <!--
+            not a real module, workaround to enforce the build order
+            ROOT -> shim
+        -->
+        <module>shim-deps</module>
+
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
@@ -1346,13 +1353,13 @@
                             <skip>${maven.cleanall.skip}</skip>
                             <target>
                                 <!-- #if scala-2.12 --><!--
-                                <dirset dir="${project.basedir}" 
+                                <dirset dir="${project.basedir}"
                                     includes="**/target"
                                     excludes="scala2.13/**"
                                     id="target.dirs.for.clean"/>
                                 --><!-- #endif scala-2.12 -->
                                 <!-- #if scala-2.13 -->
-                                <dirset dir="${project.basedir}" 
+                                <dirset dir="${project.basedir}"
                                     includes="**/target"
                                     id="target.dirs.for.clean"/>
                                 <!-- #endif scala-2.13 -->
