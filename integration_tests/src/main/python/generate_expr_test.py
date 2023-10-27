@@ -214,7 +214,29 @@ def test_generate_outer_fallback():
         lambda spark: spark.sql("SELECT array(struct(1, 'a'), struct(2, 'b')) as x")\
             .repartition(1).selectExpr("inline_outer(x)"),
         "GenerateExec")
-    
+
+@ignore_order(local=True) 
 def test_stack():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.range(1).selectExpr('stack(1, 1, 2, 3)'))
+        lambda spark : spark.range(100).selectExpr('*', 'stack(3, id, 2L, 3L, 4L, 5L, 6L)'))
+    
+@ignore_order(local=True)
+def test_stack_mixed_types():
+    data_gen = StructGen([
+        ('ints', int_gen),
+        ('longs', long_gen),
+        ('strings', string_gen),
+        ('bools', boolean_gen),
+        ('dates', date_gen),
+        ('timestamps', timestamp_gen),
+        ('decimals', DecimalGen(precision=2, scale=1)),
+        ('doubles', double_gen),
+        ('floats', float_gen),
+        ('bytes', byte_gen),
+        ('shorts', short_gen),
+        ('nulls', null_gen)
+    ], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100)
+                .selectExpr('*', 'stack(2, ints, longs, strings, bools, dates, timestamps, decimals, doubles, floats, bytes, shorts, nulls, ' +
+                            '1, 2L, "3", true, to_date("2019-01-01"), to_timestamp("2019-01-01 00:00:00"), 1.0, 2.0d, 3.0f, 4Y, 5S, null)'))

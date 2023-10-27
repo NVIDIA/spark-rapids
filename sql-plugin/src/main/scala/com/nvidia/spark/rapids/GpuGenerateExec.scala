@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expre
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
-import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, NullType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuGenerateExecSparkPlanMeta(
@@ -68,7 +68,8 @@ class GpuGenerateExecSparkPlanMeta(
         val stackProj: Seq[Expression] = for (col <- 0 until numFields) yield {
           val index = row * numFields + col
           if (index >= stackMeta.childExprs.tail.length) {
-            GpuLiteral(null, NullType)
+            val typeInfo = stackMeta.childExprs.tail(col).dataType
+            GpuLiteral(null, typeInfo)
           } else {
             stackMeta.childExprs.tail(index).convertToGpu()
           }
