@@ -20,7 +20,6 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
 
-import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.types._
@@ -33,42 +32,34 @@ import org.apache.spark.unsafe.types.UTF8String
 class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQueryCompareTestSuite {
 
   test("test splitting partition data into groups") {
-    val conf = new SparkConf(false)
-      .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
-    withCpuSparkSession(_ => {
-      val (_, partValues, partRows, schema) = getSamplePartitionData
-      val partitionRowData = PartitionRowData.from(partValues, partRows)
-      val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataIntoGroups(
-        partitionRowData, schema)
-      val resultRowCounts = resultPartitions.flatMap(_.map(_.rowNum)).sum
-      val expectedRowCounts = partitionRowData.map(_.rowNum).sum
-      assert(resultRowCounts == expectedRowCounts)
-    }, conf)
+    val maxGpuColumnSizeBytes = 1000L
+    val (_, partValues, partRows, schema) = getSamplePartitionData
+    val partitionRowData = PartitionRowData.from(partValues, partRows)
+    val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataIntoGroups(
+      partitionRowData, schema, maxGpuColumnSizeBytes)
+    val resultRowCounts = resultPartitions.flatMap(_.map(_.rowNum)).sum
+    val expectedRowCounts = partitionRowData.map(_.rowNum).sum
+    assert(resultRowCounts == expectedRowCounts)
   }
 
   test("test splitting partition data into halves") {
-    val conf = new SparkConf(false)
-      .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
-    withCpuSparkSession(_ => {
-      val (_, partValues, partRows, _) = getSamplePartitionData
-      val partitionRowData = PartitionRowData.from(partValues, partRows)
-      val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataInHalf(partitionRowData)
-      val resultRowCounts = resultPartitions.flatMap(_.map(_.rowNum)).sum
-      val expectedRowCounts = partitionRowData.map(_.rowNum).sum
-      assert(resultRowCounts == expectedRowCounts)
-    }, conf)
+    val (_, partValues, partRows, _) = getSamplePartitionData
+    val partitionRowData = PartitionRowData.from(partValues, partRows)
+    val resultPartitions = BatchWithPartitionDataUtils.splitPartitionDataInHalf(partitionRowData)
+    val resultRowCounts = resultPartitions.flatMap(_.map(_.rowNum)).sum
+    val expectedRowCounts = partitionRowData.map(_.rowNum).sum
+    assert(resultRowCounts == expectedRowCounts)
   }
 
   test("test adding partition values to batch with OOM split and retry - unhandled") {
     // This test uses single-row partition values that should throw a SplitAndRetryOOM exception
     // when a retry is forced.
-    val conf = new SparkConf(false)
-      .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
+    val maxGpuColumnSizeBytes = 1000L
     withGpuSparkSession(_ => {
       val (_, partValues, _, partSchema) = getSamplePartitionData
       closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
         val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
-          Array(1), partValues.take(1), partSchema)
+          Array(1), partValues.take(1), partSchema, maxGpuColumnSizeBytes)
         RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
         withResource(resultBatchIter) { _ =>
           assertThrows[SplitAndRetryOOM] {
@@ -76,20 +67,19 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
           }
         }
       }
-    }, conf)
+    })
   }
 
   test("test adding partition values to batch with OOM split and retry") {
     // This test should split the input batch and process them when a retry is forced.
-    val conf = new SparkConf(false)
-      .set(RapidsConf.CUDF_COLUMN_SIZE_LIMIT.key, "1000")
+    val maxGpuColumnSizeBytes = 1000L
     withGpuSparkSession(_ => {
       val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
       withResource(buildBatch(getSampleValueData)) { valueBatch =>
         withResource(buildBatch(partCols)) { partBatch =>
           withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
             val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
-              partRows, partValues, partSchema)
+              partRows, partValues, partSchema, maxGpuColumnSizeBytes)
             withResource(resultBatchIter) { _ =>
               RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
               // Assert that the final count of rows matches expected batch
@@ -99,7 +89,7 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
           }
         }
       }
-    }, conf)
+    })
   }
 
   private def getSamplePartitionData: (Array[Array[String]], Array[InternalRow], Array[Long],

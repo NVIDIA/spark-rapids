@@ -21,6 +21,7 @@ import java.util.Optional
 import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
+import scala.collection
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -527,7 +528,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   extends ShuffleReader[K, C] with Logging {
 
   case class GetMapSizesResult(
-      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+      blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
       canEnableBatchFetch: Boolean)
 
   protected def getMapSizes: GetMapSizesResult
@@ -965,7 +966,7 @@ class RapidsCachingWriter[K, V](
           bytesWritten += partSize
           // if the size is 0 and we have rows, we are in a case where there are columns
           // but the type is such that there isn't a buffer in the GPU backing it.
-          // For example, a Struct column without any members. We treat such a case as if it 
+          // For example, a Struct column without any members. We treat such a case as if it
           // were a degenerate table.
           if (partSize == 0 && batch.numRows() > 0) {
             sizes(partId) += DEGENERATE_PARTITION_BYTE_SIZE_DEFAULT
@@ -1043,7 +1044,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
+class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
@@ -1420,73 +1421,4 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       }
     }
   }
-}
-
-/**
- * Trait that makes it easy to check whether we are dealing with the
- * a RAPIDS Shuffle Manager
- */
-trait RapidsShuffleManagerLike {
-  def isDriver: Boolean
-  def initialize: Unit
-}
-
-/**
- * A simple proxy wrapper allowing to delay loading of the
- * real implementation to a later point when ShimLoader
- * has already updated Spark classloaders.
- *
- * @param conf
- * @param isDriver
- */
-class ProxyRapidsShuffleInternalManagerBase(
-    conf: SparkConf,
-    override val isDriver: Boolean
-) extends RapidsShuffleManagerLike with Proxy {
-
-  // touched in the plugin code after the shim initialization
-  // is complete
-  lazy val self: ShuffleManager = ShimLoader.newInternalShuffleManager(conf, isDriver)
-      .asInstanceOf[ShuffleManager]
-
-  // This function touches the lazy val `self` so we actually instantiate
-  // the manager. This is called from both the driver and executor.
-  // In the driver, it's mostly to display information on how to enable/disable the manager,
-  // in the executor, the UCXShuffleTransport starts and allocates memory at this time.
-  override def initialize: Unit = self
-
-  def getWriter[K, V](
-      handle: ShuffleHandle,
-      mapId: Long,
-      context: TaskContext,
-      metrics: ShuffleWriteMetricsReporter
-  ): ShuffleWriter[K, V] = {
-    self.getWriter(handle, mapId, context, metrics)
-  }
-
-  def getReader[K, C](
-      handle: ShuffleHandle,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int,
-      context: TaskContext,
-      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    self.getReader(handle,
-      startMapIndex, endMapIndex, startPartition, endPartition,
-      context, metrics)
-  }
-
-  def registerShuffle[K, V, C](
-      shuffleId: Int,
-      dependency: ShuffleDependency[K, V, C]
-  ): ShuffleHandle = {
-    self.registerShuffle(shuffleId, dependency)
-  }
-
-  def unregisterShuffle(shuffleId: Int): Boolean = self.unregisterShuffle(shuffleId)
-
-  def shuffleBlockResolver: ShuffleBlockResolver = self.shuffleBlockResolver
-
-  def stop(): Unit = self.stop()
 }

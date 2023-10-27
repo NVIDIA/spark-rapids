@@ -199,9 +199,9 @@ object ColumnCastUtil {
             newView
           }
         case s: StructType =>
-          val newColumns = ArrayBuilder.make[ColumnView]()
+          val newColumns = ArrayBuilder.make[ColumnView]
           newColumns.sizeHint(cv.getNumChildren)
-          val newColIndices = ArrayBuilder.make[Int]()
+          val newColIndices = ArrayBuilder.make[Int]
           newColIndices.sizeHint(cv.getNumChildren)
           (0 until cv.getNumChildren).foreach { i =>
             val child = cv.getChildColumnView(i)

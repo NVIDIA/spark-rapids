@@ -21,6 +21,7 @@ shopt -s extglob
 
 SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
+SCALA213=0
 
 function print_usage() {
   echo "Usage: buildall [OPTION]"
@@ -35,10 +36,10 @@ function print_usage() {
   echo "        generate projects for Bloop clients: IDE (Scala Metals, IntelliJ) or Bloop CLI"
   echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
   echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
-  echo "        snapshotsWithDatabricks, and noSnapshotsWithDatabricks. NOTE: the Databricks-related spark3XYdb shims"
-  echo "        are not built locally, the jars are fetched prebuilt from a remote Maven repo."
-  echo "        You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will build only"
-  echo "        the distribution jar only for 3.2.0 and 3.3.0"
+  echo "        snapshotsWithDatabricks, noSnapshotsWithDatabricks, noSnapshotsScala213, snapshotsScala213."
+  echo "        NOTE: the Databricks-related spark3XYdb shims are not built locally, the jars are fetched prebuilt from a"
+  echo " .      remote Maven repo. You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will"
+  echo "        build only the distribution jar only for 3.2.0 and 3.3.0"
   echo "   -m=MODULE, --module=MODULE"
   echo "        after finishing parallel builds, resume from dist and build up to and including module MODULE."
   echo "        E.g., --module=integration_tests"
@@ -135,6 +136,10 @@ case "$1" in
   FINAL_OP="install"
   ;;
 
+--scala213)
+  SCALA213=1
+  ;;
+
 --rebuild-dist-only)
   SKIP_DIST_DEPS="1"
   MODULE="dist"
@@ -157,13 +162,32 @@ shift
 
 done
 
+if [[ "$DIST_PROFILE" == *Scala213 ]]; then
+  SCALA213=1
+fi
+
+
 # include options to mvn command
 export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
 
-DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+if [[ "$SCALA213" == "1" ]]; then
+  DIST_PROFILE=${DIST_PROFILE:-"noSnapshotsScala213"}
+  $(dirname $0)/make-scala-version-build-files.sh 2.13
+else
+  DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+fi
+
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 case $DIST_PROFILE in
+
+  snapshotsScala213)
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshotsScala213"))
+    ;;
+
+  noSnapshotsScala213)
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshotsScala213"))
+    ;;
 
   snapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshots"))
@@ -207,6 +231,10 @@ export BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 if [[ "$SKIP_CLEAN" != "1" ]]; then
   echo Clean once across all modules
   $MVN -q clean
+fi
+
+if [[ "$SCALA213" == "1" ]]; then
+  cd scala2.13
 fi
 
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."

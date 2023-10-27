@@ -22,6 +22,7 @@ import scala.util.hashing.byteswap32
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
@@ -187,6 +188,8 @@ case class GpuRangePartitioner(
    * @return the partition id for each item.
    */
   def computePartitionIndexes(cb: ColumnarBatch): cudf.ColumnVector = {
+    // Don't make this retry-block avoiding nested try-blocks
+    // from computeBoundsAndCloseWithRetry
     withResource(converters.convertBatch(rangeBounds,
       TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
       withResource(sorter.appendProjectedColumns(cb)) { withExtraColumns =>
@@ -195,32 +198,35 @@ case class GpuRangePartitioner(
     }
   }
 
-  def computeBoundsAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
+  def computeBoundsAndCloseWithRetry(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
     val types = GpuColumnVector.extractTypes(batch)
-    val partedTable = withResource(batch) { batch =>
-      val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
-        computePartitionIndexes(batch)
-      }
-      withResource(parts) { parts =>
-        withResource(GpuColumnVector.from(batch)) { table =>
-          table.partition(parts, numPartitions)
+    withRetryNoSplit(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { sb =>
+      val partedTable = withResource(sb.getColumnarBatch()) { cb =>
+        val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
+          computePartitionIndexes(cb)
+        }
+        withResource(parts) { parts =>
+          withResource(GpuColumnVector.from(cb)) { table =>
+            table.partition(parts, numPartitions)
+          }
         }
       }
-    }
-    withResource(partedTable) { partedTable =>
-      val parts = partedTable.getPartitions
-      val tp = partedTable.getTable
-      val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(types).map {
-        case (index, sparkType) =>
-          GpuColumnVector.from(tp.getColumn(index).incRefCount(), sparkType)
+
+      withResource(partedTable) { partedTable =>
+        val parts = partedTable.getPartitions
+        val tp = partedTable.getTable
+        val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(types).map {
+          case (index, sparkType) =>
+            GpuColumnVector.from(tp.getColumn(index).incRefCount(), sparkType)
+        }
+        (parts, columns.toArray)
       }
-      (parts, columns.toArray)
     }
   }
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     if (rangeBounds.nonEmpty) {
-      val (parts, partitionColumns) = computeBoundsAndClose(batch)
+      val (parts, partitionColumns) = computeBoundsAndCloseWithRetry(batch)
       sliceInternalGpuOrCpuAndClose(partitionColumns.head.getRowCount.toInt,
         parts, partitionColumns)
     } else {

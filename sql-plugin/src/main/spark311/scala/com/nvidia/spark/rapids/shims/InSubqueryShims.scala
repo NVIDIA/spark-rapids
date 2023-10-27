@@ -27,6 +27,7 @@
 {"spark": "324"}
 {"spark": "330db"}
 {"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 

@@ -201,7 +201,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           }
         }
         if (bssToIssue.nonEmpty) {
-          doHandleTransferRequest(bssToIssue)
+          doHandleTransferRequest(bssToIssue.toSeq)
         }
       }
 
@@ -368,7 +368,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
         // If we are still able to handle at least one `BufferSendState`, add any
         // others that also failed due back to the queue.
-        addToContinueQueue(toTryAgain)
+        addToContinueQueue(toTryAgain.toSeq)
       }
 
       serverStream.sync()
@@ -382,55 +382,60 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         val sendHeader = bufferSendState.getPeerBufferReceiveHeader
         // make sure we close the buffer slice
         withResource(buffersToSend) { _ =>
-          serverConnection.send(peerExecutorId, MessageType.Buffer,
-            // TODO: it may be nice to hide `sendHeader` in `Transaction`
-            sendHeader, buffersToSend, withResource(_) { bufferTx =>
-              bufferTx.getStatus match {
-                case TransactionStatus.Success =>
-                  logDebug(s"Done with the send for $bufferSendState with $buffersToSend")
+          // [Scala 2.13] The compiler does not seem to be able to do the implicit SAM
+          // conversion after expanding the call in the method call below. So we have to define the 
+          // callback here in a val and type it to TransactionCallback
+          val txCallback: TransactionCallback = tx => withResource(tx) { bufferTx =>
+            bufferTx.getStatus match {
+              case TransactionStatus.Success =>
+                logDebug(s"Done with the send for $bufferSendState with $buffersToSend")
 
-                  if (bufferSendState.hasMoreSends) {
-                    // continue issuing sends.
-                    logDebug(s"Buffer send state $bufferSendState is NOT done. " +
-                      s"Still pending: ${pendingTransfersQueue.size}.")
-                    addToContinueQueue(Seq(bufferSendState))
-                  } else {
-                    val transferResponse = bufferSendState.getTransferResponse()
+                if (bufferSendState.hasMoreSends) {
+                  // continue issuing sends.
+                  logDebug(s"Buffer send state $bufferSendState is NOT done. " +
+                    s"Still pending: ${pendingTransfersQueue.size}.")
+                  addToContinueQueue(Seq(bufferSendState))
+                } else {
+                  val transferResponse = bufferSendState.getTransferResponse()
 
-                    val requestTx = bufferSendState.getRequestTransaction
-                    logDebug(s"Handling transfer request $requestTx for executor " +
-                      s"$peerExecutorId with $buffersToSend")
+                  val requestTx = bufferSendState.getRequestTransaction
+                  logDebug(s"Handling transfer request $requestTx for executor " +
+                    s"$peerExecutorId with $buffersToSend")
 
-                    // send the transfer response
-                    requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
-                      withResource(transferResponse) { _ =>
-                        responseTx.getStatus match {
-                          case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                            logError(s"Error while handling TransferResponse: " +
-                              s"${responseTx.getErrorMessage}")
-                          case _ =>
-                        }
+                  // send the transfer response
+                  requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
+                    withResource(transferResponse) { _ =>
+                      responseTx.getStatus match {
+                        case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                          logError(s"Error while handling TransferResponse: " +
+                            s"${responseTx.getErrorMessage}")
+                        case _ =>
                       }
-                    })
-
-                    // wake up the bssExec since bounce buffers became available
-                    logDebug(s"Buffer send state " +
-                      s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
-                      s"is done, closing. Still pending: ${pendingTransfersQueue.size}.")
-                    bssExec.synchronized {
-                      bufferSendState.close()
-                      bssExec.notifyAll()
                     }
-                  }
-                case _ =>
-                  // errored or cancelled
-                  logError(s"Error while sending buffers $bufferTx.")
+                  })
+
+                  // wake up the bssExec since bounce buffers became available
+                  logDebug(s"Buffer send state " +
+                    s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
+                    s"is done, closing. Still pending: ${pendingTransfersQueue.size}.")
                   bssExec.synchronized {
                     bufferSendState.close()
                     bssExec.notifyAll()
                   }
-              }
-            })
+                }
+              case _ =>
+                // errored or cancelled
+                logError(s"Error while sending buffers $bufferTx.")
+                bssExec.synchronized {
+                  bufferSendState.close()
+                  bssExec.notifyAll()
+                }
+            }
+          }
+
+          serverConnection.send(peerExecutorId, MessageType.Buffer,
+            // TODO: it may be nice to hide `sendHeader` in `Transaction`
+            sendHeader, buffersToSend, txCallback)
         }
       }
     }
