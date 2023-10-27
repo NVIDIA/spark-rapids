@@ -23,16 +23,18 @@ import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
-object CpuTimeZoneDB {
+object TimeZoneDB {
 
   def cacheDatabase(): Unit = {}
 
   /**
-   * Interprate a timestamp as a time in the given time zone, and renders that time as a timestamp in UTC
+   * Interpret a timestamp as a time in the given time zone,
+   * and renders that time as a timestamp in UTC
    *
-   * @return
    */
-  def fromTimestampToUtcTimestamp(inputVector: ColumnVector, currentTimeZone: ZoneId): ColumnVector = {
+  def fromTimestampToUtcTimestamp(
+      inputVector: ColumnVector,
+      currentTimeZone: ZoneId): ColumnVector = {
     assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
     val zoneStr = currentTimeZone.getId
     val rowCount = inputVector.getRowCount.toInt
@@ -60,7 +62,9 @@ object CpuTimeZoneDB {
    * @param desiredTimeZone desired time zone
    * @return timestamp in the `desiredTimeZone`
    */
-  def fromUtcTimestampToTimestamp(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
+  def fromUtcTimestampToTimestamp(
+      inputVector: ColumnVector,
+      desiredTimeZone: ZoneId): ColumnVector = {
     assert(inputVector.getType == DType.TIMESTAMP_MICROSECONDS)
     val zoneStr = desiredTimeZone.getId
     val rowCount = inputVector.getRowCount.toInt
@@ -82,7 +86,7 @@ object CpuTimeZoneDB {
   }
 
   /**
-   * Converts timesamp to date since 1970-01-01 at the given zone ID.
+   * Converts timestamp to date since 1970-01-01 at the given zone ID.
    *
    * @return
    */
@@ -113,7 +117,7 @@ object CpuTimeZoneDB {
    * @param desiredTimeZone desired time zone
    * @return timestamp in the `desiredTimeZone`
    */
-  def fromDateToTimestap(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
+  def fromDateToTimestamp(inputVector: ColumnVector, desiredTimeZone: ZoneId): ColumnVector = {
     assert(inputVector.getType == DType.TIMESTAMP_DAYS)
     val rowCount = inputVector.getRowCount.toInt
     withResource(inputVector.copyToHost()) { input =>
