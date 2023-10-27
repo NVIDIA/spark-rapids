@@ -22,23 +22,9 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.datasources.V1WritesUtils.Empty2Null
-import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
 object SparkShimImpl extends Spark332PlusDBShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      // Empty2Null is pulled out of FileFormatWriter by default since Spark 3.4.0,
-      // so it is visible in the overriding stage.
-      GpuOverrides.expr[Empty2Null](
-        "Converts the empty string to null for writing data",
-        ExprChecks.unaryProjectInputMatchesOutput(
-          TypeSig.STRING, TypeSig.STRING),
-        (a, conf, p, r) => new UnaryExprMeta[Empty2Null](a, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
-        }
-      )
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
+    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 }
