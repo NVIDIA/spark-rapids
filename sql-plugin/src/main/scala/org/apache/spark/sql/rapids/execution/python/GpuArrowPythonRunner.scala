@@ -35,6 +35,7 @@ import org.apache.spark.api.python._
 import org.apache.spark.rapids.shims.api.python.ShimBasePythonRunner
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -298,7 +299,7 @@ abstract class GpuArrowPythonRunnerBase(
 
       private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Unit = {
         // most code is copied from Spark
-        val arrowSchema = ArrowUtils.toArrowSchema(pythonInSchema, timeZoneId)
+        val arrowSchema = ArrowUtilsShim.toArrowSchema(pythonInSchema, timeZoneId)
         val allocator = ArrowUtils.rootAllocator.newChildAllocator(
           s"stdout writer for empty partition", 0, Long.MaxValue)
         val root = VectorSchemaRoot.create(arrowSchema, allocator)
