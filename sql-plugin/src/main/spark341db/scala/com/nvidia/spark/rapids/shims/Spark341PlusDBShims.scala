@@ -33,18 +33,6 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-<<<<<<< Updated upstream
-      // Empty2Null is pulled out of FileFormatWriter by default since Spark 3.4.0,
-      // so it is visible in the overriding stage.
-      GpuOverrides.expr[Empty2Null](
-        "Converts the empty string to null for writing data",
-        ExprChecks.unaryProjectInputMatchesOutput(
-          TypeSig.STRING, TypeSig.STRING),
-        (a, conf, p, r) => new UnaryExprMeta[Empty2Null](a, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
-        }
-      )
-=======
       GpuOverrides.expr[PythonUDAF](
         "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated",
@@ -73,7 +61,6 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
               childExprs.map(_.convertToGpu()),
               a.evalType, a.udfDeterministic, a.resultId)
         })
->>>>>>> Stashed changes
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
