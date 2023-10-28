@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
+import scala.util.{Left, Right}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -947,6 +948,12 @@ trait BatchedUnboundedToUnboundedWindowFixer extends AutoCloseable {
 trait GpuBatchedRunningWindowWithFixer {
 
   /**
+   * Checks whether the running window can be fixed up. This should be called before
+   * newFixer(), to check whether the fixer would work.
+   */
+  def canFixUp: Boolean = true
+
+  /**
    * Get a new class that can be used to fix up batched running window operations.
    */
   def newFixer(): BatchedRunningWindowFixer
@@ -1130,6 +1137,110 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
 
   override def close(): Unit = {
     previousResult.foreach(_.close())
+    previousResult = None
+  }
+}
+
+class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
+  extends BatchedRunningWindowFixer with Logging {
+  private val name = "first"
+  private var previousResult: Option[Scalar] = None
+  private var chkptPreviousResult: Option[Scalar] = None
+
+  private[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
+    val numRows = finalOutputColumn.getRowCount.toInt
+    if (numRows > 0) {
+      val lastIndex = numRows - 1
+      logDebug(s"$name: updateState from $previousResult to...")
+      previousResult.foreach(_.close)
+      previousResult = Some(finalOutputColumn.getScalarElement(lastIndex))
+      logDebug(s"$name: ... $previousResult")
+    }
+  }
+
+  /**
+   * Fix up `windowedColumnOutput` with any stored state from previous batches.
+   * Like all window operations the input data will have been sorted by the partition
+   * by columns and the order by columns.
+   *
+   * @param samePartitionMask    a mask that uses `true` to indicate the row
+   *                             is for the same partition by keys that was the last row in the
+   *                             previous batch or `false` to indicate it is not. If this is known
+   *                             to be all true or all false values a single boolean is used. If
+   *                             it can change for different rows than a column vector is provided.
+   *                             Only values that are for the same partition by keys should be
+   *                             modified. Because the input data is sorted by the partition by
+   *                             columns the boolean values will be grouped together.
+   * @param sameOrderMask        Similar mask for ordering. Unused for `FIRST`.
+   * @param unfixedWindowResults the output of the windowAggregation without anything
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
+   * @return a fixed ColumnVector that was with outputs updated for items that were in the same
+   *         group by key as the last row in the previous batch.
+   */
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+                     sameOrderMask: Option[Either[ColumnVector, Boolean]],
+                     unfixedWindowResults: ColumnView): ColumnVector = {
+    // `sameOrderMask` is irrelevant for this operation.
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) =>
+        // No previous result. Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(prev), Right(allRowsInSamePartition)) => // Boolean flag.
+        // All the current batch results may be replaced.
+        if (allRowsInSamePartition) {
+          if (!ignoreNulls || prev.isValid) {
+            // If !ignoreNulls, `prev` is the result for all rows.
+            // If ignoreNulls *AND* `prev` isn't null, `prev` is the result for all rows.
+            ColumnVector.fromScalar(prev, unfixedWindowResults.getRowCount.toInt)
+          } else {
+            // If ignoreNulls, *AND* `prev` is null, keep the current result.
+            incRef(unfixedWindowResults)
+          }
+        } else {
+          // No rows in the same partition. Current result needs no fixing.
+          incRef(unfixedWindowResults)
+        }
+      case (Some(prev), Left(someRowsInSamePartition)) => // Boolean vector.
+        if (!ignoreNulls || prev.isValid) {
+          someRowsInSamePartition.ifElse(prev, unfixedWindowResults)
+        } else {
+          incRef(unfixedWindowResults)
+        }
+    }
+    // Reset previous result.
+    closeOnExcept(ret) { ret =>
+      resetPrevious(ret)
+      ret
+    }
+  }
+
+  /**
+   * Save the state, so it can be restored in the case of a retry.
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def checkpoint(): Unit = chkptPreviousResult = previousResult
+
+  /**
+   * Restore the state that was saved by calling to "checkpoint".
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def restore(): Unit = {
+    // If there is a previous checkpoint result, restore it to previousResult.
+    if (chkptPreviousResult.isDefined) {
+      // Close erstwhile previousResult.
+      previousResult match {
+        case Some(r) if r != chkptPreviousResult.get => r.close()
+        case _ => // Nothing to close if result is None, or matches the checkpoint.
+      }
+    }
+    previousResult = chkptPreviousResult
+    chkptPreviousResult = None
+  }
+
+  override def close(): Unit = {
+    previousResult.foreach(_.close)
     previousResult = None
   }
 }
