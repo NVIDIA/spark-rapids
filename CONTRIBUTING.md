@@ -203,6 +203,9 @@ mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
 If you omit `-PjdkXY` the corresponding JDK profile will be activated implicitly based on the
 detected JDK version executing the Maven build.
 
+If you need to build with a JDK version that we do not test internally add
+`-Denforcer.skipRules=requireJavaVersion` to the Maven invocation.
+
 ### Building and Testing with ARM
 
 To build our project on ARM platform, please add `-Parm64` to your Maven commands.

@@ -24,13 +24,14 @@
         <artifactId>rapids-4-spark-parent_2.13</artifactId>
         <version>23.12.0-SNAPSHOT</version>
     </parent>
+    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
     <packaging>pom</packaging>
     <description>Shim JDK Profiles</description>
     <version>23.12.0-SNAPSHOT</version>
     <profiles>
         <profile>
-            <id>jdk11plus</id>
+            <id>jdk9plus</id>
             <properties>
                 <scala.plugin.version>4.6.1</scala.plugin.version>
                 <maven.compiler.source>${java.specification.version}</maven.compiler.source>
@@ -38,7 +39,8 @@
                 <maven.compiler.target>${maven.compiler.source}</maven.compiler.target>
             </properties>
             <activation>
-                <jdk>[11,17]</jdk>
+                <!-- activate for all java versions after 9 -->
+                <jdk>[9,)</jdk>
             </activation>
         </profile>
     </profiles>
