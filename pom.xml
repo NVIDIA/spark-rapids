@@ -1214,7 +1214,7 @@
                 <version>3.3.0</version>
                 <executions>
                   <execution>
-                    <id>enforce-maven</id>
+                    <id>rapids-rules</id>
                     <goals>
                       <goal>enforce</goal>
                     </goals>
@@ -1224,6 +1224,17 @@
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <requireJavaVersion>
+                            <message>Only Java 8, 11, and 17 are supported!</message>
+                            <version>[1.8,1.9),[11,12),[17,18)</version>
+                        </requireJavaVersion>
+                        <!-- #if scala-2.13 --><!--
+                        <requireProperty>
+                            <regexMessage>Unexpected buildver value ${buildver}. Scala 2.13 build is enabled only for Apache Spark 3.3.0+, vendor builds are not yet supported</regexMessage>
+                            <property>buildver</property>
+                            <regex>[3-9][3-9][0-9]</regex>
+                        </requireProperty>
+                        --><!-- #endif scala-2.13 -->
                         <!-- TODO add buildver validation -->
                       </rules>
                     </configuration>
