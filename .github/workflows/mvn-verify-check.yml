@@ -179,7 +179,7 @@ jobs:
             -Drat.skip=true \
             ${{ env.COMMON_MVN_FLAGS }}
 
-  
+
   verify-all-modules:
     needs: get-shim-versions-from-dist
     runs-on: ubuntu-latest
@@ -208,7 +208,7 @@ jobs:
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify \
-            -P "individual,pre-merge,jdk${{ matrix.java-version }}" \
+            -P "individual,pre-merge" \
             -Dbuildver=${{ matrix.spark-version }} \
             ${{ env.COMMON_MVN_FLAGS }}
 
@@ -244,6 +244,6 @@ jobs:
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command
           ./mvnw -Dmaven.wagon.http.retryHandler.count=3 -B install \
-            -P "individual,pre-merge,jdk11" \
+            -P "individual,pre-merge" \
             -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
             ${{ env.COMMON_MVN_FLAGS }}
