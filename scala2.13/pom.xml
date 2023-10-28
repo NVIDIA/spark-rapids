@@ -1240,7 +1240,7 @@
                             <property>buildver</property>
                             <regex>[3-9][3-9][0-9]</regex>
                         </requireProperty>
-                        <!-- #endif scala-2.13 -->
+                        --><!-- #endif -->
                       </rules>
                     </configuration>
                   </execution>
