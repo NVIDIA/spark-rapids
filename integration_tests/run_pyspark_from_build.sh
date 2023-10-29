@@ -33,11 +33,13 @@ else
     VERSION_STRING=$(PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} python -c \
         "import pyspark, re; print(re.sub('\.dev0?$', '', pyspark.__version__))"
     )
+    SCALA_VERSION=`$SPARK_HOME/bin/pyspark --version 2>&1| grep Scala | awk '{split($4,v,"."); printf "%s.%s", v[1], v[2]}'`
 
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
+    [[ -z $SCALA_VERSION ]] && { echo "Unable to detect the Scala version at $SPARK_HOME"; exit 1; }
     [[ -z $SPARK_SHIM_VER ]] && { SPARK_SHIM_VER="spark${VERSION_STRING//./}"; }
 
-    echo "Detected Spark version $VERSION_STRING (shim version: $SPARK_SHIM_VER)"
+    echo "Detected Spark version $VERSION_STRING (shim version: $SPARK_SHIM_VER) (Scala version: $SCALA_VERSION)"
 
     INTEGRATION_TEST_VERSION=$SPARK_SHIM_VER
 
@@ -46,6 +48,7 @@ else
         INTEGRATION_TEST_VERSION=$INTEGRATION_TEST_VERSION_OVERRIDE
     fi
 
+    TARGET_DIR="$SCRIPTPATH"/target
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
@@ -63,18 +66,19 @@ else
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     else
-        AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
-        PARQUET_HADOOP_TESTS=$(echo "$SCRIPTPATH"/target/dependency/parquet-hadoop*.jar)
+        [[ "$SCALA_VERSION" != "2.12"  ]] && TARGET_DIR=${TARGET_DIR/integration_tests/scala$SCALA_VERSION\/integration_tests}
+        AVRO_JARS=$(echo "$TARGET_DIR"/dependency/spark-avro*.jar)
+        PARQUET_HADOOP_TESTS=$(echo "$TARGET_DIR"/dependency/parquet-hadoop*.jar)
         # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
         # if it isn't present or already removed
         zip -d $PARQUET_HADOOP_TESTS log4j.properties || true
-        MIN_PARQUET_JAR="$SCRIPTPATH/target/dependency/parquet-hadoop-1.12.0-tests.jar"
+        MIN_PARQUET_JAR="$TARGET_DIR"/dependency/parquet-hadoop-1.12.0-tests.jar
         # Make sure we have Parquet version >= 1.12 in the dependency
         LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
         export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "$MIN_PARQUET_JAR" ]] && echo true || echo false)
-        PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
+        PLUGIN_JARS=$(echo "$TARGET_DIR"/../../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
-        TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
+        TEST_JARS=$(echo "$TARGET_DIR"/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     fi
 
     # `./run_pyspark_from_build.sh` runs all the tests excluding the avro tests in 'avro_test.py'.
@@ -176,7 +180,6 @@ else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
 
-    TARGET_DIR="$SCRIPTPATH"/target
     mkdir -p "$TARGET_DIR"
 
     RUN_DIR=${RUN_DIR-$(mktemp -p "$TARGET_DIR" -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}

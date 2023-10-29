@@ -58,26 +58,28 @@ class MortgageSparkSuite extends AnyFunSuite {
   test("extract mortgage data") {
     val df = Run.csv(
       session,
-      "src/test/resources/Performance_2007Q3.txt_0",
-      "src/test/resources/Acquisition_2007Q3.txt"
+      getClass.getClassLoader.getResource("Performance_2007Q3.txt_0").getPath,
+      getClass.getClassLoader.getResource("Acquisition_2007Q3.txt").getPath
     ).sort(col("loan_id"), col("monthly_reporting_period"))
 
     assert(df.count() === 10000)
   }
 
   test("convert data to parquet") {
-    ReadPerformanceCsv(session, "src/test/resources/Performance_2007Q3.txt_0")
+    ReadPerformanceCsv(session,
+      getClass.getClassLoader.getResource("Performance_2007Q3.txt_0").getPath)
       .write.mode("overwrite").parquet("target/test_output/perf")
 
-    ReadAcquisitionCsv(session, "src/test/resources/Acquisition_2007Q3.txt")
+    ReadAcquisitionCsv(session,
+      getClass.getClassLoader.getResource("Acquisition_2007Q3.txt").getPath)
       .write.mode("overwrite").parquet("target/test_output/acq")
   }
 
   test("run on parquet data") {
     val df = Run.parquet(
       session,
-      "src/test/resources/parquet_perf",
-      "src/test/resources/parquet_acq"
+      getClass.getClassLoader.getResource("parquet_perf").getPath,
+      getClass.getClassLoader.getResource("parquet_acq").getPath
     ).sort(col("loan_id"), col("monthly_reporting_period"))
 
     assert(df.count() === 10000)
@@ -86,8 +88,8 @@ class MortgageSparkSuite extends AnyFunSuite {
   test("compute some basic aggregates") {
     val df = SimpleAggregates.csv(
       session,
-      "src/test/resources/Performance_2007Q3.txt_0",
-      "src/test/resources/Acquisition_2007Q3.txt"
+      getClass.getClassLoader.getResource("Performance_2007Q3.txt_0").getPath,
+      getClass.getClassLoader.getResource("Acquisition_2007Q3.txt").getPath
     )
 
     assert(df.count() === 1660)
@@ -96,7 +98,7 @@ class MortgageSparkSuite extends AnyFunSuite {
   test("compute aggregates with percentiles") {
     val df = AggregatesWithPercentiles.csv(
       session,
-      "src/test/resources/Performance_2007Q3.txt_0"
+      getClass.getClassLoader.getResource("Performance_2007Q3.txt_0").getPath
     )
 
     assert(df.count() === 177)
@@ -105,8 +107,8 @@ class MortgageSparkSuite extends AnyFunSuite {
   test("compute aggregates with joins") {
     val df = AggregatesWithJoin.csv(
       session,
-      "src/test/resources/Performance_2007Q3.txt_0",
-      "src/test/resources/Acquisition_2007Q3.txt"
+      getClass.getClassLoader.getResource("Performance_2007Q3.txt_0").getPath,
+      getClass.getClassLoader.getResource("Acquisition_2007Q3.txt").getPath
     )
 
     assert(df.count() === 177)

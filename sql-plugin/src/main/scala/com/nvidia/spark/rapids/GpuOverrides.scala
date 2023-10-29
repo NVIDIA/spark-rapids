@@ -3575,6 +3575,31 @@ object GpuOverrides extends Logging {
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
+    expr[StructsToJson](
+      "Converts structs to JSON text format",
+      ExprChecks.projectOnly(
+        TypeSig.STRING,
+        TypeSig.STRING,
+        Seq(ParamCheck("struct",
+          (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
+            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
+            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+        ))),
+      (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.options.get("ignoreNullFields").exists(_.equalsIgnoreCase("false"))) {
+            willNotWorkOnGpu("to_json option ignore_null_fields=false is not supported")
+          }
+          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
+            willNotWorkOnGpu("to_json option pretty=true is not supported")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuStructsToJson(a.options, child, a.timeZoneId)
+      }).disabledByDefault("to_json support is experimental. See compatibility " +
+          "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
@@ -3716,7 +3741,8 @@ object GpuOverrides extends Logging {
             a.partitionFilters,
             a.dataFilters,
             conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
+            conf.maxReadBatchSizeBytes,
+            conf.maxGpuColumnSizeBytes)
       }),
     GpuOverrides.scan[JsonScan](
       "Json parsing",
@@ -3733,7 +3759,8 @@ object GpuOverrides extends Logging {
             a.partitionFilters,
             a.dataFilters,
             conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
+            conf.maxReadBatchSizeBytes,
+            conf.maxGpuColumnSizeBytes)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =

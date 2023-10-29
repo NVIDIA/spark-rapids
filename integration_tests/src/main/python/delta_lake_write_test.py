@@ -27,12 +27,35 @@ from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
 
+_delta_confs = copy_and_update(writer_confs, delta_writes_enabled_conf,
+                               {"spark.rapids.sql.hasExtendedYearValues": "false",
+                                "spark.sql.legacy.parquet.datetimeRebaseModeInRead": "CORRECTED",
+                                "spark.sql.legacy.parquet.int96RebaseModeInRead": "CORRECTED"})
+
 def get_last_operation_metrics(path):
     from delta.tables import DeltaTable
     return with_cpu_session(lambda spark: DeltaTable.forPath(spark, path)\
                             .history(1)\
                             .selectExpr("operationMetrics")\
                             .head()[0])
+
+def _create_table(spark, path, schema, partitioned_by=None):
+    q = f"CREATE TABLE delta.`{path}` ({schema}) USING DELTA"
+    if partitioned_by:
+        q += f" PARTITIONED BY ({partitioned_by})"
+    spark.sql(q)
+
+def _create_cpu_gpu_tables(spark, path, schema, partitioned_by=None):
+    _create_table(spark, path + "/CPU", schema, partitioned_by)
+    _create_table(spark, path + "/GPU", schema, partitioned_by)
+
+def _assert_sql(data_path, confs, query):
+    def do_sql(spark, q): spark.sql(q)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: do_sql(spark, query.format(path=path)),
+        read_delta_path,
+        data_path,
+        confs)
 
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
@@ -180,9 +203,125 @@ def test_delta_append_data_exec_v1(spark_tmp_path, use_cdf):
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, gen_list).coalesce(1)\
             .write.format("delta").mode("append").saveAsTable(f"delta.`{path}`"),
-        lambda spark, path: spark.read.format("delta").load(path),
+        read_delta_path,
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+def test_delta_overwrite_by_expression_exec_v1(spark_tmp_table_factory, spark_tmp_path, use_cdf):
+    gen_list = [("c" + str(i), gen) for i, gen in enumerate(delta_write_gens)]
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_path = spark_tmp_path + "/PARQUET_DATA"
+    src_table = spark_tmp_table_factory.get()
+    def setup_src_table(spark):
+        df = gen_df(spark, gen_list).coalesce(1)
+        df.write.parquet(src_path)
+        spark.read.parquet(src_path).createOrReplaceTempView(src_table)
+    with_cpu_session(setup_src_table, conf=writer_confs)
+    def setup_tables(spark):
+        setup_delta_dest_tables(spark, data_path,
+                                lambda spark: spark.read.parquet(src_path).limit(1), use_cdf)
+    with_cpu_session(setup_tables, writer_confs)
+    def overwrite_table(spark, path):
+        spark.sql(f"INSERT OVERWRITE delta.`{path}` SELECT * FROM {src_table}")
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        overwrite_table,
+        read_delta_path,
+        data_path,
+        conf=_delta_confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    schema = "id bigint, data string, data2 string"
+    with_cpu_session(lambda spark: _create_cpu_gpu_tables(spark, data_path, schema), conf=writer_confs)
+    confs = _delta_confs
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(id, data, data2) VALUES(1L, 'a', 'b')")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('b', 'd', 2L)")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)")
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks_runtime(), reason="Schema evolution fixed in later releases")
+def test_delta_overwrite_schema_evolution_arrays(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_path = data_path + "/SRC"
+    def setup_tables(spark):
+        src_schema = "id INT, col2 STRING, " +\
+                     "col ARRAY<STRUCT<f1: INT, f2: STRUCT<f21: STRING, f22: DATE>, f3: STRUCT<f31: STRING>>>"
+        dst_schema = "id INT, col2 DATE, col ARRAY<STRUCT<f1: INT, f2: STRUCT<f21: STRING>>>"
+        _create_table(spark, src_path, src_schema)
+        spark.sql(f"INSERT INTO delta.`{src_path}` VALUES (1, '2022-11-01', " +
+                  "array(struct(1, struct('s1', DATE'2022-11-01'), struct('s1'))))")
+        _create_cpu_gpu_tables(spark, data_path, dst_schema)
+    with_cpu_session(setup_tables, conf=writer_confs)
+    confs = copy_and_update(_delta_confs, {"spark.databricks.delta.schema.autoMerge.enabled": "true"})
+    _assert_sql(data_path, confs,
+                "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02', array(struct(2, struct('s2'))))")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}` " +
+                f"SELECT * FROM delta.`{src_path}`")
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES(2, DATE'2022-11-02'," +
+               "array(struct(2, struct('s2', DATE'2022-11-02'), struct('s2'))))")
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (3, DATE'2022-11-03', " +
+               "array(struct(3, struct('s3', NULL), struct(NULL))))")
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("mode", [
+    "STATIC",
+    pytest.param("DYNAMIC", marks=pytest.mark.xfail(is_databricks_runtime(),
+                                                    reason="https://github.com/NVIDIA/spark-rapids/issues/9543"))
+], ids=idfn)
+@pytest.mark.parametrize("clause", ["", "PARTITION (id)"], ids=idfn)
+def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_tmp_path, mode, clause):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    view = spark_tmp_table_factory.get()
+    confs = copy_and_update(_delta_confs,
+                            {"spark.sql.sources.partitionOverwriteMode" : mode})
+    def setup(spark):
+        _create_cpu_gpu_tables(spark, data_path, "id bigint, data string", "id")
+        spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
+    with_cpu_session(setup, conf=writer_confs)
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy'), (4L, 'value')")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
+                f"{clause} SELECT * FROM {view}")
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("mode", [
+    "STATIC",
+    pytest.param("DYNAMIC", marks=pytest.mark.xfail(is_databricks_runtime(),
+                                                    reason="https://github.com/NVIDIA/spark-rapids/issues/9543"))
+], ids=idfn)
+@pytest.mark.parametrize("clause", ["PARTITION (id, p = 2)", "PARTITION (p = 2, id)", "PARTITION (p = 2)"])
+def test_delta_overwrite_mixed_clause(spark_tmp_table_factory, spark_tmp_path, mode, clause):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    view = spark_tmp_table_factory.get()
+    confs = copy_and_update(_delta_confs,
+                            {"spark.sql.sources.partitionOverwriteMode" : mode})
+    def setup(spark):
+        _create_cpu_gpu_tables(spark, data_path, "id bigint, data string, p int", "id, p")
+        spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ("id", "data")).createOrReplaceTempView(view)
+    with_cpu_session(setup, conf=writer_confs)
+    _assert_sql(data_path, confs, "INSERT INTO delta.`{path}` VALUES (2L, 'dummy', 23), (4L, 'value', 2)")
+    _assert_sql(data_path, confs, "INSERT OVERWRITE TABLE delta.`{path}` " +
+                f"{clause} SELECT * FROM {view}")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow)

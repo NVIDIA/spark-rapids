@@ -63,7 +63,7 @@ object PlanUtils {
         case other =>
           other.children.flatMap(p => recurse(p, predicate, accum)).headOption
       }
-      accum
+      accum.toSeq
     }
     recurse(exp, predicate, new ListBuffer[Expression]())
   }
@@ -86,7 +86,7 @@ object PlanUtils {
         case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
         case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
       }
-      accum
+      accum.toSeq
     }
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }

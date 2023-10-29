@@ -240,7 +240,7 @@ final class TypeSig private(
     val nt = childTypes & other.childTypes
     val lt = litOnlyTypes & other.initialTypes
     val nts = notes.filterKeys(other.initialTypes)
-    new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts)
+    new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts.toMap)
   }
 
   /**
@@ -813,7 +813,7 @@ abstract class TypeChecks[RET] {
     val unsupportedTypes: Map[DataType, Set[String]] = fields
       .filterNot(attr => sig.isSupportedByPlugin(attr.dataType))
       .groupBy(_.dataType)
-      .mapValues(_.map(_.name).toSet)
+      .mapValues(_.map(_.name).toSet).toMap
 
     tagTimezoneInfoIfHasTimestampType(unsupportedTypes, meta)
 
@@ -1948,7 +1948,7 @@ object SupportedOpsDocs {
         }
         println("<tr>")
         val execChecks = checks.get.asInstanceOf[ExecChecks]
-        val allData = allSupportedTypes.map { t =>
+        val allData = allSupportedTypes.toSeq.map { t =>
           (t, execChecks.support(t))
         }.toMap
 
@@ -2031,7 +2031,7 @@ object SupportedOpsDocs {
           ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
         val exprChecks = checks.get.asInstanceOf[ExprChecks]
         // Params can change between contexts, but should not
-        val allData = allSupportedTypes.map { t =>
+        val allData = allSupportedTypes.toSeq.map { t =>
           (t, exprChecks.support(t))
         }.toMap
         // Now we should get the same keys for each type, so we are only going to look at the first
@@ -2135,7 +2135,7 @@ object SupportedOpsDocs {
           nextOutputAt = totalCount + headerEveryNLines
         }
         val partChecks = checks.get.asInstanceOf[PartChecks]
-        val allData = allSupportedTypes.map { t =>
+        val allData = allSupportedTypes.toSeq.map { t =>
           (t, partChecks.support(t))
         }.toMap
         // Now we should get the same keys for each type, so we are only going to look at the first
@@ -2351,7 +2351,7 @@ object SupportedOpsForTools {
       val isConfigDisabled = rule.disabledMsg.isDefined
       if (rule.isVisible && checks.forall(_.shown)) {
         val execChecks = checks.get.asInstanceOf[ExecChecks]
-        val allData = allSupportedTypes.map { t =>
+        val allData = allSupportedTypes.toSeq.map { t =>
           (t, execChecks.support(t))
         }.toMap
 
@@ -2390,7 +2390,7 @@ object SupportedOpsForTools {
           ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
         val exprChecks = checks.get.asInstanceOf[ExprChecks]
         // Params can change between contexts, but should not
-        val allData = allSupportedTypes.map { t =>
+        val allData = allSupportedTypes.toSeq.map { t =>
           (t, exprChecks.support(t))
         }.toMap
         val representative = allData.values.head

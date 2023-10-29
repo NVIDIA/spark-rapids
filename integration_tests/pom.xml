@@ -21,12 +21,13 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
+        <artifactId>rapids-4-spark-parent_2.12</artifactId>
         <version>23.12.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
     <version>23.12.0-SNAPSHOT</version>
     <properties>
+        <rapids.module>integration_tests</rapids.module>
         <target.classifier/>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
@@ -159,7 +160,7 @@
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
                     <descriptors>
-                        <descriptor>src/assembly/bin.xml</descriptor>
+                        <descriptor>${spark.rapids.source.basedir}/${rapids.module}/src/assembly/bin.xml</descriptor>
                     </descriptors>
                 </configuration>
                 <executions>
@@ -258,8 +259,8 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
-                            <executable>./run_pyspark_from_build.sh</executable>
-                            <workingDirectory>./</workingDirectory>
+                            <executable>${spark.rapids.source.basedir}/${rapids.module}/run_pyspark_from_build.sh</executable>
+                            <workingDirectory>${spark.rapids.source.basedir}</workingDirectory>
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>

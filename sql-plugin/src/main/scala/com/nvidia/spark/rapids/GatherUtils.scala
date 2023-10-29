@@ -33,7 +33,7 @@ object GatherUtils {
       c.setNumRows(rows.length)
       c
     } else {
-      withResource(ColumnVector.fromInts(rows: _*)) { gatherCv =>
+      withResource(ColumnVector.fromInts(rows.toSeq: _*)) { gatherCv =>
         withResource(GpuColumnVector.from(cb)) { table =>
           // GPU gather
           withResource(table.gather(gatherCv)) { gatheredTable =>

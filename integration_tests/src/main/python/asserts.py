@@ -459,7 +459,8 @@ def assert_gpu_sql_fallback_collect(df_fun, cpu_fallback_class_name, table_name,
 def _assert_gpu_and_cpu_are_equal(func,
     mode,
     conf={},
-    is_cpu_first=True):
+    is_cpu_first=True,
+    result_canonicalize_func_before_compare=None):
     (bring_back, collect_type) = _prep_func_for_compare(func, mode)
     conf = _prep_incompat_conf(conf)
 
@@ -467,29 +468,33 @@ def _assert_gpu_and_cpu_are_equal(func,
         print('### CPU RUN ###')
         global cpu_start
         cpu_start = time.time()
-        global from_cpu
         from_cpu = with_cpu_session(bring_back, conf=conf)
         global cpu_end
         cpu_end = time.time()
+        return from_cpu
 
     def run_on_gpu():
         print('### GPU RUN ###')
         global gpu_start
         gpu_start = time.time()
-        global from_gpu
         from_gpu = with_gpu_session(bring_back, conf=conf)
         global gpu_end
         gpu_end = time.time()
+        return from_gpu
 
     if is_cpu_first:
-        run_on_cpu()
-        run_on_gpu()
+        from_cpu = run_on_cpu()
+        from_gpu = run_on_gpu()
     else:
-        run_on_gpu()
-        run_on_cpu()
+        from_gpu = run_on_gpu()
+        from_cpu = run_on_cpu()
 
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
+
+    if result_canonicalize_func_before_compare is not None:
+        (from_cpu, from_gpu) = result_canonicalize_func_before_compare(from_cpu, from_gpu)
+
     if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
         from_gpu.sort(key=_RowCmp)
@@ -557,13 +562,23 @@ def run_with_cpu_and_gpu(func,
 
     return (from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True, result_canonicalize_func_before_compare=None):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
+    :param result_canonicalize_func_before_compare: specify a func to canonicalize the cpu and gpu results before compare.
+                                                 It's needed when comparing fastparquet and GPU.
+                                                 The result of fastparquet is different from the result of GPU, e.g.:
+                                                    --- CPU OUTPUT
+                                                    +++ GPU OUTPUT
+                                                    @@ -1 +1 @@
+                                                    -Row(a.first=-341142443, a.second=3.333994866005594e-37)
+                                                    +Row(a=Row(first=-341142443, second=3.333994866005594e-37))
+                                                  Use this func to canonicalize the results.
+                                                  Usage of this func is: (cpu, gpu) = result_canonicalize_func_before_compare(original_cpu_result, original_gpu_result)
     """
-    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first)
+    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first, result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
 
 def assert_gpu_and_cpu_are_equal_iterator(func, conf={}, is_cpu_first=True):
     """

@@ -345,7 +345,7 @@ class RapidsShuffleClient(
     }
 
     if (ptrs.nonEmpty) {
-      transport.queuePending(ptrs)
+      transport.queuePending(ptrs.toSeq)
     }
   }
 

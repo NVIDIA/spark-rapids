@@ -661,7 +661,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       (value, o.value) match {
         case (null, null) => true
         case (a: Array[Byte], b: Array[Byte]) => util.Arrays.equals(a, b)
-        case (a, b) => a != null && a.equals(b)
+        case (a, b) => a != null && a == b
       }
     case _ => false
   }
