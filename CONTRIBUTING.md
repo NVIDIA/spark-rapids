@@ -191,18 +191,6 @@ public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
 the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
-
-Also make sure to use scala-maven-plugin version `scala.plugin.version` 4.6.0 or later to correctly process
-[maven.compiler.release](https://github.com/davidB/scala-maven-plugin/blob/4.6.1/src/main/java/scala_maven/ScalaMojoSupport.java#L161)
-flag if cross-compilation is required.
-
-```bash
-mvn clean verify -Dbuildver=330 -P<jdk11|jdk17>
-```
-
-If you omit `-PjdkXY` the corresponding JDK profile will be activated implicitly based on the
-detected JDK version executing the Maven build.
-
 If you need to build with a JDK version that we do not test internally add
 `-Denforcer.skipRules=requireJavaVersion` to the Maven invocation.
 
