@@ -1153,11 +1153,13 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable
               "spark.rapids.sql.input." + scan_name: False})
 
 @ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner", "FullOuter"], ids=idfn)
 @pytest.mark.parametrize("is_left_host_shuffle", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_right_host_shuffle", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_left_smaller", [False, True], ids=idfn)
 @pytest.mark.parametrize("batch_size", ["1024", "1g"], ids=idfn)
-def test_new_inner_join(is_left_host_shuffle, is_right_host_shuffle, is_left_smaller, batch_size):
+def test_new_symmetric_join(join_type, is_left_host_shuffle, is_right_host_shuffle,
+                            is_left_smaller, batch_size):
     join_conf = {
         "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
         "spark.sql.autoBroadcastJoinThreshold": "1",
@@ -1183,14 +1185,17 @@ def test_new_inner_join(is_left_host_shuffle, is_right_host_shuffle, is_left_sma
             left_df = left_df.groupBy("key1", "key2").max("ints", "floats")
         if not is_right_host_shuffle:
             right_df = right_df.groupBy("key1", "key2").max("doubles", "shorts")
-        return left_df.join(right_df, ["key1", "key2"], "inner")
+        return left_df.join(right_df, ["key1", "key2"], join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
 
 @ignore_order(local=True)
+@pytest.mark.parametrize("join_type", ["Inner", "FullOuter"], ids=idfn)
 @pytest.mark.parametrize("is_left_smaller", [False, True], ids=idfn)
 @pytest.mark.parametrize("is_ast_supported", [False, True], ids=idfn)
 @pytest.mark.parametrize("batch_size", ["1024", "1g"], ids=idfn)
-def test_new_inner_join_conditional(is_ast_supported, is_left_smaller, batch_size):
+def test_new_symmetric_join_conditional(join_type, is_ast_supported, is_left_smaller, batch_size):
+    if join_type == "FullOuter" and not is_ast_supported:
+        pytest.skip("Full outer joins do not support a non-AST condition")
     join_conf = {
         "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
         "spark.sql.autoBroadcastJoinThreshold": "1",
@@ -1213,5 +1218,5 @@ def test_new_inner_join_conditional(is_ast_supported, is_left_smaller, batch_siz
         else:
             # AST does not support logarithm yet
             cond.append(left_df.ints >= f.log(right_df.ints))
-        return left_df.join(right_df, cond, "inner")
+        return left_df.join(right_df, cond, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)

@@ -28,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{Inner, InnerLike, JoinType, LeftAnti, LeftSemi}
+import org.apache.spark.sql.catalyst.plans.{FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -70,8 +70,9 @@ class GpuShuffledHashJoinMeta(
     }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     val joinExec = join.joinType match {
-      case Inner if conf.useShuffledSymmetricHashJoin =>
+      case Inner | FullOuter if conf.useShuffledSymmetricHashJoin =>
         GpuShuffledSymmetricHashJoinExec(
+          join.joinType,
           leftKeys.map(_.convertToGpu()),
           rightKeys.map(_.convertToGpu()),
           joinCondition,
