@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -168,17 +168,26 @@ final case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
   override def value: Long = sqlMetric.value
 }
 
-class CollectTimeIterator(
+/** A GPU metric class that just accumulates into a variable without implicit publishing. */
+final class LocalGpuMetric extends GpuMetric {
+  private var lval = 0L
+  override def value: Long = lval
+  override def set(v: Long): Unit = { lval = v }
+  override def +=(v: Long): Unit = { lval += v }
+  override def add(v: Long): Unit = { lval += v }
+}
+
+class CollectTimeIterator[T](
     nvtxName: String,
-    it: Iterator[ColumnarBatch],
-    collectTime: GpuMetric) extends Iterator[ColumnarBatch] {
+    it: Iterator[T],
+    collectTime: GpuMetric) extends Iterator[T] {
   override def hasNext: Boolean = {
     withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
       it.hasNext
     }
   }
 
-  override def next(): ColumnarBatch = {
+  override def next(): T = {
     withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
       it.next
     }

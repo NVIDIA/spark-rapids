@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1151,3 +1151,63 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable
         conf={"spark.sql.autoBroadcastJoinThreshold": "-1",
               "spark.sql.sources.useV1SourceList": "",
               "spark.rapids.sql.input." + scan_name: False})
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("is_left_host_shuffle", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_right_host_shuffle", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_left_smaller", [False, True], ids=idfn)
+@pytest.mark.parametrize("batch_size", ["1024", "1g"], ids=idfn)
+def test_new_inner_join(is_left_host_shuffle, is_right_host_shuffle, is_left_smaller, batch_size):
+    join_conf = {
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "1",
+        "spark.rapids.sql.batchSizeBytes": batch_size
+    }
+    left_size, right_size = (2048, 1024) if is_left_smaller else (1024, 2048)
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("key1", RepeatSeqGen(long_gen, length = 10)),
+            ("ints", int_gen),
+            ("key2", RepeatSeqGen(int_gen, length = 20)),
+            ("floats", float_gen)], left_size)
+        right_df = gen_df(spark, [
+            ("doubles", double_gen),
+            ("key2", RepeatSeqGen(int_gen, length = 30)),
+            ("shorts", short_gen),
+            ("key1", RepeatSeqGen(long_gen, length = 15))], right_size)
+        if not is_left_host_shuffle:
+            left_df = left_df.groupBy("key1", "key2").max("ints", "floats")
+        if not is_right_host_shuffle:
+            right_df = right_df.groupBy("key1", "key2").max("doubles", "shorts")
+        return left_df.join(right_df, ["key1", "key2"], "inner")
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("is_left_smaller", [False, True], ids=idfn)
+@pytest.mark.parametrize("is_ast_supported", [False, True], ids=idfn)
+@pytest.mark.parametrize("batch_size", ["1024", "1g"], ids=idfn)
+def test_new_inner_join_conditional(is_ast_supported, is_left_smaller, batch_size):
+    join_conf = {
+        "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "1",
+        "spark.rapids.sql.batchSizeBytes": batch_size
+    }
+    left_size, right_size = (2048, 1024) if is_left_smaller else (1024, 2048)
+    def do_join(spark):
+        left_df = gen_df(spark, [
+            ("key1", RepeatSeqGen(long_gen, length = 10)),
+            ("ints", RepeatSeqGen(int_gen, length = 5)),
+            ("key2", RepeatSeqGen(int_gen, length = 20)),
+            ("floats", float_gen)], left_size)
+        right_df = gen_df(spark, [
+            ("key2", RepeatSeqGen(int_gen, length = 30)),
+            ("ints", RepeatSeqGen(int_gen, length = 3)),
+            ("key1", RepeatSeqGen(long_gen, length = 15))], right_size)
+        cond = [left_df.key1 == right_df.key1, left_df.key2 == right_df.key2]
+        if is_ast_supported:
+            cond.append(left_df.ints >= right_df.ints)
+        else:
+            # AST does not support logarithm yet
+            cond.append(left_df.ints >= f.log(right_df.ints))
+        return left_df.join(right_df, cond, "inner")
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)

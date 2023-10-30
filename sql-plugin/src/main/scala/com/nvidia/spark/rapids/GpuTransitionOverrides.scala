@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -264,25 +264,37 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   /**
-   * Removes `GpuCoalesceBatches(GpuShuffleCoalesceExec(build side))` for the build side
-   * for the shuffled hash join. The coalesce logic has been moved to the
+   * Removes `GpuCoalesceBatches(GpuShuffleCoalesceExec(build side))` from either side of a
+   * GpuShuffledInnerHashJoinExec since that node handles shuffled data directly. For other joins,
+   * it removes it for for the build side. The coalesce logic has been moved to the
    * `GpuShuffleCoalesceExec` class, and is handled differently to prevent holding onto the
    * GPU semaphore for stream IO.
    */
-  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = plan match {
-    case x@GpuShuffledHashJoinExec(
-         _, _, _, buildSide, _,
-        left: GpuShuffleCoalesceExec,
-        GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_) if buildSide == GpuBuildRight =>
-      x.withNewChildren(
-        Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
-    case x@GpuShuffledHashJoinExec(
-         _, _, _, buildSide, _,
-        GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
-        right: GpuShuffleCoalesceExec, _) if buildSide == GpuBuildLeft =>
-      x.withNewChildren(
-        Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
-    case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
+  def shuffledHashJoinOptimizeShuffle(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case j: GpuShuffledSymmetricHashJoinExec =>
+        val newChildren = Seq(j.left, j.right).map {
+          case GpuCoalesceBatches(GpuShuffleCoalesceExec(c, _), _) => c
+          case GpuShuffleCoalesceExec(c, _) => c
+          case c => c
+        }.map(shuffledHashJoinOptimizeShuffle)
+        j.withNewChildren(newChildren)
+      case x@GpuShuffledHashJoinExec(
+          _, _, _, buildSide, _,
+          left: GpuShuffleCoalesceExec,
+          GpuCoalesceBatches(GpuShuffleCoalesceExec(rc, _), _),_)
+          if buildSide == GpuBuildRight && rapidsConf.shuffledHashJoinOptimizeShuffle =>
+        x.withNewChildren(
+          Seq(shuffledHashJoinOptimizeShuffle(left), shuffledHashJoinOptimizeShuffle(rc)))
+      case x@GpuShuffledHashJoinExec(
+          _, _, _, buildSide, _,
+          GpuCoalesceBatches(GpuShuffleCoalesceExec(lc, _), _),
+          right: GpuShuffleCoalesceExec, _)
+          if buildSide == GpuBuildLeft && rapidsConf.shuffledHashJoinOptimizeShuffle =>
+        x.withNewChildren(
+          Seq(shuffledHashJoinOptimizeShuffle(lc), shuffledHashJoinOptimizeShuffle(right)))
+      case p => p.withNewChildren(p.children.map(shuffledHashJoinOptimizeShuffle))
+    }
   }
 
   private def insertCoalesce(plans: Seq[SparkPlan], goals: Seq[CoalesceGoal],
@@ -764,7 +776,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
         updatedPlan = fixupHostColumnarTransitions(updatedPlan)
         updatedPlan = optimizeCoalesce(updatedPlan)
-        if (rapidsConf.shuffledHashJoinOptimizeShuffle) {
+        if (rapidsConf.shuffledHashJoinOptimizeShuffle || rapidsConf.useShuffledSymmetricHashJoin) {
           updatedPlan = shuffledHashJoinOptimizeShuffle(updatedPlan)
         }
         if (rapidsConf.exportColumnarRdd) {
