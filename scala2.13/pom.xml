@@ -1234,7 +1234,13 @@
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
-                        <!-- TODO add buildver validation -->
+                        <!-- #if scala-2.13 -->
+                        <requireProperty>
+                            <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
+                            <property>buildver</property>
+                            <regex>[3-9][3-9][0-9]</regex>
+                        </requireProperty>
+                        --><!-- #endif -->
                       </rules>
                     </configuration>
                   </execution>
@@ -1346,13 +1352,13 @@
                             <skip>${maven.cleanall.skip}</skip>
                             <target>
                                 <!-- #if scala-2.12 --><!--
-                                <dirset dir="${project.basedir}" 
+                                <dirset dir="${project.basedir}"
                                     includes="**/target"
                                     excludes="scala2.13/**"
                                     id="target.dirs.for.clean"/>
                                 --><!-- #endif scala-2.12 -->
                                 <!-- #if scala-2.13 -->
-                                <dirset dir="${project.basedir}" 
+                                <dirset dir="${project.basedir}"
                                     includes="**/target"
                                     id="target.dirs.for.clean"/>
                                 <!-- #endif scala-2.13 -->
