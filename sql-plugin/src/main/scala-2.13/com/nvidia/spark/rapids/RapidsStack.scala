@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.Stack
 
-class RapidsStack[T] extends scala.Proxy {
+class RapidsStack[T] extends Proxy {
   override def self = new Stack[T]()
 
   def push(elem1: T): RapidsStack[T] = {
