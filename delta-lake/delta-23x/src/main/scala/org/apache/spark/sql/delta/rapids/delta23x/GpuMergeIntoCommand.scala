@@ -715,7 +715,8 @@ case class GpuMergeIntoCommand(
     // Make UDFs that appear in the custom join processor node deterministic, as they always
     // return true and update a metric. Catalyst precludes non-deterministic UDFs that are not
     // allowed outside a very specific set of Catalyst nodes (Project, Filter, Window, Aggregate).
-    val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRowsInSecondScan")
+    val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRowsInSecondScan",
+      deterministic = true)
     val incrUpdatedCountExpr = makeMetricUpdateUDF("numTargetRowsUpdated", deterministic = true)
     val incrUpdatedMatchedCountExpr = makeMetricUpdateUDF("numTargetRowsMatchedUpdated",
       deterministic = true)
