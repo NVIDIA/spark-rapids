@@ -482,8 +482,8 @@ object GpuWindowExec {
   def isBatchedRunningFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean = {
     val isSpecOkay = isRunningWindow(spec)
     val isFuncOkay = func match {
-      case _: GpuBatchedRunningWindowWithFixer => true
-      case GpuAggregateExpression(_: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => true
+      case f: GpuBatchedRunningWindowWithFixer => f.canFixUp
+      case GpuAggregateExpression(f: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => f.canFixUp
       case _ => false
     }
     isSpecOkay && isFuncOkay
@@ -1529,10 +1529,10 @@ class GpuRunningWindowIterator(
     boundWindowOps.zipWithIndex.flatMap {
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
         func match {
-          case f: GpuBatchedRunningWindowWithFixer =>
+          case f: GpuBatchedRunningWindowWithFixer if f.canFixUp =>
             Some((index, f.newFixer()))
-          case GpuAggregateExpression(f: GpuBatchedRunningWindowWithFixer, _, _, _, _) =>
-            Some((index, f.newFixer()))
+          case GpuAggregateExpression(f: GpuBatchedRunningWindowWithFixer, _, _, _, _)
+            if f.canFixUp => Some((index, f.newFixer()))
           case _ => None
         }
       case _ => None

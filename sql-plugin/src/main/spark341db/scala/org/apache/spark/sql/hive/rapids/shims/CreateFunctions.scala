@@ -15,23 +15,22 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package org.apache.spark.sql.hive.rapids.shims
 
-import org.apache.arrow.vector.types.pojo.Schema
+import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
-import org.apache.spark.sql.execution.python.ArrowPythonRunner
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.ArrowUtils
+import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 
-object ArrowUtilsShim {
-  def getPythonRunnerConfMap(conf: SQLConf): Map[String, String] =
-    ArrowPythonRunner.getPythonRunnerConfMap(conf)
+trait CreateFunctions {
+  def createFunction(a: HiveSimpleUDF): UDF = {
+    a.funcWrapper.createFunction[UDF]()
+  }
 
-  def toArrowSchema(schema: StructType, timeZoneId: String,
-      errorOnDuplicatedFieldNames: Boolean = true, largeVarTypes: Boolean = false): Schema = {
-    ArrowUtils.toArrowSchema(schema, timeZoneId, errorOnDuplicatedFieldNames, largeVarTypes)
+  def createFunction(a: HiveGenericUDF): GenericUDF = {
+    a.funcWrapper.createFunction[GenericUDF]()
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
+{"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -26,35 +27,56 @@ import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
+import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
-object SparkShimImpl extends Spark321PlusDBShims {
+trait Spark332PlusDBShims extends Spark321PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val elementAtExpr: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[KnownNullable](
+        "Tags the expression as being nullable",
+        ExprChecks.unaryProjectInputMatchesOutput(
+          TypeSig.all, TypeSig.all),
+        (a, conf, p, r) => new UnaryExprMeta[KnownNullable](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = GpuKnownNullable(child)
+        }
+      ),
       GpuElementAtMeta.elementAtRule(true)
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
+    super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 
+  private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+    GpuOverrides.exec[WriteFilesExec](
+      "v1 write files",
+      // WriteFilesExec always has patterns:
+      //   InsertIntoHadoopFsRelationCommand(WriteFilesExec) or InsertIntoHiveTable(WriteFilesExec)
+      // The parent node of `WriteFilesExec` will check the types, here just let type check pass
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (write, conf, p, r) => new GpuWriteFilesMeta(write, conf, p, r)
+    )
+  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ PythonMapInArrowExecShims.execs
+    super.getExecs ++ shimExecs ++ PythonMapInArrowExecShims.execs
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-      DataWritingCommandRule[_ <: DataWritingCommand]] = {
-    Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](
-    "Create table with select command",
-    (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+    DataWritingCommandRule[_ <: DataWritingCommand]] = {
+    Map.empty
   }
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
-      RunnableCommandRule[_ <: RunnableCommand]] = {
-      Map.empty
+    RunnableCommandRule[_ <: RunnableCommand]] = {
+    Seq(
+      GpuOverrides.runnableCmd[CreateDataSourceTableAsSelectCommand](
+        "Write to a data source",
+        (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
   override def reproduceEmptyStringBug: Boolean = false
@@ -64,7 +86,7 @@ object SparkShimImpl extends Spark321PlusDBShims {
   }
 
   override def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike,
-      parent: SparkPlan): Boolean = {
+                                             parent: SparkPlan): Boolean = {
     parent match {
       case _: GpuBroadcastHashJoinExec =>
         shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
