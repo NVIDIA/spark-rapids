@@ -65,7 +65,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   test("basic retry") {
-    RmmSpark.associateCurrentThreadWithTask(0)
+    RmmSpark.currentThreadIsDedicatedToTask(0)
     try {
       val expr = GpuAlias(GpuAdd(
         GpuBoundReference(0, LongType, true)(NamedExpression.newExprId, "a"),
@@ -95,7 +95,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   test("tiered retry") {
-    RmmSpark.associateCurrentThreadWithTask(0)
+    RmmSpark.currentThreadIsDedicatedToTask(0)
     try {
       val a = AttributeReference("a", LongType)()
       val b = AttributeReference("b", LongType)()
@@ -126,7 +126,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   test("AST retry with split") {
-    RmmSpark.associateCurrentThreadWithTask(0)
+    RmmSpark.currentThreadIsDedicatedToTask(0)
     try {
       val a = AttributeReference("a", LongType)()
       val b = AttributeReference("b", LongType)()

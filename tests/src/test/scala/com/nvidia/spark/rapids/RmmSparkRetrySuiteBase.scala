@@ -46,7 +46,7 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     RapidsBufferCatalog.setCatalog(catalog)
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
-    RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
+    RmmSpark.currentThreadIsDedicatedToTask(1)
   }
 
   override def afterEach(): Unit = {

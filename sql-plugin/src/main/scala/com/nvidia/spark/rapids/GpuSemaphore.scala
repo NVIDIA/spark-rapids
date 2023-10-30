@@ -276,7 +276,7 @@ private final class GpuSemaphore() extends Logging {
         new SemaphoreTaskInfo()
       })
       taskInfo.blockUntilReady(semaphore)
-      RmmSpark.associateCurrentThreadWithTask(taskAttemptId)
+      RmmSpark.currentThreadIsDedicatedToTask(taskAttemptId)
       GpuDeviceManager.initializeFromTask()
     }
   }

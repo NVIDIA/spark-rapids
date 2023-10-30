@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy}
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.{ParquetFooter, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, ParquetFooter}
 import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
@@ -308,7 +308,7 @@ object GpuParquetScan {
 
   /**
    * Check that we can split the targetBatchSize and then return a split targetBatchSize. This
-   * is intended to be called from the SplitAndRetryOOM handler for all implementations of
+   * is intended to be called from the GpuSplitAndRetryOOM handler for all implementations of
    * the parquet reader
    * @param targetBatchSize the current target batch size.
    * @param useChunkedReader if chunked reading is enabled. This only works if chunked reading is
@@ -317,12 +317,12 @@ object GpuParquetScan {
    */
   def splitTargetBatchSize(targetBatchSize: Long, useChunkedReader: Boolean): Long = {
       if (!useChunkedReader) {
-      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
+      throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
           "chunked parquet reader is configured off")
     }
     val ret = targetBatchSize / 2
     if (targetBatchSize < minTargetBatchSizeMiB * 1024 * 1024) {
-           throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
+           throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split input " +
           s"target batch size to less than $minTargetBatchSizeMiB MiB")
     }
     ret

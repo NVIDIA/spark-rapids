@@ -250,7 +250,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         .setNameFormat("shuffle-transport-client-exec-%d")
         .setDaemon(true)
         .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      null,
       () => RmmSpark.removeCurrentThreadAssociation()),
     // if we can't hand off because we are too busy, block the caller (in UCX's case,
     // the progress thread)
@@ -262,7 +262,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat("shuffle-client-copy-thread-%d")
       .setDaemon(true)
       .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      null,
       () => RmmSpark.removeCurrentThreadAssociation()))
 
   override def makeClient(blockManagerId: BlockManagerId): RapidsShuffleClient = {
@@ -286,7 +286,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat(s"shuffle-server-conn-thread-${shuffleServerId.executorId}-%d")
       .setDaemon(true)
       .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      null,
       () => RmmSpark.removeCurrentThreadAssociation()))
 
   // This is used to queue up on the server all the [[BufferSendState]] as the server waits for
@@ -297,7 +297,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat(s"shuffle-server-bss-thread-%d")
       .setDaemon(true)
       .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      null,
       () => RmmSpark.removeCurrentThreadAssociation()))
 
   /**
@@ -359,7 +359,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         .setNameFormat(s"shuffle-transport-throttle-monitor")
         .setDaemon(true)
         .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      null,
       () => RmmSpark.removeCurrentThreadAssociation()))
 
   // helper class to hold transfer requests that have a bounce buffer

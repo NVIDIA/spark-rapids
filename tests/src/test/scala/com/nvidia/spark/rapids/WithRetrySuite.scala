@@ -20,7 +20,7 @@ import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalf, withRestoreOnRetry, withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
@@ -58,7 +58,7 @@ class WithRetrySuite
     RapidsBufferCatalog.setCatalog(catalog)
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
-    RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
+    RmmSpark.currentThreadIsDedicatedToTask(1)
   }
 
   override def afterEach(): Unit = {
@@ -117,7 +117,7 @@ class WithRetrySuite
         withRetry(myItems.iterator, mockSplitPolicy) { _ =>
           if (!didThrow) {
             didThrow = true
-            throw new SplitAndRetryOOM("in tests")
+            throw new GpuSplitAndRetryOOM("in tests")
           } else {
             throw new IllegalStateException("unhandled exception")
           }
@@ -136,10 +136,10 @@ class WithRetrySuite
 
   test("withRetry closes input on missing split policy") {
     val myItems = Seq(buildBatch, buildBatch)
-    assertThrows[SplitAndRetryOOM] {
+    assertThrows[GpuSplitAndRetryOOM] {
       try {
         withRetry(myItems.iterator, splitPolicy = null) { _ =>
-          throw new SplitAndRetryOOM("unhandled split-and-retry")
+          throw new GpuSplitAndRetryOOM("unhandled split-and-retry")
         }.toSeq
       } finally {
         verify(myItems.head, times(1)).close()
@@ -161,7 +161,7 @@ class WithRetrySuite
           myCheckpointable.value += increment
           if (!didThrow) {
             didThrow = true
-            throw new RetryOOM("in tests")
+            throw new GpuRetryOOM("in tests")
           }
         }
       }
@@ -183,7 +183,7 @@ class WithRetrySuite
             myCheckpointable.value += increment
             if (!didThrow) {
               val ex = new IllegalStateException()
-              ex.addSuppressed(new RetryOOM("causedby ex in tests"))
+              ex.addSuppressed(new GpuRetryOOM("causedby ex in tests"))
               throw ex
               didThrow = true
             }
@@ -208,7 +208,7 @@ class WithRetrySuite
           myCheckpointables.foreach(_.value += increment)
           if (!didThrow) {
             didThrow = true
-            throw new RetryOOM("in tests")
+            throw new GpuRetryOOM("in tests")
           }
         }
       }
@@ -233,7 +233,7 @@ class WithRetrySuite
             if (!didThrow) {
               didThrow = true
               val ex = new IllegalStateException()
-              ex.addSuppressed(new RetryOOM("causedby ex in tests"))
+              ex.addSuppressed(new GpuRetryOOM("causedby ex in tests"))
               throw ex
             }
           }
@@ -257,7 +257,7 @@ class WithRetrySuite
         lastSplitSize = attempt.targetSize
         if (doThrow > 0) {
           doThrow = doThrow - 1
-          throw new SplitAndRetryOOM("in tests")
+          throw new GpuSplitAndRetryOOM("in tests")
         }
       }.toSeq
     } finally {
@@ -274,12 +274,12 @@ class WithRetrySuite
     var lastSplitSize = 0L
     val myTarget = AutoCloseableTargetSize(initialValue, minValue)
     try {
-      assertThrows[SplitAndRetryOOM] {
+      assertThrows[GpuSplitAndRetryOOM] {
         withRetry(myTarget, splitTargetSizeInHalf) { attempt =>
           lastSplitSize = attempt.targetSize
           if (doThrow > 0) {
             doThrow = doThrow - 1
-            throw new SplitAndRetryOOM("in tests")
+            throw new GpuSplitAndRetryOOM("in tests")
           }
         }.toSeq
       }
