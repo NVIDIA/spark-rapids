@@ -86,9 +86,9 @@ class GpuGenerateExecSparkPlanMeta(
     childExprs.head match {
       case stackMeta: GpuStackMeta =>
         getExpandExecForStack(stackMeta)
-      case _ =>
+      case genMeta =>
         GpuGenerateExec(
-          childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
+          genMeta.convertToGpu().asInstanceOf[GpuGenerator],
           gen.requiredChildOutput,
           gen.outer,
           gen.generatorOutput,
