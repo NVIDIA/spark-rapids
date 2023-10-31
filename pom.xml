@@ -75,19 +75,18 @@
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
-
-        <!--
-            not a real module, workaround to enforce the build order
-            ROOT -> jdk-profiles -> shim-deps -> ...
-        -->
-        <module>shim-deps</module>
-        <module>jdk-profiles</module>
-
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
+
+        <!--
+            Workaround to enforce the build order
+            ROOT -> jdk-profiles -> shim-deps -> ...
+        -->
+        <module>shim-deps</module>
+        <module>jdk-profiles</module>
     </modules>
     <profiles>
         <profile>
