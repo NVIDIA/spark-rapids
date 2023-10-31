@@ -19,14 +19,10 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.SparkDateTimeException
-import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils extends RapidsErrorUtilsBase {
-  override def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     QueryExecutionErrors.invalidIndexOfZeroError(context = null)
   }
 }

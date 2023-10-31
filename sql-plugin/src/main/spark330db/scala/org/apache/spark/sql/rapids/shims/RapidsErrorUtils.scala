@@ -20,4 +20,10 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-object RapidsErrorUtils extends RapidsErrorUtilsBase
+import org.apache.spark.sql.errors.QueryExecutionErrors
+
+object RapidsErrorUtils extends RapidsErrorUtilsBase {
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
+  }
+}

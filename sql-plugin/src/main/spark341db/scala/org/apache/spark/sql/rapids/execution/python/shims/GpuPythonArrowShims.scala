@@ -25,20 +25,12 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import org.apache.arrow.vector.VectorSchemaRoot
-import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
-import org.apache.spark.rapids.shims.api.python.ShimBasePythonRunner
-import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.Utils
 
 /**
  * A trait that can be mixed-in with `GpuPythonRunnerBase`. It implements the logic from
@@ -153,16 +145,6 @@ trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
 }
 
 /**
- * Base class of GPU Python runners who will be mixed with GpuPythonArrowOutput
- * to produce columnar batches.
- */
-abstract class GpuPythonRunnerBase[IN](
-    funcs: Seq[ChainedPythonFunctions],
-    evalType: Int,
-    argOffsets: Array[Array[Int]])
-  extends ShimBasePythonRunner[IN, ColumnarBatch](funcs, evalType, argOffsets)
-
-/**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
 abstract class GpuArrowPythonRunnerBase(
@@ -174,14 +156,8 @@ abstract class GpuArrowPythonRunnerBase(
     conf: Map[String, String],
     batchSize: Long,
     onDataWriteFinished: () => Unit = null)
-  extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
-    with GpuPythonArrowOutput {
-
-  override val bufferSize: Int = SQLConf.get.pandasUDFBufferSize
-  require(
-    bufferSize >= 4,
-    "Pandas execution requires more than 4 bytes. Please set higher buffer. " +
-      s"Please change '${SQLConf.PANDAS_UDF_BUFFER_SIZE.key}'.")
+  extends GpuArrowPythonRunnerBaseBase(funcs, evalType, argOffsets, pythonInSchema, timeZoneId,
+    conf, batchSize, onDataWriteFinished) {
 
   protected override def newWriter(
       env: SparkEnv,
@@ -191,96 +167,14 @@ abstract class GpuArrowPythonRunnerBase(
       context: TaskContext): Writer = {
     new Writer(env, worker, inputIterator, partitionIndex, context) {
 
+      val workerImpl = new RapidsWriter(env, inputIterator, partitionIndex, context)
+
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
-
-        // Write config for the worker as a number of key -> value pairs of strings
-        dataOut.writeInt(conf.size)
-        for ((k, v) <- conf) {
-          PythonRDD.writeUTF(k, dataOut)
-          PythonRDD.writeUTF(v, dataOut)
-        }
-
-        PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
+        workerImpl.writeCommand(dataOut)
       }
 
       override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
-        if (inputIterator.nonEmpty) {
-          writeNonEmptyIteratorOnGpu(dataOut)
-        } else { // Partition is empty.
-          // In this case CPU will still send the schema to Python workers by calling
-          // the "start" API of the Java Arrow writer, but GPU will send out nothing,
-          // leading to the IPC error. And it is not easy to do as what Spark does on
-          // GPU, because the C++ Arrow writer used by GPU will only send out the schema
-          // iff there is some data. Besides, it does not expose a "start" API to do this.
-          // So here we leverage the Java Arrow writer to do similar things as Spark.
-          // It is OK because sending out schema has nothing to do with GPU.
-          writeEmptyIteratorOnCpu(dataOut)
-        }
-      }
-
-      private def writeNonEmptyIteratorOnGpu(dataOut: DataOutputStream): Boolean = {
-        val writer = {
-          val builder = ArrowIPCWriterOptions.builder()
-          builder.withMaxChunkSize(batchSize)
-          builder.withCallback((table: Table) => {
-            table.close()
-            GpuSemaphore.releaseIfNecessary(TaskContext.get())
-          })
-          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
-          GpuArrowPythonRunner.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
-            if (nullable) {
-              builder.withColumnNames(name)
-            } else {
-              builder.withNotNullableColumnNames(name)
-            }
-          }
-          Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
-        }
-
-        var wrote = false
-        Utils.tryWithSafeFinally {
-          while(inputIterator.hasNext) {
-            wrote = false
-            val table = withResource(inputIterator.next()) { nextBatch =>
-              GpuColumnVector.from(nextBatch)
-            }
-            withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
-              // The callback will handle closing table and releasing the semaphore
-              writer.write(table)
-              wrote = true
-            }
-          }
-          // The iterator can grab the semaphore even on an empty batch
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        } {
-          writer.close()
-          dataOut.flush()
-          if (onDataWriteFinished != null) onDataWriteFinished()
-        }
-        wrote
-      }
-      
-      private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Boolean = {
-        // most code is copied from Spark
-        val arrowSchema = ArrowUtilsShim.toArrowSchema(pythonInSchema, timeZoneId)
-        val allocator = ArrowUtils.rootAllocator.newChildAllocator(
-          s"stdout writer for empty partition", 0, Long.MaxValue)
-        val root = VectorSchemaRoot.create(arrowSchema, allocator)
-
-        val wrote = false
-        Utils.tryWithSafeFinally {
-          val writer = new ArrowStreamWriter(root, null, dataOut)
-          writer.start()
-          // No data to write
-          writer.end()
-          // The iterator can grab the semaphore even on an empty batch
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        } {
-          root.close()
-          allocator.close()
-          if (onDataWriteFinished != null) onDataWriteFinished()
-        }
-        wrote
+        workerImpl.writeInputToStream(dataOut)
       }
     }
   }
