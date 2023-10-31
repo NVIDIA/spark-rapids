@@ -242,9 +242,9 @@ class GpuSorter(
    * @return the sorted data.
    */
   final def mergeSortAndCloseWithRetry(
-      spillableBatches: ScalaStack[SpillableColumnarBatch],
+      spillableBatches: RapidsStack[SpillableColumnarBatch],
       sortTime: GpuMetric): SpillableColumnarBatch = {
-    closeOnExcept(spillableBatches) { _ =>
+    closeOnExcept(spillableBatches.toSeq) { _ =>
       assert(spillableBatches.nonEmpty)
     }
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
@@ -277,9 +277,9 @@ class GpuSorter(
             }
           }
         } else {
-          closeOnExcept(spillableBatches) { _ =>
-            val batchesToMerge = new ScalaStack[SpillableColumnarBatch]()
-            closeOnExcept(batchesToMerge) { _ =>
+          closeOnExcept(spillableBatches.toSeq) { _ =>
+            val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
+            closeOnExcept(batchesToMerge.toSeq) { _ =>
               while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
                 // pop a spillable batch if there is one, and add it to `batchesToMerge`.
                 if (spillableBatches.nonEmpty) {
@@ -299,7 +299,7 @@ class GpuSorter(
 
                   // we no longer care about the old batches, we closed them
                   closeOnExcept(merged) { _ =>
-                    batchesToMerge.safeClose()
+                    batchesToMerge.toSeq.safeClose()
                     batchesToMerge.clear()
                   }
 

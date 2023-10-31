@@ -306,6 +306,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -326,6 +327,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -346,6 +348,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -366,6 +369,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -428,6 +432,7 @@
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -450,6 +455,7 @@
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>

@@ -18,4 +18,36 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.Stack
 
-class ScalaStack[T] extends Stack[T]
+class RapidsStack[T] extends Proxy {
+  private val stack = new Stack[T]()
+  override def self = stack
+
+  def push(elem1: T): RapidsStack[T] = {
+    self.push(elem1)
+    this
+  }
+
+  def pop(): T = {
+    self.pop()
+  }
+
+  def isEmpty: Boolean = {
+    self.isEmpty
+  }
+
+  def nonEmpty: Boolean = {
+    self.nonEmpty
+  }
+
+  def size(): Int = {
+    self.size
+  }
+
+  def toSeq(): Seq[T] = {
+    self.toSeq
+  }
+
+  def clear(): Unit = {
+    self.clear()
+  }
+}

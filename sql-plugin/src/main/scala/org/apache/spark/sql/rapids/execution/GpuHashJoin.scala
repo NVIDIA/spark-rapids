@@ -292,14 +292,14 @@ abstract class BaseHashJoinIterator(
       1.0
   }
 
-  override def computeNumJoinRows(cb: ColumnarBatch): Long = {
+  override def computeNumJoinRows(cb: LazySpillableColumnarBatch): Long = {
     // TODO: Replace this estimate with exact join row counts using the corresponding cudf APIs
     //       being added in https://github.com/rapidsai/cudf/issues/9053.
     joinType match {
       // Full Outer join is implemented via LeftOuter/RightOuter, so use same estimate.
       case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
-        Math.ceil(cb.numRows() * streamMagnificationFactor).toLong
-      case _ => cb.numRows()
+        Math.ceil(cb.numRows * streamMagnificationFactor).toLong
+      case _ => cb.numRows
     }
   }
 

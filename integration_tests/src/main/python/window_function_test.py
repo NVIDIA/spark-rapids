@@ -501,7 +501,8 @@ def test_window_running_no_part(b_gen, batch_size):
     if isinstance(b_gen.data_type, NumericType) and not isinstance(b_gen, FloatGen) and not isinstance(b_gen, DoubleGen):
         query_parts.append('sum(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
 
-    if spark_version() > "3.1.1":
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
         query_parts.append('NTH_VALUE(b, 1) IGNORE NULLS OVER '
                            '(ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
 
@@ -620,8 +621,8 @@ def test_window_running(b_gen, c_gen, batch_size):
     if isinstance(c_gen.data_type, NumericType) and (not isinstance(c_gen, FloatGen)) and (not isinstance(c_gen, DoubleGen)) and (not isinstance(c_gen, DecimalGen)):
         query_parts.append('sum(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
 
-    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.1.2.
-    if spark_version() > "3.1.1":
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
         query_parts.append('NTH_VALUE(c, 1) IGNORE NULLS OVER '
                            '(PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
 
