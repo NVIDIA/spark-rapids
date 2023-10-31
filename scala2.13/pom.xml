@@ -75,6 +75,13 @@
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
+
+        <!--
+            not a real module, workaround to enforce the build order
+            ROOT -> shim
+        -->
+        <module>shim-deps</module>
+
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
