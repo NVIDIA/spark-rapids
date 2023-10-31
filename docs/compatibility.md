@@ -315,8 +315,8 @@ In the current version, nested types (array, struct, and map types) are not yet 
 
 This particular function supports to output a map or struct type with limited functionalities.
 
-The GPU implementation is experimental and disabled by default. It can be enabled by specifying 
-`spark.rapids.sql.expression.JsonToStructs=true`.
+The `from_json` function is disabled by default because it is experimental and has some known incompatibilities
+with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStructs=true`.
 
 There are several known issues:
 
