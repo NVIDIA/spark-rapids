@@ -1086,7 +1086,7 @@
                         <!-- #if scala-2.13 --><!--
                         <compilerPlugins combine.self="override">
                         </compilerPlugins>
-                        --><!-- #endif -->
+                        --><!-- #endif scala-2.13 -->
                     </configuration>
                 </plugin>
                 <plugin>
@@ -1235,7 +1235,6 @@
                             <regex>[3-9][3-9][0-9]</regex>
                         </requireProperty>
                         --><!-- #endif scala-2.13 -->
-                        <!-- TODO add buildver validation -->
                       </rules>
                     </configuration>
                   </execution>
