@@ -1115,6 +1115,15 @@ abstract class BaseExprMeta[INPUT <: Expression](
     childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
   }
 
+  /**
+   * Check whether this node itself can be converted to AST. It will not recursively check its
+   * children. It's used to check join condition AST-ability in top-down fashion.
+   */
+  final def canSelfBeAst: Boolean = {
+    tagForAst()
+    cannotBeAstReasons.isEmpty
+  }
+
   final def requireAstForGpu(): Unit = {
     tagForAst()
     cannotBeAstReasons.foreach { reason =>

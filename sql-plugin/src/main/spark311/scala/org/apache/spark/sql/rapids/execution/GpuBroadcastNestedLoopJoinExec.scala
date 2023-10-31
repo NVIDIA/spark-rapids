@@ -36,7 +36,7 @@ package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
@@ -58,28 +58,59 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
     verifyBuildSideWasReplaced(buildSide)
 
-    val condition = conditionMeta.map(_.convertToGpu())
-    val isAstCondition = conditionMeta.forall(_.canThisBeAst)
-    join.joinType match {
-      case _: InnerLike =>
-      case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
-        throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case RightOuter if gpuBuildSide == GpuBuildRight =>
-        throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
-        // Cannot post-filter these types of joins
-        assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
-      case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
-    }
+    // If AST-able, try to split if needed. Otherwise, do post-filter
+    val isAstCondition = canJoinCondAstAble()
 
-    val joinExec = GpuBroadcastNestedLoopJoinExec(
-      left, right,
-      join.joinType, gpuBuildSide,
-      if (isAstCondition) condition else None,
-      conf.gpuTargetBatchSizeBytes)
-    if (isAstCondition) {
-      joinExec
+    if(isAstCondition){
+      // Try to extract non-AST-able conditions from join conditions
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.allAttributes, right.allAttributes, true)
+
+      // Reconstruct the childern with wrapped project node if needed.
+      val leftChild =
+        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+      val rightChild =
+        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+      val postBuildCondition =
+        if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
+
+      // TODO: a code refactor is needed to skip passing in postBuildCondition as a parameter to
+      // instantiate GpuBroadcastNestedLoopJoinExec. This is because currently output columnar batch
+      // of broadcast side is handled inside GpuBroadcastNestedLoopJoinExec. Have to manually build
+      // a project node to build side batch.
+      val joinExec = GpuBroadcastNestedLoopJoinExec(
+        leftChild, rightChild,
+        join.joinType, gpuBuildSide,
+        remains,
+        postBuildCondition,
+        conf.gpuTargetBatchSizeBytes)
+      if (leftExpr.isEmpty && rightExpr.isEmpty) {
+        joinExec
+      } else {
+        // Remove the intermediate attributes from left and right side project nodes
+        GpuProjectExec((left.output ++ right.output).toList, joinExec)(false)
+      }
     } else {
+      join.joinType match {
+        case _: InnerLike =>
+        case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
+          throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
+        case RightOuter if gpuBuildSide == GpuBuildRight =>
+          throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
+        case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
+          // Cannot post-filter these types of joins
+          assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
+        case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
+      }
+      val condition = conditionMeta.map(_.convertToGpu())
+
+      val joinExec = GpuBroadcastNestedLoopJoinExec(
+        left, right,
+        join.joinType, gpuBuildSide,
+        None,
+        List.empty,
+        conf.gpuTargetBatchSizeBytes)
+
       // condition cannot be implemented via AST so fallback to a post-filter if necessary
       condition.map {
         // TODO: Restore batch coalescing logic here.
@@ -94,13 +125,13 @@ class GpuBroadcastNestedLoopJoinMeta(
   }
 }
 
-
 case class GpuBroadcastNestedLoopJoinExec(
     left: SparkPlan,
     right: SparkPlan,
     joinType: JoinType,
     gpuBuildSide: GpuBuildSide,
     condition: Option[Expression],
+    postBroadcastCondition: List[NamedExpression],
     targetSizeBytes: Long) extends GpuBroadcastNestedLoopJoinExecBase(
-      left, right, joinType, gpuBuildSide, condition, targetSizeBytes
+      left, right, joinType, gpuBuildSide, condition, postBroadcastCondition, targetSizeBytes
     )
