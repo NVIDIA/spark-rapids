@@ -86,8 +86,8 @@ class GpuGenerateExecSparkPlanMeta(
   override def convertToGpu(): GpuExec = {
     // if child expression contains Stack, use GpuExpandExec instead
     childExprs.head match {
-      case _: GpuStackMeta =>
-        getExpandExecForStack()
+      case stackMeta: GpuStackMeta =>
+        getExpandExecForStack(stackMeta)
       case _ =>
         GpuGenerateExec(
           childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
