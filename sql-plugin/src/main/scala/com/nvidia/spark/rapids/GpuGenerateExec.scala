@@ -53,8 +53,7 @@ class GpuGenerateExecSparkPlanMeta(
     }
   }
 
-  private def getExpandExecForStack(): GpuExec = {
-    val stackMeta = childExprs.filter(_.isInstanceOf[GpuStackMeta]).head
+  private def getExpandExecForStack(stackMeta: GpuStackMeta): GpuExec = {
     val numRows = extractLit(stackMeta.childExprs.head.convertToCpu()) match {
       case Some(lit) => lit.value.asInstanceOf[Int]
       case _ => throw new IllegalStateException("First parameter of stack should be a literal Int")
