@@ -26,6 +26,7 @@ import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
+import scala.collection
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
@@ -379,7 +380,7 @@ object GpuParquetPartitionReaderFactoryBase {
 }
 
 // contains meta about all the blocks in a file
-case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
+case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
     isCorrectedInt96RebaseMode: Boolean, isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean)
@@ -1198,8 +1199,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-      targetBatchSizeBytes, useChunkedReader, metrics, partitionSchema, numThreads,
-      maxNumFileProcessed, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
+      targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader, metrics, partitionSchema,
+      numThreads, maxNumFileProcessed, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
       alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
       queryUsesInputFile, keepReadsInOrderFromConf, combineConf)
   }
@@ -1310,10 +1311,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     metrics.get("scanTime").foreach {
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
-    new MultiFileParquetPartitionReader(conf, files, clippedBlocks, isCaseSensitive,
+    new MultiFileParquetPartitionReader(conf, files, clippedBlocks.toSeq, isCaseSensitive,
       debugDumpPrefix, debugDumpAlways, useChunkedReader, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, targetBatchSizeBytes, metrics, partitionSchema, numThreads,
-      ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
+      maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes, metrics, partitionSchema,
+      numThreads, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
   }
 
   /**
@@ -1345,6 +1346,7 @@ case class GpuParquetPartitionReaderFactory(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val targetSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
+  private val maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes
   private val useChunkedReader = rapidsConf.chunkedReaderEnabled
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf, metrics)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
@@ -1360,7 +1362,8 @@ case class GpuParquetPartitionReaderFactory(
   override def buildColumnarReader(
       partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val reader = new PartitionReaderWithBytesRead(buildBaseColumnarParquetReader(partitionedFile))
-    ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
+    ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema,
+      maxGpuColumnSizeBytes)
   }
 
   private def buildBaseColumnarParquetReader(
@@ -1559,9 +1562,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           column.getTotalUncompressedSize)
         totalBytesToCopy += columnSize
       }
-      outputBlocks += GpuParquetUtils.newBlockMeta(block.getRowCount, outputColumns)
+      outputBlocks += GpuParquetUtils.newBlockMeta(block.getRowCount, outputColumns.toSeq)
     }
-    outputBlocks
+    outputBlocks.toSeq
   }
 
   /**
@@ -1607,7 +1610,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         localItem.close()
       }
     }
-    copyRemoteBlocksData(remoteItems.asInstanceOf[Seq[CopyRange]], filePath,
+    copyRemoteBlocksData(remoteItems.toSeq, filePath,
       filePathString, out, metrics)
     // fixup output pos after blocks were copied possibly out of order
     out.seek(startPos + totalBytesToCopy)
@@ -1675,7 +1678,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       }
     }
     addCurrentRange()
-    coalesced
+    coalesced.toSeq
   }
 
   private def copyLocal(
@@ -1748,7 +1751,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     readNextBatch()
     logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
       s"Estimated GPU bytes: $numBytes")
-    currentChunk
+    currentChunk.toSeq
   }
 
   /**
@@ -1902,6 +1905,7 @@ class MultiFileParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
@@ -1909,7 +1913,8 @@ class MultiFileParquetPartitionReader(
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
-    partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
+    partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
+    numThreads, execMetrics)
   with ParquetPartitionReaderBase {
 
   // Some implicits to convert the base class to the sub-class and vice versa
@@ -1934,7 +1939,7 @@ class MultiFileParquetPartitionReader(
         val startBytesRead = fileSystemBytesRead()
         val outputBlocks = withResource(outhmb) { _ =>
           withResource(new HostMemoryOutputStream(outhmb)) { out =>
-            copyBlocksData(file, out, blocks, offset, metrics)
+            copyBlocksData(file, out, blocks.toSeq, offset, metrics)
           }
         }
         val bytesRead = fileSystemBytesRead() - startBytesRead
@@ -2027,9 +2032,9 @@ class MultiFileParquetPartitionReader(
   }
 
   override def calculateFinalBlocksOutputSize(footerOffset: Long,
-      blocks: Seq[DataBlockBase], bContext: BatchContext): Long = {
+      blocks: collection.Seq[DataBlockBase], bContext: BatchContext): Long = {
 
-    val actualFooterSize = calculateParquetFooterSize(blocks, bContext.schema)
+    val actualFooterSize = calculateParquetFooterSize(blocks.toSeq, bContext.schema)
     // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
     footerOffset + actualFooterSize + 4 + 4
   }
@@ -2094,6 +2099,7 @@ class MultiFileCloudParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
     useChunkedReader: Boolean,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
@@ -2192,7 +2198,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       // using all of the actual combined output blocks meta calculate what the footer size
       // will really be
-      val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, schemaToUse)
+      val actualFooterSize = calculateParquetFooterSize(allOutputBlocks.toSeq, schemaToUse)
       var buf: HostMemoryBuffer = combinedHmb
       val totalBufferSize = if ((initTotalSize - offset) < actualFooterSize) {
         val newBufferSize = offset + actualFooterSize + 4 + 4
@@ -2217,7 +2223,7 @@ class MultiFileCloudParquetPartitionReader(
 
       withResource(buf.slice(offset, (totalBufferSize - offset))) { footerHmbSlice =>
         withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
-          writeFooter(footerOut, allOutputBlocks, schemaToUse)
+          writeFooter(footerOut, allOutputBlocks.toSeq, schemaToUse)
           BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
           footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
           offset += footerOut.getPos
@@ -2535,10 +2541,10 @@ class MultiFileCloudParquetPartitionReader(
         case Some(partRowsAndValues) =>
           val (rowsPerPart, partValues) = partRowsAndValues.unzip
           BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
-            partValues, partitionSchema)
+            partValues, partitionSchema, maxGpuColumnSizeBytes)
         case None =>
           BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(origBatch,
-            meta.partitionedFile.partitionValues, partitionSchema)
+            meta.partitionedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
       }
 
     case buffer: HostMemoryBuffersWithMetaData =>
@@ -2601,7 +2607,7 @@ class MultiFileCloudParquetPartitionReader(
         val allPartInternalRows = allPartValues.get.map(_._2)
         val rowsPerPartition = allPartValues.get.map(_._1)
         new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
-          rowsPerPartition, partitionSchema)
+          rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
       } else {
         // this is a bit weird, we don't have number of rows when allPartValues isn't
         // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
@@ -2609,7 +2615,7 @@ class MultiFileCloudParquetPartitionReader(
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
           BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
-            partedFile.partitionValues, partitionSchema)
+            partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
         }
       }
     }.flatten

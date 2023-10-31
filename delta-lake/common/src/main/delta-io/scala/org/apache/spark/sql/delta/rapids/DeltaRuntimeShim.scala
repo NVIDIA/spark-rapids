@@ -53,7 +53,11 @@ object DeltaRuntimeShim {
       Try {
         DeltaUDF.getClass.getMethod("stringStringUdf", classOf[String => String])
       }.map(_ => "org.apache.spark.sql.delta.rapids.delta21x.Delta21xRuntimeShim")
-          .getOrElse("org.apache.spark.sql.delta.rapids.delta22x.Delta22xRuntimeShim")
+        .orElse {
+          Try {
+            classOf[DeltaLog].getMethod("assertRemovable")
+          }.map(_ => "org.apache.spark.sql.delta.rapids.delta22x.Delta22xRuntimeShim")
+        }.getOrElse("org.apache.spark.sql.delta.rapids.delta23x.Delta23xRuntimeShim")
     } else if (VersionUtils.cmpSparkVersion(3, 5, 0) < 0) {
       "org.apache.spark.sql.delta.rapids.delta24x.Delta24xRuntimeShim"
     } else {

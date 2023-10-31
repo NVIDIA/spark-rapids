@@ -65,6 +65,7 @@ class GpuReadCSVFileFormat extends CSVFileFormat with GpuReadFileFormatWithMetri
       csvOpts,
       rapidsConf.maxReadBatchSizeRows,
       rapidsConf.maxReadBatchSizeBytes,
+      rapidsConf.maxGpuColumnSizeBytes,
       metrics,
       options)
     PartitionReaderIterator.buildReader(factory)

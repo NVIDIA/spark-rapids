@@ -734,7 +734,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def hasAnyToConcat: Boolean = batches.nonEmpty
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val candidates = batches.clone()
+    val candidates = batches.toIndexedSeq
     batches.clear()
     withRetryNoSplit(candidates) { attempt =>
       concatBatches(attempt.toArray)
@@ -856,7 +856,7 @@ class GpuCompressionAwareCoalesceIterator(
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val candidates = batches.clone()
+    val candidates = batches.toIndexedSeq
     batches.clear()
     withRetryNoSplit(candidates) { attempt =>
       concatBatches(attempt.toArray)

@@ -353,7 +353,7 @@ class GpuRapidsProcessDeltaMergeJoinIterator(
           results.append(GpuProjectExec.project(leftOverBatch, default))
         }
       }
-      results
+      results.toSeq
     }
   }
 

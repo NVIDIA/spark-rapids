@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2020-2023, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.nvidia</groupId>
+        <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
+        <version>23.12.0-SNAPSHOT</version>
+        <relativePath>../shim-deps/pom.xml</relativePath>
+    </parent>
+    <artifactId>rapids-4-spark-tests_2.13</artifactId>
+    <name>RAPIDS Accelerator for Apache Spark Tests</name>
+    <description>RAPIDS plugin for Apache Spark integration tests</description>
+    <version>23.12.0-SNAPSHOT</version>
+
+    <properties>
+        <rapids.module>tests</rapids.module>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jul-to-slf4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+            <!-- runtime scope is appropriate, but causes SBT build problems -->
+        </dependency>
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-library</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.scalatestplus</groupId>
+            <artifactId>mockito-4-11_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>spark-rapids-jni</artifactId>
+            <classifier>${jni.classifier}</classifier>
+        </dependency>
+        <!-- use aggregator jar because accessing internal classes -->
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>datagen_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-inline</artifactId>
+            <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.junit.jupiter</groupId>
+          <artifactId>junit-jupiter-api</artifactId>
+          <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.test.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-avro_${scala.binary.version}</artifactId>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <profile>
+            <id>release321</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>321</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release322</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>322</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release323</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>323</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release324</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>324</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release330</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release331</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>331</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release332</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>332</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release333</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>333</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release340</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>340</value>
+                </property>
+            </activation>
+        </profile>
+        <profile>
+            <id>release341</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341</value>
+                </property>
+            </activation>
+        </profile>
+    </profiles>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

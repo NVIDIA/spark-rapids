@@ -29,7 +29,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.util.Utils
 
@@ -54,7 +54,7 @@ object ExternalSource extends Logging {
     }
   }
 
-  lazy val avroProvider = ShimLoader.newAvroProvider()
+  lazy val avroProvider = ShimLoaderTemp.newAvroProvider()
 
   private lazy val hasIcebergJar = {
     Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
@@ -201,6 +201,28 @@ object ExternalSource extends Logging {
   def convertToGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): GpuExec = {
+    val writeClass = cpuExec.table.getClass
+    if (deltaProvider.isSupportedWrite(writeClass)) {
+      deltaProvider.convertToGpu(cpuExec, meta)
+    } else {
+      throw new IllegalStateException("No GPU conversion")
+    }
+  }
+
+  def tagForGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): Unit = {
+    val writeClass = cpuExec.table.getClass
+    if (deltaProvider.isSupportedWrite(writeClass)) {
+      deltaProvider.tagForGpu(cpuExec, meta)
+    } else {
+      meta.willNotWorkOnGpu(s"catalog $writeClass is not supported")
+    }
+  }
+
+  def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec = {
     val writeClass = cpuExec.table.getClass
     if (deltaProvider.isSupportedWrite(writeClass)) {
       deltaProvider.convertToGpu(cpuExec, meta)
