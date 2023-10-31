@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -52,39 +53,47 @@ class GpuGenerateExecSparkPlanMeta(
     }
   }
 
+  private def getExpandExecForStack(): GpuExec = {
+    val stackMeta = childExprs.filter(_.isInstanceOf[GpuStackMeta]).head
+    val numRows = extractLit(stackMeta.childExprs.head.convertToCpu()) match {
+      case Some(lit) => lit.value.asInstanceOf[Int]
+      case _ => throw new IllegalStateException("First parameter of stack should be a literal Int")
+    }
+    val numFields = Math.ceil((stackMeta.childExprs.length - 1.0) / numRows).toInt
+    val projections: Seq[Seq[Expression]] = for (row <- 0 until numRows) yield {
+      val childExprsGpu = childExprs.filterNot(_.isInstanceOf[GpuStackMeta])
+          .map(_.convertToGpu())
+      val otherProj: Seq[Expression] = for (req <- childExprsGpu) yield {
+        req
+      }
+      val stackProj: Seq[Expression] = for (col <- 0 until numFields) yield {
+        val index = row * numFields + col
+        if (index >= stackMeta.childExprs.tail.length) {
+          val typeInfo = stackMeta.childExprs.tail(col).dataType
+          GpuLiteral(null, typeInfo)
+        } else {
+          stackMeta.childExprs.tail(index).convertToGpu()
+        }
+      }
+      otherProj ++ stackProj
+    }
+    val output: Seq[Attribute] = gen.requiredChildOutput ++ gen.generatorOutput.take(numFields)
+    GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(
+        useTieredProject = conf.isTieredProjectEnabled)
+  }
+
   override def convertToGpu(): GpuExec = {
     // if child expression contains Stack, use GpuExpandExec instead
-    if (childExprs.exists(_.isInstanceOf[GpuStackMeta])) {
-      val stackMeta = childExprs.filter(_.isInstanceOf[GpuStackMeta]).head
-      val numRows = stackMeta.childExprs.head.convertToGpu()
-          .asInstanceOf[GpuLiteral].value.asInstanceOf[Int]
-      val numFields = Math.ceil((stackMeta.childExprs.length - 1.0) / numRows).toInt
-      val projections: Seq[Seq[Expression]] = for (row <- 0 until numRows) yield {
-        val childExprsGpu = childExprs.filterNot(_.isInstanceOf[GpuStackMeta])
-            .map(_.convertToGpu())
-        val otherProj: Seq[Expression] = for (req <- childExprsGpu) yield {
-          req
-        }
-        val stackProj: Seq[Expression] = for (col <- 0 until numFields) yield {
-          val index = row * numFields + col
-          if (index >= stackMeta.childExprs.tail.length) {
-            val typeInfo = stackMeta.childExprs.tail(col).dataType
-            GpuLiteral(null, typeInfo)
-          } else {
-            stackMeta.childExprs.tail(index).convertToGpu()
-          }
-        }
-        otherProj ++ stackProj
-      }
-      val output: Seq[Attribute] = gen.requiredChildOutput ++ gen.generatorOutput.take(numFields)
-      GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(false)
-    } else {
-      GpuGenerateExec(
-        childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
-        gen.requiredChildOutput,
-        gen.outer,
-        gen.generatorOutput,
-        childPlans.head.convertIfNeeded())
+    childExprs.head match {
+      case _: GpuStackMeta =>
+        getExpandExecForStack()
+      case _ =>
+        GpuGenerateExec(
+          childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
+          gen.requiredChildOutput,
+          gen.outer,
+          gen.generatorOutput,
+          childPlans.head.convertIfNeeded())
     }
   }
 }
@@ -98,8 +107,10 @@ class GpuStackMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = stack.children
       .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
+  
   override def convertToGpu(): GpuExpression = {
+    // There is no need to implement convertToGpu() here, because GpuGenerateExec will handle
+    // stack logic in terms of GpuExpandExec, no convertToGpu() will be called during the process
     throw new UnsupportedOperationException(s"Should not be here: $this")
   }
 }

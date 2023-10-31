@@ -215,18 +215,35 @@ def test_generate_outer_fallback():
             .repartition(1).selectExpr("inline_outer(x)"),
         "GenerateExec")
 
-# stack not guarantee to produce the same output order as Spark does
+# gpu stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True) 
 def test_stack():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.range(100).selectExpr('*', 'stack(3, id, 2L, 3L, 4L, 5L, 6L)'))
 
-# stack not guarantee to produce the same output order as Spark does
+# gpu stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True)
 def test_stack_mixed_types():
-    data_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)], nullable=False)
-    print([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
+    data_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in 
+                          enumerate(all_basic_gens + decimal_gens)], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100)
-                .selectExpr('*', 'stack(2, child1, child2, child3, child4, child5, child6, child7, child8, child9, child10,' + 
-                            '1Y, 2S, 3, 4L, 5.0f, 6.0d, "7", false, to_date("2009-01-01"), to_timestamp("2010-01-01 00:00:00"), null)'))
+                .selectExpr('*', 'stack(2, child1, child2, child3, child4, child5, child6, ' + 
+                            'child7, child8, child9, child10, child11, child12, child13, ' + 
+                            '1Y, 2S, 3, 4L, 5.0f, 6.0d, "7", false, to_date("2009-01-01"), ' + 
+                            'to_timestamp("2010-01-01 00:00:00"), null, 1234.567, ' + 
+                            '1234567890.12, 123456789012345678.90)'))
+
+# gpu stack not guarantee to produce the same output order as Spark does
+@ignore_order(local=True)
+def test_stack_nested_types():
+    data_gen = StructGen([['array', ArrayGen(IntegerGen(nullable=False))], 
+                         ['map', MapGen(IntegerGen(nullable=False), StringGen(nullable=False))],
+                         ['struct', StructGen([['col1', IntegerGen(nullable=False)], 
+                                               ['col2', StringGen(nullable=False)]])]
+                         ], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100)
+                .selectExpr('*', 'stack(2, map, array, struct, ' + 
+                            'map(1, "a", 2, "b"), array(1, 2, 3), struct(1, "a"))'))
+
