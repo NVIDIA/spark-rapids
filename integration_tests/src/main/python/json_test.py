@@ -439,16 +439,17 @@ def test_from_json_map_fallback():
     'struct<a:string>',
     'struct<b:string>',
     'struct<c:string>',
-    'struct<a:boolean>',
-    pytest.param('struct<a:int>', marks=pytest.mark.xfail(reason='TODO file issue')),
-    pytest.param('struct<a:double>', marks=pytest.mark.xfail(reason='TODO file issue')),
+    'struct<b:boolean>',
+    'struct<a:int>',
+    'struct<a:double>',
     'struct<d:string>',
     'struct<a:string,b:string>',
     'struct<c:int,a:string>',
     'struct<a:string,a:string>',
     ])
 def test_from_json_struct(schema):
-    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1\d\d\d}') \
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
+    json_string_gen = StringGen(r'{"a": [1-9]{0,5}, "b": "[A-Z]{0,5}", "c": 1\d\d\d}') \
         .with_special_pattern('', weight=50) \
         .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
