@@ -60,8 +60,7 @@ class GpuGenerateExecSparkPlanMeta(
     }
     val numFields = Math.ceil((stackMeta.childExprs.length - 1.0) / numRows).toInt
     val projections: Seq[Seq[Expression]] = for (row <- 0 until numRows) yield {
-      val childExprsGpu = childExprs.filterNot(_.isInstanceOf[GpuStackMeta])
-          .map(_.convertToGpu())
+      val childExprsGpu = childExprs.tail.map(_.convertToGpu())
       val otherProj: Seq[Expression] = for (req <- childExprsGpu) yield {
         req
       }
