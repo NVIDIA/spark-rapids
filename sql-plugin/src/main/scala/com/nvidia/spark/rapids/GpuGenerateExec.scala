@@ -68,11 +68,12 @@ class GpuGenerateExecSparkPlanMeta(
       }
       val stackProj: Seq[Expression] = for (col <- 0 until numFields) yield {
         val index = row * numFields + col
-        if (index >= stackMeta.childExprs.tail.length) {
-          val typeInfo = stackMeta.childExprs.tail(col).dataType
+        val dataChildren = stackMeta.childExprs.tail
+        if (index >= dataChildren.length) {
+          val typeInfo = dataChildren(col).dataType
           GpuLiteral(null, typeInfo)
         } else {
-          stackMeta.childExprs.tail(index).convertToGpu()
+          dataChildren(index).convertToGpu()
         }
       }
       otherProj ++ stackProj
