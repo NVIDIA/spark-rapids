@@ -1066,7 +1066,6 @@
                             <arg>-Xsource:2.13</arg>
                             <!-- #if scala-2.13 --><!--
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
-                            <arg>-target:jvm-1.8</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
                             <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
