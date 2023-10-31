@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.Scalar
+import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
@@ -96,7 +96,17 @@ case class GpuJsonToStructs(
                       }
                     }
                   }
-                  (isNullOrEmptyInput, cleaned.joinStrings(lineSep, emptyRow))
+
+                  // if the last entry in a column is incomplete or invalid, then cuDF
+                  // will drop the row rather than replace with null if there is no newline, so we
+                  // add a newline here to prevent that
+                  val joined = withResource(cleaned.joinStrings(lineSep, emptyRow)) { joined =>
+                    withResource(ColumnVector.fromStrings("\n")) { newline =>
+                      ColumnVector.stringConcatenate(Array[ColumnView](joined, newline))
+                    }
+                  }
+
+                  (isNullOrEmptyInput, joined)
                 }
               }
             }
