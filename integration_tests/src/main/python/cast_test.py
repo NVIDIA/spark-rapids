@@ -16,12 +16,12 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
-from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, is_spark_350_or_later, \
-    is_databricks113_or_later, with_gpu_session
+from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
+    is_databricks113_or_later
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
-from datetime import datetime
+from datetime import date, datetime
 import math
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
@@ -297,7 +297,6 @@ def _assert_cast_to_string_equal (data_gen, conf):
 
 @pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
@@ -317,7 +316,6 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 
 @pytest.mark.parametrize('data_gen', basic_map_gens_for_cast_to_string, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
@@ -337,7 +335,6 @@ def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
 
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@pytest.mark.xfail(condition=is_spark_350_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/9065')
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
@@ -667,14 +664,15 @@ def test_cast_int_to_string_not_UTC():
         {"spark.sql.session.timeZone": "+08"})
 
 not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (timestamp_gen, 'DATE'),
-        (date_gen, 'TIMESTAMP'),
+        # python does not like year 0, and with time zones the default start date can become year 0 :(
+        (DateGen(start=date(1, 1, 3)), 'TIMESTAMP'),
         (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP')]
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params)
+@pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params, ids=idfn)
 def test_cast_fallback_not_UTC(from_gen, to_type):
     assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, from_gen, 100).selectExpr("CAST(a AS {}) as casted".format(to_type)),
+        lambda spark: unary_op_df(spark, from_gen).selectExpr("CAST(a AS {}) as casted".format(to_type)),
         "Cast",
         {"spark.sql.session.timeZone": "+08",
          "spark.rapids.sql.castStringToTimestamp.enabled": "true"})

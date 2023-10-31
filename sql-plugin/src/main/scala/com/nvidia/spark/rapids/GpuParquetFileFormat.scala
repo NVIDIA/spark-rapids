@@ -250,7 +250,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
-    val parquetFieldIdWriteEnabled = ParquetFieldIdShims.getParquetIdWriteEnabled(sqlConf)
+    val parquetFieldIdWriteEnabled = ParquetFieldIdShims.getParquetIdWriteEnabled(conf, sqlConf)
 
     ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 

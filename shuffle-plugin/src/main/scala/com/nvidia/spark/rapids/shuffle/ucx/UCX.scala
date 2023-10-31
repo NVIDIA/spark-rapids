@@ -656,7 +656,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     while (pendingRegistration) {
       registeredMemory.wait(100)
     }
-    registeredMemory.map(_.getRemoteKeyBuffer)
+    registeredMemory.map(_.getRemoteKeyBuffer).toSeq
   }
 
   /**

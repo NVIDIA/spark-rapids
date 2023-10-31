@@ -30,6 +30,7 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -67,15 +68,15 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       cmd.table.provider.get, spark.sessionState.conf)
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
-    gpuProvider = origProvider.getConstructor().newInstance() match {
-      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark,
-          cmd.table.storage.properties, cmd.query.schema)
-      case ds =>
-        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
-        None
+    gpuProvider = if (classOf[FileFormat].isAssignableFrom(origProvider) &&
+      GpuOrcFileFormat.isSparkOrcFormat(origProvider.asInstanceOf[Class[_ <: FileFormat]])) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
+    } else if (origProvider == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark,
+        cmd.table.storage.properties, cmd.query.schema)
+    } else {
+      willNotWorkOnGpu(s"Data source class not supported: $origProvider")
+      None
     }
   }
 

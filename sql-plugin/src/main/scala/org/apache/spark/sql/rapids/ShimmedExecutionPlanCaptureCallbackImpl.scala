@@ -20,7 +20,7 @@ import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
-import com.nvidia.spark.rapids.{PlanShims, PlanUtils, ShimLoader}
+import com.nvidia.spark.rapids.{PlanShims, PlanUtils, ShimLoaderTemp}
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -99,7 +99,7 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     import org.apache.spark.sql.execution.FileSourceScanExec
     import org.apache.spark.sql.types.StructType
 
-    val adaptiveSparkPlanHelper = ShimLoader.newAdaptiveSparkPlanHelperShim()
+    val adaptiveSparkPlanHelper = ShimLoaderTemp.newAdaptiveSparkPlanHelperShim()
     val cpuFileSourceScanSchemata =
       adaptiveSparkPlanHelper.collect(cpuDf.queryExecution.executedPlan) {
       case scan: FileSourceScanExec => scan.requiredSchema

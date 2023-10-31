@@ -293,6 +293,12 @@ def test_map_expr_expr_keys_dupe_exception():
             conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
             error_message = "Duplicate map key")
 
+def test_map_keys_null_exception():
+    assert_gpu_and_cpu_error(
+            lambda spark: spark.sql(
+                "select map(x, -1) from (select explode(array(1,null)) as x)").collect(),
+            conf = {},
+            error_message = "Cannot use null as map key")
 
 def test_map_expr_literal_keys_dupe_last_win():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
@@ -331,7 +337,7 @@ def test_str_to_map_expr_fixed_pattern_input():
     # Test pattern "key1:val1,key2:val2".
     # In order to prevent duplicate keys, the first key starts with a number [0-9] and the second
     # key start with a letter [a-zA-Z].
-    data_gen = [('a', StringGen(pattern='[0-9].{0,10}:.{0,10},[a-zA-Z].{0,10}:.{0,10}',
+    data_gen = [('a', StringGen(pattern='[0-9][^:,]{0,10}:[^:,]{0,10},[a-zA-Z][^:,]{0,10}:[^:,]{0,10}',
                                 nullable=True))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
@@ -357,7 +363,8 @@ def test_str_to_map_expr_random_delimiters():
     delim_gen = StringGen(pattern='[0-9a-z :,]', nullable=False)
     (pair_delim, keyval_delim) = ('', '')
     while pair_delim == keyval_delim:
-        (pair_delim, keyval_delim) = gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True)
+        (pair_delim, keyval_delim) = with_cpu_session(
+            lambda spark: gen_scalars_for_sql(delim_gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).selectExpr(
             'str_to_map(a) as m1',

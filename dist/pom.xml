@@ -21,13 +21,14 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-parent</artifactId>
-        <version>23.10.0-SNAPSHOT</version>
+        <artifactId>rapids-4-spark-parent_2.12</artifactId>
+        <version>23.12.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>23.10.0-SNAPSHOT</version>
+    <version>23.12.0-SNAPSHOT</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -39,8 +40,9 @@
     </dependencies>
 
     <properties>
+        <rapids.module>dist</rapids.module>
         <target.classifier/>
-        <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
+        <dist.jar.name>${project.build.directory}/${project.build.finalName}-${jni.classifier}.jar</dist.jar.name>
         <dist.jar.pom.url>jar:file:${dist.jar.name}!/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml</dist.jar.pom.url>
         <rapids.default.jar.phase>none</rapids.default.jar.phase>
     </properties>
@@ -58,7 +60,12 @@
             <id>noSnapshots</id>
             <properties>
                 <included_buildvers>
+                    <!-- #if scala-2.12 -->
                     ${noSnapshot.buildvers}
+                    <!-- #endif scala-2.12 -->
+                    <!-- #if scala-2.13 --><!--
+                    ${noSnapshotScala213.buildvers}
+                    --><!-- #endif scala-2.13 -->
                 </included_buildvers>
             </properties>
         </profile>
@@ -83,6 +90,14 @@
             <properties>
                 <included_buildvers>
                     ${premergeUTF8.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeScala213.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
@@ -165,6 +180,31 @@
             </properties>
         </profile>
         <profile>
+            <id>noSnapshotsScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>snapshotsScala213</id>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshotScala213.buildvers},
+                    ${snapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>snapshotScala213Only</id>
+            <properties>
+                <included_buildvers>
+                    ${snapshotScala213.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>individual</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -223,7 +263,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
-                    <classifier>${cuda.version}</classifier>
+                    <classifier>${jni.classifier}</classifier>
                 </configuration>
                 <executions>
                     <execution>
@@ -235,7 +275,7 @@
                         <configuration>
                             <archive><compress>${dist.jar.compress}</compress></archive>
                             <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
-                            <classifier>${cuda.version}</classifier>
+                            <classifier>${jni.classifier}</classifier>
                         </configuration>
                     </execution>
                 </executions>
@@ -277,7 +317,7 @@
                                 <property name="scala.binary.version" value="${scala.binary.version}"/>
                                 <property name="included_buildvers" value="${included_buildvers}"/>
                                 <ant
-                                    antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                    antfile="${spark.rapids.source.basedir}/${rapids.module}/maven-antrun/build-parallel-worlds.xml"
                                     target="remove-dependencies-from-pom"
                                 />
                             </target>
@@ -412,7 +452,7 @@ self.log("... OK")
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>spark-rapids-jni</artifactId>
-                                    <classifier>${cuda.version}</classifier>
+                                    <classifier>${jni.classifier}</classifier>
                                     <excludes>META-INF/**</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
                                     <overWrite>true</overWrite>
@@ -447,7 +487,7 @@ self.log("... OK")
                         <configuration>
                             <file>${dist.jar.name}</file>
                             <artifactId>${project.artifactId}</artifactId>
-                            <classifier>${cuda.version}</classifier>
+                            <classifier>${jni.classifier}</classifier>
                             <groupId>${project.groupId}</groupId>
                             <version>${project.version}</version>
                             <packaging>jar</packaging>
@@ -477,7 +517,7 @@ self.log("... OK")
                             <file>${dist.jar.name}</file>
                             <url>file://${java.io.tmpdir}/m2-repo</url>
                             <artifactId>${project.artifactId}</artifactId>
-                            <classifier>${cuda.version}</classifier>
+                            <classifier>${jni.classifier}</classifier>
                             <groupId>${project.groupId}</groupId>
                             <packaging>jar</packaging>
                             <!-- pomFile will be taken from META-INF in jar

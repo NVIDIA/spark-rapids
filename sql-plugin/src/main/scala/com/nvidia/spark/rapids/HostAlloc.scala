@@ -26,7 +26,7 @@ import org.apache.spark.TaskContext
 private class HostAlloc(nonPinnedLimit: Long) {
   private var currentNonPinnedAllocated: Long = 0L
   private var currentNonPinnedReserved: Long = 0L
-  private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes()
+  private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes
   // For now we are going to assume that we are the only ones calling into the pinned pool
   // That is not really true, but should be okay.
   private var currentPinnedAllocated: Long = 0L
@@ -48,7 +48,9 @@ private class HostAlloc(nonPinnedLimit: Long) {
    * An allocation that has not been completed yet. It is blocked waiting for more resources.
    */
   private class BlockedAllocation(val amount: Long, val taskId: Long) {
-    var shouldWake = false
+    private var shouldWake = false
+
+    def isReady: Boolean = shouldWake
 
     /**
      * Wait until we should retry the allocation because it might succeed. It is not
@@ -56,7 +58,6 @@ private class HostAlloc(nonPinnedLimit: Long) {
      * It is required that the parent lock is held before this is called.
      */
     def waitUntilPossiblyReady(): Unit = {
-      shouldWake = false
       while (!shouldWake) {
         HostAlloc.this.wait(1000)
       }
@@ -280,12 +281,16 @@ private class HostAlloc(nonPinnedLimit: Long) {
     ret
   }
 
-  private def checkSize(amount: Long, tryPinned: Boolean): Unit = {
-    val pinnedFailed = (isPinnedOnly || tryPinned) && (amount > pinnedLimit)
+  private def canNeverSucceed(amount: Long, preferPinned: Boolean): Boolean = {
+    val pinnedFailed = (isPinnedOnly || preferPinned) && (amount > pinnedLimit)
     val nonPinnedFailed = isPinnedOnly || (amount > nonPinnedLimit)
-    if (pinnedFailed && nonPinnedFailed) {
+    !isUnlimited && pinnedFailed && nonPinnedFailed
+  }
+
+  private def checkSize(amount: Long, preferPinned: Boolean): Unit = {
+    if (canNeverSucceed(amount, preferPinned)) {
       throw new IllegalArgumentException(s"The amount requested $amount is larger than the " +
-      s"maximum pool size ${math.max(pinnedLimit, nonPinnedLimit)}")
+          s"maximum pool size ${math.max(pinnedLimit, nonPinnedLimit)}")
     }
   }
 
@@ -311,14 +316,50 @@ private class HostAlloc(nonPinnedLimit: Long) {
     do {
       ret = tryAlloc(amount, preferPinned)
       if (ret.isEmpty) {
-        if (blocked == null) {
-          blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId())
-        }
+        blocked = new BlockedAllocation(amount, TaskContext.get().taskAttemptId())
         pendingAllowedQueue.offer(blocked)
+        var amountSpilled: Option[Long] = None
+        // None for amountSpilled means we need to retry because of a race.
+        // forall returns true for None in this case.
+        while(!blocked.isReady && amountSpilled.forall(_ > 0)) {
+          amountSpilled = RapidsBufferCatalog.synchronousSpill(
+            RapidsBufferCatalog.getHostStorage, amount)
+        }
+        // Wait until we think we are ready to allocate something
         blocked.waitUntilPossiblyReady()
       }
     } while(ret.isEmpty)
     ret.get
+  }
+
+  /**
+   * Allocate a buffer at the highest priority possible. If the allocation cannot happen
+   * for whatever reason a None is returned instead of blocking
+   */
+  def allocHighPriority(amount: Long,
+      preferPinned: Boolean = true): Option[HostMemoryBuffer] = synchronized {
+    var ret: Option[HostMemoryBuffer] = None
+    if (!canNeverSucceed(amount, preferPinned)) {
+      ret = tryAlloc(amount, preferPinned)
+      if (ret.isEmpty) {
+        val blocked = new BlockedAllocation(amount, Long.MinValue)
+        pendingAllowedQueue.offer(blocked)
+        var amountSpilled: Option[Long] = None
+        // None for amountSpilled means we need to retry because of a race.
+        // forall returns true for None in this case.
+        while (!blocked.isReady && amountSpilled.forall(_ > 0)) {
+          amountSpilled = RapidsBufferCatalog.synchronousSpill(
+            RapidsBufferCatalog.getHostStorage, amount)
+        }
+
+        if (blocked.isReady) {
+          ret = tryAlloc(amount, preferPinned)
+        } else {
+          pendingAllowedQueue.remove(blocked)
+        }
+      }
+    }
+    ret
   }
 
   def reserve(amount: Long, preferPinned: Boolean): HostMemoryReservation = synchronized {
@@ -377,6 +418,16 @@ object HostAlloc {
     getSingleton.alloc(amount, preferPinned)
   }
 
+  /**
+   * Allocate a HostMemoryBuffer, but at the highest priority. This will not block for a free. It
+   * may spill data to make room for the allocation, but it will do it at the highest priority.
+   * If we cannot make it work, then a None will be returned an whoever tries to use this needs
+   * a backup plan.
+   */
+  def allocHighPriority(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
+    getSingleton.allocHighPriority(amount, preferPinned)
+  }
+
   def reserve(amount: Long, preferPinned: Boolean = true): HostMemoryReservation = {
     getSingleton.reserve(amount, preferPinned)
   }
@@ -423,6 +474,22 @@ object HostAlloc {
       }
       buff.setEventHandler(newHandler)
       buff
+    }
+  }
+
+  private def findEventHandlerInternal[K](handler: MemoryBuffer.EventHandler,
+    eh: PartialFunction[MemoryBuffer.EventHandler, K]): Option[K] = handler match {
+    case multi: MultiEventHandler =>
+      findEventHandlerInternal(multi.a, eh)
+        .orElse(findEventHandlerInternal(multi.b, eh))
+    case other =>
+      eh.lift(other)
+  }
+
+  def findEventHandler[K](buff: HostMemoryBuffer)(
+    eh: PartialFunction[MemoryBuffer.EventHandler, K]): Option[K] = {
+    buff.synchronized {
+      findEventHandlerInternal(buff.getEventHandler, eh)
     }
   }
 

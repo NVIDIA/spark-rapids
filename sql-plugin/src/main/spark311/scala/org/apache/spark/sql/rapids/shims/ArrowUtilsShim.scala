@@ -30,17 +30,27 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.arrow.vector.types.pojo.Schema
+
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.ArrowUtils
 
 object ArrowUtilsShim {
   def getPythonRunnerConfMap(conf: SQLConf): Map[String, String] =
     ArrowUtils.getPythonRunnerConfMap(conf)
+
+  def toArrowSchema(schema: StructType, timeZoneId: String,
+      errorOnDuplicatedFieldNames: Boolean = true, largeVarTypes: Boolean = false): Schema = {
+    ArrowUtils.toArrowSchema(schema, timeZoneId)
+  }
 }

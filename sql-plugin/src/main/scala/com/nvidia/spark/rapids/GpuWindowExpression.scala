@@ -19,16 +19,20 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
+import scala.util.{Left, Right}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, CollectList, CollectSet, Count, Max, Min, Sum}
+import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.aggregate.{GpuAggregateExpression, GpuCount}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -81,13 +85,25 @@ abstract class GpuWindowExpressionMetaBase(
               case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
-                if (lower > 0) {
-                  willNotWorkOnGpu(s"lower-bounds ahead of current row is not supported. " +
-                      s"Found $lower")
+                // Negative bounds are allowed, so long as lower does not exceed upper.
+                if (upper < lower) {
+                  willNotWorkOnGpu("upper-bounds must equal or exceed the lower bounds. " +
+                    s"Found lower=$lower, upper=$upper ")
                 }
-                if (upper < 0) {
-                  willNotWorkOnGpu(s"upper-bounds behind the current row is not supported. " +
-                      s"Found $upper")
+                // Also check for negative offsets.
+                if (upper < 0 || lower > 0) {
+                  windowFunction.asInstanceOf[AggregateExpression].aggregateFunction match {
+                    case _: Average => // Supported
+                    case _: CollectList => // Supported
+                    case _: CollectSet => // Supported
+                    case _: Count => // Supported
+                    case _: Max => // Supported
+                    case _: Min => // Supported
+                    case _: Sum => // Supported
+                    case f: AggregateFunction =>
+                      willNotWorkOnGpu("negative row bounds unsupported for specified " +
+                        s"aggregation: ${f.prettyName}")
+                  }
                 }
             }
           case RangeFrame =>
@@ -649,7 +665,15 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression {
+  /**
+   * Get "min-periods" value, i.e. the minimum number of periods/rows
+   * above which a non-null value is returned for the function.
+   * Otherwise, null is returned.
+   * @return Non-negative value for min-periods.
+   */
+  def getMinPeriods: Int = 1
+}
 
 /**
  * This is a special window function that simply replaces itself with one or more
@@ -814,7 +838,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  * </code>
  * which can be output.
  */
-trait BatchedRunningWindowFixer extends AutoCloseable with CheckpointRestore {
+trait BatchedRunningWindowFixer extends AutoCloseable with Retryable {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -924,6 +948,12 @@ trait BatchedUnboundedToUnboundedWindowFixer extends AutoCloseable {
 trait GpuBatchedRunningWindowWithFixer {
 
   /**
+   * Checks whether the running window can be fixed up. This should be called before
+   * newFixer(), to check whether the fixer would work.
+   */
+  def canFixUp: Boolean = true
+
+  /**
    * Get a new class that can be used to fix up batched running window operations.
    */
   def newFixer(): BatchedRunningWindowFixer
@@ -994,6 +1024,55 @@ class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
   }
 }
 
+class BatchedUnboundedToUnboundedBinaryFixer(val binOp: BinaryOp, val dataType: DataType)
+    extends BatchedUnboundedToUnboundedWindowFixer {
+  private var previousResult: Option[Scalar] = None
+
+  override def updateState(scalar: Scalar): Unit = previousResult match {
+    case None =>
+      previousResult = Some(scalar.incRefCount())
+    case Some(prev) =>
+      // This is ugly, but for now it is simple to make it work
+      val result = withResource(ColumnVector.fromScalar(prev, 1)) { p1 =>
+        withResource(p1.binaryOp(binOp, scalar, prev.getType)) { result1 =>
+          result1.getScalarElement(0)
+        }
+      }
+      closeOnExcept(result) { _ =>
+        previousResult.foreach(_.close)
+        previousResult = Some(result)
+      }
+  }
+
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+      column: ColumnVector): ColumnVector = {
+    val scalar =  previousResult match {
+      case Some(value) =>
+        value.incRefCount()
+      case None =>
+        GpuScalar.from(null, dataType)
+    }
+
+    withResource(scalar) { scalar =>
+      samePartitionMask match {
+        case scala.Left(cv) =>
+          cv.ifElse(scalar, column)
+        case scala.Right(true) =>
+          ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+        case _ =>
+          column.incRefCount()
+      }
+    }
+  }
+
+  override def close(): Unit = reset()
+
+  override def reset(): Unit = {
+    previousResult.foreach(_.close())
+    previousResult = None
+  }
+}
+
 /**
  * This class fixes up batched running windows by performing a binary op on the previous value and
  * those in the the same partition by key group. It does not deal with nulls, so it works for things
@@ -1058,6 +1137,110 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
 
   override def close(): Unit = {
     previousResult.foreach(_.close())
+    previousResult = None
+  }
+}
+
+class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
+  extends BatchedRunningWindowFixer with Logging {
+  private val name = "first"
+  private var previousResult: Option[Scalar] = None
+  private var chkptPreviousResult: Option[Scalar] = None
+
+  private[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
+    val numRows = finalOutputColumn.getRowCount.toInt
+    if (numRows > 0) {
+      val lastIndex = numRows - 1
+      logDebug(s"$name: updateState from $previousResult to...")
+      previousResult.foreach(_.close)
+      previousResult = Some(finalOutputColumn.getScalarElement(lastIndex))
+      logDebug(s"$name: ... $previousResult")
+    }
+  }
+
+  /**
+   * Fix up `windowedColumnOutput` with any stored state from previous batches.
+   * Like all window operations the input data will have been sorted by the partition
+   * by columns and the order by columns.
+   *
+   * @param samePartitionMask    a mask that uses `true` to indicate the row
+   *                             is for the same partition by keys that was the last row in the
+   *                             previous batch or `false` to indicate it is not. If this is known
+   *                             to be all true or all false values a single boolean is used. If
+   *                             it can change for different rows than a column vector is provided.
+   *                             Only values that are for the same partition by keys should be
+   *                             modified. Because the input data is sorted by the partition by
+   *                             columns the boolean values will be grouped together.
+   * @param sameOrderMask        Similar mask for ordering. Unused for `FIRST`.
+   * @param unfixedWindowResults the output of the windowAggregation without anything
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
+   * @return a fixed ColumnVector that was with outputs updated for items that were in the same
+   *         group by key as the last row in the previous batch.
+   */
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+                     sameOrderMask: Option[Either[ColumnVector, Boolean]],
+                     unfixedWindowResults: ColumnView): ColumnVector = {
+    // `sameOrderMask` is irrelevant for this operation.
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) =>
+        // No previous result. Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(prev), Right(allRowsInSamePartition)) => // Boolean flag.
+        // All the current batch results may be replaced.
+        if (allRowsInSamePartition) {
+          if (!ignoreNulls || prev.isValid) {
+            // If !ignoreNulls, `prev` is the result for all rows.
+            // If ignoreNulls *AND* `prev` isn't null, `prev` is the result for all rows.
+            ColumnVector.fromScalar(prev, unfixedWindowResults.getRowCount.toInt)
+          } else {
+            // If ignoreNulls, *AND* `prev` is null, keep the current result.
+            incRef(unfixedWindowResults)
+          }
+        } else {
+          // No rows in the same partition. Current result needs no fixing.
+          incRef(unfixedWindowResults)
+        }
+      case (Some(prev), Left(someRowsInSamePartition)) => // Boolean vector.
+        if (!ignoreNulls || prev.isValid) {
+          someRowsInSamePartition.ifElse(prev, unfixedWindowResults)
+        } else {
+          incRef(unfixedWindowResults)
+        }
+    }
+    // Reset previous result.
+    closeOnExcept(ret) { ret =>
+      resetPrevious(ret)
+      ret
+    }
+  }
+
+  /**
+   * Save the state, so it can be restored in the case of a retry.
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def checkpoint(): Unit = chkptPreviousResult = previousResult
+
+  /**
+   * Restore the state that was saved by calling to "checkpoint".
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def restore(): Unit = {
+    // If there is a previous checkpoint result, restore it to previousResult.
+    if (chkptPreviousResult.isDefined) {
+      // Close erstwhile previousResult.
+      previousResult match {
+        case Some(r) if r != chkptPreviousResult.get => r.close()
+        case _ => // Nothing to close if result is None, or matches the checkpoint.
+      }
+    }
+    previousResult = chkptPreviousResult
+    chkptPreviousResult = None
+  }
+
+  override def close(): Unit = {
+    previousResult.foreach(_.close)
     previousResult = None
   }
 }

@@ -60,6 +60,7 @@ import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
@@ -324,24 +325,23 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
 
     val spark = SparkSession.active
-
-    fileFormat = cmd.fileFormat match {
-      case _: CSVFileFormat =>
-        willNotWorkOnGpu("CSV output is not supported")
-        None
-      case _: JsonFileFormat =>
-        willNotWorkOnGpu("JSON output is not supported")
-        None
-      case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
-      case _: TextFileFormat =>
-        willNotWorkOnGpu("text output is not supported")
-        None
-      case f =>
-        willNotWorkOnGpu(s"unknown file format: ${f.getClass.getCanonicalName}")
-        None
+    val formatCls = cmd.fileFormat.getClass
+    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+      willNotWorkOnGpu("CSV output is not supported")
+      None
+    } else if (formatCls == classOf[JsonFileFormat]) {
+      willNotWorkOnGpu("JSON output is not supported")
+      None
+    } else if (GpuOrcFileFormat.isSparkOrcFormat(formatCls)) {
+      GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[ParquetFileFormat]) {
+      GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
+    } else if (formatCls == classOf[TextFileFormat]) {
+      willNotWorkOnGpu("text output is not supported")
+      None
+    } else {
+      willNotWorkOnGpu(s"unknown file format: ${formatCls.getCanonicalName}")
+      None
     }
   }
 
@@ -393,7 +393,7 @@ trait GpuOverridesListener {
   def optimizedPlan(
       plan: SparkPlanMeta[SparkPlan],
       sparkPlan: SparkPlan,
-      costOptimizations: Seq[Optimization])
+      costOptimizations: Seq[Optimization]): Unit
 }
 
 sealed trait FileFormatType
@@ -3086,6 +3086,26 @@ object GpuOverrides extends Logging {
          |For instance decimal strings not longer than 18 characters / hexadecimal strings
          |not longer than 15 characters disregarding the sign cannot cause an overflow.
          """.stripMargin.replaceAll("\n", " ")),
+    expr[FormatNumber](
+      "Formats the number x like '#,###,###.##', rounded to d decimal places.",
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
+        ("x", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("d", TypeSig.lit(TypeEnum.INT), TypeSig.INT+TypeSig.STRING)),
+      (in, conf, p, r) => new BinaryExprMeta[FormatNumber](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          in.children.head.dataType match {
+            case FloatType | DoubleType if !conf.isFloatFormatNumberEnabled =>
+              willNotWorkOnGpu("format_number with floating point types on the GPU returns " +
+                  "results that have a different precision than the default results of Spark. " +
+                  "To enable this operation on the GPU, set" +
+                  s" ${RapidsConf.ENABLE_FLOAT_FORMAT_NUMBER} to true.")
+            case _ =>
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuFormatNumber(lhs, rhs)
+      }
+    ),
     expr[MapConcat](
       "Returns the union of all the given maps",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3341,13 +3361,13 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
+          TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL +
-              TypeSig.STRUCT +
-              TypeSig.ARRAY).nested(),
+            TypeSig.NULL +
+            TypeSig.STRUCT +
+            TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
@@ -3414,6 +3434,73 @@ object GpuOverrides extends Logging {
           val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
           GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
         }
+      }),
+    expr[Percentile](
+      "Aggregation computing exact percentile",
+      ExprChecks.reductionAndGroupByAgg(
+        // The output can be a single number or array depending on whether percentiles param
+        // is a single number or an array.
+        TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+        TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+        Seq(
+          // ANSI interval types are new in Spark 3.2.0 and are not yet supported by the
+          // current GPU implementation.
+          ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.integral + TypeSig.fp),
+          ParamCheck("percentage",
+            TypeSig.lit(TypeEnum.DOUBLE) + TypeSig.ARRAY.nested(TypeSig.lit(TypeEnum.DOUBLE)),
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
+          ParamCheck("frequency",
+            TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG),
+            TypeSig.LONG + TypeSig.ARRAY.nested(TypeSig.LONG)))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          // Check if the input percentage can be supported on GPU.
+          GpuOverrides.extractLit(childExprs(1).wrapped.asInstanceOf[Expression]) match {
+            case None =>
+              willNotWorkOnGpu("percentile on GPU only supports literal percentages")
+            case Some(Literal(null, _)) =>
+              willNotWorkOnGpu("percentile on GPU only supports non-null literal percentages")
+            case Some(Literal(a: ArrayData, _)) => {
+              if((0 until a.numElements).exists(a.isNullAt)) {
+                willNotWorkOnGpu(
+                  "percentile on GPU does not support percentage arrays containing nulls")
+              }
+              if (a.toDoubleArray().exists(percentage => percentage < 0.0 || percentage > 1.0)) {
+                willNotWorkOnGpu(
+                  "percentile requires the input percentages given in the range [0, 1]")
+              }
+            }
+            case Some(_) => // This is fine
+          }
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val exprMeta = p.get.asInstanceOf[BaseExprMeta[_]]
+          val isReduction = exprMeta.context match {
+            case ReductionAggExprContext => true
+            case GroupByAggExprContext => false
+            case _ => throw new IllegalStateException(
+              s"Invalid aggregation context: ${exprMeta.context}")
+          }
+          GpuPercentile(childExprs.head, childExprs(1).asInstanceOf[GpuLiteral], childExprs(2),
+            isReduction)
+        }
+        // Declare the data type of the internal buffer so it can be serialized and
+        // deserialized correctly during shuffling.
+        override def aggBufferAttribute: AttributeReference = {
+          val aggBuffer = c.aggBufferAttributes.head
+          val dataType: DataType = ArrayType(StructType(Seq(
+            StructField("value", childExprs.head.dataType),
+            StructField("frequency", LongType))), containsNull = false)
+          aggBuffer.copy(dataType = dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+        }
+
+        override val needsAnsiCheck: Boolean = false
+        override val supportBufferConversion: Boolean = true
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+          CpuToGpuPercentileBufferConverter(childExprs.head.dataType)
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+          GpuToCpuPercentileBufferConverter(childExprs.head.dataType)
       }),
     expr[ApproximatePercentile](
       "Approximate percentile",
@@ -3501,6 +3588,31 @@ object GpuOverrides extends Logging {
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
       }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
       "should be considered beta quality right now."),
+    expr[StructsToJson](
+      "Converts structs to JSON text format",
+      ExprChecks.projectOnly(
+        TypeSig.STRING,
+        TypeSig.STRING,
+        Seq(ParamCheck("struct",
+          (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
+            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
+            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+        ))),
+      (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.options.get("ignoreNullFields").exists(_.equalsIgnoreCase("false"))) {
+            willNotWorkOnGpu("to_json option ignore_null_fields=false is not supported")
+          }
+          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
+            willNotWorkOnGpu("to_json option pretty=true is not supported")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuStructsToJson(a.options, child, a.timeZoneId)
+      }).disabledByDefault("to_json support is experimental. See compatibility " +
+          "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
         "All the input parameters and output column types are string.",
@@ -3632,7 +3744,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuCSVScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuCSVScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3642,14 +3754,15 @@ object GpuOverrides extends Logging {
             a.partitionFilters,
             a.dataFilters,
             conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
+            conf.maxReadBatchSizeBytes,
+            conf.maxGpuColumnSizeBytes)
       }),
     GpuOverrides.scan[JsonScan](
       "Json parsing",
       (a, conf, p, r) => new ScanMeta[JsonScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = GpuJsonScan.tagSupport(this)
 
-        override def convertToGpu(): Scan =
+        override def convertToGpu(): GpuScan =
           GpuJsonScan(a.sparkSession,
             a.fileIndex,
             a.dataSchema,
@@ -3659,7 +3772,8 @@ object GpuOverrides extends Logging {
             a.partitionFilters,
             a.dataFilters,
             conf.maxReadBatchSizeRows,
-            conf.maxReadBatchSizeBytes)
+            conf.maxReadBatchSizeBytes,
+            conf.maxGpuColumnSizeBytes)
       })).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
@@ -3842,10 +3956,7 @@ object GpuOverrides extends Logging {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128.withPsNote(
           TypeEnum.DECIMAL, "128bit decimal only supported for Orc and Parquet") +
-          TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
-          TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
-          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
-          TypeSig.BINARY.withPsNote(TypeEnum.BINARY, "Only supported for Parquet") +
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
@@ -4217,7 +4328,7 @@ object GpuOverrides extends Logging {
       // is impacted by forcing operators onto CPU due to other rules that we have
       wrap.runAfterTagRules()
       val optimizer = try {
-        ShimLoader.newOptimizerClass(conf.optimizerClassName)
+        ShimLoaderTemp.newOptimizerClass(conf.optimizerClassName)
       } catch {
         case e: Exception =>
           throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)

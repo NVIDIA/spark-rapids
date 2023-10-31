@@ -58,6 +58,7 @@ IS_SPARK_321_OR_LATER=0
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: delta_lake tests only
 # - MULTITHREADED_SHUFFLE: shuffle tests only
+# - PYARROW_ONLY: pyarrow tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 
 # Classloader config is here to work around classloader issues with
@@ -81,6 +82,11 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
     SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
     bash integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
+}
+
+run_pyarrow_tests() {
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
+        bash integration_tests/run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
 
 ## limit parallelism to avoid OOM kill
@@ -107,5 +113,9 @@ if [ "$(pwd)" == "$SOURCE_PATH" ]; then
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
         ## Mutithreaded Shuffle test
         rapids_shuffle_smoke_test
+    fi
+    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
+      # Pyarrow tests
+      run_pyarrow_tests
     fi
 fi

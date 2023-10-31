@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320, is_databricks113_or_later
+from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
 import warnings
 
 _grpkey_longs_with_no_nulls = [
@@ -134,15 +134,15 @@ _grpkey_long_with_nulls_with_overflow = [
     ('a', IntegerGen()),
     ('b', LongGen(nullable=True))]
 
-part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+part_and_order_gens = [long_gen, DoubleGen(special_cases=[]),
         string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 
-running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+running_part_and_order_gens = [long_gen, DoubleGen(special_cases=[]),
         string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1),
         DecimalGen(precision=38, scale=1)]
 
-lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+lead_lag_data_gens = [long_gen, DoubleGen(special_cases=[]),
         boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
         DecimalGen(precision=38, scale=4),
         StructGen(children=[
@@ -444,6 +444,42 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size):
         ' FROM window_agg_table ',
         conf={'spark.rapids.sql.batchSizeBytes': batch_size})
 
+# This is for aggregations that work with the optimized unbounded to unbounded window optimization.
+# They don't need to be batched specially, but it only works if all of the aggregations can support this.
+# the order returned should be consistent because the data ends up in a single task (no partitioning)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+def test_window_batched_unbounded_no_part(b_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['min(b) over (order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as min_col',
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as max_col']
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuCachedDoublePassWindowExec'],
+        conf = conf)
+
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+def test_window_batched_unbounded(b_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['min(b) over (order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as min_col',
+            'max(b) over (partition by a % 2 order by a rows between UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as max_col']
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuCachedDoublePassWindowExec'],
+        conf = conf)
 
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
@@ -458,9 +494,17 @@ def test_window_running_no_part(b_gen, batch_size):
             'dense_rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
-            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
+            'FIRST(b) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+            'FIRST(b, TRUE) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
+            'NTH_VALUE(b, 1) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls']
     if isinstance(b_gen.data_type, NumericType) and not isinstance(b_gen, FloatGen) and not isinstance(b_gen, DoubleGen):
         query_parts.append('sum(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
+
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
+        query_parts.append('NTH_VALUE(b, 1) IGNORE NULLS OVER '
+                           '(ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
@@ -568,11 +612,19 @@ def test_window_running(b_gen, c_gen, batch_size):
             'dense_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
-            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
+            'FIRST(c) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+            'FIRST(c, TRUE) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
+            'NTH_VALUE(c, 1) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls']
 
     # Decimal precision can grow too large. Float and Double can get odd results for Inf/-Inf because of ordering
     if isinstance(c_gen.data_type, NumericType) and (not isinstance(c_gen, FloatGen)) and (not isinstance(c_gen, DoubleGen)) and (not isinstance(c_gen, DecimalGen)):
         query_parts.append('sum(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
+
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
+        query_parts.append('NTH_VALUE(c, 1) IGNORE NULLS OVER '
+                           '(PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : three_col_df(spark, UniqueLongGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
@@ -653,7 +705,7 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
             return df.withColumn('lead_def_c', f.lead('c', 2, None).over(base_window_spec)) \
                      .withColumn('lag_def_c', f.lag('c', 4, None).over(base_window_spec))
         else:
-            default_val = gen_scalar_value(c_gen, force_no_nulls=False)
+            default_val = with_cpu_session(lambda spark: gen_scalar_value(c_gen, force_no_nulls=False))
             return df.withColumn('inc_max_c', f.max('c').over(inclusive_window_spec)) \
                      .withColumn('inc_min_c', f.min('c').over(inclusive_window_spec)) \
                      .withColumn('lead_def_c', f.lead('c', 2, default_val).over(base_window_spec)) \
@@ -1449,6 +1501,103 @@ def test_to_date_with_window_functions():
         FROM window_input
         """
     )
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      _grpkey_longs_with_nullable_larger_decimals
+                                      ], ids=idfn)
+@pytest.mark.parametrize('window_spec', ["3 PRECEDING AND -1 FOLLOWING",
+                                         "-2 PRECEDING AND 4 FOLLOWING",
+                                         "UNBOUNDED PRECEDING AND -1 FOLLOWING",
+                                         "-1 PRECEDING AND UNBOUNDED FOLLOWING",
+                                         "10 PRECEDING AND -1 FOLLOWING",
+                                         "5 PRECEDING AND -2 FOLLOWING"], ids=idfn)
+def test_window_aggs_for_negative_rows_partitioned(data_gen, batch_size, window_spec):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' SUM(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ASC ROWS BETWEEN {window}) AS sum_c_asc, '
+        ' MAX(c) OVER '
+        '   (PARTITION BY a ORDER BY b DESC, c DESC ROWS BETWEEN {window}) AS max_c_desc, '
+        ' MIN(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS min_c_asc, '
+        ' COUNT(1) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_1, '
+        ' COUNT(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS count_c, '
+        ' AVG(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS avg_c, '
+        ' COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window}) AS list_c, '
+        ' SORT_ARRAY(COLLECT_SET(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c ROWS BETWEEN {window})) AS sorted_set_c '
+        'FROM window_agg_table '.format(window=window_spec),
+        conf=conf)
+
+
+def spark_bugs_in_decimal_sorting():
+    """
+    Checks whether Apache Spark version has a bug in sorting Decimal columns correctly.
+    See https://issues.apache.org/jira/browse/SPARK-40089.
+    :return: True, if Apache Spark version does not sort Decimal(>20, >2) correctly. False, otherwise.
+    """
+    v = spark_version()
+    return v < "3.1.4" or v < "3.3.1" or v < "3.2.3" or v < "3.4.0"
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      pytest.param(_grpkey_longs_with_nullable_larger_decimals,
+                                                   marks=pytest.mark.skipif(
+                                                     condition=spark_bugs_in_decimal_sorting(),
+                                                     reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))],
+                         ids=idfn)
+def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' SUM(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN 3 PRECEDING AND -1 FOLLOWING) AS sum_c_asc, '
+        ' MAX(c) OVER '
+        '   (ORDER BY b DESC, c DESC, a DESC ROWS BETWEEN -2 PRECEDING AND 4 FOLLOWING) AS max_c_desc, '
+        ' min(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN UNBOUNDED PRECEDING AND -1 FOLLOWING) AS min_c_asc, '
+        ' COUNT(1) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS count_1, '
+        ' COUNT(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN 10 PRECEDING AND -1 FOLLOWING) AS count_c, '
+        ' AVG(c) OVER '
+        '   (ORDER BY b,c,a ROWS BETWEEN -1 PRECEDING AND UNBOUNDED FOLLOWING) AS avg_c, '
+        ' COLLECT_LIST(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING) AS list_c, '
+        ' SORT_ARRAY(COLLECT_SET(c) OVER '
+        '   (PARTITION BY a ORDER BY b,c,a ROWS BETWEEN 5 PRECEDING AND -2 FOLLOWING)) AS set_c '
+        'FROM window_agg_table ',
+        conf=conf)
+
 
 def test_lru_cache_datagen():
     # log cache info at the end of integration tests, not related to window functions

@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.tests.scaletest
 import java.util.concurrent._
 
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
-import scala.collection.immutable.ListMap
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.NANOSECONDS
@@ -78,8 +77,6 @@ object ScaleTest {
     val status = ListBuffer[String]()
 
     (1 to query.iterations).foreach(i => {
-      spark.sparkContext.setJobGroup(s"query=${query.name}", s"iteration=$i")
-      println(s"Iteration: $i")
       while (idleSessionListener.isBusy()){
         // Scala Test aims for stability not performance. And the sleep time will not be calculated
         // into execution time.
@@ -89,9 +86,13 @@ object ScaleTest {
       }
       val taskFailureListener = new TaskFailureListener
       try {
-        spark.conf.set("spark.sql.shuffle.partitions", query.shufflePartitions)
-        spark.sparkContext.addSparkListener(taskFailureListener)
         val future = scala.concurrent.Future {
+          spark.sparkContext.setJobGroup(query.name, s"query=${query.name},iteration=$i")
+          println(s"Iteration: $i")
+
+          spark.conf.set("spark.sql.shuffle.partitions", query.shufflePartitions)
+          spark.sparkContext.addSparkListener(taskFailureListener)
+
           val start = System.nanoTime()
           spark.sql(query.content).write.mode(mode).format(format).save(s"${baseOutputPath}_$i")
           val end = System.nanoTime()
@@ -124,7 +125,8 @@ object ScaleTest {
         spark.sparkContext.removeSparkListener(taskFailureListener)
       }
     })
-    QueryMeta(query.name, query.content, status, exceptions.asScala.toSeq, executionTimes)
+    QueryMeta(query.name, query.content, status.toSeq,
+        exceptions.asScala.toSeq, executionTimes.toSeq)
   }
 
   /**
@@ -132,7 +134,7 @@ object ScaleTest {
    * @param spark spark session
    * @param queryMap query map
    */
-  private def printQueries(spark: SparkSession, queryMap: ListMap[String, TestQuery]): Unit
+  private def printQueries(spark: SparkSession, queryMap: Map[String, TestQuery]): Unit
   = {
     for ((queryName, query) <- queryMap) {
       println("*"*80)
@@ -151,7 +153,7 @@ object ScaleTest {
     spark.sparkContext.addSparkListener(idleSessionListener)
     val querySpecs = new QuerySpecs(config, spark)
     querySpecs.initViews()
-    val queryMap = querySpecs.getCandidateQueries()
+    val queryMap = querySpecs.getCandidateQueries
     if (config.dry) {
       printQueries(spark, queryMap)
       sys.exit(1)

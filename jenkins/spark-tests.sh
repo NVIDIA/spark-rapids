@@ -96,7 +96,7 @@ fi
 
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
-. jenkins/hadoop-def.sh $SPARK_VER
+. jenkins/hadoop-def.sh $SPARK_VER ${SCALA_BINARY_VER}
 wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 # Download parquet-hadoop jar for parquet-read encryption tests
@@ -186,6 +186,7 @@ run_delta_lake_tests() {
   echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
   SPARK_32X_PATTERN="(3\.2\.[0-9])"
   SPARK_33X_PATTERN="(3\.3\.[0-9])"
+  SPARK_34X_PATTERN="(3\.4\.[0-9])"
 
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
@@ -195,6 +196,10 @@ run_delta_lake_tests() {
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
     DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
+  fi
+
+  if [[ $SPARK_VER =~ $SPARK_34X_PATTERN ]]; then
+    DELTA_LAKE_VERSIONS="2.4.0"
   fi
 
   if [ -z "$DELTA_LAKE_VERSIONS" ]; then
@@ -254,6 +259,10 @@ rapids_shuffle_smoke_test() {
     ./run_pyspark_from_build.sh -m shuffle_test
 }
 
+run_pyarrow_tests() {
+  ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
+}
+
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
@@ -264,6 +273,10 @@ rapids_shuffle_smoke_test() {
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
+
+  SPARK_SHELL_SMOKE_TEST=1 \
+  PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${SHUFFLE_SPARK_SHIM}.RapidsShuffleManager \
+    ./run_pyspark_from_build.sh
 
   # ParquetCachedBatchSerializer cache_test
   PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer \
@@ -301,6 +314,11 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
     PYSP_TEST_spark_executorEnv_PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
     PYSP_TEST_spark_python=${CONDA_ROOT}/bin/python \
     ./run_pyspark_from_build.sh -m cudf_udf --cudf_udf
+fi
+
+# Pyarrow tests
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
+  run_pyarrow_tests
 fi
 
 popd

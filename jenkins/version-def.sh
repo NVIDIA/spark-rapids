@@ -26,11 +26,12 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"23.10.0-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"23.12.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"23.10.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.10.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"23.12.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.12.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
+SPARK_VER_213=${SPARK_VER_213:-"3.3.0"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
 # cloudera, and others) may not be a simple as just the version number, so
@@ -56,15 +57,28 @@ function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }
-# Psnapshots: snapshots + noSnapshots
-set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
-SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PnoSnapshots: noSnapshots only
-set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
-SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PsnapshotOnly : snapshots only
-set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
-SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+
+if [[ $SCALA_BINARY_VER == "2.13" ]]; then
+    # Psnapshots: snapshots + noSnapshots
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotsScala213
+    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PnoSnapshots: noSnapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshotsScala213
+    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PsnapshotOnly : snapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotScala213Only
+    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+else
+    # Psnapshots: snapshots + noSnapshots
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
+    SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PnoSnapshots: noSnapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
+    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+    # PsnapshotOnly : snapshots only
+    set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
+    SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+fi
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
@@ -100,6 +114,9 @@ SPARK_SHIM_VERSIONS_PREMERGE_UT_2=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # utf-8 cases
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUTF8
 SPARK_SHIM_VERSIONS_PREMERGE_UTF8=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# scala 2.13 cases
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeScala213
+SPARK_SHIM_VERSIONS_PREMERGE_SCALA213=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # jdk11 cases
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk11-test
 SPARK_SHIM_VERSIONS_JDK11=("${SPARK_SHIM_VERSIONS_ARR[@]}")

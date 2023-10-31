@@ -215,7 +215,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
     withResource(spy(new RapidsDeviceMemoryStore)) { deviceStore =>
       val mockStore = mock[RapidsBufferStore]
       withResource(
-        new RapidsHostMemoryStore(10000)) { hostStore =>
+        new RapidsHostMemoryStore(Some(10000))) { hostStore =>
         deviceStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         val catalog = new RapidsBufferCatalog(deviceStore)
@@ -243,7 +243,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
               assertResult(unspilled)(unspilledSame)
             }
             // verify that we invoked the copy function exactly once
-            verify(deviceStore, times(1)).copyBuffer(any(), any())
+            verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
             unspilled
           }
           val unspilledSame = catalog.unspillBufferToDeviceStore(
@@ -253,7 +253,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
             assertResult(unspilled)(unspilledSame)
           }
           // verify that we invoked the copy function exactly once
-          verify(deviceStore, times(1)).copyBuffer(any(), any())
+          verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
         }
       }
     }
@@ -330,7 +330,7 @@ class RapidsBufferCatalogSuite extends AnyFunSuite with MockitoSugar {
       var _acquireAttempts: Int = acquireAttempts
       var currentPriority: Long =  initialPriority
       override val id: RapidsBufferId = bufferId
-      override def getMemoryUsedBytes: Long = 0
+      override val memoryUsedBytes: Long = 0
       override def meta: TableMeta = tableMeta
       override val storageTier: StorageTier = tier
       override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null

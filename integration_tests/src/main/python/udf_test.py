@@ -400,3 +400,13 @@ def test_map_arrow_large_var_types_fallback(data_type):
             .mapInArrow(filter_func, schema=f"a {data_type}, b {data_type}"),
         "PythonMapInArrowExec",
         conf=conf)
+
+
+def test_map_pandas_udf_with_empty_partitions():
+    def test_func(spark):
+        df = spark.range(10).withColumn("const", f.lit(1))
+        # The repartition will produce 4 empty partitions.
+        return df.repartition(5, "const").mapInPandas(
+            lambda data: [pd.DataFrame([len(list(data))])], schema="ret:integer")
+
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf)

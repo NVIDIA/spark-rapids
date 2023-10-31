@@ -23,7 +23,7 @@ import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, CurrentRow, ExprId, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
-import org.apache.spark.sql.rapids.GpuCount
+import org.apache.spark.sql.rapids.aggregate.GpuCount
 import org.apache.spark.sql.types.{DataType, DataTypes, IntegerType, LongType}
 
 class WindowRetrySuite
@@ -170,5 +170,44 @@ class WindowRetrySuite
       verify(inputBatch, times(2)).getColumnarBatch()
       verify(inputBatch, times(1)).close()
     }
+  }
+
+  test("row-based group by running window handles SplitAndRetryOOM") {
+    val runningFrame = GpuSpecifiedWindowFrame(RowFrame,
+      GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))
+    val boundOrderSpec = SortOrder(
+      GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "int"), Ascending) :: Nil
+    val boundPartSpec = Seq(
+      GpuBoundReference(1, LongType, nullable = true)(ExprId(1), "long"))
+    val spec = GpuWindowSpecDefinition(boundPartSpec, boundOrderSpec, runningFrame)
+    val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral.create(1, IntegerType))), spec)
+    val cb = buildInputBatch()
+
+    val runningIter = new GpuRunningWindowIterator(
+      Seq(cb).iterator, Seq(GpuAlias(count, "count")()), boundPartSpec, boundOrderSpec,
+      Array(LongType), NoopMetric, NoopMetric, NoopMetric)
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+    // there should be two batches, each has two rows
+    withResource(runningIter.next()) { first =>
+      assertResult(1)(first.numCols())
+      assertResult(2)(first.numRows())
+      withResource(first.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hc =>
+        // one row one partition
+        Seq(1L, 1L).zipWithIndex.foreach { case (cnt, pos) =>
+          assert(cnt == hc.getLong(pos))
+        }
+      }
+    }
+    withResource(runningIter.next()) { second =>
+      assertResult(1)(second.numCols())
+      assertResult(2)(second.numRows())
+      withResource(second.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hc =>
+        // count for partition [3, 3] are [1L, 2L] by running frame.
+        Seq(1L, 2L).zipWithIndex.foreach { case (cnt, pos) =>
+          assert(cnt == hc.getLong(pos))
+        }
+      }
+    }
+    assert(runningIter.isEmpty)
   }
 }

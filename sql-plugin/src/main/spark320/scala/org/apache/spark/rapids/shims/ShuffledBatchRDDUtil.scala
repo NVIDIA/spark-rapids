@@ -27,13 +27,17 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
+
+import scala.collection
 
 import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, SparkEnv, TaskContext}
 import org.apache.spark.shuffle.ShuffleReader
@@ -73,7 +77,7 @@ object ShuffledBatchRDDUtil {
   }
 
   private def getPartitionSize(
-      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]): Long = {
+      blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])]): Long = {
     blocksByAddress.flatMap { case (_, blockInfos) =>
       blockInfos.map { case (_, size, _) => size }
     }.sum

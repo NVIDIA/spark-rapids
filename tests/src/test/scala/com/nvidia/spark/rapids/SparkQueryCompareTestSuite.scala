@@ -202,8 +202,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def withCpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
-      // temp work around to unsupported timestamp type
-      .set("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
     withSparkSession(c, f)
   }
 
@@ -2273,4 +2271,6 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   def isCdh321: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 2, 1) == 0
 
   def isCdh330: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 0) == 0
+
+  def isCdh332: Boolean = VersionUtils.isCloudera && cmpSparkVersion(3, 3, 2) == 0
 }
