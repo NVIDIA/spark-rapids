@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayStack
 
 class RapidsStack[T] extends Proxy {
-  override def self = new ArrayStack[T]()
+  private val stack = new ArrayStack[T]()
 
-  def push(elem1: T): RapidsStack[T] = {
+  override def self = stack
+
+  def push(elem1: T): Unit = {
     self.push(elem1)
-    this
   }
 
   def pop(): T = {
@@ -38,11 +39,11 @@ class RapidsStack[T] extends Proxy {
     self.nonEmpty
   }
 
-  def size(): Int = {
+  def size: Int = {
     self.size
   }
 
-  def toSeq(): Seq[T] = {
+  def toSeq: Seq[T] = {
     self.toSeq
   }
 
