@@ -1106,7 +1106,6 @@ object GpuCast {
 
     val rowCount = input.getRowCount.toInt
 
-
     def castToJsonAttribute(fieldIndex: Int,
         colon: ColumnVector,
         quote: ColumnVector): ColumnVector = {
