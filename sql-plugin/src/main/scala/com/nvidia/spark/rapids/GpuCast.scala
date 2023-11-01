@@ -729,6 +729,7 @@ object GpuCast {
       fromDataType: DataType, options: CastOptions): ColumnVector = fromDataType match {
     case StringType => input.copyToColumnVector()
     case DateType => input.asStrings("%Y-%m-%d")
+    case TimestampType if options.castToJsonString => castTimestampToJson(input)
     case TimestampType => castTimestampToString(input)
     case FloatType | DoubleType => castFloatingTypeToString(input)
     case BinaryType => castBinToString(input, options)
@@ -769,6 +770,14 @@ object GpuCast {
           firstPass.stringReplaceWithBackrefs(prog, "\\1")
         }
       }
+    }
+  }
+
+  private def castTimestampToJson(input: ColumnView): ColumnVector = {
+    withResource(input.castTo(DType.TIMESTAMP_MILLISECONDS)) { millis =>
+      // we fall back to CPU if the JSON timezone is not `Z`, so it is safe
+      // to hard-code it here
+      millis.asStrings("%Y-%m-%dT%H:%M:%S.%3fZ")
     }
   }
 
@@ -928,7 +937,8 @@ object GpuCast {
         // to be represented by the string literal `null`
         val strValue = closeOnExcept(strKey) { _ =>
           withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-            val valueStr = if (valueColumn.getType == DType.STRING) {
+            val dt = valueColumn.getType
+            val valueStr = if (dt == DType.STRING || dt.isDurationType || dt.isTimestampType) {
               withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
                 addQuotes(valueStr.incRefCount(), valueColumn.getRowCount.toInt)
               }
@@ -1094,11 +1104,14 @@ object GpuCast {
 
     val rowCount = input.getRowCount.toInt
 
+
     def castToJsonAttribute(fieldIndex: Int,
         colon: ColumnVector,
         quote: ColumnVector): ColumnVector = {
       val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
-      val needsQuoting = inputSchema(fieldIndex).dataType == DataTypes.StringType
+      val dt = inputSchema(fieldIndex).dataType
+      val needsQuoting = dt == DataTypes.StringType || dt == DataTypes.DateType ||
+        dt == DataTypes.TimestampType
       withResource(input.getChildColumnView(fieldIndex)) { cv =>
         withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
           // prefix with quoted column name followed by colon

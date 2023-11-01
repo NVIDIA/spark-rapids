@@ -3595,9 +3595,11 @@ object GpuOverrides extends Logging {
         TypeSig.STRING,
         Seq(ParamCheck("struct",
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
       (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -3606,6 +3608,16 @@ object GpuOverrides extends Logging {
           }
           if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
             willNotWorkOnGpu("to_json option pretty=true is not supported")
+          }
+          val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(a.child.dataType,
+            _.isInstanceOf[TimestampType])
+          if (hasTimestamps) {
+            val timeZone = a.options.getOrElse("timeZone", SQLConf.get.sessionLocalTimeZone)
+            if (timeZone != "UTC") {
+              // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
+              // so we need to fall back if a different timeZone is specified
+              willNotWorkOnGpu(s"Unsupported timeZone '$timeZone' in to_json")
+            }
           }
         }
 
