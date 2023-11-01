@@ -156,7 +156,7 @@ abstract class GpuArrowPythonRunnerBase(
     conf: Map[String, String],
     batchSize: Long,
     onDataWriteFinished: () => Unit = null)
-  extends GpuArrowPythonRunnerBaseBase(funcs, evalType, argOffsets, pythonInSchema, timeZoneId,
+  extends GpuArrowPythonRunnerBase(funcs, evalType, argOffsets, pythonInSchema, timeZoneId,
     conf, batchSize, onDataWriteFinished) {
 
   protected override def newWriter(

@@ -129,7 +129,7 @@ abstract class GpuPythonRunnerBase[IN](
 /**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
-abstract class GpuArrowPythonRunnerBaseBase(
+abstract class GpuArrowPythonRunnerBase(
     funcs: Seq[ChainedPythonFunctions],
     evalType: Int,
     argOffsets: Array[Array[Int]],
