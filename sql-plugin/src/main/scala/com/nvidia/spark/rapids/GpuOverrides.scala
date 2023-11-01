@@ -3300,6 +3300,19 @@ object GpuOverrides extends Logging {
         override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
+    expr[Stack](
+      "Separates expr1, ..., exprk into n rows.",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("n", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+        Some(RepeatingParamCheck("expr",
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all))),
+      (a, conf, p, r) => new GpuStackMeta(a, conf, p, r)
+    ),
     expr[ReplicateRows](
       "Given an input row replicates the row N times",
       ExprChecks.projectOnly(
