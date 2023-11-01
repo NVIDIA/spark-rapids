@@ -359,7 +359,6 @@ def get_sequence_cases_mixed_df(spark, length=2048):
         SparkContext.getOrCreate().parallelize(get_sequence_data(data_gen, length)),
         mixed_schema)
 
-@disable_timezone_test
 # test for 3 cases mixed in a single dataset
 @disable_timezone_test
 def test_sequence_with_step_mixed_cases():
