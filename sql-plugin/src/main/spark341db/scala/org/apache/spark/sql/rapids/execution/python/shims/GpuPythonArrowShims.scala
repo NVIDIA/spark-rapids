@@ -25,14 +25,18 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import org.apache.arrow.vector.VectorSchemaRoot
+import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.rapids.shims.api.python.ShimBasePythonRunner
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
@@ -214,7 +218,7 @@ abstract class GpuArrowPythonRunnerBase(
         }
       }
 
-      private def writeNonEmptyIteratorOnGpu(dataOut: DataOutputStream): Unit = {
+      private def writeNonEmptyIteratorOnGpu(dataOut: DataOutputStream): Boolean = {
         val writer = {
           val builder = ArrowIPCWriterOptions.builder()
           builder.withMaxChunkSize(batchSize)
@@ -256,13 +260,14 @@ abstract class GpuArrowPythonRunnerBase(
         wrote
       }
       
-      private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Unit = {
+      private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Boolean = {
         // most code is copied from Spark
         val arrowSchema = ArrowUtilsShim.toArrowSchema(pythonInSchema, timeZoneId)
         val allocator = ArrowUtils.rootAllocator.newChildAllocator(
           s"stdout writer for empty partition", 0, Long.MaxValue)
         val root = VectorSchemaRoot.create(arrowSchema, allocator)
 
+        val wrote = false
         Utils.tryWithSafeFinally {
           val writer = new ArrowStreamWriter(root, null, dataOut)
           writer.start()
@@ -275,6 +280,7 @@ abstract class GpuArrowPythonRunnerBase(
           allocator.close()
           if (onDataWriteFinished != null) onDataWriteFinished()
         }
+        wrote
       }
     }
   }

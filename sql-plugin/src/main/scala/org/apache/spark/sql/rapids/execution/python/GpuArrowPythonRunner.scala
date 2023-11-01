@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.api.python._
 import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunnerBase
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class BufferToStreamWriter(outputStream: DataOutputStream) extends HostBufferConsumer {
