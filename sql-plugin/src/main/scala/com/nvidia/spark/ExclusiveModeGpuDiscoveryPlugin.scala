@@ -18,7 +18,7 @@ package com.nvidia.spark
 
 import java.util.Optional
 
-import com.nvidia.spark.rapids.{RapidsProxy, ShimLoader}
+import com.nvidia.spark.rapids.ShimLoader
 
 import org.apache.spark.SparkConf
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
@@ -35,12 +35,12 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
  *  This plugin can be activated in spark with the configuration:
  *  `--conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin`
  */
-class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with RapidsProxy {
+class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin {
   override def discoverResource(
     request: ResourceRequest,
     sparkConf: SparkConf
   ): Optional[ResourceInformation] = self.discoverResource(request, sparkConf)
 
-  override lazy val self: ResourceDiscoveryPlugin =
+  lazy val self: ResourceDiscoveryPlugin =
     ShimLoader.newInternalExclusiveModeGpuDiscoveryPlugin()
 }

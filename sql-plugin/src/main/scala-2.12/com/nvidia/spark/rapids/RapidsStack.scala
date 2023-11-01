@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayStack
 
-class RapidsStack[T] extends RapidsProxy {
-  override val self: ArrayStack[T] = new ArrayStack[T]()
+class RapidsStack[T] {
+  val self: ArrayStack[T] = new ArrayStack[T]()
 
   def push(elem1: T): Unit = {
     self.push(elem1)

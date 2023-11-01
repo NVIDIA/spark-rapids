@@ -114,7 +114,7 @@ that the classloader is
 [set up at load time](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/scala/com/nvidia/spark/SQLPlugin.scala#L29)
 before the DriverPlugin and ExecutorPlugin instances are called the `init` method on.
 
-By making a visible class merely a wrapper of the real implementation, extending `scala.Proxy` where `self` is a lazy
+By making a visible class merely a wrapper of the real implementation where `self` is a lazy
 val, we prevent classes from Parallel Worlds to be loaded before they can be, and are actually required.
 For examples see:
 

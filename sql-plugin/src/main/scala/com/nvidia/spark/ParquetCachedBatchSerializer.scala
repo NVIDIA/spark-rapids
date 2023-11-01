@@ -16,7 +16,7 @@
 
 package com.nvidia.spark
 
-import com.nvidia.spark.rapids.{RapidsProxy, ShimLoaderTemp}
+import com.nvidia.spark.rapids.ShimLoaderTemp
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -39,9 +39,9 @@ trait GpuCachedBatchSerializer extends CachedBatchSerializer {
 /**
  * User facing wrapper class that calls into the internal version.
  */
-class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with RapidsProxy {
+class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
-  override lazy val self: GpuCachedBatchSerializer =
+  lazy val self: GpuCachedBatchSerializer =
     ShimLoaderTemp.newParquetCachedBatchSerializer()
 
   /**
