@@ -60,6 +60,8 @@ case class GpuCheckOverflow(child: Expression,
       GpuCast.checkNFixDecimalBounds(rounded, dataType, !nullOnOverflow)
     }
   }
+
+  override def nullable: Boolean = true
 }
 
 /**
