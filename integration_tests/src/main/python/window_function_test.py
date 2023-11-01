@@ -820,6 +820,50 @@ def test_window_running_float_decimal_sum(batch_size):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
+
+@approximate_float
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Test different batch sizes.
+def test_range_running_window_float_decimal_sum_runs_batched(batch_size):
+    """
+    This test is very similar to test_window_running_float_decimal_sum, except that it checks that RANGE window SUM
+    aggregations can run in batched mode.
+    Note that in the RANGE case, the test needs to check the case where there are repeats in the order-by column.
+    This covers the case where `CURRENT ROW` might refer to multiple rows in the order-by column. This does introduce
+    the possibility of non-deterministic results, because the ordering with repeated values isn't deterministic.
+    This is mitigated by aggregating on the same column as the order-by column, such that the same value is aggregated
+    for the repeated keys.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.variableFloatAgg.enabled': True,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    def window(oby_column):
+        return "(PARTITION BY p ORDER BY " + oby_column + " RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) "
+
+    query_parts = [
+        'p', 'oby',
+        'SUM(CAST(oby AS DOUBLE)) OVER       ' + window('CAST(oby AS DOUBLE)') + '       AS short_double_sum',
+        'SUM(ABS(dbl)) OVER                  ' + window('ABS(dbl)') + '                  AS double_sum',
+        'SUM(CAST(oby AS FLOAT)) OVER        ' + window('CAST(oby AS FLOAT)') + '        AS short_float_sum',
+        'SUM(ABS(flt)) OVER                  ' + window('ABS(flt)') + '                  AS float_sum',
+        'SUM(CAST(oby AS DECIMAL(6,1))) OVER ' + window('CAST(oby AS DECIMAL(6,1))') + ' AS dec_sum'
+    ]
+
+    gen = StructGen([('p', RepeatSeqGen(int_gen, length=1000)),
+                     ('oby', short_gen),
+                     ('flt', float_gen),
+                     ('dbl', double_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen, length=1024 * 14),
+        "window_agg_table",
+        'SELECT ' +
+        ', '.join(query_parts) +
+        ' FROM window_agg_table ',
+        validate_execs_in_gpu_plan=['GpuRunningWindowExec'],
+        conf=conf)
+
+
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
