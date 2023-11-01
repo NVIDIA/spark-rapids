@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.{RapidsProxy, ShimLoader}
 
 import org.apache.spark.{ShuffleDependency, SparkConf, TaskContext}
 import org.apache.spark.shuffle._
@@ -42,7 +42,7 @@ trait RapidsShuffleManagerLike {
 class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
-) extends RapidsShuffleManagerLike with Proxy with ShuffleManager {
+) extends RapidsShuffleManagerLike with RapidsProxy with ShuffleManager {
 
   // touched in the plugin code after the shim initialization
   // is complete

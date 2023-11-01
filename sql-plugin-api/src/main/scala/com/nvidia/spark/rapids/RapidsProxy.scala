@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,37 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.Stack
-
-class RapidsStack[T] extends RapidsProxy {
-  override val self = Stack.empty[T]
-
-  def push(elem1: T): RapidsStack[T] = {
-    self.push(elem1)
-    this
-  }
-
-  def pop(): T = {
-    self.pop()
-  }
-
-  def isEmpty: Boolean = {
-    self.isEmpty
-  }
-
-  def nonEmpty: Boolean = {
-    self.nonEmpty
-  }
-
-  def size(): Int = {
-    self.size
-  }
-
-  def toSeq(): Seq[T] = {
-    self.toSeq
-  }
-
-  def clear(): Unit = {
-    self.clear()
-  }
+/**
+ * Trait to replace usage of deprecated scala.Proxy. If the purpose is to delay
+ * initialization of the underlying implementation, self is overriden as a
+ * lazy val
+ */
+trait RapidsProxy extends Any {
+  def self: Any
 }

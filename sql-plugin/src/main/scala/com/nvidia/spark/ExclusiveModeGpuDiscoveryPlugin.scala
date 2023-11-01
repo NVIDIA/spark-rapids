@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark
 
 import java.util.Optional
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.{RapidsProxy, ShimLoader}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
@@ -35,7 +35,7 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
  *  This plugin can be activated in spark with the configuration:
  *  `--conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin`
  */
-class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with Proxy {
+class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin with RapidsProxy {
   override def discoverResource(
     request: ResourceRequest,
     sparkConf: SparkConf
