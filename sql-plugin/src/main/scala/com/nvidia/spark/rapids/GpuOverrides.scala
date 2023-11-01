@@ -3617,6 +3617,7 @@ object GpuOverrides extends Logging {
             val dateFormat = a.options.getOrElse("dateFormat", defaultFormat)
             if (dateFormat != defaultFormat) {
               // we can likely support other formats but we would need to add tests
+              // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
               willNotWorkOnGpu(s"Unsupported dateFormat '$dateFormat' in to_json")
             }
           }
@@ -3628,6 +3629,7 @@ object GpuOverrides extends Logging {
             val timestampFormat = a.options.getOrElse("timestampFormat", defaultFormat)
             if (timestampFormat != defaultFormat) {
               // we can likely support other formats but we would need to add tests
+              // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
               willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
             }
             val timeZone = a.options.getOrElse("timeZone", SQLConf.get.sessionLocalTimeZone)
