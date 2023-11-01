@@ -3609,9 +3609,27 @@ object GpuOverrides extends Logging {
           if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
             willNotWorkOnGpu("to_json option pretty=true is not supported")
           }
+          val hasDates = TrampolineUtil.dataTypeExistsRecursively(a.child.dataType,
+            _.isInstanceOf[DateType])
+          if (hasDates) {
+            // check if the default format is being used
+            val defaultFormat = "yyyy-MM-dd"
+            val dateFormat = a.options.getOrElse("dateFormat", defaultFormat)
+            if (dateFormat != defaultFormat) {
+              // we can likely support other formats but we would need to add tests
+              willNotWorkOnGpu(s"Unsupported dateFormat '$dateFormat' in to_json")
+            }
+          }
           val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(a.child.dataType,
             _.isInstanceOf[TimestampType])
           if (hasTimestamps) {
+            // check if the default format is being used
+            val defaultFormat = "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
+            val timestampFormat = a.options.getOrElse("timestampFormat", defaultFormat)
+            if (timestampFormat != defaultFormat) {
+              // we can likely support other formats but we would need to add tests
+              willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
+            }
             val timeZone = a.options.getOrElse("timeZone", SQLConf.get.sessionLocalTimeZone)
             if (timeZone != "UTC") {
               // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
