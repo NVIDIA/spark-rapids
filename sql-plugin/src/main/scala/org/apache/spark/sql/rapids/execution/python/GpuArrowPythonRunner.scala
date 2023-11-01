@@ -32,7 +32,7 @@ import org.apache.spark.api.python._
 import org.apache.spark.rapids.shims.api.python.ShimBasePythonRunner
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunnerBase, GpuPythonArrowOutput}
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunner, GpuPythonArrowOutput}
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
@@ -79,43 +79,6 @@ class StreamToBufferProvider(inputStream: DataInputStream) extends HostBufferPro
   }
 }
 
-class GpuArrowPythonRunner(
-    funcs: Seq[ChainedPythonFunctions],
-    evalType: Int,
-    argOffsets: Array[Array[Int]],
-    pythonInSchema: StructType,
-    timeZoneId: String,
-    conf: Map[String, String],
-    batchSize: Long,
-    pythonOutSchema: StructType,
-    onDataWriteFinished: () => Unit = null)
-  extends GpuArrowPythonRunnerBase(
-    funcs,
-    evalType,
-    argOffsets,
-    pythonInSchema,
-    timeZoneId,
-    conf,
-    batchSize,
-    onDataWriteFinished) {
-
-  def toBatch(table: Table): ColumnarBatch = {
-    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
-  }
-}
-
-object GpuArrowPythonRunner {
-  def flattenNames(d: DataType, nullable: Boolean = true): Seq[(String, Boolean)] =
-    d match {
-      case s: StructType =>
-        s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
-      case m: MapType =>
-        flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
-      case a: ArrayType => flattenNames(a.elementType, nullable)
-      case _ => Nil
-    }
-}
-
 /**
  * Base class of GPU Python runners who will be mixed with GpuPythonArrowOutput
  * to produce columnar batches.
@@ -137,9 +100,14 @@ abstract class GpuArrowPythonRunnerBase(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
+    pythonOutSchema: StructType = null,
     onDataWriteFinished: () => Unit = null)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
+  }
 
   override val bufferSize: Int = SQLConf.get.pandasUDFBufferSize
   require(

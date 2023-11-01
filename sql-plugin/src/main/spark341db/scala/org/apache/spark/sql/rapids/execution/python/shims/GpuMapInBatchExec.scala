@@ -31,7 +31,6 @@ import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunnerBase
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -89,7 +88,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             }
           }
       }
-      val pyRunner = new GpuArrowPythonRunnerBase(
+      val pyRunner = new GpuArrowPythonRunner(
           chainedFunc,
           pythonEvalType,
           argOffsets,

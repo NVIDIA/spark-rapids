@@ -147,7 +147,7 @@ trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
 /**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
-abstract class GpuArrowPythonRunnerBase(
+class GpuArrowPythonRunner(
     funcs: Seq[ChainedPythonFunctions],
     evalType: Int,
     argOffsets: Array[Array[Int]],
@@ -155,9 +155,10 @@ abstract class GpuArrowPythonRunnerBase(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
+    pythonOutSchema: StructType = null,
     onDataWriteFinished: () => Unit = null)
   extends GpuArrowPythonRunnerBase(funcs, evalType, argOffsets, pythonInSchema, timeZoneId,
-    conf, batchSize, onDataWriteFinished) {
+    conf, batchSize, pythonOutSchema, onDataWriteFinished) {
 
   protected override def newWriter(
       env: SparkEnv,
