@@ -586,7 +586,8 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
     False
 ])
-def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
+@pytest.mark.parametrize('timezone', ['UTC', 'Etc/UTC'])
+def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty, timezone):
     struct_gen = StructGen([
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
@@ -598,7 +599,8 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
     options = { 'ignoreNullFields': ignore_null_fields,
-                'pretty': pretty }
+                'pretty': pretty,
+                'timeZone': timezone}
 
     def struct_to_json(spark):
         df = gen_df(spark, gen)

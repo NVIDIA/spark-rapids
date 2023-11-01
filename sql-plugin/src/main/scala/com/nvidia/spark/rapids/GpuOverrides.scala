@@ -3633,7 +3633,7 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
             }
             val timeZone = a.options.getOrElse("timeZone", SQLConf.get.sessionLocalTimeZone)
-            if (timeZone != "UTC") {
+            if (timeZone != "UTC" && timeZone != "Etc/UTC") {
               // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
               // so we need to fall back if a different timeZone is specified
               willNotWorkOnGpu(s"Unsupported timeZone '$timeZone' in to_json")
