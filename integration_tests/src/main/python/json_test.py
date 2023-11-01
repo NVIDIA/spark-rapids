@@ -476,7 +476,6 @@ def test_from_json_map_fallback():
     'struct<a:string>',
     'struct<b:string>',
     'struct<c:string>',
-    'struct<b:boolean>',
     'struct<a:int>',
     'struct<a:long>',
     'struct<a:float>',
@@ -495,6 +494,18 @@ def test_from_json_struct(schema):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9597')
+def test_from_json_struct_boolean():
+    json_string_gen = StringGen(r'{ "a": [truefalsTRUEFALS]{0,5}, "b": [0-9]{0,2} }') \
+        .with_special_pattern('{ "a": true, "b": 1 }', weight=50) \
+        .with_special_pattern('{ "a": false, "b": 0 }', weight=50) \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', 'struct<a:boolean, b:boolean>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 def test_from_json_struct_decimal():
