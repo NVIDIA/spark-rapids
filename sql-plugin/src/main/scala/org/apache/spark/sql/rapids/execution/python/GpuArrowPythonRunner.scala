@@ -145,6 +145,8 @@ abstract class GpuArrowPythonRunnerBase(
         // So here we leverage the Java Arrow writer to do similar things as Spark.
         // It is OK because sending out schema has nothing to do with GPU.
         writeEmptyIteratorOnCpu(dataOut)
+        // Returning false because nothing was written
+        false
       }
     }
 
@@ -190,14 +192,13 @@ abstract class GpuArrowPythonRunnerBase(
       wrote
     }
 
-    private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Boolean = {
+    private def writeEmptyIteratorOnCpu(dataOut: DataOutputStream): Unit = {
       // most code is copied from Spark
       val arrowSchema = ArrowUtilsShim.toArrowSchema(pythonInSchema, timeZoneId)
       val allocator = ArrowUtils.rootAllocator.newChildAllocator(
         s"stdout writer for empty partition", 0, Long.MaxValue)
       val root = VectorSchemaRoot.create(arrowSchema, allocator)
 
-      val wrote = false
       Utils.tryWithSafeFinally {
         val writer = new ArrowStreamWriter(root, null, dataOut)
         writer.start()
@@ -210,7 +211,6 @@ abstract class GpuArrowPythonRunnerBase(
         allocator.close()
         if (onDataWriteFinished != null) onDataWriteFinished()
       }
-      wrote
     }
   }
 }

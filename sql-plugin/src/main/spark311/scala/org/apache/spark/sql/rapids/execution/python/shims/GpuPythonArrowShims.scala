@@ -197,7 +197,6 @@ class GpuArrowPythonRunner(
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         workerImpl.writeInputToStream(dataOut)
-        return
       }
     }
   }
