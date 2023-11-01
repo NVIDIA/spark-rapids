@@ -46,7 +46,7 @@ class ProxyRapidsShuffleInternalManagerBase(
 
   // touched in the plugin code after the shim initialization
   // is complete
-  lazy val self: ShuffleManager = ShimLoader.newInternalShuffleManager(conf, isDriver)
+  override lazy val self: ShuffleManager = ShimLoader.newInternalShuffleManager(conf, isDriver)
       .asInstanceOf[ShuffleManager]
 
   // This function touches the lazy val `self` so we actually instantiate
