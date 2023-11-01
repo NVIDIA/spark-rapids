@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
+from marks import disable_timezone_test
 from spark_session import with_cpu_session, is_before_spark_330
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -291,6 +292,7 @@ def test_filter_with_project(data_gen):
 # and some constants that then make it so all we need is the number of rows
 # of input.
 @pytest.mark.parametrize('op', ['>', '<'])
+@disable_timezone_test
 def test_empty_filter(op, spark_tmp_path):
 
     def do_it(spark):

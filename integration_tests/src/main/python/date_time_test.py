@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, assert_spark_exception, with_gpu_session
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu, disable_timezone_test

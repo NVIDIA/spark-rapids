@@ -1713,6 +1713,7 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
+
         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
       }),
     expr[Minute](
@@ -1720,10 +1721,12 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
+
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuMinute(expr)
       }),
     expr[Second](
+
       "Returns the second component of the string/timestamp",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
