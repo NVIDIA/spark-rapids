@@ -296,7 +296,7 @@ object GpuCast {
 
   val OVERFLOW_MESSAGE: String = "overflow occurred"
 
-  val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
+//  val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
   def doCast(
       input: ColumnView,
