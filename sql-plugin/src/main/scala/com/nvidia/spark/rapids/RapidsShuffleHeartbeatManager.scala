@@ -218,9 +218,9 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
 
   def registerShuffleHeartbeat(): Unit = {
     val rapidsShuffleManagerProxy = SparkEnv.get.shuffleManager
-        .asInstanceOf[ProxyRapidsShuffleInternalManagerBase]
-    val rapidsShuffleManager = rapidsShuffleManagerProxy.self
-        .asInstanceOf[RapidsShuffleInternalManagerBase]
+      .asInstanceOf[ProxyRapidsShuffleInternalManagerBase]
+    val rapidsShuffleManager = rapidsShuffleManagerProxy.getRealImpl
+      .asInstanceOf[RapidsShuffleInternalManagerBase]
     if (rapidsShuffleManager.isDriver) {
       logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
     } else {

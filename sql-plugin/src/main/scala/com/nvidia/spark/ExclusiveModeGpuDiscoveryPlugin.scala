@@ -36,11 +36,10 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
  *  `--conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin`
  */
 class ExclusiveModeGpuDiscoveryPlugin extends ResourceDiscoveryPlugin {
+  private lazy val realImpl = ShimLoader.newInternalExclusiveModeGpuDiscoveryPlugin()
+
   override def discoverResource(
     request: ResourceRequest,
     sparkConf: SparkConf
-  ): Optional[ResourceInformation] = self.discoverResource(request, sparkConf)
-
-  lazy val self: ResourceDiscoveryPlugin =
-    ShimLoader.newInternalExclusiveModeGpuDiscoveryPlugin()
+  ): Optional[ResourceInformation] = realImpl.discoverResource(request, sparkConf)
 }

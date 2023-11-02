@@ -46,14 +46,19 @@ class ProxyRapidsShuffleInternalManagerBase(
 
   // touched in the plugin code after the shim initialization
   // is complete
-  lazy val self: ShuffleManager = ShimLoader.newInternalShuffleManager(conf, isDriver)
-      .asInstanceOf[ShuffleManager]
+  private lazy val realImpl = ShimLoader.newInternalShuffleManager(conf, isDriver)
+    .asInstanceOf[ShuffleManager]
 
   // This function touches the lazy val `self` so we actually instantiate
   // the manager. This is called from both the driver and executor.
   // In the driver, it's mostly to display information on how to enable/disable the manager,
   // in the executor, the UCXShuffleTransport starts and allocates memory at this time.
-  override def initialize: Unit = self
+  override def initialize: Unit = realImpl
+
+  /**
+   * Return the real implementation
+   */
+  def getRealImpl: ShuffleManager = realImpl
 
   def getWriter[K, V](
       handle: ShuffleHandle,
@@ -61,7 +66,7 @@ class ProxyRapidsShuffleInternalManagerBase(
       context: TaskContext,
       metrics: ShuffleWriteMetricsReporter
   ): ShuffleWriter[K, V] = {
-    self.getWriter(handle, mapId, context, metrics)
+    realImpl.getWriter(handle, mapId, context, metrics)
   }
 
   def getReader[K, C](
@@ -72,7 +77,7 @@ class ProxyRapidsShuffleInternalManagerBase(
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    self.getReader(handle,
+    realImpl.getReader(handle,
       startMapIndex, endMapIndex, startPartition, endPartition,
       context, metrics)
   }
@@ -81,13 +86,13 @@ class ProxyRapidsShuffleInternalManagerBase(
       shuffleId: Int,
       dependency: ShuffleDependency[K, V, C]
   ): ShuffleHandle = {
-    self.registerShuffle(shuffleId, dependency)
+    realImpl.registerShuffle(shuffleId, dependency)
   }
 
-  def unregisterShuffle(shuffleId: Int): Boolean = self.unregisterShuffle(shuffleId)
+  def unregisterShuffle(shuffleId: Int): Boolean = realImpl.unregisterShuffle(shuffleId)
 
-  def shuffleBlockResolver: ShuffleBlockResolver = self.shuffleBlockResolver
+  def shuffleBlockResolver: ShuffleBlockResolver = realImpl.shuffleBlockResolver
 
-  def stop(): Unit = self.stop()
+  def stop(): Unit = realImpl.stop()
 }
 

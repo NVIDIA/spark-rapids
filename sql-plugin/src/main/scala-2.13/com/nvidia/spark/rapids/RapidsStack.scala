@@ -19,34 +19,34 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.Stack
 
 class RapidsStack[T] {
-  val self = Stack.empty[T]
+  private val realImpl = Stack.empty[T]
 
   def push(elem1: T): RapidsStack[T] = {
-    self.push(elem1)
+    realImpl.push(elem1)
     this
   }
 
   def pop(): T = {
-    self.pop()
+    realImpl.pop()
   }
 
   def isEmpty: Boolean = {
-    self.isEmpty
+    realImpl.isEmpty
   }
 
   def nonEmpty: Boolean = {
-    self.nonEmpty
+    realImpl.nonEmpty
   }
 
   def size(): Int = {
-    self.size
+    realImpl.size
   }
 
   def toSeq(): Seq[T] = {
-    self.toSeq
+    realImpl.toSeq
   }
 
   def clear(): Unit = {
-    self.clear()
+    realImpl.clear()
   }
 }
