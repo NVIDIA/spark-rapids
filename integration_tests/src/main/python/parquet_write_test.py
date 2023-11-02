@@ -527,6 +527,7 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
         "spark.sql.hive.convertCTAS": "true",
         "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
     }
+    conf = copy_and_update(conf, writer_confs_for_DB)
     def test_it(spark):
         src_name = spark_tmp_table_factory.get()
         spark.sql("CREATE TABLE {}(id string) LOCATION '{}/src1'".format(src_name, data_path))
