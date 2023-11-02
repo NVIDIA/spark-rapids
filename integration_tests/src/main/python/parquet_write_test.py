@@ -40,6 +40,15 @@ parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
+# On Databricks, the default mode is LEGACY, it's different from regular Spark,
+# This makes test cases pass on Databricks
+writer_confs_for_DB = {
+    'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInWrite' : 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED'
+}
+
 parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                     string_gen, boolean_gen, date_gen, TimestampGen(), binary_gen]
 
@@ -124,7 +133,8 @@ def test_write_round_trip_corner(spark_tmp_path, par_gen):
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list, 128000, num_slices=1).write.parquet(path),
             lambda spark, path: spark.read.parquet(path),
-            data_path)
+            data_path,
+            conf=writer_confs_for_DB)
 
 @pytest.mark.parametrize('parquet_gens', [[
     TimestampGen(),
@@ -232,6 +242,7 @@ if not is_before_spark_320():
 def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.compression.codec': compress}
+    all_confs = copy_and_update(all_confs, writer_confs_for_DB)
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
@@ -305,9 +316,11 @@ def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory)
     data_path = spark_tmp_path + '/PARQUET_DATA'
     table_name = spark_tmp_table_factory.get()
     with_gpu_session(
-            lambda spark : unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(table_name))
+            lambda spark : unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(table_name),
+            conf=writer_confs_for_DB)
     with_gpu_session(
-            lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name))
+            lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name),
+            conf=writer_confs_for_DB)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
@@ -468,7 +481,8 @@ def test_write_map_nullable(spark_tmp_path):
     assert_gpu_and_cpu_writes_are_equal_collect(
             generate_map_with_empty_validity,
             lambda spark, path: spark.read.parquet(path),
-            data_path)
+            data_path,
+            conf=writer_confs_for_DB)
 
 @pytest.mark.parametrize('ts_write_data_gen', [('INT96', TimestampGen()),
                                                ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))),
@@ -617,6 +631,7 @@ def test_concurrent_writer(spark_tmp_path):
         lambda spark, path: spark.read.parquet(path),
         data_path,
         copy_and_update(
+            writer_confs_for_DB,
             # 26 > 25, will not fall back to single writer
             {"spark.sql.maxConcurrentOutputFileWriters": 26}
         ))
@@ -757,7 +772,7 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
         lambda spark, path: write_partitions(spark, path),
         lambda spark, path: spark.read.parquet(path),
         base_output_path,
-        conf={}
+        conf=writer_confs_for_DB
     )
 
 def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, func):
@@ -830,7 +845,7 @@ def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled,
 def test_write_list_struct_single_element(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     data_gen = ArrayGen(StructGen([('element', long_gen)], nullable=False), max_length=10, nullable=False)
-    conf = {}
+    conf = writer_confs_for_DB
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: gen_df(spark, data_gen).write.parquet(path),
         lambda spark, path: spark.read.parquet(path), data_path, conf)
@@ -850,4 +865,5 @@ def test_parquet_write_column_name_with_dots(spark_tmp_path):
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path:  gen_df(spark, gens).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
-        data_path)
+        data_path,
+        conf=writer_confs_for_DB)

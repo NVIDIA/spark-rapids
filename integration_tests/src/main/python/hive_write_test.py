@@ -23,6 +23,15 @@ from marks import *
 from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session, \
     is_databricks122_or_later
 
+# On Databricks, the default mode is LEGACY, it's different from regular Spark,
+# This makes test cases pass on Databricks
+writer_confs_for_DB = {
+    'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInWrite' : 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED'
+}
+
 # Using timestamps from 1970 to work around a cudf ORC bug
 # https://github.com/NVIDIA/spark-rapids/issues/140.
 # Using a limited upper end for timestamps to avoid INT96 overflow on Parquet.
@@ -176,9 +185,9 @@ def do_hive_copy(spark_tmp_table_factory, gen, type1, type2):
 
     (from_cpu, cpu_df), (from_gpu, gpu_df) = run_with_cpu_and_gpu(
         do_test, 'COLLECT_WITH_DATAFRAME',
-        conf={
+        conf=copy_and_update(writer_confs_for_DB, {
             'spark.sql.ansi.enabled': 'true',
-            'spark.sql.storeAssignmentPolicy': 'ANSI'})
+            'spark.sql.storeAssignmentPolicy': 'ANSI'}))
 
     jvm = spark_jvm()
     jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContainsAnsiCast(cpu_df._jdf)
