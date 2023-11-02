@@ -21,12 +21,12 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
+import java.time.ZoneId
 import java.util
 import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
-import scala.collection
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
@@ -215,10 +215,6 @@ object GpuParquetScan {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
-    val schemaHasDates = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
-    }
-
     sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
       case "EXCEPTION" | "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...
@@ -231,9 +227,12 @@ object GpuParquetScan {
 
     sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
       case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" => // really is EXCEPTION for us...
-        if (schemaHasDates || schemaHasTimestamps) {
-          meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
+      case "LEGACY" =>
+        if (!TypeChecks.areTimestampsSupported()) {
+          meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
+            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+            s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
+            " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
