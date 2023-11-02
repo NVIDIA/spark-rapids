@@ -1169,11 +1169,11 @@ object GpuCast {
   }
 
   private def escapeJsonString(cv: ColumnVector): ColumnVector = {
-    val chars = Seq("\\", "\"")
-    val escaped = chars.map("\\" + _)
-    withResource(ColumnVector.fromStrings(chars: _*)) { search =>
-      withResource(ColumnVector.fromStrings(escaped: _*)) { replace =>
-        withResource(cv) { _=>
+    withResource(cv) { _=>
+      val chars = Seq("\\", "\"")
+      val escaped = chars.map("\\" + _)
+      withResource(ColumnVector.fromStrings(chars: _*)) { search =>
+        withResource(ColumnVector.fromStrings(escaped: _*)) { replace =>
           cv.stringReplace(search, replace)
         }
       }
