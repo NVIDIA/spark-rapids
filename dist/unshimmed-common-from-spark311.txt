@@ -3,7 +3,6 @@ META-INF/LICENSE
 META-INF/NOTICE
 com/nvidia/spark/GpuCachedBatchSerializer*
 com/nvidia/spark/ParquetCachedBatchSerializer*
-com/nvidia/spark/Retryable*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/GpuColumnVectorUtils*
