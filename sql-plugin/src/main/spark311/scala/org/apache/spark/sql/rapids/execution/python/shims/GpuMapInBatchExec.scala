@@ -112,29 +112,24 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
           }
       }
 
-      if (pyInputIterator.hasNext) {
-        val pyRunner = new GpuArrowPythonRunner(
-            chainedFunc,
-            pythonEvalType,
-            argOffsets,
-            pyInputSchema,
-            sessionLocalTimeZone,
-            pythonRunnerConf,
-            batchSize) {
-          override def toBatch(table: Table): ColumnarBatch = {
-            BatchGroupedIterator.extractChildren(table, localOutput)
-          }
-        }
+    val pyRunner = new GpuArrowPythonRunner(
+        chainedFunc,
+        pythonEvalType,
+        argOffsets,
+        pyInputSchema,
+        sessionLocalTimeZone,
+        pythonRunnerConf,
+        batchSize) {
+      override def toBatch(table: Table): ColumnarBatch = {
+        BatchGroupedIterator.extractChildren(table, localOutput)
+      }
+    }
 
-        pyRunner.compute(pyInputIterator, context.partitionId(), context)
-          .map { cb =>
-            numOutputBatches += 1
-            numOutputRows += cb.numRows
-            cb
-          }
-      } else {
-        // Empty partition, return it directly
-        inputIter
+    pyRunner.compute(pyInputIterator, context.partitionId(), context)
+      .map { cb =>
+        numOutputBatches += 1
+        numOutputRows += cb.numRows
+        cb
       }
     } // end of mapPartitionsInternal
   } // end of internalDoExecuteColumnar
