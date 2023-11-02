@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  COMMON_MVN_FLAGS: >
+  COMMON_MVN_FLAGS: >-
     -Ddist.jar.compress=false
     -DskipTests
     -Dskip
