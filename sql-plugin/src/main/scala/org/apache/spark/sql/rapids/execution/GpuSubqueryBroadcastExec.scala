@@ -25,14 +25,14 @@ import scala.concurrent.duration.Duration
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExec, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
-import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ShimBaseSubqueryExec, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BoundReference, Cast, Expression, NamedExpression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
-import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{HashedRelationBroadcastMode, HashJoin}
@@ -173,7 +173,7 @@ case class GpuSubqueryBroadcastExec(
     index: Int,
     buildKeys: Seq[Expression],
     child: SparkPlan)(modeKeys: Option[Seq[Expression]])
-    extends BaseSubqueryExec with GpuExec with ShimUnaryExecNode {
+    extends ShimBaseSubqueryExec with GpuExec with ShimUnaryExecNode {
 
   override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
 
