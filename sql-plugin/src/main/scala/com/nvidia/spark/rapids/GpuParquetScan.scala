@@ -158,21 +158,16 @@ object GpuParquetScan {
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
-  def throwIfNeeded(
-      table: Table,
-      isCorrectedInt96Rebase: Boolean,
-      isCorrectedDateTimeRebase: Boolean,
-      hasInt96Timestamps: Boolean): Unit = {
+  def throwIfRebaseNeededInExceptionMode(table: Table, dateRebaseMode: String,
+                                         timestampRebaseMode: String): Unit = {
     (0 until table.getNumberOfColumns).foreach { i =>
       val col = table.getColumn(i)
-      if (!isCorrectedDateTimeRebase && RebaseHelper.isDateRebaseNeededInRead(col)) {
+      if (dateRebaseMode.equals("EXCEPTION") && RebaseHelper.isDateRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
-      else if (hasInt96Timestamps && !isCorrectedInt96Rebase ||
-          !hasInt96Timestamps && !isCorrectedDateTimeRebase) {
-        if (RebaseHelper.isTimeRebaseNeededInRead(col)) {
-          throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-        }
+      else if (timestampRebaseMode.equals("EXCEPTION") &&
+        RebaseHelper.isTimeRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
     }
   }
@@ -361,8 +356,7 @@ object GpuParquetPartitionReaderFactoryBase {
 // contains meta about all the blocks in a file
 case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[BlockMetaData],
     partValues: InternalRow, schema: MessageType, readSchema: StructType,
-    isCorrectedInt96RebaseMode: Boolean, isCorrectedRebaseMode: Boolean,
-    hasInt96Timestamps: Boolean)
+    dateRebaseMode: String, timestampRebaseMode: String)
 
 private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
 
@@ -496,9 +490,7 @@ private case class GpuParquetFileFilterHandler(
   private val pushDownStringPredicate = ParquetStringPredShims.pushDown(sqlConf)
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val rebaseMode = SparkShimImpl.parquetRebaseRead(sqlConf)
-  private val isCorrectedRebase = "CORRECTED" == rebaseMode
-  val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
-  private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
+  private val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val ignoreMissingParquetFieldId = ParquetSchemaClipShims.ignoreMissingIds(sqlConf)
 

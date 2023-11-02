@@ -139,9 +139,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader, metrics,
-          true, // isCorrectedInt96RebaseMode
-          true, // isCorrectedRebaseMode
-          true, // hasInt96Timestamps
+          "CORRECTED", // dateRebaseMode
+          "CORRECTED", // timestampRebaseMode
           false // useFieldId
       );
       PartitionReaderWithBytesRead partReader = new PartitionReaderWithBytesRead(parquetPartReader);
