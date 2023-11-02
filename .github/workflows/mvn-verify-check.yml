@@ -125,7 +125,9 @@ jobs:
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command
-          mvn -Dmaven.wagon.http.retryHandler.count=3 -B package \
+          mvn -Dmaven.wagon.http.retryHandler.count=3 \
+            -Dmaven.wagon.httpconnectionManager.ttlSeconds=25 \
+            -Daether.connector.http.connectionMaxTtl=25 -B package \
             -pl integration_tests,tests -am \
             -P 'individual,pre-merge' \
             -Dbuildver=${{ matrix.spark-version }} \
@@ -206,11 +208,24 @@ jobs:
           export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-          # test command
-          mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify \
-            -P "individual,pre-merge" \
-            -Dbuildver=${{ matrix.spark-version }} \
-            ${{ env.COMMON_MVN_FLAGS }}
+          # test command, will retry for 3 times if failed.
+          max_retry=3
+          i=1
+          while true; do
+            mvn -Dmaven.wagon.http.retryHandler.count=$max_retry -B verify \
+              -P "individual,pre-merge" \
+              -Dbuildver=${{ matrix.spark-version }} \
+              ${{ env.COMMON_MVN_FLAGS }} && break || {
+            if [[ $i -le $max_retry ]]; then
+              echo "mvn command failed. Retry $i/$max_retry."
+              ((i++))
+              sleep 3
+            else
+              echo "mvn command failed. Exit 1"
+              exit 1
+            fi
+          }
+          done
 
   install-modules:
     needs: get-shim-versions-from-dist
