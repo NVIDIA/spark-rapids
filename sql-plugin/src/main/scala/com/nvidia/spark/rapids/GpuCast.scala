@@ -1169,9 +1169,15 @@ object GpuCast {
   }
 
   private def escapeJsonString(cv: ColumnVector): ColumnVector = {
-    // this is a placeholder for implementing string escaping
-    // https://github.com/NVIDIA/spark-rapids/issues/9514
-    cv
+    val chars = Seq("\\", "\"")
+    val escaped = chars.map("\\" + _)
+    withResource(ColumnVector.fromStrings(chars: _*)) { search =>
+      withResource(ColumnVector.fromStrings(escaped: _*)) { replace =>
+        withResource(cv) { _=>
+          cv.stringReplace(search, replace)
+        }
+      }
+    }
   }
 
   private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
