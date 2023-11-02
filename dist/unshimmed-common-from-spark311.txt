@@ -3,7 +3,6 @@ META-INF/LICENSE
 META-INF/NOTICE
 com/nvidia/spark/GpuCachedBatchSerializer*
 com/nvidia/spark/ParquetCachedBatchSerializer*
-com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/GpuColumnVectorUtils*
 com/nvidia/spark/rapids/ExplainPlan.class
@@ -14,7 +13,6 @@ com/nvidia/spark/rapids/SQLExecPlugin*
 com/nvidia/spark/rapids/ShimLoaderTemp*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/rapids/optimizer/SQLOptimizerPlugin*
-com/nvidia/spark/udf/Plugin*
 org/apache/spark/sql/rapids/AdaptiveSparkPlanHelperShim*
 org/apache/spark/sql/rapids/ExecutionPlanCaptureCallback*
 rapids/*.py
