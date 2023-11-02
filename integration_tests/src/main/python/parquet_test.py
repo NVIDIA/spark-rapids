@@ -337,10 +337,10 @@ def readParquetCatchException(spark, data_path):
         df = spark.read.parquet(data_path).collect()
     assert e_info.match(r".*SparkUpgradeException.*")
 
-# Once https://github.com/NVIDIA/spark-rapids/issues/1126 is fixed nested timestamps and dates should be added in
-# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
-# timestamp_gen
-@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))], ids=idfn)
+# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with timestamp_gen
+@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc)),
+                                 ArrayGen(TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))),
+                                 ArrayGen(ArrayGen(TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))))], ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -982,7 +982,7 @@ def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp
 
 
 conf_for_parquet_aggregate_pushdown = {
-    "spark.sql.parquet.aggregatePushdown": "true", 
+    "spark.sql.parquet.aggregatePushdown": "true",
     "spark.sql.sources.useV1SourceList": ""
 }
 
@@ -1469,7 +1469,7 @@ def test_parquet_read_count(spark_tmp_path):
 def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_confs, col_name):
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
-    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)),
             ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
             ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
             ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
@@ -1477,7 +1477,7 @@ def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_c
             ('v1', LongGen()),
             ('v2', LongGen()),
             ('v3', LongGen())]
- 
+
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/PAR_DATA'
     reader = read_func(data_path)
