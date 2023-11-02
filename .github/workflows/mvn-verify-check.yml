@@ -212,10 +212,11 @@ jobs:
           max_retry=3
           i=1
           while true; do
-            "mvn -Dmaven.wagon.http.retryHandler.count=$max_retry -B verify \
+            mvn -Dmaven.wagon.http.retryHandler.count=$max_retry -B verify \
               -P "individual,pre-merge" \
               -Dbuildver=${{ matrix.spark-version }} \
-              ${{ env.COMMON_MVN_FLAGS }}" && break || {
+              ${{ env.COMMON_MVN_FLAGS }} \
+            && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."
               ((i++))
