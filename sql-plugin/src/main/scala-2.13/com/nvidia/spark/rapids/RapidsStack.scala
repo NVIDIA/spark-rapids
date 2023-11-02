@@ -16,6 +16,37 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayStack
+import scala.collection.mutable.Stack
 
-class ScalaStack[T] extends ArrayStack[T]
+class RapidsStack[T] {
+  private val realImpl = Stack.empty[T]
+
+  def push(elem1: T): RapidsStack[T] = {
+    realImpl.push(elem1)
+    this
+  }
+
+  def pop(): T = {
+    realImpl.pop()
+  }
+
+  def isEmpty: Boolean = {
+    realImpl.isEmpty
+  }
+
+  def nonEmpty: Boolean = {
+    realImpl.nonEmpty
+  }
+
+  def size(): Int = {
+    realImpl.size
+  }
+
+  def toSeq(): Seq[T] = {
+    realImpl.toSeq
+  }
+
+  def clear(): Unit = {
+    realImpl.clear()
+  }
+}
