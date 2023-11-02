@@ -376,6 +376,7 @@ abstract class GpuBroadcastExchangeExecBase(
 
   @transient
   lazy val relationFuture: Future[Broadcast[Any]] = {
+    println("WOW!")
     // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
@@ -447,7 +448,11 @@ abstract class GpuBroadcastExchangeExecBase(
         }
       }
     }
-    GpuBroadcastExchangeExecBase.executionContext.submit[Broadcast[Any]](task)
+    SQLExecution.withThreadLocalCaptured[Broadcast[Any]](
+      session, GpuBroadcastExchangeExecBase.executionContext) {
+        task.call()
+    } 
+    // GpuBroadcastExchangeExecBase.executionContext.submit[Broadcast[Any]](task)
   }
 
 
