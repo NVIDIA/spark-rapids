@@ -40,15 +40,6 @@ parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
-# On Databricks, the default mode is LEGACY, it's different from regular Spark,
-# This makes test cases pass on Databricks
-writer_confs_for_DB = {
-    'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-    'spark.sql.parquet.int96RebaseModeInWrite' : 'CORRECTED',
-    'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED'
-}
-
 parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                     string_gen, boolean_gen, date_gen, TimestampGen(), binary_gen]
 
@@ -579,10 +570,11 @@ def get_nested_parquet_meta_data_for_field_id():
 def test_parquet_write_field_id(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     schema, data = get_nested_parquet_meta_data_for_field_id()
+    conf = copy_and_update(enable_parquet_field_id_read, writer_confs_for_DB)
     with_gpu_session(
         # default write Parquet IDs
         lambda spark: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite")
-            .parquet(data_path), conf=enable_parquet_field_id_write)
+            .parquet(data_path), conf=conf)
 
     # check data, for schema check refer to Scala test case `ParquetFieldIdSuite`
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -590,24 +582,26 @@ def test_parquet_write_field_id(spark_tmp_path):
             .mode("overwrite").parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path,
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
 def test_parquet_write_field_id_disabled(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     schema, data = get_nested_parquet_meta_data_for_field_id()
+    conf = copy_and_update(disable_parquet_field_id_write, writer_confs_for_DB)
     with_gpu_session(
         lambda spark: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite")
             .parquet(data_path),
-        conf=disable_parquet_field_id_write)  # disable write Parquet IDs
+        conf=conf)  # disable write Parquet IDs
 
+    conf = copy_and_update(enable_parquet_field_id_read, writer_confs_for_DB)
     # check data, for schema check refer to Scala test case `ParquetFieldIdSuite`
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: spark.createDataFrame(data, schema).coalesce(1).write
             .mode("overwrite").parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path,
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')

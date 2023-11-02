@@ -1013,7 +1013,7 @@ def test_parquet_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
     No aggregation will be pushed down in this test, so we should not fallback to CPU
     """
     data_path = spark_tmp_path + "/pushdown.parquet"
-
+    conf = copy_and_update(conf_for_parquet_aggregate_pushdown, writer_confs_for_DB)
     def do_parquet_scan(spark):
         spark.range(10).selectExpr("id", "id % 3 as p").write.partitionBy("p").mode("overwrite").parquet(data_path)
         df = spark.read.parquet(data_path).selectExpr("Max(p)")
@@ -1021,7 +1021,7 @@ def test_parquet_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(
         do_parquet_scan,
-        conf_for_parquet_aggregate_pushdown
+        conf=conf
     )
 
 
@@ -1287,7 +1287,8 @@ def test_parquet_read_daytime_interval_gpu_file(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('_c1', DayTimeIntervalGen())]
     # write DayTimeInterval with GPU
-    with_gpu_session(lambda spark :gen_df(spark, gen_list).coalesce(1).write.mode("overwrite").parquet(data_path))
+    with_gpu_session(lambda spark :gen_df(spark, gen_list).coalesce(1).write.mode("overwrite").parquet(data_path),
+                     conf=writer_confs_for_DB)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: spark.read.parquet(data_path))
 

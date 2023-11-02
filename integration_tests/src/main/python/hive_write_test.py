@@ -23,15 +23,6 @@ from marks import *
 from spark_session import is_hive_available, is_spark_33X, is_spark_340_or_later, with_cpu_session, \
     is_databricks122_or_later
 
-# On Databricks, the default mode is LEGACY, it's different from regular Spark,
-# This makes test cases pass on Databricks
-writer_confs_for_DB = {
-    'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-    'spark.sql.parquet.int96RebaseModeInWrite' : 'CORRECTED',
-    'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED'
-}
-
 # Using timestamps from 1970 to work around a cudf ORC bug
 # https://github.com/NVIDIA/spark-rapids/issues/140.
 # Using a limited upper end for timestamps to avoid INT96 overflow on Parquet.

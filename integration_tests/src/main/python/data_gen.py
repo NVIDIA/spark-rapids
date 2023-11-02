@@ -1173,3 +1173,14 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
+
+# If timezone is non-UTC and rebase mode is LEGACY, writing to Parquet will fail because of GPU
+# currently does not support. On Databricks, the default datetime rebase mode is LEGACY,
+# it's different from regular Spark. Some of the cases will fall if timezone is non-UTC on DB.
+# The following configs is for DB and ensure the rebase mode is not LEGACY on DB.
+writer_confs_for_DB = {
+    'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInWrite' : 'CORRECTED',
+    'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED'
+}
