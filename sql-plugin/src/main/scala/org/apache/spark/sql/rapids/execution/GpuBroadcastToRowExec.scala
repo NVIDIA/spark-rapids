@@ -60,7 +60,6 @@ case class GpuBroadcastToRowExec(
 
   @transient
   override lazy val relationFuture: Future[Broadcast[Any]] = {
-    println("SHOULD NOT BE HERE")
     // This will run in another thread. Set the execution id so that we can connect these jobs
     // with the correct execution.
     SQLExecution.withThreadLocalCaptured[Broadcast[Any]](

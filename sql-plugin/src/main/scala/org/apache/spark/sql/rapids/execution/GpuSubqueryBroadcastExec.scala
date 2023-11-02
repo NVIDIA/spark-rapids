@@ -20,6 +20,7 @@ import java.util.concurrent.{Future => JFuture}
 
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.Duration
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExec, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -214,14 +215,8 @@ case class GpuSubqueryBroadcastExec(
       SQLExecution.withExecutionId(session, executionId) {
         val broadcastBatch = child.executeBroadcast[Any]()
         val result: Array[InternalRow] = broadcastBatch.value match {
-          case b: SerializeConcatHostBuffersDeserializeBatch => {
-            println("GpuSubqueryBroadcastExec SerializeConcatHostBuffersDeserializeBatch")
-            projectSerializedBatchToRows(b)
-          }
-          case b if SparkShimImpl.isEmptyRelation(b) => {
-            println("GpuSubqueryBroadcastExec isEmptyRelation")
-            Array.empty
-          }
+          case b: SerializeConcatHostBuffersDeserializeBatch =>  projectSerializedBatchToRows(b)
+          case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
           case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
         }
 
@@ -284,17 +279,11 @@ case class GpuSubqueryBroadcastExec(
   }
 
   protected override def doPrepare(): Unit = {
-    println("GpuSubqueryBroadcastExec doPrepare")
     relationFuture
-    Thread.sleep(10)
   }
 
   override def executeCollect(): Array[InternalRow] = {
-    println("GpuSubqueryBroadcastExec executeCollect")
-    val res = relationFuture.get()
-    println("GpuSubqueryBroadcastExec executeCollect res " + res.mkString(","))
-    res
-    // ThreadUtils.awaitResult(relationFuture, Duration.Inf)
+    ThreadUtils.awaitResult(relationFuture, Duration.Inf)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
