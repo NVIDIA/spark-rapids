@@ -353,7 +353,7 @@ interested in. For example, to generate the Bloop projects for the Spark 3.2.0 d
 just for the production code run:
 
 ```shell script
-mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -pl aggregator -am \
+mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -am \
   -DdownloadSources=true \
   -Dbuildver=320 \
   -DskipTests \
@@ -383,6 +383,11 @@ You can now open the spark-rapids as a
 [BSP project in IDEA](https://www.jetbrains.com/help/idea/bsp-support.html)
 
 Read on for VS Code Scala Metals instructions.
+
+##### JDK 11 Requirement
+
+It is known that Bloop's SemanticDB generation with JDK 8 is broken for spark-rapids. Please use JDK
+11 or later for Bloop builds.
 
 #### Bloop, Scala Metals, and Visual Studio Code
 
