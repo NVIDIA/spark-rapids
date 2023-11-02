@@ -24,59 +24,42 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper {
-  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
-    column.getType match {
-      case DType.TIMESTAMP_DAYS =>
-        withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
-          withResource(column.lessThan(minGood)) { hasBad =>
-            withResource(hasBad.any()) { anyBad =>
-              anyBad.isValid && anyBad.getBoolean
-            }
+  private[this] def isRebaseNeeded(column: ColumnView, checkType: DType,
+                                   minGood: Scalar): Boolean = {
+    val dtype = column.getType
+    require(!dtype.hasTimeResolution || dtype == DType.TIMESTAMP_MICROSECONDS)
+
+    dtype match {
+      case `checkType` =>
+        withResource(column.lessThan(minGood)) { hasBad =>
+          withResource(hasBad.any()) { anyBad =>
+            anyBad.isValid && anyBad.getBoolean
           }
         }
 
-      case DType.LIST => withResource(column.getChildColumnView(0)) { child =>
-        isDateRebaseNeeded(child, startDay)
-      }
+      case DType.LIST =>
+        withResource(column.getChildColumnView(0)) { child =>
+          isRebaseNeeded(child, checkType, minGood)
+        }
 
       case DType.STRUCT => (0 until column.getNumChildren).exists(i =>
         withResource(column.getChildColumnView(i)) { child =>
-          isDateRebaseNeeded(child, startDay)
+          isRebaseNeeded(child, checkType, minGood)
         })
 
       case _ => false
     }
   }
 
-  private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
-    val dtype = column.getType
-    if (dtype.hasTimeResolution) {
-      require(dtype == DType.TIMESTAMP_MICROSECONDS)
+  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
+    withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
+      isRebaseNeeded(column, DType.TIMESTAMP_DAYS, minGood)
     }
+  }
 
-    dtype match {
-      case DType.TIMESTAMP_MICROSECONDS =>
-        withResource(
-          Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
-          withResource(column.lessThan(minGood)) { hasBad =>
-            withResource(hasBad.any()) { anyBad =>
-              anyBad.isValid && anyBad.getBoolean
-            }
-          }
-        }
-
-      case DType.LIST =>
-        withResource(column.getChildColumnView(0)) { child =>
-          isTimeRebaseNeeded(child, startTs)
-        }
-
-      case DType.STRUCT =>
-        (0 until column.getNumChildren).exists( i =>
-          withResource(column.getChildColumnView(i)) { child =>
-            isTimeRebaseNeeded(child, startTs)
-          })
-
-      case _ => false
+  private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
+    withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+      isRebaseNeeded(column, DType.TIMESTAMP_MICROSECONDS, minGood)
     }
   }
 
