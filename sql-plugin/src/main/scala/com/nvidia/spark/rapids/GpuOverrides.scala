@@ -3601,9 +3601,6 @@ object GpuOverrides extends Logging {
         ))),
       (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (a.options.get("ignoreNullFields").exists(_.equalsIgnoreCase("false"))) {
-            willNotWorkOnGpu("to_json option ignore_null_fields=false is not supported")
-          }
           if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
             willNotWorkOnGpu("to_json option pretty=true is not supported")
           }

@@ -20,6 +20,7 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, StringType, StructType}
 
 case class GpuStructsToJson(
@@ -27,8 +28,12 @@ case class GpuStructsToJson(
   child: Expression,
   timeZoneId: Option[String] = None) extends GpuUnaryExpression {
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val ignoreNullFields = options.getOrElse("ignoreNullFields", SQLConf.get.getConfString(
+      SQLConf.JSON_GENERATOR_IGNORE_NULL_FIELDS.key)).toBoolean
     GpuCast.castStructToJsonString(input.getBase, child.dataType.asInstanceOf[StructType].fields,
-      new CastOptions(false, false, false, true))
+      new CastOptions(legacyCastComplexTypesToString = false, ansiMode = false,
+        stringToDateAnsiMode = false, castToJsonString = true,
+        ignoreNullFieldsInStructs = ignoreNullFields))
   }
 
   override def dataType: DataType = StringType
