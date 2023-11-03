@@ -1578,6 +1578,7 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
+  with GpuBatchedRunningWindowWithFixer
   with GpuAggregateWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
@@ -1627,6 +1628,8 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.nth(-1, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
+
+  override def newFixer(): BatchedRunningWindowFixer = new LastRunningWindowFixer(ignoreNulls)
 }
 
 case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boolean)
@@ -1665,16 +1668,26 @@ case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boole
       if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
+  private[this] def getN: Option[Int] = GpuOverrides.extractLit(offset) match {
+    // Only Integer literals are supported for N.
+    case Some(Literal(value: Int, IntegerType)) => Some(value)
+    case _ => None
+  }
+
   override def canFixUp: Boolean = {
-    GpuOverrides.extractLit(offset) match {
-      case Some(Literal(value, IntegerType)) if value == 1 => true // Only FIRST() is supported.
-      case _ => false
+    getN match {
+      case Some(1)  => true // First is supported.
+      case Some(-1) => true // Last is also supported.
+      case _ => false // No other index is currently supported for fixup.
     }
   }
 
   override def newFixer(): BatchedRunningWindowFixer = {
     assert(canFixUp, "NthValue fixup cannot be done when offset != 1.")
-    new FirstRunningWindowFixer(ignoreNulls)
+    getN match {
+      case Some(1) => new FirstRunningWindowFixer(ignoreNulls)
+      case _ => new LastRunningWindowFixer(ignoreNulls)
+    }
   }
 }
 
