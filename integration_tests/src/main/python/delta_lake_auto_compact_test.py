@@ -191,11 +191,12 @@ def test_auto_compact_min_num_files(spark_tmp_path):
         'spark.databricks.delta.autoCompact.minNumFiles': 5  # Num files before compaction.
     }
 
+    conf = copy_and_update(enable_auto_compaction_on_5, writer_confs_for_DB)
     # Minimum number of input files == 5.
     # If 4 files are written, there should be no OPTIMIZE.
     writer = write_to_delta(num_writes=4)
     with_gpu_session(func=lambda spark: writer(spark, data_path),
-                     conf=copy_and_update(enable_auto_compaction_on_5, writer_confs_for_DB))
+                     conf=conf)
 
     def verify_table_history_before_limit(spark):
         input_table = DeltaTable.forPath(spark, data_path)
@@ -210,7 +211,7 @@ def test_auto_compact_min_num_files(spark_tmp_path):
 
     # On the 5th file write, auto-OPTIMIZE should kick in.
     with_gpu_session(func=lambda spark: write_to_delta(num_writes=1)(spark, data_path),
-                     conf=enable_auto_compaction_on_5)
+                     conf=conf)
 
     def verify_table_history_after_limit(spark):
         input_table = DeltaTable.forPath(spark, data_path)
