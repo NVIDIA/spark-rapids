@@ -78,9 +78,11 @@ case class GpuDecimalMultiply(
 
   override def children: Seq[Expression] = Seq(left, right)
 
-  // Should follow the nullability of GpuMultiply (inherited from
-  // CudfBinaryArithmetic for Spark31X, Spark32X, Spark33X)
-  override def nullable: Boolean = left.nullable || right.nullable
+  // In theory it should follow the nullability of GpuMultiply.
+  // (That is "left.nullable || right.nullable" for Spark31X, Spark32X, Spark33X).
+  // But GPU removes its wrapper expression "CheckOverflow" whose "nullable" is always
+  // true. So its "nullable" should be always true here.
+  override def nullable: Boolean = true
 }
 
 case class GpuAdd(

@@ -1384,3 +1384,14 @@ def test_day_time_interval_division_nan(data_type, value_pair):
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
         error_message='java.lang.ArithmeticException')
+
+
+@pytest.mark.parametrize('op_str', ['+', '- -', '*'], ids=['Add', 'Subtract', 'Multiply'])
+def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
+    def test_func(spark):
+        return spark.range(20).selectExpr("CAST(id as DECIMAL(38,0)) as dec_num")\
+            .selectExpr("99999999999999999999999999999999999991" + op_str + "dec_num as dec_over")
+    # Have to disable ansi, otherwise both CPU and GPU will throw exceptions, which is
+    # not we want for this test.
+    conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
