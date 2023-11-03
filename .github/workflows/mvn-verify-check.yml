@@ -239,7 +239,7 @@ jobs:
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
           # specify expected versions
-          export JAVA_HOME=export JAVA_HOME=${JAVA_HOME_11_X64}
+          export JAVA_HOME=${JAVA_HOME_11_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command
