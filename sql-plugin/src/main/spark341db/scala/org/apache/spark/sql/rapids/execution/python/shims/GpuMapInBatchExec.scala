@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "341db"}
+spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python
 
 import ai.rapids.cudf
@@ -23,11 +26,12 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
-import org.apache.spark.{ContextAwareIterator, TaskContext}
+import org.apache.spark.TaskContext
 import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -72,9 +76,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
 
-      val contextAwareIter = new ContextAwareIterator(context, inputIter)
-
-      val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
+      val pyInputIterator = new RebatchingRoundoffIterator(inputIter, pyInputTypes,
           batchSize, numInputRows, numInputBatches)
         .map { batch =>
           // Here we wrap it via another column so that Python sides understand it
@@ -87,7 +89,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             }
           }
       }
-      val pyRunner = new GpuArrowPythonRunnerBase(
+      val pyRunner = new GpuArrowPythonRunner(
           chainedFunc,
           pythonEvalType,
           argOffsets,
