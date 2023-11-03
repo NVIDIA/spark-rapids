@@ -1311,24 +1311,23 @@ class LastRunningWindowFixer(ignoreNulls: Boolean = false)
       case (None, _) =>
         // No previous result. Current result needs no fixing.
         incRef(unfixedWindowResults)
-      case (Some(prev), Right(allRowsInSamePartition)) => // Boolean flag.
-        // All the current batch results may be replaced.
-        if (allRowsInSamePartition) {
-          if (!ignoreNulls || !prev.isValid) {
-            // If !ignoreNulls, current result needs no fixing. The latest answer is the right one.
-            // If ignoreNulls, but prev is NULL, current result is again the right answer.
-            incRef(unfixedWindowResults)
-          } else {
-            // ignoreNulls *and* prev.isValid. => Final result now depends on the unfixed results.
-            // `prev` must replace all null rows from the same group in the unfixed results.
-            // In this case, that includes the entire column.
-            unfixedWindowResults.replaceNulls(prev)
-          }
-        } else {
-          // No rows in the same partition. Current result needs no fixing.
+      case (Some(_), Right(false)) => // samePartitionMask == false.
+        // No rows in this batch correspond to the previousResult's partition.
+        // Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(prev), Right(true)) => // samePartitionMask == true.
+        // All the rows in this batch correspond to the previousResult's partition.
+        if (!ignoreNulls || !prev.isValid) {
+          // If !ignoreNulls, current result needs no fixing. The latest answer is the right one.
+          // If ignoreNulls, but prev is NULL, current result is again the right answer.
           incRef(unfixedWindowResults)
+        } else {
+          // ignoreNulls *and* prev.isValid. => Final result now depends on the unfixed results.
+          // `prev` must replace all null rows from the same group in the unfixed results.
+          // In this case, that includes the entire column.
+          unfixedWindowResults.replaceNulls(prev)
         }
-      case (Some(prev), Left(someRowsInSamePartition)) => // Boolean vector.
+      case (Some(prev), Left(someRowsInSamePartition)) => // samePartitionMask is a Boolean vector.
         if (!ignoreNulls || !prev.isValid) {
           // If !ignoreNulls, current result needs no fixing. The latest answer is the right one.
           // If ignoreNulls, but prev is NULL, current result is again the right answer.
