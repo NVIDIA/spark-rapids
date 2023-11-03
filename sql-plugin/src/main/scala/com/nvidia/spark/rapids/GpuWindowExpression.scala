@@ -1333,8 +1333,7 @@ class LastRunningWindowFixer(ignoreNulls: Boolean = false)
           // If !ignoreNulls, current result needs no fixing. The latest answer is the right one.
           // If ignoreNulls, but prev is NULL, current result is again the right answer.
           incRef(unfixedWindowResults)
-        }
-        else {
+        } else {
           // ignoreNulls==true, *and* prev.isValid.
           // prev must replace nulls for all rows that belong in the same group.
           val mustReplace = withResource(unfixedWindowResults.isNull) { isNull =>
