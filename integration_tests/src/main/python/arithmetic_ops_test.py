@@ -1395,3 +1395,4 @@ def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
     # not we want for this test.
     conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
     assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
+
