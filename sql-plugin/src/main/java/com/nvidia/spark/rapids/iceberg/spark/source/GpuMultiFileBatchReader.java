@@ -221,8 +221,10 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     private final PartitionSpec partitionSpec;
 
     IcebergParquetExtraInfo(String dateRebaseMode, String timestampRebaseMode,
-        Map<Integer, ?> idToConstant, Schema expectedSchema, PartitionSpec partitionSpec) {
-      super(dateRebaseMode, timestampRebaseMode);
+                            boolean hasInt96Timestamps,
+                            Map<Integer, ?> idToConstant, Schema expectedSchema,
+                            PartitionSpec partitionSpec) {
+      super(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps);
       this.idToConstant = idToConstant;
       this.expectedSchema = expectedSchema;
       this.partitionSpec = partitionSpec;
@@ -309,7 +311,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             new Path(new URI(fst.file().path().toString())), clippedBlocks,
             InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
             "CORRECTED", // dateRebaseMode
-            "CORRECTED" // timestampRebaseMode
+            "CORRECTED", // timestampRebaseMode
+            true //  hasInt96Timestamps
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
       } catch (IOException e) {
@@ -397,6 +400,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
                 new IcebergParquetExtraInfo(
                     filteredInfo.parquetBlockMeta.dateRebaseMode(),
                     filteredInfo.parquetBlockMeta.timestampRebaseMode(),
+                    filteredInfo.parquetBlockMeta.hasInt96Timestamps(),
                     filteredInfo.idToConstant(),
                     filteredInfo.expectedSchema(),
                     fst.spec())))
