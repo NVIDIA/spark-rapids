@@ -69,7 +69,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuShuffleCoalesceIterator(
-        new HostShuffleCoalesceIterator(iter, targetSize, dataTypes, metricsMap),
+        new HostShuffleCoalesceIterator(iter, targetSize, metricsMap),
         dataTypes, metricsMap)
     }
   }
@@ -84,7 +84,6 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 class HostShuffleCoalesceIterator(
     iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
-    dataTypes: Array[DataType],
     metricsMap: Map[String, GpuMetric])
       extends Iterator[HostConcatResult] with AutoCloseable {
   private[this] val concatTimeMetric = metricsMap(GpuMetric.CONCAT_TIME)

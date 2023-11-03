@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,15 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
+{"spark": "311"}
+{"spark": "312"}
+{"spark": "313"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.BaseSubqueryExec
 
-object RapidsErrorUtils extends RapidsErrorUtilsBase {
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
-  }
+trait ShimBaseSubqueryExec extends BaseSubqueryExec {
+  @transient final val session = SparkSession.getActiveSession.orNull
 }

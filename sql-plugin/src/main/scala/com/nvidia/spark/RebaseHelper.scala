@@ -37,12 +37,7 @@ object RebaseHelper {
           }
         }
 
-      case DType.LIST =>
-        withResource(column.getChildColumnView(0)) { child =>
-          isRebaseNeeded(child, checkType, minGood)
-        }
-
-      case DType.STRUCT => (0 until column.getNumChildren).exists(i =>
+      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
         withResource(column.getChildColumnView(i)) { child =>
           isRebaseNeeded(child, checkType, minGood)
         })

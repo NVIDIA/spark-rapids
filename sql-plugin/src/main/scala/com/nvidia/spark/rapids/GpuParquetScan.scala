@@ -210,6 +210,10 @@ object GpuParquetScan {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
+    val schemaHasDates = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
+    }
+
     sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
       case "EXCEPTION" | "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...

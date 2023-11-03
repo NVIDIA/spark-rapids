@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,28 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+{"spark": "330"}
+{"spark": "330cdh"}
 {"spark": "330db"}
+{"spark": "331"}
+{"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
+{"spark": "333"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.execution.BaseSubqueryExec
 
-object RapidsErrorUtils extends RapidsErrorUtilsBase {
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
-  }
-}
+trait ShimBaseSubqueryExec extends BaseSubqueryExec
