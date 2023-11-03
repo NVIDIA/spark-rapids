@@ -52,7 +52,7 @@ def delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory, use_cdf,
 def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                                    src_table_func, dest_table_func, merge_sql,
                                    compare_logs, partition_columns=None,
-                                   conf=delta_merge_enabled_conf):
+                                   conf=copy_and_update(delta_merge_enabled_conf, writer_confs_for_DB)):
     def read_data(spark, path):
         read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
         df = read_func(spark, path)
@@ -142,7 +142,7 @@ def test_delta_merge_partial_fallback_via_conf(spark_tmp_path, spark_tmp_table_f
                 " WHEN MATCHED THEN UPDATE SET d.a = s.a + 4 WHEN NOT MATCHED THEN INSERT *"
     # Non-deterministic input for each task means we can only reliably compare record counts when using only one task
     compare_logs = num_slices == 1
-    conf = copy_and_update(delta_merge_enabled_conf, { disable_conf: "false" })
+    conf = copy_and_update(delta_merge_enabled_conf, { disable_conf: "false" }, writer_confs_for_DB)
     assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
                                    src_table_func, dest_table_func, merge_sql, compare_logs,
                                    partition_columns, conf=conf)
@@ -295,7 +295,7 @@ def test_delta_merge_dataframe_api(spark_tmp_path, use_cdf, num_slices):
             .whenNotMatchedInsertAll() \
             .execute()
     read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
-    assert_gpu_and_cpu_writes_are_equal_collect(do_merge, read_func, data_path, conf=delta_merge_enabled_conf)
+    assert_gpu_and_cpu_writes_are_equal_collect(do_merge, read_func, data_path, conf=copy_and_update(delta_merge_enabled_conf, writer_confs_for_DB))
     # Non-deterministic input for each task means we can only reliably compare record counts when using only one task
     if num_slices == 1:
         with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))

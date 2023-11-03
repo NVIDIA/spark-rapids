@@ -14,7 +14,7 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
-from data_gen import copy_and_update
+from data_gen import *
 from delta_lake_utils import delta_meta_allow
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
@@ -65,7 +65,7 @@ def test_auto_compact_basic(spark_tmp_path, auto_compact_conf):
         write_func=write_to_delta(is_partitioned=False),
         read_func=read_data,
         base_path=data_path,
-        conf=_conf)
+        conf=copy_and_update(_conf, writer_confs_for_DB))
 
     def read_metadata(spark, table_path):
         input_table = DeltaTable.forPath(spark, table_path)
@@ -84,7 +84,7 @@ def test_auto_compact_basic(spark_tmp_path, auto_compact_conf):
         write_func=lambda spark, table_path: None,  # Already written.
         read_func=read_metadata,
         base_path=data_path,
-        conf=conf_enable_auto_compact)
+        conf=copy_and_update(conf_enable_auto_compact, writer_confs_for_DB))
 
 
 @delta_lake
@@ -113,7 +113,7 @@ def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf):
         write_func=write_to_delta(is_partitioned=True),
         read_func=read_data,
         base_path=data_path,
-        conf=_conf)
+        conf=copy_and_update(_conf, writer_confs_for_DB))
 
     def read_metadata(spark, table_path):
         """
@@ -136,7 +136,7 @@ def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf):
         write_func=lambda spark, table_path: None,  # Already written.
         read_func=read_metadata,
         base_path=data_path,
-        conf=conf_enable_auto_compact)
+        conf=copy_and_update(conf_enable_auto_compact, writer_confs_for_DB))
 
 
 @delta_lake
@@ -158,7 +158,7 @@ def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
 
     writer = write_to_delta(num_writes=10)
     with_gpu_session(func=lambda spark: writer(spark, data_path),
-                     conf=disable_auto_compaction)
+                     conf=copy_and_update(disable_auto_compaction, writer_confs_for_DB))
 
     # 10 writes should correspond to 10 commits.
     # (i.e. there should be no OPTIMIZE commits.)
@@ -195,7 +195,7 @@ def test_auto_compact_min_num_files(spark_tmp_path):
     # If 4 files are written, there should be no OPTIMIZE.
     writer = write_to_delta(num_writes=4)
     with_gpu_session(func=lambda spark: writer(spark, data_path),
-                     conf=enable_auto_compaction_on_5)
+                     conf=copy_and_update(enable_auto_compaction_on_5, writer_confs_for_DB))
 
     def verify_table_history_before_limit(spark):
         input_table = DeltaTable.forPath(spark, data_path)

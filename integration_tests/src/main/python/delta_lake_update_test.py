@@ -38,7 +38,7 @@ def delta_sql_update_test(spark_tmp_path, use_cdf, dest_table_func, update_sql,
 def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, update_sql,
                                     partition_columns=None,
                                     enable_deletion_vectors=False,
-                                    conf=delta_update_enabled_conf):
+                                    conf=copy_and_update(delta_update_enabled_conf, writer_confs_for_DB)):
     def read_data(spark, path):
         read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
         df = read_func(spark, path)
@@ -175,7 +175,7 @@ def test_delta_update_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
         dest_table.update(condition="b > 'c'", set={"c": f.col("b"), "a": f.lit(1)})
     read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
     assert_gpu_and_cpu_writes_are_equal_collect(do_update, read_func, data_path,
-                                                conf=delta_update_enabled_conf)
+                                                conf=copy_and_update(delta_update_enabled_conf, writer_confs_for_DB))
     # Databricks not guaranteed to write the same number of files due to optimized write when
     # using partitions
     if not is_databricks_runtime() or not partition_columns:

@@ -516,16 +516,17 @@ def test_delta_write_legacy_format_fallback(spark_tmp_path):
 def test_delta_write_append_only(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     gen = int_gen
+    conf = copy_and_update(delta_writes_enabled_conf, writer_confs_for_DB)
     # setup initial table
     with_gpu_session(lambda spark: unary_op_df(spark, gen).coalesce(1).write.format("delta")
                      .option("delta.appendOnly", "true")
                      .save(data_path),
-                     conf=delta_writes_enabled_conf)
+                     conf=conf)
     # verify overwrite fails
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: unary_op_df(spark, gen).write.format("delta").mode("overwrite").save(data_path),
-            conf=delta_writes_enabled_conf),
+            conf=conf),
         "This table is configured to only allow appends")
 
 @allow_non_gpu(*delta_meta_allow)
@@ -541,16 +542,16 @@ def test_delta_write_constraint_not_null(spark_tmp_path):
         spark.sql("CREATE TABLE delta.`{}` (a string NOT NULL) USING DELTA".format(data_path))
 
     with_cpu_session(setup_table)
-
+    conf = copy_and_update(delta_writes_enabled_conf, writer_confs_for_DB)
     # verify write of non-null values does not throw
     with_gpu_session(lambda spark: unary_op_df(spark, not_null_gen).write.format("delta").mode("append").save(data_path),
-                     conf=delta_writes_enabled_conf)
+                     conf=conf)
 
     # verify write of null value throws
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: unary_op_df(spark, null_gen).write.format("delta").mode("append").save(data_path),
-            conf=delta_writes_enabled_conf),
+            conf=conf),
         "NOT NULL constraint violated for column: a")
 
 @allow_non_gpu(*delta_meta_allow)
@@ -570,8 +571,9 @@ def test_delta_write_constraint_check(spark_tmp_path):
     def gen_good_data(spark):
         return spark.range(1024).withColumn("x", f.col("id") + 1)
 
+    conf = copy_and_update(delta_writes_enabled_conf, writer_confs_for_DB)
     with_gpu_session(lambda spark: gen_good_data(spark).write.format("delta").mode("append").save(data_path),
-                     conf=delta_writes_enabled_conf)
+                     conf=conf)
 
     # verify write of values that violate the constraint throws
     def gen_bad_data(spark):
@@ -580,7 +582,7 @@ def test_delta_write_constraint_check(spark_tmp_path):
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: gen_bad_data(spark).write.format("delta").mode("append").save(data_path),
-            conf=delta_writes_enabled_conf),
+            conf=conf),
         "CHECK constraint customcheck (id < x) violated")
 
 @allow_non_gpu(*delta_meta_allow)
@@ -594,7 +596,7 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
         spark.sql("ALTER TABLE delta.`{}` ADD CONSTRAINT mycheck CHECK (id + x < 1000)".format(data_path))
     with_cpu_session(setup_table)
     # create a conf that will force constraint check to fallback to CPU
-    add_disable_conf = copy_and_update(delta_writes_enabled_conf, {"spark.rapids.sql.expression.Add": "false"})
+    add_disable_conf = copy_and_update(delta_writes_enabled_conf, {"spark.rapids.sql.expression.Add": "false"}, writer_confs_for_DB)
     # verify write of dataframe that passes constraint check does not fail
     def gen_good_data(spark):
         return spark.range(100).withColumn("x", f.col("id") + 1)
@@ -617,7 +619,7 @@ def test_delta_write_constraint_check_fallback(spark_tmp_path):
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_stat_column_limits(num_cols, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs = copy_and_update(delta_writes_enabled_conf, {"spark.databricks.io.skipping.stringPrefixLength": 8})
+    confs = copy_and_update(delta_writes_enabled_conf, {"spark.databricks.io.skipping.stringPrefixLength": 8}, writer_confs_for_DB)
     strgen = StringGen() \
         .with_special_case((chr(sys.maxunicode) * 7) + "abc") \
         .with_special_case((chr(sys.maxunicode) * 8) + "abc") \
@@ -654,11 +656,12 @@ def test_delta_write_generated_columns(spark_tmp_table_factory, spark_tmp_path):
         df.write.format("delta").mode("append").save(path)
 
     data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = copy_and_update(delta_writes_enabled_conf, writer_confs_for_DB)
     assert_gpu_and_cpu_writes_are_equal_collect(
         write_data,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        conf=delta_writes_enabled_conf)
+        conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu("CreateTableExec", *delta_meta_allow)
@@ -671,11 +674,12 @@ def test_delta_write_identity_columns(spark_tmp_path):
     def create_data(spark, path):
         spark.sql("CREATE TABLE delta.`{}` (x BIGINT, id BIGINT GENERATED ALWAYS AS IDENTITY) USING DELTA".format(path))
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
+    conf = copy_and_update(delta_writes_enabled_conf, writer_confs_for_DB)
     assert_gpu_and_cpu_writes_are_equal_collect(
         create_data,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        conf=delta_writes_enabled_conf)
+        conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     def append_data(spark, path):
         spark.range(2048).selectExpr("id + 10 as x").write.format("delta").mode("append").save(path)
@@ -683,7 +687,7 @@ def test_delta_write_identity_columns(spark_tmp_path):
         append_data,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        conf=delta_writes_enabled_conf)
+        conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
@@ -704,11 +708,12 @@ def test_delta_write_multiple_identity_columns(spark_tmp_path):
                   "id5 BIGINT GENERATED ALWAYS AS IDENTITY ( START WITH 12 INCREMENT BY -3 )"
                   ") USING DELTA")
         spark.range(2048).selectExpr("id * id AS x").write.format("delta").mode("append").save(path)
+    conf = copy_and_update(delta_writes_enabled_conf, writer_confs_for_DB)
     assert_gpu_and_cpu_writes_are_equal_collect(
         create_data,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        conf=delta_writes_enabled_conf)
+        conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
     def append_data(spark, path):
         spark.range(2048).selectExpr("id + 10 as x").write.format("delta").mode("append").save(path)
@@ -716,7 +721,7 @@ def test_delta_write_multiple_identity_columns(spark_tmp_path):
         append_data,
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        conf=delta_writes_enabled_conf)
+        conf=conf)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow, "ExecutedCommandExec")
@@ -782,7 +787,7 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_aqe_join(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
-    confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"})
+    confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"}, writer_confs_for_DB)
     def do_join(spark, path):
         df = unary_op_df(spark, int_gen)
         df.join(df, ["a"], "inner").write.format("delta").save(path)
@@ -805,10 +810,12 @@ def test_delta_write_aqe_join(spark_tmp_path):
 def test_delta_write_optimized_aqe(spark_tmp_path, enable_conf_key, aqe_enabled):
     num_chunks = 20
     def do_write(data_path, is_optimize_write):
-        confs=copy_and_update(delta_writes_enabled_conf, {
-            enable_conf_key : str(is_optimize_write),
-            "spark.sql.adaptive.enabled" : str(aqe_enabled)
-        })
+        confs=copy_and_update(delta_writes_enabled_conf,
+                              {
+                                enable_conf_key : str(is_optimize_write),
+                                "spark.sql.adaptive.enabled" : str(aqe_enabled)
+                              },
+                              writer_confs_for_DB)
         assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: unary_op_df(spark, int_gen)\
                 .repartition(num_chunks).write.format("delta").save(path),
@@ -909,16 +916,16 @@ def test_delta_write_optimized_table_confs(spark_tmp_path):
             lambda spark, path: spark.read.format("delta").load(path),
             data_path,
             conf=confs)
-    confs=copy_and_update(delta_writes_enabled_conf, {
-        "spark.databricks.delta.optimizeWrite.enabled" : "true"
-    })
+    confs=copy_and_update(delta_writes_enabled_conf,
+                          {"spark.databricks.delta.optimizeWrite.enabled" : "true"},
+                          writer_confs_for_DB)
     do_write(confs)
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 1
     # Verify SQL conf takes precedence over table setting
-    confs=copy_and_update(delta_writes_enabled_conf, {
-        "spark.databricks.delta.optimizeWrite.enabled" : "false"
-    })
+    confs=copy_and_update(delta_writes_enabled_conf,
+                          {"spark.databricks.delta.optimizeWrite.enabled" : "false"},
+                          writer_confs_for_DB)
     do_write(confs)
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == num_chunks
@@ -927,9 +934,9 @@ def test_delta_write_optimized_table_confs(spark_tmp_path):
         spark.sql("ALTER TABLE delta.`{}`".format(gpu_data_path) +
                   " SET TBLPROPERTIES (delta.autoOptimize.optimizeWrite = true)")
     with_cpu_session(do_prop_update)
-    confs=copy_and_update(delta_writes_enabled_conf, {
-        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite" : "false"
-    })
+    confs=copy_and_update(delta_writes_enabled_conf,
+                          {"spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite" : "false"},
+                          writer_confs_for_DB)
     do_write(confs)
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 1
@@ -951,16 +958,16 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
             lambda spark, path: spark.read.format("delta").load(path),
             data_path,
             conf=confs)
-    confs=copy_and_update(delta_writes_enabled_conf, {
-        "spark.databricks.delta.optimizeWrite.enabled" : "false"
-    })
+    confs=copy_and_update(delta_writes_enabled_conf,
+                          {"spark.databricks.delta.optimizeWrite.enabled" : "false"},
+                          writer_confs_for_DB)
     do_write(confs)
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 2 * num_chunks
     # Verify SQL conf takes precedence over table setting
-    confs=copy_and_update(delta_writes_enabled_conf, {
-        "spark.databricks.delta.optimizeWrite.enabled" : "true"
-    })
+    confs=copy_and_update(delta_writes_enabled_conf,
+                          {"spark.databricks.delta.optimizeWrite.enabled" : "true"},
+                          writer_confs_for_DB)
     do_write(confs)
     opmetrics = get_last_operation_metrics(gpu_data_path)
     assert int(opmetrics["numFiles"]) == 2
