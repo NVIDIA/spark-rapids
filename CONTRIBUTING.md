@@ -353,7 +353,7 @@ interested in. For example, to generate the Bloop projects for the Spark 3.2.0 d
 just for the production code run:
 
 ```shell script
-mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -am \
+mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
   -DdownloadSources=true \
   -Dbuildver=320 \
   -DskipTests \

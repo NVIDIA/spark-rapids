@@ -57,7 +57,14 @@ function bloopInstall() {
 
   [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
 
-  local javaVersion=$(java -version 2>&1 | sed -E -n 's/.* version "([^.-]*).*"/\1/p' | cut -d' ' -f1)
+  if [ -z $JAVA_HOME ]
+  then
+    local java=java
+  else
+    local java=$JAVA_HOME/bin/java
+  fi
+
+  local javaVersion=$($java -version 2>&1 | sed -E -n 's/.* version "([^.-]*).*"/\1/p' | cut -d' ' -f1)
   if [ $javaVersion -lt 11 ]
   then
     echo "Bloop install requires JDK >= 11"
@@ -73,7 +80,6 @@ function bloopInstall() {
       mkdir -p $bloopTmpConfigDir
       $MVN -B clean install \
         ch.epfl.scala:bloop-maven-plugin:bloopInstall \
-        -am \
         -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
         -Dbuildver="$bv" \
