@@ -204,7 +204,7 @@ case class GpuJsonToStructs(
                 GpuColumnVector.columnVectorFromNull(numRows, dtype)
               } else {
                 val col = rawTable.getColumn(i)
-                // getSparkType is only used to get the from type for cast
+                // getSparkType is only used to get the "from type" for cast
                 val sparkType = getSparkType(col)
                 (sparkType, dtype) match {
                   case (DataTypes.StringType, DataTypes.BooleanType) =>
@@ -233,7 +233,6 @@ case class GpuJsonToStructs(
   }
 
   private def castJsonStringToBool(input: ColumnVector): ColumnVector = {
-    println("ANDY castJsonStringToBool")
     val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
         input.equalTo(trueStr)
     }

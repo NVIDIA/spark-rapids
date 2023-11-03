@@ -496,19 +496,21 @@ def test_from_json_struct(schema):
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-def test_from_json_struct_boolean():
-    # TODO add tests where values are not boolean literals .. for example, numeric values
-    # and strings containing boolean values are known to produce different results to Spark
-    json_string_gen = StringGen(r'{ "bool1": [truefalsTRUEFALS]{0,5} }') \
-        .with_special_case('{ "bool1": true, "bool2": true }', weight=50) \
-        .with_special_case('{ "bool1": false, "bool2": false }', weight=50) \
-        .with_special_case('{ "bool1": true }', weight=50) \
-        .with_special_case('{ "bool2": true }', weight=50) \
+@pytest.mark.parametrize('pattern', [
+    r'{ "bool": [truefalsTRUEFALS]{1,5} }',
+    r'{ "bool": "[truefalsTRUEFALS]{1,5}" }',
+    pytest.param(r'{ "bool": [0-9]{0,2}(\.[0-9]{1,2})? }', marks=pytest.mark.xfail(reason='TBD')),
+    r'{ "bool": "[0-9]{0,2}(\.[0-9]{1,2})?" }',
+    r'{ "bool": [0-9]{4}-[0-9]{2}-[0-9]{2} }',
+    r'{ "bool": "[0-9]{4}-[0-9]{2}-[0-9]{2}" }'
+])
+def test_from_json_struct_boolean(pattern):
+    json_string_gen = StringGen(pattern) \
         .with_special_case('', weight=50) \
         .with_special_case('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.col('a'), f.from_json('a', 'struct<bool1:boolean, bool2:boolean>')),
+            .select(f.col('a'), f.from_json('a', 'struct<bool:boolean>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 def test_from_json_struct_decimal():
