@@ -1141,13 +1141,31 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
   }
 }
 
-class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
+/**
+ * Common base class for batched running window fixers for FIRST() and LAST() window functions.
+ * This mostly handles the checkpoint logic. The fixup logic is left to the concrete subclass.
+ *
+ * @param name Name of the function (E.g. "FIRST").
+ * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
+ */
+abstract class FirstLastRunningWindowFixerBase(val name: String, val ignoreNulls: Boolean = false)
   extends BatchedRunningWindowFixer with Logging {
-  private val name = "first"
-  private var previousResult: Option[Scalar] = None
-  private var chkptPreviousResult: Option[Scalar] = None
 
-  private[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
+  /**
+   * Saved "carry-over" result that might be applied to the next batch.
+   */
+  protected[this] var previousResult: Option[Scalar] = None
+
+  /**
+   * Checkpoint result, in case it needs to be rolled back.
+   */
+  protected[this] var chkptPreviousResult: Option[Scalar] = None
+
+  /**
+   * Saves the last row from the `finalOutputColumn`, to carry over to the next
+   * column processed by this fixer.
+   */
+  protected[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
     val numRows = finalOutputColumn.getRowCount.toInt
     if (numRows > 0) {
       val lastIndex = numRows - 1
@@ -1158,6 +1176,42 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
     }
   }
 
+  /**
+   * Save the state, so it can be restored in the case of a retry.
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def checkpoint(): Unit = chkptPreviousResult = previousResult
+
+  /**
+   * Restore the state that was saved by calling to "checkpoint".
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def restore(): Unit = {
+    // If there is a previous checkpoint result, restore it to previousResult.
+    if (chkptPreviousResult.isDefined) {
+      // Close erstwhile previousResult.
+      previousResult match {
+        case Some(r) if r != chkptPreviousResult.get => r.close()
+        case _ => // Nothing to close if result is None, or matches the checkpoint.
+      }
+    }
+    previousResult = chkptPreviousResult
+    chkptPreviousResult = None
+  }
+
+  override def close(): Unit = {
+    previousResult.foreach(_.close)
+    previousResult = None
+  }
+}
+
+/**
+ * Batched running window fixer for `FIRST() ` window functions. Supports fixing for batched
+ * execution for `ROWS` and `RANGE` based window specifications.
+ * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
+ */
+class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
+  extends FirstLastRunningWindowFixerBase(name="First", ignoreNulls=ignoreNulls) {
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
@@ -1215,53 +1269,15 @@ class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
       ret
     }
   }
-
-  /**
-   * Save the state, so it can be restored in the case of a retry.
-   * (This is called inside a Spark task context on executors.)
-   */
-  override def checkpoint(): Unit = chkptPreviousResult = previousResult
-
-  /**
-   * Restore the state that was saved by calling to "checkpoint".
-   * (This is called inside a Spark task context on executors.)
-   */
-  override def restore(): Unit = {
-    // If there is a previous checkpoint result, restore it to previousResult.
-    if (chkptPreviousResult.isDefined) {
-      // Close erstwhile previousResult.
-      previousResult match {
-        case Some(r) if r != chkptPreviousResult.get => r.close()
-        case _ => // Nothing to close if result is None, or matches the checkpoint.
-      }
-    }
-    previousResult = chkptPreviousResult
-    chkptPreviousResult = None
-  }
-
-  override def close(): Unit = {
-    previousResult.foreach(_.close)
-    previousResult = None
-  }
 }
 
+/**
+ * Batched running window fixer for `LAST() ` window functions. Supports fixing for batched
+ * execution for `ROWS` and `RANGE` based window specifications.
+ * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
+ */
 class LastRunningWindowFixer(ignoreNulls: Boolean = false)
-  extends BatchedRunningWindowFixer with Logging {
-  private val name = "Last"
-  private var previousResult: Option[Scalar] = None
-  private var chkptPreviousResult: Option[Scalar] = None
-
-  private[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
-    val numRows = finalOutputColumn.getRowCount.toInt
-    if (numRows > 0) {
-      val lastIndex = numRows - 1
-      logDebug(s"$name: resetting previous previousResult from $previousResult to...")
-      previousResult.foreach(_.close)
-      previousResult = Some(finalOutputColumn.getScalarElement(lastIndex))
-      logDebug(s"$name: ... $previousResult")
-    }
-  }
-
+  extends FirstLastRunningWindowFixerBase(name="Last", ignoreNulls=ignoreNulls) {
   /**
    * Fixes up `unfixedWindowResults` with stored state from previous batch(es).
    * In this case (i.e. `LAST`), the previous result only comes into it if:
@@ -1335,36 +1351,7 @@ class LastRunningWindowFixer(ignoreNulls: Boolean = false)
       ret
     }
   }
-
-  /**
-   * Save the state, so it can be restored in the case of a retry.
-   * (This is called inside a Spark task context on executors.)
-   */
-  override def checkpoint(): Unit = chkptPreviousResult = previousResult
-
-  /**
-   * Restore the state that was saved by calling to "checkpoint".
-   * (This is called inside a Spark task context on executors.)
-   */
-  override def restore(): Unit = {
-    // If there is a previous checkpoint result, restore it to previousResult.
-    if (chkptPreviousResult.isDefined) {
-      // Close erstwhile previousResult.
-      previousResult match {
-        case Some(r) if r != chkptPreviousResult.get => r.close()
-        case _ => // Nothing to close if result is None, or matches the checkpoint.
-      }
-    }
-    previousResult = chkptPreviousResult
-    chkptPreviousResult = None
-  }
-
-  override def close(): Unit = {
-    previousResult.foreach(_.close)
-    previousResult = None
-  }
 }
-
 
 /**
  * This class fixes up batched running windows for sum. Sum is a lot like other binary op
