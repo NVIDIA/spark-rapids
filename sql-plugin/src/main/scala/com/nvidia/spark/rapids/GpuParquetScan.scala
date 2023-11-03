@@ -452,7 +452,7 @@ private case class GpuParquetFileFilterHandler(
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
   private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
 
-  def isParquetTimeInInt96(parquetType: Type): Boolean = {
+  private def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
       case p:PrimitiveType =>
         p.getPrimitiveTypeName == PrimitiveTypeName.INT96
@@ -486,7 +486,7 @@ private case class GpuParquetFileFilterHandler(
     }
   }
 
-  def convertToFooterSchema(schema: StructType): ParquetFooter.StructElement = {
+  private def convertToFooterSchema(schema: StructType): ParquetFooter.StructElement = {
     convertToParquetNative(schema).asInstanceOf[ParquetFooter.StructElement]
   }
 
@@ -575,7 +575,7 @@ private case class GpuParquetFileFilterHandler(
     }
   }
 
-  def readAndFilterFooter(
+  private def readAndFilterFooter(
       file: PartitionedFile,
       conf : Configuration,
       readDataSchema: StructType,
@@ -599,7 +599,7 @@ private case class GpuParquetFileFilterHandler(
   @scala.annotation.nowarn(
     "msg=method readFooter in class ParquetFileReader is deprecated"
   )
-  def readAndSimpleFilterFooter(
+  private def readAndSimpleFilterFooter(
       file: PartitionedFile,
       conf : Configuration,
       filePath: Path): ParquetMetadata = {
@@ -2077,7 +2077,7 @@ class MultiFileCloudParquetPartitionReader(
       firstNonEmpty: HostMemoryBuffersWithMetaData)
 
   // assumes all these are ok to combine and have the same metadata for schema
-  // and *rebaseMode and timestamp type settings
+  // and *RebaseMode and timestamp type settings
   private def doCombineHMBs(combinedMeta: CombinedMeta): HostMemoryBuffersWithMetaDataBase = {
     val toCombineHmbs = combinedMeta.toCombine.filterNot(_.isInstanceOf[HostMemoryEmptyMetaData])
     val metaToUse = combinedMeta.firstNonEmpty
