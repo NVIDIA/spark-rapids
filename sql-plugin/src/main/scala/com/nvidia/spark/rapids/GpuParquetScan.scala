@@ -662,7 +662,7 @@ private case class GpuParquetFileFilterHandler(
       }
       val fileHadoopConf =
         ReaderUtils.getHadoopConfForReaderThread(new Path(file.filePath.toString), conf)
-      val footer = try {
+      val footer: ParquetMetadata = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
             val serialized = withResource(readAndFilterFooter(file, fileHadoopConf,
