@@ -23,8 +23,87 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-object RebaseHelper {
-  private[this] def isRebaseNeeded(column: ColumnView, checkType: DType,
+/**
+ * Mirror of Spark's LegaclBehaviorPolicy
+ */
+sealed abstract class DateTimeRebaseMode
+
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.EXCEPTION
+ */
+case object DateTimeRebaseException extends DateTimeRebaseMode
+
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.LEGACY
+ */
+case object DateTimeRebaseLegacy extends DateTimeRebaseMode
+
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.CORRECTED
+ */
+case object DateTimeRebaseCorrected extends DateTimeRebaseMode
+
+object DateTimeRebaseHelper {
+  // Copied from Spark
+  private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
+  private val SPARK_LEGACY_DATETIME_METADATA_KEY = "org.apache.spark.legacyDateTime"
+  private val SPARK_LEGACY_INT96_METADATA_KEY = "org.apache.spark.legacyINT96"
+  private val SPARK_TIMEZONE_METADATA_KEY = "org.apache.spark.timeZone"
+
+  private def getRebaseMode(lookupFileMeta: String => String,
+                            modeByConfig: String,
+                            minVersion: String,
+                            metadataKey: String): DateTimeRebaseMode = {
+
+    // If there is no version, we return the mode specified by the config.
+    val mode = Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
+      // Files written by Spark 2.4 and earlier follow the legacy hybrid calendar and we need to
+      // rebase the datetime values.
+      // Files written by `minVersion` and latter may also need the rebase if they were written
+      // with the "LEGACY" rebase mode.
+      if (version < minVersion || lookupFileMeta(metadataKey) != null) {
+        DateTimeRebaseLegacy
+      } else {
+        DateTimeRebaseCorrected
+      }
+    }.getOrElse(modeByConfig match {
+      case "EXCEPTION" => DateTimeRebaseException
+      case "LEGACY" => DateTimeRebaseLegacy
+      case "CORRECTED" => DateTimeRebaseCorrected
+      case _ => throw new IllegalArgumentException(
+        s"Unknown datetime rebase mode from config: $modeByConfig")
+    })
+
+    // Check the timezone of the file if the mode is LEGACY.
+    if (mode == DateTimeRebaseLegacy) {
+      val fileTimeZone = lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)
+      if (fileTimeZone != "UTC") {
+        throw new UnsupportedOperationException(
+          "LEGACY datetime rebase mode is only supported for files written in UTC timezone. " +
+            s"Actual file timezone: $fileTimeZone")
+      }
+    }
+
+    mode
+  }
+
+  def datetimeRebaseMode(lookupFileMeta: String => String,
+                         modeByConfig: String): DateTimeRebaseMode = {
+    getRebaseMode(lookupFileMeta,
+      modeByConfig,
+      "3.0.0",
+      SPARK_LEGACY_DATETIME_METADATA_KEY)
+  }
+
+  def int96RebaseMode(lookupFileMeta: String => String,
+                      modeByConfig: String): DateTimeRebaseMode = {
+    getRebaseMode(lookupFileMeta,
+      modeByConfig,
+      "3.1.0",
+      SPARK_LEGACY_INT96_METADATA_KEY)
+  }
+
+  private def isRebaseNeeded(column: ColumnView, checkType: DType,
                                    minGood: Scalar): Boolean = {
     val dtype = column.getType
     require(!dtype.hasTimeResolution || dtype == DType.TIMESTAMP_MICROSECONDS)
@@ -46,13 +125,13 @@ object RebaseHelper {
     }
   }
 
-  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
+  private def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
     withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
       isRebaseNeeded(column, DType.TIMESTAMP_DAYS, minGood)
     }
   }
 
-  private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
+  private def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
     withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
       isRebaseNeeded(column, DType.TIMESTAMP_MICROSECONDS, minGood)
     }

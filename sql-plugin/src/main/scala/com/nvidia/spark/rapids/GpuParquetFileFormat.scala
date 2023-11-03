@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import ai.rapids.cudf._
-import com.nvidia.spark.RebaseHelper
+import com.nvidia.spark.DateTimeRebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.DateTimeRebase
@@ -310,11 +310,12 @@ class GpuParquetWriter(
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
-      if (dateRebaseMode.equals("EXCEPTION") && RebaseHelper.isDateRebaseNeededInWrite(col)) {
+      if (dateRebaseMode.equals("EXCEPTION") &&
+        DateTimeRebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
       else if (timestampRebaseMode.equals("EXCEPTION") &&
-               RebaseHelper.isTimeRebaseNeededInWrite(col)) {
+               DateTimeRebaseHelper.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
