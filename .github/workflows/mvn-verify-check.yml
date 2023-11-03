@@ -125,7 +125,7 @@ jobs:
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command, will retry for 3 times if failed.
-          max_retry=3; i=1
+          max_retry=3; delay=30; i=1
           while true; do
             mvn -Dmaven.wagon.http.retryHandler.count=3 \
               -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
@@ -134,7 +134,7 @@ jobs:
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep 3
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
               echo "mvn command failed. Exit 1"; exit 1
             fi
@@ -179,7 +179,7 @@ jobs:
           # change to Scala 2.13 Directory
           cd scala2.13
           # test command, will retry for 3 times if failed.
-          max_retry=3; i=1
+          max_retry=3; delay=30; i=1
           while true; do
             mvn -Dmaven.wagon.http.retryHandler.count=3 \
               -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
@@ -188,7 +188,7 @@ jobs:
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep 3
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
               echo "mvn command failed. Exit 1"; exit 1
             fi
@@ -223,7 +223,7 @@ jobs:
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command, will retry for 3 times if failed.
-          max_retry=3; i=1
+          max_retry=3; delay=30; i=1
           while true; do
             mvn -Dmaven.wagon.http.retryHandler.count=$max_retry \
               -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
@@ -231,7 +231,7 @@ jobs:
               -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep 3
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
               echo "mvn command failed. Exit 1"; exit 1
             fi
@@ -269,7 +269,7 @@ jobs:
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command, will retry for 3 times if failed.
-          max_retry=3; i=1
+          max_retry=3; delay=30; i=1
           while true; do
             ./mvnw -Dmaven.wagon.http.retryHandler.count=3 \
               -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
@@ -278,7 +278,7 @@ jobs:
               -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep 3
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
               echo "mvn command failed. Exit 1"; exit 1
             fi
