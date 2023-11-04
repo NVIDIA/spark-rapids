@@ -26,22 +26,22 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 /**
  * Mirror of Spark's LegacyBehaviorPolicy
  */
-sealed abstract class DateTimeRebaseMode
+sealed abstract class DateTimeRebaseMode(val value: String)
 
 /**
  * Mirror of Spark's LegacyBehaviorPolicy.EXCEPTION
  */
-case object DateTimeRebaseException extends DateTimeRebaseMode
+case object DateTimeRebaseException extends DateTimeRebaseMode("EXCEPTION")
 
 /**
  * Mirror of Spark's LegacyBehaviorPolicy.LEGACY
  */
-case object DateTimeRebaseLegacy extends DateTimeRebaseMode
+case object DateTimeRebaseLegacy extends DateTimeRebaseMode("LEGACY")
 
 /**
  * Mirror of Spark's LegacyBehaviorPolicy.CORRECTED
  */
-case object DateTimeRebaseCorrected extends DateTimeRebaseMode
+case object DateTimeRebaseCorrected extends DateTimeRebaseMode("CORRECTED")
 
 object DateTimeRebaseUtils {
   // Copied from Spark
@@ -67,9 +67,9 @@ object DateTimeRebaseUtils {
         DateTimeRebaseCorrected
       }
     }.getOrElse(modeByConfig match {
-      case "EXCEPTION" => DateTimeRebaseException
-      case "LEGACY" => DateTimeRebaseLegacy
-      case "CORRECTED" => DateTimeRebaseCorrected
+      case DateTimeRebaseException.value => DateTimeRebaseException
+      case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
+      case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
       case _ => throw new IllegalArgumentException(
         s"Unknown datetime rebase mode from config: $modeByConfig")
     })
@@ -77,7 +77,7 @@ object DateTimeRebaseUtils {
     // Check the timezone of the file if the mode is LEGACY.
     if (mode == DateTimeRebaseLegacy) {
       val fileTimeZone = lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)
-      if (fileTimeZone != "UTC") {
+      if (fileTimeZone != null && fileTimeZone != "UTC") {
         throw new UnsupportedOperationException(
           "LEGACY datetime rebase mode is only supported for files written in UTC timezone. " +
             s"Actual file timezone: $fileTimeZone")

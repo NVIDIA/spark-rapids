@@ -121,9 +121,8 @@ object GpuParquetFileFormat {
     }
 
     SparkShimImpl.int96ParquetRebaseWrite(sqlConf) match {
-      case "EXCEPTION" =>
-      case "CORRECTED" =>
-      case "LEGACY" =>
+      case DateTimeRebaseException.value | DateTimeRebaseCorrected.value => // Good
+      case DateTimeRebaseLegacy.value =>
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
         }
@@ -132,8 +131,8 @@ object GpuParquetFileFormat {
     }
 
     SparkShimImpl.parquetRebaseWrite(sqlConf) match {
-      case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" =>
+      case DateTimeRebaseException.value | DateTimeRebaseCorrected.value => // Good
+      case DateTimeRebaseLegacy.value =>
         if (!TypeChecks.areTimestampsSupported()) {
           meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
             s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +

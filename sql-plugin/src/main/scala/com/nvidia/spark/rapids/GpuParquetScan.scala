@@ -210,8 +210,8 @@ object GpuParquetScan {
     }
 
     sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
-      case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" => // really is EXCEPTION for us...
+      case DateTimeRebaseException.value | DateTimeRebaseCorrected.value => // Good
+      case DateTimeRebaseLegacy.value =>
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
         }
@@ -220,8 +220,8 @@ object GpuParquetScan {
     }
 
     sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
-      case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" =>
+      case DateTimeRebaseException.value | DateTimeRebaseCorrected.value => // Good
+      case DateTimeRebaseLegacy.value =>
         val schemaHasDates = readSchema.exists { field =>
           TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
         }
