@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import ai.rapids.cudf._
-import com.nvidia.spark.DateTimeRebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.DateTimeRebase
@@ -311,11 +310,11 @@ class GpuParquetWriter(
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
       if (dateRebaseMode.equals("EXCEPTION") &&
-        DateTimeRebaseHelper.isDateRebaseNeededInWrite(col)) {
+        DateTimeRebaseUtils.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
       else if (timestampRebaseMode.equals("EXCEPTION") &&
-               DateTimeRebaseHelper.isTimeRebaseNeededInWrite(col)) {
+               DateTimeRebaseUtils.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }

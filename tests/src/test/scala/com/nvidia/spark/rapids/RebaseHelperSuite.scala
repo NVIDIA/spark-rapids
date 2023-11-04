@@ -17,22 +17,21 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.DateTimeRebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
 class RebaseHelperSuite extends AnyFunSuite {
   test("all null timestamp days column rebase check") {
     withResource(ColumnVector.timestampDaysFromBoxedInts(null, null, null)) { c =>
-      assertResult(false)(DateTimeRebaseHelper.isDateRebaseNeededInWrite(c))
-      assertResult(false)(DateTimeRebaseHelper.isDateRebaseNeededInRead(c))
+      assertResult(false)(DateTimeRebaseUtils.isDateRebaseNeededInWrite(c))
+      assertResult(false)(DateTimeRebaseUtils.isDateRebaseNeededInRead(c))
     }
   }
 
   test("all null timestamp microseconds column rebase check") {
     withResource(ColumnVector.timestampMicroSecondsFromBoxedLongs(null, null, null)) { c =>
-      assertResult(false)(DateTimeRebaseHelper.isTimeRebaseNeededInWrite(c))
-      assertResult(false)(DateTimeRebaseHelper.isTimeRebaseNeededInRead(c))
+      assertResult(false)(DateTimeRebaseUtils.isTimeRebaseNeededInWrite(c))
+      assertResult(false)(DateTimeRebaseUtils.isTimeRebaseNeededInRead(c))
     }
   }
 }

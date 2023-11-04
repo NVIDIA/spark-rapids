@@ -31,7 +31,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
 
 import ai.rapids.cudf._
-import com.nvidia.spark.DateTimeRebaseHelper
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy}
@@ -163,11 +162,11 @@ object GpuParquetScan {
     (0 until table.getNumberOfColumns).foreach { i =>
       val col = table.getColumn(i)
       if (dateRebaseMode.equals("EXCEPTION") &&
-        DateTimeRebaseHelper.isDateRebaseNeededInRead(col)) {
+        DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
       else if (timestampRebaseMode.equals("EXCEPTION") &&
-        DateTimeRebaseHelper.isTimeRebaseNeededInRead(col)) {
+        DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
     }
@@ -740,11 +739,11 @@ private case class GpuParquetFileFilterHandler(
           (clipped, clippedSchema)
         }
 
-      val dateRebaseModeForThisFile = DateTimeRebaseHelper.datetimeRebaseMode(
+      val dateRebaseModeForThisFile = DateTimeRebaseUtils.datetimeRebaseMode(
           footer.getFileMetaData.getKeyValueMetaData.get, datetimeRebaseMode)
       val hasInt96Timestamps = isParquetTimeInInt96(fileSchema)
       val timestampRebaseModeForThisFile = if (hasInt96Timestamps) {
-        DateTimeRebaseHelper.int96RebaseMode(
+        DateTimeRebaseUtils.int96RebaseMode(
           footer.getFileMetaData.getKeyValueMetaData.get, int96RebaseMode)
       } else {
         dateRebaseModeForThisFile

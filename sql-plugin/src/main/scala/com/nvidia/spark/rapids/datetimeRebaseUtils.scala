@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark
+package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -43,7 +43,7 @@ case object DateTimeRebaseLegacy extends DateTimeRebaseMode
  */
 case object DateTimeRebaseCorrected extends DateTimeRebaseMode
 
-object DateTimeRebaseHelper {
+object DateTimeRebaseUtils {
   // Copied from Spark
   private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
   private val SPARK_LEGACY_DATETIME_METADATA_KEY = "org.apache.spark.legacyDateTime"

@@ -25,6 +25,7 @@ import java.util.Set;
 
 import scala.collection.Seq;
 
+import com.nvidia.spark.rapids.DateTimeRebaseLegacy$;
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.GpuParquetUtils;
 import com.nvidia.spark.rapids.ParquetPartitionReader;
@@ -139,8 +140,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader, metrics,
-          "CORRECTED", // dateRebaseMode
-          "CORRECTED", // timestampRebaseMode
+          DateTimeRebaseLegacy$.MODULE$.toString(), // dateRebaseMode
+          DateTimeRebaseLegacy$.MODULE$.toString(), // timestampRebaseMode
           true, // hasInt96Timestamps
           false // useFieldId
       );
