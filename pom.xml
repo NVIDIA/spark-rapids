@@ -609,7 +609,7 @@
                             <execution>
                                 <id>generate-bloop-projects</id>
                                 <goals><goal>bloopInstall</goal></goals>
-                                <phase>${bloopInstallPhase}</phase>
+                                <phase>${bloop.installPhase}</phase>
                                 <configuration>
                                     <!-- Metals looks at the repo root. so to accomodate scala 2.13  define -->
                                     <bloopConfigDir>${bloop.configDirectory}</bloopConfigDir>
@@ -641,7 +641,6 @@
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
-        <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <!--
         -processing
         to suppress unactionable "No processor claimed any of these annotations"
@@ -818,7 +817,8 @@
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
-        <bloopInstallPhase>install</bloopInstallPhase>
+        <bloop.installPhase>install</bloop.installPhase>
+        <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
     </properties>
 
     <dependencyManagement>
