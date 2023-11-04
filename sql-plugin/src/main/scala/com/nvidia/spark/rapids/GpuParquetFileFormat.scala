@@ -126,8 +126,8 @@ object GpuParquetFileFormat {
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
         }
-      case other =>
-        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
+      case other => meta.willNotWorkOnGpu(s"Invalid datetime rebase mode from config: $other " +
+          "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
     }
 
     SparkShimImpl.parquetRebaseWrite(sqlConf) match {
@@ -139,8 +139,8 @@ object GpuParquetFileFormat {
             s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
             " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
-      case other =>
-        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode")
+      case other => meta.willNotWorkOnGpu(s"Invalid datetime rebase mode from config: $other " +
+        "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
     }
 
     if (meta.canThisBeReplaced) {

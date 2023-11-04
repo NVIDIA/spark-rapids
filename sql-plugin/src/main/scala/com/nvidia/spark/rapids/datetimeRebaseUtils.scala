@@ -71,7 +71,8 @@ object DateTimeRebaseUtils {
       case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
       case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
       case _ => throw new IllegalArgumentException(
-        s"Unknown datetime rebase mode from config: $modeByConfig")
+        s"Invalid datetime rebase mode from config: $modeByConfig " +
+          "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
     })
 
     // Check the timezone of the file if the mode is LEGACY.
