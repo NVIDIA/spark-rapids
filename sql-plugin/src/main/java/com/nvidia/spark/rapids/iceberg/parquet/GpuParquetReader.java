@@ -140,8 +140,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, debugDumpAlways,
           maxBatchSizeRows, maxBatchSizeBytes, targetBatchSizeBytes, useChunkedReader, metrics,
-          DateTimeRebaseLegacy$.MODULE$.toString(), // dateRebaseMode
-          DateTimeRebaseLegacy$.MODULE$.toString(), // timestampRebaseMode
+          DateTimeRebaseLegacy$.MODULE$, // dateRebaseMode
+          DateTimeRebaseLegacy$.MODULE$, // timestampRebaseMode
           true, // hasInt96Timestamps
           false // useFieldId
       );

@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
- * Mirror of Spark's LegaclBehaviorPolicy
+ * Mirror of Spark's LegacyBehaviorPolicy
  */
 sealed abstract class DateTimeRebaseMode
 

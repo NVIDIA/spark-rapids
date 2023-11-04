@@ -220,7 +220,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     private final Schema expectedSchema;
     private final PartitionSpec partitionSpec;
 
-    IcebergParquetExtraInfo(String dateRebaseMode, String timestampRebaseMode,
+    IcebergParquetExtraInfo(DateTimeRebaseMode dateRebaseMode,
+                            DateTimeRebaseMode timestampRebaseMode,
                             boolean hasInt96Timestamps,
                             Map<Integer, ?> idToConstant, Schema expectedSchema,
                             PartitionSpec partitionSpec) {
@@ -310,8 +311,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         ParquetFileInfoWithBlockMeta parquetBlockMeta = ParquetFileInfoWithBlockMeta.apply(
             new Path(new URI(fst.file().path().toString())), clippedBlocks,
             InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
-            "CORRECTED", // dateRebaseMode
-            "CORRECTED", // timestampRebaseMode
+            DateTimeRebaseLegacy$.MODULE$, // dateRebaseMode
+            DateTimeRebaseLegacy$.MODULE$, // timestampRebaseMode
             true //  hasInt96Timestamps
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
