@@ -612,7 +612,7 @@
                                 <phase>${bloopInstallPhase}</phase>
                                 <configuration>
                                     <!-- Metals looks at the repo root. so to accomodate scala 2.13  define -->
-                                    <bloopConfigDir>${spark.rapids.source.basedir}/.bloop</bloopConfigDir>
+                                    <bloopConfigDir>${bloop.configDirectory}</bloopConfigDir>
                                 </configuration>
                             </execution>
                         </executions>
@@ -641,6 +641,7 @@
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
+        <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <!--
         -processing
         to suppress unactionable "No processor claimed any of these annotations"

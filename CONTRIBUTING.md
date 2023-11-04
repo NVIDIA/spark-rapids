@@ -353,13 +353,10 @@ interested in. For example, to generate the Bloop projects for the Spark 3.2.0 d
 just for the production code run:
 
 ```shell script
-mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
-  -DdownloadSources=true \
-  -Dbuildver=320 \
-  -DskipTests \
-  -Dskip \
-  -Dmaven.scalastyle.skip=true \
-  -Dmaven.updateconfig.skip=true
+mvn -B clean install \
+    -DbloopInstall \
+    -DdownloadSources=true \
+    -Dbuildver=320
 ```
 
 With `--generate-bloop` we integrated Bloop project generation into `buildall`. It makes it easier
@@ -436,18 +433,11 @@ jps -l
 ###### java.lang.RuntimeException: boom
 
 Metals background compilation process status appears to be resetting to 0% after reaching 99%
-and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. You can work around
-it by making sure Metals Server (Bloop client) and Bloop Server are both running on Java 11+.
+and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. This is a known issue
+when running Metals/Bloop on Java 8. To work around it, ensure Metals and Bloop are both running on
+Java 11+.
 
-1. To this end make sure that Bloop projects are generated using Java 11+
-
-    ```bash
-    JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 \
-      mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
-      -DdownloadSources=true \
-      -Dbuildver=331 \
-      -Dskip -DskipTests
-    ```
+1. The `-DbloopInstall` profile will enforce Java 11+ compliance.
 
 1. Add [`metals.javaHome`][2] to VSCode preferences to point to Java 11+.
 
