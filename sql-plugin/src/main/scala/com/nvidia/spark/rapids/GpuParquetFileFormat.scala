@@ -310,11 +310,9 @@ class GpuParquetWriter(
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
-      // if col is a day
       if (dateRebaseMode.equals("EXCEPTION") && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
-      // if col is a time
       else if (timestampRebaseMode.equals("EXCEPTION") &&
                RebaseHelper.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")

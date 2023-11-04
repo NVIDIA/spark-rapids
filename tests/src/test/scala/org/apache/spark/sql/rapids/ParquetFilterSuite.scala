@@ -224,8 +224,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
     })
   }
 
-  // https://github.com/NVIDIA/spark-rapids/issues/9507
-  ignore("Parquet filter pushdown - timestamp") {
+  test("Parquet filter pushdown - timestamp") {
     withCpuSparkSession(spark => {
       import spark.implicits._
       val df = (1 to 1024).map(i => new Timestamp(i)).toDF("a")
