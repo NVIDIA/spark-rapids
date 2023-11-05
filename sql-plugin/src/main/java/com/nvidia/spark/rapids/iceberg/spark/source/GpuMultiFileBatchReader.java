@@ -311,8 +311,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         ParquetFileInfoWithBlockMeta parquetBlockMeta = ParquetFileInfoWithBlockMeta.apply(
             new Path(new URI(fst.file().path().toString())), clippedBlocks,
             InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
-            DateTimeRebaseLegacy$.MODULE$, // dateRebaseMode
-            DateTimeRebaseLegacy$.MODULE$, // timestampRebaseMode
+            DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
+            DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
             true //  hasInt96Timestamps
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
