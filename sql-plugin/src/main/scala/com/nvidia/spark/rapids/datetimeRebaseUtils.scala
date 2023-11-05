@@ -26,7 +26,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 /**
  * Mirror of Spark's LegacyBehaviorPolicy
  */
-sealed abstract class DateTimeRebaseMode(val value: String)
+sealed abstract class DateTimeRebaseMode(val value: String) extends Serializable
 
 /**
  * Mirror of Spark's LegacyBehaviorPolicy.EXCEPTION
