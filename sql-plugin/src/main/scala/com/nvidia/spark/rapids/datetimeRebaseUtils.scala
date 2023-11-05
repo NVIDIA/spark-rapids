@@ -47,7 +47,7 @@ object DateTimeRebaseUtils {
   def invalidRebaseModeMessage(name: String): String =
     s"Invalid datetime rebase mode: $name (must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')"
 
-  def getRebaseModeFromName(name: String): DateTimeRebaseMode = name match {
+  def rebaseModeFromName(name: String): DateTimeRebaseMode = name match {
     case DateTimeRebaseException.value => DateTimeRebaseException
     case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
     case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
@@ -60,10 +60,10 @@ object DateTimeRebaseUtils {
   private val SPARK_LEGACY_INT96_METADATA_KEY = "org.apache.spark.legacyINT96"
   private val SPARK_TIMEZONE_METADATA_KEY = "org.apache.spark.timeZone"
 
-  private def getRebaseMode(lookupFileMeta: String => String,
-                            modeByConfig: String,
-                            minVersion: String,
-                            metadataKey: String): DateTimeRebaseMode = {
+  private def rebaseModeFromFileMeta(lookupFileMeta: String => String,
+                                     modeByConfig: String,
+                                     minVersion: String,
+                                     metadataKey: String): DateTimeRebaseMode = {
 
     // If there is no version, we return the mode specified by the config.
     val mode = Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
@@ -76,7 +76,7 @@ object DateTimeRebaseUtils {
       } else {
         DateTimeRebaseCorrected
       }
-    }.getOrElse(getRebaseModeFromName(modeByConfig))
+    }.getOrElse(rebaseModeFromName(modeByConfig))
 
     // Check the timezone of the file if the mode is LEGACY.
     if (mode == DateTimeRebaseLegacy) {
@@ -93,7 +93,7 @@ object DateTimeRebaseUtils {
 
   def datetimeRebaseMode(lookupFileMeta: String => String,
                          modeByConfig: String): DateTimeRebaseMode = {
-    getRebaseMode(lookupFileMeta,
+    rebaseModeFromFileMeta(lookupFileMeta,
       modeByConfig,
       "3.0.0",
       SPARK_LEGACY_DATETIME_METADATA_KEY)
@@ -101,7 +101,7 @@ object DateTimeRebaseUtils {
 
   def int96RebaseMode(lookupFileMeta: String => String,
                       modeByConfig: String): DateTimeRebaseMode = {
-    getRebaseMode(lookupFileMeta,
+    rebaseModeFromFileMeta(lookupFileMeta,
       modeByConfig,
       "3.1.0",
       SPARK_LEGACY_INT96_METADATA_KEY)
