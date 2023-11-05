@@ -156,15 +156,15 @@ object GpuParquetScan {
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
-  def throwIfRebaseNeededInExceptionMode(table: Table, dateRebaseMode: DateTimeRebaseMode,
-                                         timestampRebaseMode: DateTimeRebaseMode): Unit = {
+  def throwIfRebaseNeeded(table: Table, dateRebaseMode: DateTimeRebaseMode,
+                          timestampRebaseMode: DateTimeRebaseMode): Unit = {
     (0 until table.getNumberOfColumns).foreach { i =>
       val col = table.getColumn(i)
-      if (dateRebaseMode == DateTimeRebaseException &&
+      if (dateRebaseMode != DateTimeRebaseCorrected &&
         DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
-      else if (timestampRebaseMode == DateTimeRebaseException &&
+      else if (timestampRebaseMode != DateTimeRebaseCorrected &&
         DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
@@ -2604,7 +2604,7 @@ object MakeParquetTableProducer extends Logging {
             logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
           }
         }
-        GpuParquetScan.throwIfRebaseNeededInExceptionMode(table, dateRebaseMode,
+        GpuParquetScan.throwIfRebaseNeeded(table, dateRebaseMode,
           timestampRebaseMode)
         if (readDataSchema.length < table.getNumberOfColumns) {
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
@@ -2659,7 +2659,7 @@ case class ParquetTableReader(
     }
 
     closeOnExcept(table) { _ =>
-      GpuParquetScan.throwIfRebaseNeededInExceptionMode(table, dateRebaseMode, timestampRebaseMode)
+      GpuParquetScan.throwIfRebaseNeeded(table, dateRebaseMode, timestampRebaseMode)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
           s"but read ${table.getNumberOfColumns} from $splitsString")
