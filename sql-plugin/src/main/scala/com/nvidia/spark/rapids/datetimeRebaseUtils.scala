@@ -93,22 +93,17 @@ object DateTimeRebaseUtils {
 
   def datetimeRebaseMode(lookupFileMeta: String => String,
                          modeByConfig: String): DateTimeRebaseMode = {
-    rebaseModeFromFileMeta(lookupFileMeta,
-      modeByConfig,
-      "3.0.0",
+    rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.0.0",
       SPARK_LEGACY_DATETIME_METADATA_KEY)
   }
 
   def int96RebaseMode(lookupFileMeta: String => String,
                       modeByConfig: String): DateTimeRebaseMode = {
-    rebaseModeFromFileMeta(lookupFileMeta,
-      modeByConfig,
-      "3.1.0",
+    rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.1.0",
       SPARK_LEGACY_INT96_METADATA_KEY)
   }
 
-  private def isRebaseNeeded(column: ColumnView, checkType: DType,
-                                   minGood: Scalar): Boolean = {
+  private def isRebaseNeeded(column: ColumnView, checkType: DType, minGood: Scalar): Boolean = {
     val dtype = column.getType
     require(!dtype.hasTimeResolution || dtype == DType.TIMESTAMP_MICROSECONDS)
 
