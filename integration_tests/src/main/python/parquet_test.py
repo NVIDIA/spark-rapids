@@ -312,6 +312,8 @@ def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
+_unused_var = []
+
 # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with timestamp_gen
 @pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc)),
     ArrayGen(TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))),
