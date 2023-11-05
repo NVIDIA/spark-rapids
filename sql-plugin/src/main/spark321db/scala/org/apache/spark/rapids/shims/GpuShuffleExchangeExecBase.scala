@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
+{"spark": "321db"}
+{"spark": "330db"}
+{"spark": "332db"}
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
@@ -27,22 +30,40 @@ import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
 
-case class GpuShuffleExchangeExec(
+case class GpuShuffleExchangeExecBase(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
-  extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child, shuffleOrigin)(
-    cpuOutputPartitioning) {
+  extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
+      with ShuffleExchangeLike {
 
-  override def getShuffleRDD(
-      partitionSpecs: Array[ShufflePartitionSpec],
-      lazyFetching: Boolean): RDD[_] = {
+  override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
+
+  override val outputPartitioning: Partitioning = cpuOutputPartitioning
+
+  override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
+
+  override def numPartitions: Int = shuffleDependencyColumnar.partitioner.numPartitions
+
+  override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
     new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
   }
 
   // DB SPECIFIC - throw if called since we don't know how its used
-  override def targetOutputPartitioning: Partitioning = {
+  override def withNewOutputPartitioning(outputPartitioning: Partitioning) = {
     throw new UnsupportedOperationException
   }
+
+  override def runtimeStatistics: Statistics = {
+    // note that Spark will only use the sizeInBytes statistic but making the rowCount
+    // available here means that we can more easily reference it in GpuOverrides when
+    // planning future query stages when AQE is on
+    Statistics(
+      sizeInBytes = metrics("dataSize").value,
+      rowCount = Some(metrics("numOutputRows").value)
+    )
+  }
+
+  override def shuffleId: Int = shuffleDependencyColumnar.shuffleId
 }
