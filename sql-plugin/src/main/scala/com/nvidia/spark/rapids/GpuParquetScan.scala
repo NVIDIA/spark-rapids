@@ -215,8 +215,7 @@ object GpuParquetScan {
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
         }
-      case other => meta.willNotWorkOnGpu(s"Invalid datetime rebase mode from config: $other " +
-        "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
+      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
     }
 
     sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
@@ -228,8 +227,7 @@ object GpuParquetScan {
         if (schemaHasDates || schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
         }
-      case other => meta.willNotWorkOnGpu(s"Invalid datetime rebase mode from config: $other " +
-        "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
+      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
     }
   }
 

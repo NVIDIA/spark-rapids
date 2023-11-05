@@ -126,8 +126,7 @@ object GpuParquetFileFormat {
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
         }
-      case other => meta.willNotWorkOnGpu(s"Invalid datetime rebase mode from config: $other " +
-          "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
+      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
     }
 
     SparkShimImpl.parquetRebaseWrite(sqlConf) match {
@@ -139,8 +138,7 @@ object GpuParquetFileFormat {
             s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
             " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
-      case other => meta.willNotWorkOnGpu(s"Invalid datetime rebase mode from config: $other " +
-        "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
+      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
     }
 
     if (meta.canThisBeReplaced) {
@@ -191,9 +189,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val conf = ContextUtil.getConfiguration(job)
 
     val outputTimestampType = sqlConf.parquetOutputTimestampType
-    val dateTimeRebaseMode = sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey)
+    val dateTimeRebaseMode = DateTimeRebaseUtils.getRebaseModeFromName(
+      sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
     val timestampRebaseMode = if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
-      sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey)
+      DateTimeRebaseUtils.getRebaseModeFromName(
+        sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey))
     } else {
       dateTimeRebaseMode
     }
@@ -300,19 +300,19 @@ class GpuParquetWriter(
     dataSchema: StructType,
     compressionType: CompressionType,
     outputTimestampType: String,
-    dateRebaseMode: String,
-    timestampRebaseMode: String,
+    dateRebaseMode: DateTimeRebaseMode,
+    timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
-      if (dateRebaseMode.equals("EXCEPTION") &&
+      if (dateRebaseMode == DateTimeRebaseException &&
         DateTimeRebaseUtils.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
-      else if (timestampRebaseMode.equals("EXCEPTION") &&
+      else if (timestampRebaseMode == DateTimeRebaseException &&
                DateTimeRebaseUtils.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
@@ -333,14 +333,14 @@ class GpuParquetWriter(
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
       case (cv, _) if cv.getType.isTimestampType =>
         if(cv.getType == DType.TIMESTAMP_DAYS) {
-          if (dateRebaseMode.equals("LEGACY")) {
+          if (dateRebaseMode == DateTimeRebaseLegacy) {
             DateTimeRebase.rebaseGregorianToJulian(cv)
           } else {
             cv.copyToColumnVector()
           }
         } else { /* timestamp */
           val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-          if (timestampRebaseMode.equals("LEGACY")) {
+          if (timestampRebaseMode == DateTimeRebaseLegacy) {
             val rebasedTimestampAsMicros = if(cv.getType == DType.TIMESTAMP_MICROSECONDS) {
               DateTimeRebase.rebaseGregorianToJulian(cv)
             } else {

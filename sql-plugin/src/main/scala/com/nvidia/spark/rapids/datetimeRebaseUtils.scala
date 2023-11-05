@@ -44,6 +44,16 @@ case object DateTimeRebaseLegacy extends DateTimeRebaseMode("LEGACY")
 case object DateTimeRebaseCorrected extends DateTimeRebaseMode("CORRECTED")
 
 object DateTimeRebaseUtils {
+  def invalidRebaseModeMessage(name: String): String =
+    s"Invalid datetime rebase mode: $name (must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')"
+
+  def getRebaseModeFromName(name: String): DateTimeRebaseMode = name match {
+    case DateTimeRebaseException.value => DateTimeRebaseException
+    case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
+    case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
+    case _ => throw new IllegalArgumentException(invalidRebaseModeMessage(name))
+  }
+
   // Copied from Spark
   private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
   private val SPARK_LEGACY_DATETIME_METADATA_KEY = "org.apache.spark.legacyDateTime"
@@ -66,14 +76,7 @@ object DateTimeRebaseUtils {
       } else {
         DateTimeRebaseCorrected
       }
-    }.getOrElse(modeByConfig match {
-      case DateTimeRebaseException.value => DateTimeRebaseException
-      case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
-      case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
-      case _ => throw new IllegalArgumentException(
-        s"Invalid datetime rebase mode from config: $modeByConfig " +
-          "(must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')")
-    })
+    }.getOrElse(getRebaseModeFromName(modeByConfig))
 
     // Check the timezone of the file if the mode is LEGACY.
     if (mode == DateTimeRebaseLegacy) {
