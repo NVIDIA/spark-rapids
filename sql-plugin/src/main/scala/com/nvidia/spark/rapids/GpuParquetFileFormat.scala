@@ -126,7 +126,10 @@ object GpuParquetFileFormat {
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
         }
-      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
     DateTimeRebaseMode.fromName(SparkShimImpl.parquetRebaseWrite(sqlConf)) match {
@@ -138,7 +141,10 @@ object GpuParquetFileFormat {
             s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
             " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
-      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
     if (meta.canThisBeReplaced) {
@@ -189,10 +195,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val conf = ContextUtil.getConfiguration(job)
 
     val outputTimestampType = sqlConf.parquetOutputTimestampType
-    val dateTimeRebaseMode = DateTimeRebaseUtils.rebaseModeFromName(
+    val dateTimeRebaseMode = DateTimeRebaseMode.fromName(
       sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
     val timestampRebaseMode = if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
-      DateTimeRebaseUtils.rebaseModeFromName(
+      DateTimeRebaseMode.fromName(
         sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey))
     } else {
       dateTimeRebaseMode

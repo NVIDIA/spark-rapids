@@ -217,7 +217,10 @@ object GpuParquetScan {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
             s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
         }
-      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
     DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.parquetRebaseReadKey)) match {
@@ -231,7 +234,10 @@ object GpuParquetScan {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
             s"${SparkShimImpl.parquetRebaseReadKey} is LEGACY")
         }
-      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
   }
 
@@ -1853,8 +1859,8 @@ private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockB
 
 /** Parquet extra information containing rebase modes and whether there is int96 timestamp */
 class ParquetExtraInfo(val dateRebaseMode: DateTimeRebaseMode,
-                       val timestampRebaseMode: DateTimeRebaseMode,
-                       val hasInt96Timestamps: Boolean) extends ExtraInfo
+    val timestampRebaseMode: DateTimeRebaseMode,
+    val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(

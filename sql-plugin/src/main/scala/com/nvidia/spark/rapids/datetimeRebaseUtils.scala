@@ -27,7 +27,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  * Mirror of Spark's LegacyBehaviorPolicy.
  * <p>
  * This is to provides a stable reference to other Java code in our codebase and also mitigate
- * from Spark's breaking change that will cause issues with our code that uses Spark's
+ * from Spark's breaking changes that may cause issues if our code uses Spark's
  * LegacyBehaviorPolicy.
  */
 sealed abstract class DateTimeRebaseMode(val value: String) extends Serializable
