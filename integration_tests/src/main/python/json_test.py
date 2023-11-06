@@ -472,46 +472,79 @@ def test_from_json_map_fallback():
         'JsonToStructs',
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
-@pytest.mark.parametrize('schema', ['struct<a:string>',
-                                    'struct<d:string>',
-                                    'struct<a:string,b:string>',
-                                    'struct<c:int,a:string>',
-                                    'struct<a:string,a:string>',
-                                    ])
+@pytest.mark.parametrize('schema', [
+    'struct<a:string>',
+    'struct<b:string>',
+    'struct<c:string>',
+    'struct<a:int>',
+    'struct<a:long>',
+    'struct<a:float>',
+    'struct<a:double>',
+    'struct<a:decimal>',
+    'struct<d:string>',
+    'struct<a:string,b:string>',
+    'struct<c:int,a:string>',
+    'struct<a:string,a:string>',
+    ])
 def test_from_json_struct(schema):
-    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}", "b": "[A-Z]{0,5}", "c": 1\d\d\d}').with_special_pattern('', weight=50)
+    # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
+    json_string_gen = StringGen(r'{"a": [1-9]{0,5}, "b": "[A-Z]{0,5}", "c": 1\d\d\d}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9597')
+def test_from_json_struct_boolean():
+    json_string_gen = StringGen(r'{ "a": [truefalsTRUEFALS]{0,5}, "b": [0-9]{0,2} }') \
+        .with_special_pattern('{ "a": true, "b": 1 }', weight=50) \
+        .with_special_pattern('{ "a": false, "b": 0 }', weight=50) \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', 'struct<a:boolean, b:boolean>')),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
+def test_from_json_struct_decimal():
+    json_string_gen = StringGen(r'{ "a": "[+-]?([0-9]{0,5})?(\.[0-9]{0,2})?([eE][+-]?[0-9]{1,2})?" }') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json('a', 'struct<a:decimal>')),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True})
+
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:struct<name:string,age:int>>',
                                     'struct<teacher:string,student:struct<name:string,age:int>>'])
 def test_from_json_struct_of_struct(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
-                                r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}').with_special_pattern('', weight=50)
+                                r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50) \
+        .with_special_pattern('invalid_entry', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:array<struct<name:string,class:string>>>',
                                     'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
 def test_from_json_struct_of_list(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
-                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}').with_special_pattern('', weight=50)
+                                r'{"name": "[A-Z]{1}[a-z]{2,5}", "class": "freshman"}\]}') \
+        .with_special_pattern('', weight=50) \
+        .with_special_pattern('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/8558')
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
 def test_from_json_struct_all_empty_string_input(schema):
     json_string_gen = StringGen('')
