@@ -235,6 +235,19 @@ def get_jvm_charset():
     sc = _spark.sparkContext
     return str(sc._jvm.java.nio.charset.Charset.defaultCharset())
 
+def get_scala_version():
+    sc = _spark.sparkContext
+    return str(sc._jvm.scala.tools.nsc.Properties.versionNumberString())
+
+def get_scala_binary_version():
+    ".".join(get_scala_version().split(".")[:2])
+
+def is_scala212():
+    return get_scala_version().startswith("2.12")
+
+def is_scala213():
+    return get_scala_version().startswith("2.13")
+
 def is_jvm_charset_utf8():
     return get_jvm_charset() == 'UTF-8'
 

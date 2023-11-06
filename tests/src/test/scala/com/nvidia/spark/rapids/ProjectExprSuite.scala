@@ -22,11 +22,12 @@ import java.nio.file.Files
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.RmmSpark
-import org.mockito.Mockito.spy
+import org.mockito.Mockito.{mock, spy, when}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Literal, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, Literal, NamedExpression}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.GpuAdd
 import org.apache.spark.sql.types._
@@ -117,6 +118,51 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
           assertResult(22L)(hcv.getLong(2))
           assert(!hcv.isNull(3))
           assertResult(20L)(hcv.getLong(3))
+        }
+      }
+    } finally {
+      RmmSpark.removeThreadAssociation(0)
+    }
+  }
+
+  test("AST retry with split") {
+    RmmSpark.associateCurrentThreadWithTask(0)
+    try {
+      val a = AttributeReference("a", LongType)()
+      val b = AttributeReference("b", LongType)()
+      val sb = buildProjectBatch()
+      val expr = GpuAlias(GpuAdd(
+        GpuBoundReference(0, LongType, true)(NamedExpression.newExprId, "a"),
+        GpuBoundReference(1, LongType, true)(NamedExpression.newExprId, "b"), false),
+        "ret")()
+      val mockPlan = mock(classOf[SparkPlan])
+      when(mockPlan.output).thenReturn(Seq(a, b))
+      val ast = GpuProjectAstExec(List(expr.asInstanceOf[Expression]), mockPlan)
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+      withResource(sb) { sb =>
+        withResource(ast.buildRetryableAstIterator(Seq(sb.getColumnarBatch).iterator)) { result =>
+          withResource(result.next()) { cb =>
+            assertResult(2)(cb.numRows)
+            assertResult(1)(cb.numCols)
+            val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+            withResource(gcv.getBase.copyToHost()) { hcv =>
+              assert(!hcv.isNull(0))
+              assertResult(11L)(hcv.getLong(0))
+              assert(hcv.isNull(1))
+            }
+          }
+
+          withResource(result.next()) { cb =>
+            assertResult(2)(cb.numRows)
+            assertResult(1)(cb.numCols)
+            val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+            withResource(gcv.getBase.copyToHost()) { hcv =>
+              assert(!hcv.isNull(0))
+              assertResult(11L)(hcv.getLong(0))
+              assert(!hcv.isNull(1))
+              assertResult(10L)(hcv.getLong(1))
+            }
+          }
         }
       }
     } finally {

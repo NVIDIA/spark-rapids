@@ -73,7 +73,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
       logTrace(s"CBO finished optimizing plan. " +
         s"${optimizations.length} optimizations applied:\n\t${optimizations.mkString("\n\t")}")
     }
-    optimizations
+    optimizations.toSeq
   }
 
   /**

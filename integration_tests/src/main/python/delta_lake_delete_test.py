@@ -16,8 +16,7 @@ import pytest
 
 from asserts import assert_equal, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
 from data_gen import *
-from delta_lake_write_test import assert_gpu_and_cpu_delta_logs_equivalent, delta_meta_allow, delta_writes_enabled_conf
-from delta_lake_merge_test import read_delta_path, read_delta_path_with_cdf, setup_dest_tables
+from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, supports_delta_lake_deletion_vectors, \
     with_cpu_session, with_gpu_session
@@ -30,7 +29,7 @@ def delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql,
                           check_func, partition_columns=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
+        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, partition_columns)
     def do_delete(spark, path):
         return spark.sql(delete_sql.format(path=path))
     with_cpu_session(setup_tables)
@@ -74,9 +73,9 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
 def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path,
-                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                          use_cdf=False)
+        setup_delta_dest_tables(spark, data_path,
+                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                                use_cdf=False)
     def write_func(spark, path):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
@@ -93,9 +92,9 @@ def test_delta_delete_disabled_fallback(spark_tmp_path, disable_conf):
 def test_delta_deletion_vector_fallback(spark_tmp_path, use_cdf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
-        setup_dest_tables(spark, data_path,
-                          dest_table_func=lambda spark: unary_op_df(spark, int_gen),
-                          use_cdf=use_cdf, enable_deletion_vectors=True)
+        setup_delta_dest_tables(spark, data_path,
+                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                                use_cdf=use_cdf, enable_deletion_vectors=True)
     def write_func(spark, path):
         delete_sql="DELETE FROM delta.`{}`".format(path)
         spark.sql(delete_sql)
@@ -182,7 +181,7 @@ def test_delta_delete_dataframe_api(spark_tmp_path, use_cdf, partition_columns):
                             SetValuesGen(IntegerType(), range(5)),
                             SetValuesGen(StringType(), "abcdefg"),
                             string_gen, num_slices=num_slices_to_test)
-    with_cpu_session(lambda spark: setup_dest_tables(spark, data_path, generate_dest_data, use_cdf, partition_columns))
+    with_cpu_session(lambda spark: setup_delta_dest_tables(spark, data_path, generate_dest_data, use_cdf, partition_columns))
     def do_delete(spark, path):
         dest_table = DeltaTable.forPath(spark, path)
         dest_table.delete("b > 'c'")

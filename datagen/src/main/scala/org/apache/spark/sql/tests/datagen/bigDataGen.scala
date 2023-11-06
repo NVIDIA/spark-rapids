@@ -1261,7 +1261,7 @@ object DecimalGen {
         (BigDecimal(Long.MaxValue) - Long.MinValue)
     val minLong = BigDecimal(Long.MinValue)
     n => {
-      (((n - minLong) * scaleFactor) + minValBD).setScale(0, RoundingMode.FLOOR).toBigInt()
+      (((n - minLong) * scaleFactor) + minValBD).setScale(0, RoundingMode.FLOOR).toBigInt
     }
   }
 }

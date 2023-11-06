@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.GpuOverrides.extractLit
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
@@ -27,7 +28,7 @@ import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows, Stack}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
@@ -52,13 +53,64 @@ class GpuGenerateExecSparkPlanMeta(
     }
   }
 
+  private def getExpandExecForStack(stackMeta: GpuStackMeta): GpuExec = {
+    val numRows = extractLit(stackMeta.childExprs.head.convertToCpu()) match {
+      case Some(lit) => lit.value.asInstanceOf[Int]
+      case _ => throw new IllegalStateException("First parameter of stack should be a literal Int")
+    }
+    val numFields = Math.ceil((stackMeta.childExprs.length - 1.0) / numRows).toInt
+    val projections: Seq[Seq[Expression]] = for (row <- 0 until numRows) yield {
+      val childExprsGpu = childExprs.tail.map(_.convertToGpu())
+      val otherProj: Seq[Expression] = for (req <- childExprsGpu) yield {
+        req
+      }
+      val stackProj: Seq[Expression] = for (col <- 0 until numFields) yield {
+        val index = row * numFields + col
+        val dataChildren = stackMeta.childExprs.tail
+        if (index >= dataChildren.length) {
+          val typeInfo = dataChildren(col).dataType
+          GpuLiteral(null, typeInfo)
+        } else {
+          dataChildren(index).convertToGpu()
+        }
+      }
+      otherProj ++ stackProj
+    }
+    val output: Seq[Attribute] = gen.requiredChildOutput ++ gen.generatorOutput.take(numFields)
+    GpuExpandExec(projections, output, childPlans.head.convertIfNeeded())(
+        useTieredProject = conf.isTieredProjectEnabled)
+  }
+
   override def convertToGpu(): GpuExec = {
-    GpuGenerateExec(
-      childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
-      gen.requiredChildOutput,
-      gen.outer,
-      gen.generatorOutput,
-      childPlans.head.convertIfNeeded())
+    // if child expression contains Stack, use GpuExpandExec instead
+    childExprs.head match {
+      case stackMeta: GpuStackMeta =>
+        getExpandExecForStack(stackMeta)
+      case genMeta =>
+        GpuGenerateExec(
+          genMeta.convertToGpu().asInstanceOf[GpuGenerator],
+          gen.requiredChildOutput,
+          gen.outer,
+          gen.generatorOutput,
+          childPlans.head.convertIfNeeded())
+    }
+  }
+}
+
+class GpuStackMeta(
+    stack: Stack,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends BaseExprMeta[Stack](stack, conf, parent, rule) {
+
+  override val childExprs: Seq[BaseExprMeta[_]] = stack.children
+      .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  
+  override def convertToGpu(): GpuExpression = {
+    // There is no need to implement convertToGpu() here, because GpuGenerateExec will handle
+    // stack logic in terms of GpuExpandExec, no convertToGpu() will be called during the process
+    throw new UnsupportedOperationException(s"Should not be here: $this")
   }
 }
 
@@ -562,7 +614,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           newColumns += exploded.getColumn(index).incRefCount()
         }
       }
-      new Table(newColumns: _*)
+      new Table(newColumns.toSeq: _*)
     }
   }
 

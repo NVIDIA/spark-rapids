@@ -160,7 +160,12 @@ void databricksBuild() {
                         def BUILD_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -z ./spark-rapids-ci.tgz" +
                                 " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/build.sh -d /home/ubuntu/build.sh" +
                                 " -v $BASE_SPARK_VERSION -i $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
-                        sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
+
+                        //  add retry for build step to try
+                        //  mitigate the issue of downloading dependencies while maven/sonatype is quite unstable
+                        retry(3) {
+                            sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
+                        }
                     }
                 }
             }

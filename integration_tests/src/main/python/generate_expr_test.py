@@ -46,7 +46,8 @@ def test_explode_makearray(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_explode_litarray(data_gen):
-    array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
+    array_lit = with_cpu_session(
+        lambda spark: gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False)))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.explode(array_lit)))
@@ -133,7 +134,8 @@ def test_posexplode_makearray(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_posexplode_litarray(data_gen):
-    array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
+    array_lit = with_cpu_session(
+        lambda spark: gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False)))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'),
                 f.posexplode(array_lit)))
@@ -214,3 +216,39 @@ def test_generate_outer_fallback():
         lambda spark: spark.sql("SELECT array(struct(1, 'a'), struct(2, 'b')) as x")\
             .repartition(1).selectExpr("inline_outer(x)"),
         "GenerateExec")
+
+# gpu stack not guarantee to produce the same output order as Spark does
+@ignore_order(local=True) 
+def test_stack():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.range(100).selectExpr('*', 'stack(3, id, 2L, 3L, 4L, 5L, 6L)'))
+
+# gpu stack not guarantee to produce the same output order as Spark does
+@ignore_order(local=True)
+def test_stack_mixed_types():
+    base_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, 
+                  boolean_gen, date_gen, timestamp_gen, null_gen, DecimalGen(precision=7, scale=3),
+                  DecimalGen(precision=12, scale=2), DecimalGen(precision=20, scale=2)]
+    data_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in 
+                          enumerate(base_gens)], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100)
+                .selectExpr('*', 'stack(2, child1, child2, child3, child4, child5, child6, ' + 
+                            'child7, child8, child9, child10, child11, child12, child13, ' + 
+                            '1Y, 2S, 3, 4L, 5.0f, 6.0d, "7", false, to_date("2009-01-01"), ' + 
+                            'to_timestamp("2010-01-01 00:00:00"), null, 1234.567, ' + 
+                            '1234567890.12, 123456789012345678.90)'))
+
+# gpu stack not guarantee to produce the same output order as Spark does
+@ignore_order(local=True)
+def test_stack_nested_types():
+    data_gen = StructGen([['array', ArrayGen(IntegerGen(nullable=False))], 
+                         ['map', MapGen(IntegerGen(nullable=False), StringGen(nullable=False))],
+                         ['struct', StructGen([['col1', IntegerGen(nullable=False)], 
+                                               ['col2', StringGen(nullable=False)]])]
+                         ], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, data_gen, length=100)
+                .selectExpr('*', 'stack(2, map, array, struct, ' + 
+                            'map(1, "a", 2, "b"), array(1, 2, 3), struct(1, "a"))'))
+

@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, Shim
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, ImplicitCastInputTypes, Literal, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
@@ -1389,7 +1389,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType) extends GpuA
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: Expression =
-      GpuDivide(sum, GpuCast(count, DoubleType), failOnErrorOverride = false)
+      GpuDivide(sum, GpuCast(count, DoubleType), failOnError = false)
 
   // Window
   // Replace average with SUM/COUNT. This lets us run average in running window mode without
@@ -1398,7 +1398,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType) extends GpuA
     val count = GpuWindowExpression(GpuCount(Seq(child)), spec)
     val sum = GpuWindowExpression(
       GpuSum(GpuCast(child, dataType), dataType, failOnErrorOverride = false), spec)
-    GpuDivide(sum, GpuCast(count, dataType), failOnErrorOverride = false)
+    GpuDivide(sum, GpuCast(count, dataType), failOnError = false)
   }
 
   // Copied from Average
@@ -1520,6 +1520,7 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType)
  */
 case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction
+  with GpuBatchedRunningWindowWithFixer
   with GpuAggregateWindowFunction
   with GpuDeterministicFirstLastCollectShim
   with ImplicitCastInputTypes
@@ -1571,6 +1572,8 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
     RollingAggregation.nth(0, if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
 
+  override def newFixer(): BatchedRunningWindowFixer =
+    new FirstRunningWindowFixer(ignoreNulls)
 }
 
 case class GpuLast(child: Expression, ignoreNulls: Boolean)
@@ -1628,6 +1631,7 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
 
 case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boolean)
   extends GpuAggregateWindowFunction
+        with GpuBatchedRunningWindowWithFixer  // Only if the N == 1.
         with ImplicitCastInputTypes
         with Serializable {
 
@@ -1660,6 +1664,18 @@ case class GpuNthValue(child: Expression, offset: Expression, ignoreNulls: Boole
     RollingAggregation.nth(offsetVal - 1,
       if (ignoreNulls) NullPolicy.EXCLUDE else NullPolicy.INCLUDE)
         .onColumn(inputs.head._2)
+
+  override def canFixUp: Boolean = {
+    GpuOverrides.extractLit(offset) match {
+      case Some(Literal(value, IntegerType)) if value == 1 => true // Only FIRST() is supported.
+      case _ => false
+    }
+  }
+
+  override def newFixer(): BatchedRunningWindowFixer = {
+    assert(canFixUp, "NthValue fixup cannot be done when offset != 1.")
+    new FirstRunningWindowFixer(ignoreNulls)
+  }
 }
 
 trait GpuCollectBase
@@ -1903,7 +1919,7 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean)
 
   override lazy val evaluateExpression: Expression = {
     // stddev_pop = sqrt(m2 / n).
-    val stddevPop = GpuSqrt(GpuDivide(bufferM2, bufferN, failOnErrorOverride = false))
+    val stddevPop = GpuSqrt(GpuDivide(bufferM2, bufferN, failOnError = false))
 
     // Set nulls for the rows where n == 0.
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevPop)
@@ -1938,7 +1954,7 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
     // stddev_samp = sqrt(m2 / (n - 1.0)).
     val stddevSamp =
       GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
-        failOnErrorOverride = false))
+        failOnError = false))
 
     // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
@@ -1969,7 +1985,7 @@ case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean)
 
   override lazy val evaluateExpression: Expression = {
     // var_pop = m2 / n.
-    val varPop = GpuDivide(bufferM2, bufferN, failOnErrorOverride = false)
+    val varPop = GpuDivide(bufferM2, bufferN, failOnError = false)
 
     // Set nulls for the rows where n == 0.
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), varPop)
@@ -1984,7 +2000,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
   override lazy val evaluateExpression: Expression = {
     // var_samp = m2 / (n - 1.0).
     val varSamp = GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
-      failOnErrorOverride = false)
+      failOnError = false)
 
     // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,

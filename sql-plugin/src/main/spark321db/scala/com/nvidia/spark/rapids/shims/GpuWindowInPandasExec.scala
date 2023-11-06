@@ -18,6 +18,7 @@
 {"spark": "321db"}
 {"spark": "330db"}
 {"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -33,7 +34,8 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuArrowPythonRunner, GpuPythonHelper, GpuPythonUDF, GpuWindowInPandasExecBase, GroupingIterator}
+import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuPythonHelper, GpuPythonUDF, GpuWindowInPandasExecBase, GroupingIterator}
+import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch

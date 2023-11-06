@@ -361,7 +361,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
               }
               columns += castColumn
             }
-            new Table(columns: _*)
+            new Table(columns.toSeq: _*)
           }
         }
 
@@ -759,7 +759,7 @@ object GpuTextBasedDateUtils {
       }
       formats += fmt
     }
-    formats
+    formats.toSeq
   }
 
 }

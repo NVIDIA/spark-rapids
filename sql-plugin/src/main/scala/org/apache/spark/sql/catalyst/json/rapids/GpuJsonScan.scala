@@ -197,7 +197,8 @@ case class GpuJsonScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
-    maxReaderBatchSizeBytes: Long)
+    maxReaderBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long)
   extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: JSONOptions = new JSONOptions(
@@ -220,7 +221,7 @@ case class GpuJsonScan(
 
     GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
+      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
   }
 
   override def withInputFile(): GpuScan = this
@@ -236,6 +237,7 @@ case class GpuJsonPartitionReaderFactory(
     parsedOptions: JSONOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
     @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
@@ -248,7 +250,8 @@ case class GpuJsonPartitionReaderFactory(
     val reader = new PartitionReaderWithBytesRead(new JsonPartitionReader(conf, partFile,
       dataSchema, readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes,
       metrics))
-    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
+    ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
+      maxGpuColumnSizeBytes)
   }
 }
 
@@ -267,7 +270,14 @@ object JsonPartitionReader {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
         withResource(new NvtxWithMetrics(formatName + " decode",
           NvtxColor.DARK_GREEN, decodeTime)) { _ =>
-          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+          try {
+            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+          } catch {
+            case e: AssertionError if e.getMessage == "CudfColumns can't be null or empty" =>
+              // this happens when every row in a JSON file is invalid (or we are
+              // trying to read a non-JSON file format as JSON)
+              throw new IOException(s"Error when processing file [$partFile]", e)
+          }
         }
       }
     } catch {
@@ -291,7 +301,7 @@ class JsonPartitionReader(
     maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions = {
-    val builder = cudf.JSONOptions.builder()
+    val builder = cudf.JSONOptions.builder().withRecoverWithNull(true)
     builder.build
   }
 

@@ -14,6 +14,8 @@ and directory contains the corresponding support code.
 | 2.0.x              | Spark 3.2.x     | `delta-20x`        |
 | 2.1.x              | Spark 3.3.x     | `delta-21x`        |
 | 2.2.x              | Spark 3.3.x     | `delta-22x`        |
+| 2.3.x              | Spark 3.3.x     | `delta-23x`        |
+| 2.4.x              | Spark 3.4.x     | `delta-24x`        |
 | Databricks 10.4    | Databricks 10.4 | `delta-spark321db` |
 | Databricks 11.3    | Databricks 11.3 | `delta-spark330db` |
 | Databricks 12.2    | Databricks 12.2 | `delta-spark332db` |

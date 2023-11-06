@@ -125,7 +125,8 @@ object ScaleTest {
         spark.sparkContext.removeSparkListener(taskFailureListener)
       }
     })
-    QueryMeta(query.name, query.content, status, exceptions.asScala.toSeq, executionTimes)
+    QueryMeta(query.name, query.content, status.toSeq,
+        exceptions.asScala.toSeq, executionTimes.toSeq)
   }
 
   /**

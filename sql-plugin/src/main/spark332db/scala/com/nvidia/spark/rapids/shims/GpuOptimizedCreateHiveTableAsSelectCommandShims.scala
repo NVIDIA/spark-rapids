@@ -18,6 +18,7 @@
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -206,11 +207,11 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
       }
       val options = tableDesc.properties.filterKeys(isParquetProperty) ++
           tableDesc.storage.properties
-      GpuParquetFileFormat.tagGpuSupport(this, spark, options, cmd.query.schema)
+      GpuParquetFileFormat.tagGpuSupport(this, spark, options.toMap, cmd.query.schema)
     } else if (serde.contains("orc")) {
       val options = tableDesc.properties.filterKeys(isOrcProperty) ++
           tableDesc.storage.properties
-      GpuOrcFileFormat.tagGpuSupport(this, spark, options, cmd.query.schema)
+      GpuOrcFileFormat.tagGpuSupport(this, spark, options.toMap, cmd.query.schema)
     } else {
       willNotWorkOnGpu(s"unsupported serde detected: $serde")
     }

@@ -16,12 +16,14 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RunnableCommandRule, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
 
 import org.apache.spark.sql.Strategy
+import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -43,14 +45,44 @@ trait DeltaProvider {
 
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
+  def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean
+
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
   def getReadFileFormat(format: FileFormat): FileFormat
+
+  def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
+
+  def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit
+
+  def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec
+
+  def tagForGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit
+
+  def convertToGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec
+
+  def tagForGpu(cpuExec: AppendDataExecV1,meta: AppendDataExecV1Meta): Unit
+
+  def convertToGpu(cpuExec: AppendDataExecV1, meta: AppendDataExecV1Meta): GpuExec
+
+  def tagForGpu(cpuExec: OverwriteByExpressionExecV1, meta: OverwriteByExpressionExecV1Meta): Unit
+
+  def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec
 }
 
 object DeltaProvider {
   private lazy val provider = {
-    ShimLoader.newDeltaProbe().getDeltaProvider
+    ShimLoaderTemp.newDeltaProbe().getDeltaProvider
   }
 
   def apply(): DeltaProvider = provider
@@ -69,9 +101,57 @@ object NoDeltaProvider extends DeltaProvider {
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = false
 
+  override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = false
+
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     throw new IllegalStateException("unsupported format")
 
   override def getReadFileFormat(format: FileFormat): FileFormat =
     throw new IllegalStateException("unsupported format")
+
+  override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false
+
+  override def tagForGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): Unit = {
+    throw new IllegalStateException("catalog not supported, should not be called")
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicCreateTableAsSelectExec,
+      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
+    throw new IllegalStateException("catalog not supported, should not be called")
+  }
+
+  override def tagForGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
+    throw new IllegalStateException("catalog not supported, should not be called")
+  }
+
+  override def convertToGpu(
+      cpuExec: AtomicReplaceTableAsSelectExec,
+      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
+    throw new IllegalStateException("catalog not supported, should not be called")
+  }
+
+  override def tagForGpu(cpuExec: AppendDataExecV1, meta: AppendDataExecV1Meta): Unit = {
+    throw new IllegalStateException("write not supported, should not be called")
+  }
+
+  override def convertToGpu(cpuExec: AppendDataExecV1, meta: AppendDataExecV1Meta): GpuExec = {
+    throw new IllegalStateException("write not supported, should not be called")
+  }
+
+  override def tagForGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): Unit = {
+    throw new IllegalStateException("write not supported, should not be called")
+  }
+
+  override def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec = {
+    throw new IllegalStateException("write not supported, should not be called")
+  }
 }

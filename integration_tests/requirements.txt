@@ -17,3 +17,4 @@ pandas
 pyarrow
 pytest-xdist >= 2.0.0
 findspark
+fastparquet == 0.8.3

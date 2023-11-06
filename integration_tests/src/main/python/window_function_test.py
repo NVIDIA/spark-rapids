@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from pyspark.sql.types import NumericType
+from pyspark.sql.types import DateType, TimestampType, NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_320, is_databricks113_or_later, spark_version
@@ -494,9 +494,18 @@ def test_window_running_no_part(b_gen, batch_size):
             'dense_rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
-            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
+            'FIRST(b) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+            'FIRST(b, TRUE) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
+            'NTH_VALUE(b, 1) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls']
+
     if isinstance(b_gen.data_type, NumericType) and not isinstance(b_gen, FloatGen) and not isinstance(b_gen, DoubleGen):
         query_parts.append('sum(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
+
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
+        query_parts.append('NTH_VALUE(b, 1) IGNORE NULLS OVER '
+                           '(ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : two_col_df(spark, UniqueLongGen(), b_gen, length=1024 * 14),
@@ -506,6 +515,62 @@ def test_window_running_no_part(b_gen, batch_size):
         ' from window_agg_table ',
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
+
+
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Testing multiple batch sizes.
+@pytest.mark.parametrize('a_gen', integral_gens + [string_gen, date_gen, timestamp_gen], ids=meta_idfn('data:'))
+def test_running_window_without_partitions_runs_batched(a_gen, batch_size):
+    """
+    This tests the running window optimization as applied to RANGE-based window specifications,
+    so long as the bounds are defined as [UNBOUNDED PRECEDING, CURRENT ROW]. 
+    This test verifies the following:
+      1. All tested aggregations invoke `GpuRunningWindowExec`, indicating that the running window
+         optimization is in effect.
+      2. The execution is batched, i.e. does not require that the entire input is loaded at once.
+      3. The CPU and GPU runs produce the same results, regardless of batch size.
+      
+    Note that none of the ranking functions (including ROW_NUMBER) can be tested as a RANGE query.
+    By definition, ranking functions require ROW frames.
+
+    Note, also, that the order-by column is not generated via `UniqueLongGen()`.  This is specifically
+    to test the case where `CURRENT ROW` might include more than a single row (as is possible in
+    RANGE queries).  To mitigate the occurrence of non-deterministic results, the order-by column
+    is also used in the aggregation.  This way, regardless of order, the same value is aggregated.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = [
+        'COUNT(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS count_col',
+        'MIN(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS min_col',
+        'MAX(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS max_col',
+        'FIRST(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+        'FIRST(a, TRUE) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
+        'NTH_VALUE(a, 1) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls'
+    ]
+
+    def must_test_sum_aggregation(gen):
+        if isinstance(gen, DateType) or isinstance(gen.data_type, TimestampType):
+            return False  # These types do not support SUM().
+        # For Float/Double types, skip `SUM()` test. This is tested in test_running_float_sum_no_part.
+        return isinstance(gen.data_type, NumericType) and \
+            not isinstance(gen, FloatGen) and not isinstance(gen, DoubleGen)
+
+    if must_test_sum_aggregation(a_gen):
+        query_parts.append('SUM(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sum_col')
+
+    if spark_version() >= "3.2.1":
+        query_parts.append('NTH_VALUE(a, 1) IGNORE NULLS OVER '
+                           '(ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, StructGen([('a', a_gen)], nullable=False), length=1024*14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
+        conf = conf)
+
 
 # Test that we can do a running window sum on floats and doubles.  This becomes problematic because we do the agg in parallel
 # which means that the result can switch back and forth from Inf to not Inf depending on the order of aggregations.
@@ -533,6 +598,39 @@ def test_running_float_sum_no_part(batch_size):
         ' from window_agg_table ',
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
+
+
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Tests different batch sizes.
+def test_running_window_float_sum_without_partitions_runs_batched(batch_size):
+    """
+    This test is very similar to test_running_float_sum_no_part, except that it checks that RANGE window SUM
+    aggregations can run in batched mode.
+    Note that in the RANGE case, the test needs to check the case where there are repeats in the order-by column.
+    This covers the case where `CURRENT ROW` might refer to multiple rows in the order-by column. This does introduce
+    the possibility of non-deterministic results, because the ordering with repeated values isn't deterministic.
+    This is mitigated by aggregating on the same column as the order-by column, such that the same value is aggregated
+    for the repeated keys.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.variableFloatAgg.enabled': True,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['b',
+                   'SUM(CAST(b AS DOUBLE)) OVER (ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS shrt_dbl_sum',
+                   'SUM(ABS(dbl)) OVER (ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS dbl_sum',
+                   'SUM(CAST(b AS FLOAT)) OVER (ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS shrt_flt_sum',
+                   'SUM(ABS(flt)) OVER (ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS flt_sum']
+
+    gen = StructGen([('b', short_gen), ('flt', float_gen), ('dbl', double_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, gen, length=1024 * 14),
+        "window_agg_table",
+        'SELECT ' +
+        ', '.join(query_parts) +
+        ' FROM window_agg_table ',
+        validate_execs_in_gpu_plan=['GpuRunningWindowExec'],
+        conf=conf)
+
 
 # Rank aggregations are running window aggregations but they care about the ordering. In most tests we don't
 # allow duplicate ordering, because that makes the results ambiguous. If two rows end up being switched even
@@ -604,11 +702,19 @@ def test_window_running(b_gen, c_gen, batch_size):
             'dense_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
-            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
+            'FIRST(c) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
+            'FIRST(c, TRUE) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
+            'NTH_VALUE(c, 1) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls']
 
     # Decimal precision can grow too large. Float and Double can get odd results for Inf/-Inf because of ordering
     if isinstance(c_gen.data_type, NumericType) and (not isinstance(c_gen, FloatGen)) and (not isinstance(c_gen, DoubleGen)) and (not isinstance(c_gen, DecimalGen)):
         query_parts.append('sum(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
+
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
+        query_parts.append('NTH_VALUE(c, 1) IGNORE NULLS OVER '
+                           '(PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_ignore_nulls')
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : three_col_df(spark, UniqueLongGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
@@ -618,6 +724,71 @@ def test_window_running(b_gen, c_gen, batch_size):
         ' from window_agg_table ',
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Test different batch sizes.
+@pytest.mark.parametrize('part_gen', [int_gen, long_gen], ids=idfn)  # Partitioning is not really the focus of the test.
+@pytest.mark.parametrize('order_gen', [x for x in all_basic_gens_no_null if x not in boolean_gens] + [decimal_gen_32bit], ids=idfn)
+def test_range_running_window_runs_batched(part_gen, order_gen, batch_size):
+    """
+    This tests the running window optimization as applied to RANGE-based window specifications,
+    so long as the bounds are defined as [UNBOUNDED PRECEDING, CURRENT ROW].
+    This test verifies the following:
+      1. All tested aggregations invoke `GpuRunningWindowExec`, indicating that the running window
+         optimization is in effect.
+      2. The execution is batched, i.e. does not require that the entire input is loaded at once.
+      3. The CPU and GPU runs produce the same results, regardless of batch size.
+
+    Note that none of the ranking functions (including ROW_NUMBER) can be tested as a RANGE query.
+    By definition, ranking functions require ROW frames.
+
+    Note, also, that the order-by column is not generated via `UniqueLongGen()`.  This is specifically
+    to test the case where `CURRENT ROW` might include more than a single row (as is possible in
+    RANGE queries).  To mitigate the occurrence of non-deterministic results, the order-by column
+    is also used in the aggregation.  This way, regardless of order, the same value is aggregated.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.variableFloatAgg.enabled': True,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    window = "(PARTITION BY p ORDER BY oby RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) "
+    query_parts = [
+        'p', 'oby',
+        'COUNT(oby) OVER        ' + window + ' AS count_col',
+        'MIN(oby) OVER          ' + window + ' AS min_col',
+        'MAX(oby) OVER          ' + window + ' AS max_col',
+        'FIRST(oby) OVER        ' + window + ' AS first_keep_nulls',
+        'FIRST(oby, TRUE) OVER  ' + window + ' AS first_ignore_nulls',
+        'NTH_VALUE(oby, 1) OVER ' + window + ' AS nth_1_keep_nulls'
+    ]
+
+    def must_test_sum_aggregation(gen):
+        if isinstance(gen, DateType) or isinstance(gen.data_type, TimestampType):
+            return False  # These types do not support SUM().
+        # For Float/Double types, skip `SUM()` test. This is tested later.
+        # Decimal precision can grow too large. Float and Double can get odd results for Inf/-Inf because of ordering
+        return isinstance(gen.data_type, NumericType) and \
+            not isinstance(gen, FloatGen) and not isinstance(gen, DoubleGen) and not isinstance(gen, DecimalGen)
+
+    if must_test_sum_aggregation(order_gen):
+        query_parts.append('SUM(oby) OVER ' + window + ' AS sum_col')
+
+    # The option to IGNORE NULLS in NTH_VALUE is not available prior to Spark 3.2.1.
+    if spark_version() >= "3.2.1":
+        query_parts.append('NTH_VALUE(oby, 1) IGNORE NULLS OVER ' + window + ' AS nth_1_ignore_nulls')
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark,
+                             StructGen([('p', RepeatSeqGen(part_gen, length=100)),
+                                        ('oby', order_gen)], nullable=False),
+                             length=1024*14),
+        "window_agg_table",
+        'SELECT ' +
+        ', '.join(query_parts) +
+        ' FROM window_agg_table ',
+        validate_execs_in_gpu_plan=['GpuRunningWindowExec'],
+        conf=conf)
+
 
 # Test that we can do a running window sum on floats and doubles and decimal. This becomes problematic because we do the agg in parallel
 # which means that the result can switch back and forth from Inf to not Inf depending on the order of aggregations.
@@ -648,6 +819,50 @@ def test_window_running_float_decimal_sum(batch_size):
         ' from window_agg_table ',
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
+
+
+@approximate_float
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Test different batch sizes.
+def test_range_running_window_float_decimal_sum_runs_batched(batch_size):
+    """
+    This test is very similar to test_window_running_float_decimal_sum, except that it checks that RANGE window SUM
+    aggregations can run in batched mode.
+    Note that in the RANGE case, the test needs to check the case where there are repeats in the order-by column.
+    This covers the case where `CURRENT ROW` might refer to multiple rows in the order-by column. This does introduce
+    the possibility of non-deterministic results, because the ordering with repeated values isn't deterministic.
+    This is mitigated by aggregating on the same column as the order-by column, such that the same value is aggregated
+    for the repeated keys.
+    """
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.variableFloatAgg.enabled': True,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+
+    def window(oby_column):
+        return "(PARTITION BY p ORDER BY " + oby_column + " RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) "
+
+    query_parts = [
+        'p', 'oby',
+        'SUM(CAST(oby AS DOUBLE)) OVER       ' + window('CAST(oby AS DOUBLE)') + '       AS short_double_sum',
+        'SUM(ABS(dbl)) OVER                  ' + window('ABS(dbl)') + '                  AS double_sum',
+        'SUM(CAST(oby AS FLOAT)) OVER        ' + window('CAST(oby AS FLOAT)') + '        AS short_float_sum',
+        'SUM(ABS(flt)) OVER                  ' + window('ABS(flt)') + '                  AS float_sum',
+        'SUM(CAST(oby AS DECIMAL(6,1))) OVER ' + window('CAST(oby AS DECIMAL(6,1))') + ' AS dec_sum'
+    ]
+
+    gen = StructGen([('p', RepeatSeqGen(int_gen, length=1000)),
+                     ('oby', short_gen),
+                     ('flt', float_gen),
+                     ('dbl', double_gen)], nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, gen, length=1024 * 14),
+        "window_agg_table",
+        'SELECT ' +
+        ', '.join(query_parts) +
+        ' FROM window_agg_table ',
+        validate_execs_in_gpu_plan=['GpuRunningWindowExec'],
+        conf=conf)
+
 
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
@@ -689,7 +904,7 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
             return df.withColumn('lead_def_c', f.lead('c', 2, None).over(base_window_spec)) \
                      .withColumn('lag_def_c', f.lag('c', 4, None).over(base_window_spec))
         else:
-            default_val = gen_scalar_value(c_gen, force_no_nulls=False)
+            default_val = with_cpu_session(lambda spark: gen_scalar_value(c_gen, force_no_nulls=False))
             return df.withColumn('inc_max_c', f.max('c').over(inclusive_window_spec)) \
                      .withColumn('inc_min_c', f.min('c').over(inclusive_window_spec)) \
                      .withColumn('lead_def_c', f.lead('c', 2, default_val).over(base_window_spec)) \

@@ -20,7 +20,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.nvidia</groupId>
-    <artifactId>rapids-4-spark-parent</artifactId>
+    <artifactId>rapids-4-spark-parent_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
     <version>23.12.0-SNAPSHOT</version>
@@ -80,12 +80,21 @@
         <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
+
+        <!--
+            Workaround to enforce the build order
+            ROOT -> jdk-profiles -> shim-deps -> ...
+        -->
+        <module>shim-deps</module>
+        <module>jdk-profiles</module>
     </modules>
     <profiles>
         <profile>
             <id>release311</id>
             <activation>
+                <!-- #if scala-2.12 -->
                 <activeByDefault>true</activeByDefault>
+                <!-- #endif scala-2.12 -->
                 <property>
                     <name>buildver</name>
                     <value>311</value>
@@ -264,12 +273,6 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark321db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
                 <spark.version>${spark321db.version}</spark.version>
                 <spark.test.version>${spark321db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -284,6 +287,9 @@
         <profile>
             <id>release330</id>
             <activation>
+                <!-- #if scala-2.13 --><!--
+                <activeByDefault>true</activeByDefault>
+                --><!-- #endif scala-2.13 -->
                 <property>
                     <name>buildver</name>
                     <value>330</value>
@@ -299,6 +305,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -319,6 +326,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -339,6 +347,7 @@
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -354,12 +363,12 @@
                 <spark.version>${spark333.version}</spark.version>
                 <spark.test.version>${spark333.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark333.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -422,6 +431,7 @@
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -444,6 +454,7 @@
                 <module>shim-deps/cloudera</module>
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
+                <module>delta-lake/delta-23x</module>
             </modules>
         </profile>
         <profile>
@@ -460,12 +471,6 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark330db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
                 <spark.version>${spark330db.version}</spark.version>
                 <spark.test.version>${spark330db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -492,12 +497,6 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark332db</spark.version.classifier>
-                <!--
-                     Note that we are using the Spark version for all of the Databricks dependencies as well.
-                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
-                     This is to make it easier and not have to change version numbers for each individual dependency
-                     and deal with differences between Databricks versions
-                -->
                 <spark.version>${spark332db.version}</spark.version>
                 <spark.test.version>${spark332db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -523,7 +522,6 @@
                 <spark.version>${spark350.version}</spark.version>
                 <spark.test.version>${spark350.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark350.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
@@ -552,21 +550,17 @@
             </build>
         </profile>
         <profile>
-            <id>jdk11</id>
+            <id>scala-2.12</id>
             <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>11</maven.compiler.release>
-                <maven.compiler.source>11</maven.compiler.source>
-                <maven.compiler.target>11</maven.compiler.target>
+                <scala.binary.version>2.12</scala.binary.version>
+                <scala.version>2.12.15</scala.version>
             </properties>
         </profile>
         <profile>
-            <id>jdk17</id>
+            <id>scala-2.13</id>
             <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>17</maven.compiler.release>
-                <maven.compiler.source>17</maven.compiler.source>
-                <maven.compiler.target>17</maven.compiler.target>
+                <scala.binary.version>2.13</scala.binary.version>
+                <scala.version>2.13.8</scala.version>
             </properties>
         </profile>
         <profile>
@@ -578,6 +572,7 @@
     </profiles>
 
     <properties>
+        <rapids.module>.</rapids.module>
         <allowConventionalDistJar>false</allowConventionalDistJar>
         <buildver>311</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -716,6 +711,10 @@
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
+        <premergeScala213.buildvers>
+            332,
+            340
+        </premergeScala213.buildvers>
         <jdk11.buildvers>
             312,
             321,
@@ -730,6 +729,21 @@
             ${snapshot.buildvers},
             ${databricks.buildvers},
         </all.buildvers>
+        <noSnapshotScala213.buildvers>
+            330,
+            331,
+            332,
+            333,
+            340,
+            341,
+            350
+        </noSnapshotScala213.buildvers>
+        <snapshotScala213.buildvers>
+        </snapshotScala213.buildvers>
+        <allScala213.buildvers>
+            ${noSnapshotScala213.buildvers}
+            ${snapshotScala213.buildvers}
+        </allScala213.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
         <cpd.sourceType>main</cpd.sourceType>
         <!-- SPARK-36796 for JDK-17 test-->
@@ -1042,17 +1056,41 @@
                             <arg>-deprecation</arg>
                             <arg>-feature</arg>
                             <arg>-explaintypes</arg>
-                            <arg>-Yno-adapted-args</arg>
-                            <arg>-Ywarn-unused:imports,locals,patvars,privates</arg>
                             <arg>-Xlint:missing-interpolator</arg>
+                            <!-- #if scala-2.12 -->
+                            <arg>-Ywarn-unused:imports,locals,patvars,privates</arg>
+                            <arg>-Yno-adapted-args</arg>
                             <arg>-Xfatal-warnings</arg>
+                            <!-- #endif scala-2.12 -->
+                            <arg>-Wconf:cat=lint-adapted-args:e</arg>
+                            <arg>-Xsource:2.13</arg>
+                            <!-- #if scala-2.13 --><!--
+                            <arg>-Ywarn-unused:locals,patvars,privates</arg>
+                            <arg>-Wconf:cat=deprecation:wv,any:e</arg>
+                            <arg>-Wconf:cat=scaladoc:wv</arg>
+                            <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
+                            <arg>-Wconf:cat=other-nullary-override:wv</arg>
+                            <arg>-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:s</arg>
+                            <arg>-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:s</arg>
+                            <arg>-Wconf:msg=Auto-application to \`\(\)\` is deprecated:s</arg>
+                            <arg>-Wconf:msg=method with a single empty parameter list overrides method without any parameter list:s</arg>
+                            <arg>-Wconf:msg=method without a parameter list overrides a method with a single empty one:s</arg>
+                            <arg>-Wconf:cat=deprecation&amp;msg=procedure syntax is deprecated:e</arg>
+                            <arg>-Wconf:cat=unchecked&amp;msg=outer reference:s</arg>
+                            <arg>-Wconf:cat=unchecked&amp;msg=eliminated by erasure:s</arg>
+                            <arg>-Wconf:msg=^(?=.*?a value of type)(?=.*?cannot also be).+$:s</arg>
+                            --><!-- #endif scala-2.13 -->
                         </args>
                         <jvmArgs>
                             <jvmArg>-Xms1024m</jvmArg>
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
                         <addJavacArgs>${scala.javac.args}</addJavacArgs>
-                        <secondaryCacheDir>${spark.rapids.source.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
+                        <secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
+                        <!-- #if scala-2.13 --><!--
+                        <compilerPlugins combine.self="override">
+                        </compilerPlugins>
+                        --><!-- #endif scala-2.13 -->
                     </configuration>
                 </plugin>
                 <plugin>
@@ -1190,7 +1228,17 @@
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
-                        <!-- TODO add buildver validation -->
+                        <requireJavaVersion>
+                            <message>Only Java 8, 11, and 17 are supported!</message>
+                            <version>[1.8,1.9),[11,12),[17,18)</version>
+                        </requireJavaVersion>
+                        <!-- #if scala-2.13 --><!--
+                        <requireProperty>
+                            <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
+                            <property>buildver</property>
+                            <regex>[3-9][3-9][0-9]</regex>
+                        </requireProperty>
+                        --><!-- #endif scala-2.13 -->
                       </rules>
                     </configuration>
                   </execution>
@@ -1228,7 +1276,7 @@
                 </configuration>
             </plugin>
 
-            <!--use this plugin to configure "spark.rapids.source.basedir" property-->
+            <!--use this plugin to configure "spark.rapids.project.basedir" property-->
             <plugin>
                 <groupId>org.commonjava.maven.plugins</groupId>
                 <artifactId>directory-maven-plugin</artifactId>
@@ -1241,7 +1289,7 @@
                         </goals>
                         <phase>initialize</phase>
                         <configuration>
-                            <property>spark.rapids.source.basedir</property>
+                            <property>spark.rapids.project.basedir</property>
                         </configuration>
                     </execution>
                 </executions>
@@ -1270,10 +1318,14 @@
                             <skip>${maven.scalastyle.skip}</skip>
                             <target>
                                 <pathconvert property="scalastyle.dirs" pathsep=" ">
-                                    <dirset dir="${project.basedir}" includes="**/src/main/scala"/>
-                                    <dirset dir="${project.basedir}" includes="**/src/main/*/scala"/>
-                                    <dirset dir="${project.basedir}" includes="**/src/test/scala"/>
-                                    <dirset dir="${project.basedir}" includes="**/src/test/*/scala"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/scala"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/*/scala"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/scala"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/*/scala"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/scala-${scala.binary.version}"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/main/*/scala-${scala.binary.version}"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/scala-${scala.binary.version}"/>
+                                    <dirset dir="${spark.rapids.source.basedir}" includes="**/src/test/*/scala-${scala.binary.version}"/>
                                 </pathconvert>
                                 <echo>Checking scalastyle for all modules using following paths:
                                     ${scalastyle.dirs}
@@ -1281,7 +1333,7 @@
                                 <java classname="org.scalastyle.Main" failonerror="true">
                                     <arg line="--verbose false"/>
                                     <arg line="--warnings false"/>
-                                    <arg line="--config scalastyle-config.xml"/>
+                                    <arg line="--config ${spark.rapids.source.basedir}/scalastyle-config.xml"/>
                                     <arg line="--xmlOutput ${project.basedir}/target/scalastyle-output.xml"/>
                                     <arg line="--inputEncoding ${project.build.sourceEncoding}"/>
                                     <arg line="--xmlEncoding ${project.reporting.outputEncoding}"/>
@@ -1297,7 +1349,17 @@
                         <configuration>
                             <skip>${maven.cleanall.skip}</skip>
                             <target>
-                                <dirset dir="${project.basedir}" includes="**/target" id="target.dirs.for.clean"/>
+                                <!-- #if scala-2.12 -->
+                                <dirset dir="${project.basedir}"
+                                    includes="**/target"
+                                    excludes="scala2.13/**"
+                                    id="target.dirs.for.clean"/>
+                                <!-- #endif scala-2.12 -->
+                                <!-- #if scala-2.13 --><!--
+                                <dirset dir="${project.basedir}"
+                                    includes="**/target"
+                                    id="target.dirs.for.clean"/>
+                                --><!-- #endif scala-2.13 -->
                                 <pathconvert property="target.dirs.str" pathsep=" ">
                                    <dirset refid="target.dirs.for.clean"/>
                                 </pathconvert>
@@ -1324,6 +1386,86 @@
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
+                        <id>update-highest-source-dir</id>
+                        <goals>
+                            <goal>regex-property</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <name>spark.rapids.source.basedir</name>
+                            <value>${spark.rapids.project.basedir}</value>
+                            <regex>\/scala[0-9.]+</regex>
+                            <replacement></replacement>
+                            <failIfNoMatch>false</failIfNoMatch>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>update-base-source-dir</id>
+                        <goals>
+                            <goal>regex-property</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <name>origbasedir</name>
+                            <value>${project.basedir}</value>
+                            <regex>\/scala[0-9.]+</regex>
+                            <replacement></replacement>
+                            <failIfNoMatch>false</failIfNoMatch>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>update-shimplify-base-source-dir</id>
+                        <goals>
+                            <goal>regex-property</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <name>shimplify.src.basedir</name>
+                            <value>${project.basedir}</value>
+                            <regex>\/scala[0-9.]+</regex>
+                            <replacement></replacement>
+                            <failIfNoMatch>false</failIfNoMatch>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <!-- #if scala-2.12 -->
+                                <source>${project.basedir}/src/main/scala-${scala.binary.version}</source>
+                                <!-- #endif scala-2.12 -->
+                                <!-- #if scala-2.13 --><!--
+                                <source>${project.basedir}/../../${rapids.module}/src/main/java</source>
+                                <source>${project.basedir}/../../${rapids.module}/src/main/scala</source>
+                                <source>${project.basedir}/../../${rapids.module}/src/main/scala-${scala.binary.version}</source>
+                                --><!-- #endif scala-2.13 -->
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>add-test-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <!-- #if scala-2.12 -->
+                                <source>${project.basedir}/src/test/scala-${scala.binary.version}</source>
+                                <!-- #endif scala-2.12 -->
+                                <!-- #if scala-2.13 --><!--
+                                <source>${project.basedir}/../../${rapids.module}/src/test/java</source>
+                                <source>${project.basedir}/../../${rapids.module}/src/test/scala</source>
+                                <source>${project.basedir}/../../${rapids.module}/src/test/scala-${scala.binary.version}</source>
+                                --><!-- #endif scala-2.13 -->
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>add-shimple-sources</id>
                         <phase>generate-sources</phase>
                         <goals><goal>add-source</goal></goals>
@@ -1343,6 +1485,44 @@
                                 <source>${spark.shim.dest}/test/scala</source>
                                 <source>${spark.shim.dest}/test/java</source>
                             </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-resources</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>add-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <!-- #if scala-2.12 -->
+                                    <directory>${project.basedir}/src/main/resources</directory>
+                                    <!-- #endif scala-2.12 -->
+                                    <!-- #if scala-2.13 --><!--
+                                    <directory>${project.basedir}/../../${rapids.module}/src/main/resources</directory>
+                                    --><!-- #endif scala-2.13 -->
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-test-resources</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>add-test-resource</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <!-- #if scala-2.12 -->
+                                    <directory>${project.basedir}/src/test/resources</directory>
+                                    <!-- #endif scala-2.12 -->
+                                    <!-- #if scala-2.13 --><!--
+                                    <directory>${project.basedir}/../../${rapids.module}/src/test/resources</directory>
+                                    --><!-- #endif scala-2.13 -->
+                                </resource>
+                            </resources>
                         </configuration>
                     </execution>
                 </executions>

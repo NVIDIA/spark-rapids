@@ -36,6 +36,7 @@ jobs:
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
       sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
+      scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -78,6 +79,23 @@ jobs:
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
           echo "jdkVersions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
 
+          SCALA_BINARY_VER=2.13
+          . jenkins/version-def.sh
+          svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
+          svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
+          # get private artifact version
+          privateVer=$(mvn help:evaluate -q -pl dist -Dexpression=spark-rapids-private.version -DforceStdout)
+          # do not add empty snapshot versions or when private version is released one (does not include snapshot shims)
+          if [[ ${#SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]} -gt 0 && $privateVer == *"-SNAPSHOT" ]]; then
+            svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
+            svArrBodySnapshot=${svArrBodySnapshot:1}
+            svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
+          else
+            svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot)
+          fi
+
+          echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
+
   package-tests:
     needs: get-shim-versions-from-dist
     continue-on-error: ${{ matrix.isSnapshot }}
@@ -115,6 +133,53 @@ jobs:
             -Drat.skip=true \
             ${{ env.COMMON_MVN_FLAGS }}
 
+  package-tests-scala213:
+    needs: get-shim-versions-from-dist
+    continue-on-error: ${{ matrix.isSnapshot }}
+    strategy:
+      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 8
+
+      - name: check runtime before tests
+        run: |
+          env | grep JAVA
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+
+      - name: package tests check
+        run: |
+          # https://github.com/NVIDIA/spark-rapids/issues/8847
+          # specify expected versions
+          export JAVA_HOME=${JAVA_HOME_8_X64}
+          export PATH=${JAVA_HOME}/bin:${PATH}
+          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+          # verify Scala 2.13 build files
+          ./build/make-scala-version-build-files.sh 2.13
+          # verify git status
+          if ! git diff --exit-code 'scala2.13/*'; then
+              echo "Generated Scala 2.13 build files don't match what's in repository"
+              exit 1
+          fi
+          # change to Scala 2.13 Directory
+          cd scala2.13
+          # test command
+          mvn -Dmaven.wagon.http.retryHandler.count=3 -B package \
+            -pl integration_tests,tests -am \
+            -P 'individual,pre-merge' \
+            -Dbuildver=${{ matrix.spark-version }} \
+            -Dmaven.scalastyle.skip=true \
+            -Drat.skip=true \
+            ${{ env.COMMON_MVN_FLAGS }}
+
+
   verify-all-modules:
     needs: get-shim-versions-from-dist
     runs-on: ubuntu-latest
@@ -143,7 +208,7 @@ jobs:
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify \
-            -P "individual,pre-merge,jdk${{ matrix.java-version }}" \
+            -P "individual,pre-merge" \
             -Dbuildver=${{ matrix.spark-version }} \
             ${{ env.COMMON_MVN_FLAGS }}
 
@@ -174,11 +239,11 @@ jobs:
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
           # specify expected versions
-          export JAVA_HOME=export JAVA_HOME=${JAVA_HOME_11_X64}
+          export JAVA_HOME=${JAVA_HOME_11_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command
           ./mvnw -Dmaven.wagon.http.retryHandler.count=3 -B install \
-            -P "individual,pre-merge,jdk11" \
+            -P "individual,pre-merge" \
             -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
             ${{ env.COMMON_MVN_FLAGS }}
