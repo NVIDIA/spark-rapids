@@ -660,8 +660,8 @@ This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
 ### Float to String
 
-The GPU will use different precision than Java's toString method when converting floating-point data
-types to strings. As a result the computed string can differ from the default behavior in Spark.
+The GPU use [ryu](https://github.com/ulfjack/ryu) as the solution when converting floating-point data
+types to strings. As a result the computed string can differ from the output of Spark in some cases: sometimes the output is shorter (which is arguably more accurate) and sometimes the output may differ in the precise digits output.
 
 The `format_number` function will retain 10 digits of precision for the GPU when the input is a floating 
 point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
