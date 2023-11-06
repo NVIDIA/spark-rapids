@@ -681,7 +681,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date

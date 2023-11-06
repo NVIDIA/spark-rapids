@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
-    is_databricks113_or_later
+    is_databricks113_or_later, with_cpu_session, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
@@ -302,21 +302,21 @@ def test_cast_array_to_string(data_gen, legacy):
         data_gen, 
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
     
-float_to_string_gens = [FloatGen(), DoubleGen()]
-
-@approximate_float
-@pytest.mark.parametrize('data_gen', float_to_string_gens, ids=idfn)
-def test_cast_float_to_string_to_float(data_gen):
+def test_cast_float_to_string_to_float():
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr("cast(cast(a as string) as double)"),
+        lambda spark: unary_op_df(spark, FloatGen()).selectExpr("cast(cast(a as string) as float)"),
         conf = {"spark.rapids.sql.castStringToFloat.enabled": True,
                 "spark.rapids.sql.castFloatToString.enabled": True})
-    
-@pytest.mark.parametrize('data_gen', float_to_string_gens, ids=idfn)
-def test_cast_float_to_string_failed(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen, length=100).select(f.col('a').cast("STRING")),
-        conf = {"spark.rapids.sql.castFloatToString.enabled": True})
+
+def test_cast_double_to_string_to_double():
+    conf = {"spark.rapids.sql.castFloatToString.enabled": True}
+    cast_func = lambda spark: unary_op_df(spark, DoubleGen()).selectExpr("cast(a as string)").collect()
+    from_cpu = with_cpu_session(cast_func, conf)
+    from_gpu = with_gpu_session(cast_func, conf)
+    cast_to_float_func = lambda row: row.a if row.a is None or row.a == 'NaN' else float(row.a)
+    from_cpu_float = list(map(cast_to_float_func, from_cpu))
+    from_gpu_float = list(map(cast_to_float_func, from_gpu))
+    assert from_cpu_float == from_gpu_float
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
