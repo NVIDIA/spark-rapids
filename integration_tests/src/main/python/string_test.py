@@ -346,7 +346,7 @@ def test_unsupported_fallback_endswith():
 
 def test_concat_ws_basic():
     gen = StringGen(nullable=True)
-    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: binary_op_df(spark, gen).select(
                 f.concat_ws("-"),
@@ -365,7 +365,7 @@ def test_concat_ws_basic():
 
 def test_concat_ws_arrays():
     gen = ArrayGen(StringGen(nullable=True), nullable=True)
-    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    (s1, s2) = with_cpu_session(lambda spark: gen_scalars(gen, 2, force_no_nulls=True))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: binary_op_df(spark, gen).select(
                 f.concat_ws("*", f.array(f.lit('2'), f.lit(''), f.lit('3'), f.lit('Z'))),
@@ -536,7 +536,7 @@ def test_ephemeral_substring():
 def test_repeat_scalar_and_column():
     gen_s = StringGen(nullable=False)
     gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0], nullable=True)
-    (s,) = gen_scalars_for_sql(gen_s, 1)
+    (s,) = with_cpu_session(lambda spark: gen_scalars_for_sql(gen_s, 1))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen_r).selectExpr(
                 'repeat({}, a)'.format(s),
@@ -796,4 +796,50 @@ def test_conv_dec_to_from_hex(from_base, to_base, pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).select('a', f.conv(f.col('a'), from_base, to_base)),
         conf={'spark.rapids.sql.expression.Conv': True}
+    )
+
+format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0), 
+                                      DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5), 
+                                      DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10), 
+                                      DecimalGen(precision=38, scale=-10), 
+                                      DecimalGen(precision=38, scale=30, special_cases=[Decimal('0.000125')]),
+                                      DecimalGen(precision=38, scale=32, special_cases=[Decimal('0.000125')]),
+                                      DecimalGen(precision=38, scale=37, special_cases=[Decimal('0.000125')])]
+
+@pytest.mark.parametrize('data_gen', format_number_gens, ids=idfn)
+def test_format_number_supported(data_gen):
+    gen = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, -2)',
+            'format_number(a, 0)',
+            'format_number(a, 1)',
+            'format_number(a, 5)',
+            'format_number(a, 10)',
+            'format_number(a, 13)',
+            'format_number(a, 30)',
+            'format_number(a, 100)')
+    )
+
+float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
+format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=15)]
+
+@pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
+def test_format_number_float_limited(data_gen):
+    gen = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'format_number(a, 5)'),
+        conf = float_format_number_conf
+    )
+
+# format_number for float/double is disabled by default due to compatibility issue
+# GPU will generate result with less precision than CPU
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_format_number_float_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'format_number(a, 5)'),
+        'FormatNumber'
     )

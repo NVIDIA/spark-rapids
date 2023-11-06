@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "311"}
 {"spark": "312"}
@@ -29,16 +30,16 @@
 {"spark": "330cdh"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, ColumnView}
 import com.nvidia.spark.rapids.jni.CastStrings
 
 object GpuCastShims {
-  def CastDecimalToString(decimalInput: ColumnView, ansiMode: Boolean): ColumnVector = {
+  def CastDecimalToString(decimalInput: ColumnView, usePlainString: Boolean): ColumnVector = {
     CastStrings.fromDecimal(decimalInput)
   }
 }

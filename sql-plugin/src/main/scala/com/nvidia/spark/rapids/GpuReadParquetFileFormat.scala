@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,14 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -58,6 +61,25 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       options,
       alluxioPathReplacementMap)
     PartitionReaderIterator.buildReader(factory)
+  }
+
+  override def isPerFileReadEnabled(conf: RapidsConf): Boolean = conf.isParquetPerFileReadEnabled
+
+  override def createMultiFileReaderFactory(
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    GpuParquetMultiFilePartitionReaderFactory(
+      fileScan.conf,
+      broadcastedConf,
+      fileScan.relation.dataSchema,
+      fileScan.requiredSchema,
+      fileScan.readPartitionSchema,
+      pushedFilters,
+      fileScan.rapidsConf,
+      fileScan.allMetrics,
+      fileScan.queryUsesInputFile,
+      fileScan.alluxioPathsMap)
   }
 }
 

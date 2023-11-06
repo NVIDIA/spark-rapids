@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,7 +90,13 @@ case class CatalystExpressionBuilder(private val function: AnyRef) extends Loggi
     if (compiled.isEmpty) {
       logDebug(s"[CatalystExpressionBuilder] failed to compile")
     } else {
-      logDebug(s"[CatalystExpressionBuilder] compiled expression: ${compiled.get.toString}")
+      val expr = compiled.get
+      val internal = expr.find(_.isInstanceOf[Repr.CompilerInternal])
+      internal.foreach { e =>
+        throw new IllegalStateException(
+          s"compiled UDF has compiler internal expression $e: $expr")
+      }
+      logDebug(s"[CatalystExpressionBuilder] compiled expression: $expr")
     }
 
     compiled
@@ -126,7 +132,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) extends Loggi
   @tailrec
   private def doCompile(worklist: List[BB],
       states: Map[BB, State],
-      pending: Map[BB, Int] = cfg.predecessor.mapValues(_.size),
+      pending: Map[BB, Int] = cfg.predecessor.mapValues(_.size).toMap,
       visited: Set[BB] = Set()): Option[Expression] = {
     /**
      * Pick the first block, and store the rest of the list in [[rest]].

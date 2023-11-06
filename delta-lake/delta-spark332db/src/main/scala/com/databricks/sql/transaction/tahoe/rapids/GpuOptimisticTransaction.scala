@@ -72,7 +72,7 @@ class GpuOptimisticTransaction(
    * @param deltaLog   The Delta Log for the table this transaction is modifying.
    * @param rapidsConf RAPIDS Accelerator config settings
    */
-  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) {
+  def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
     this(deltaLog, deltaLog.update(), rapidsConf)
   }
 
@@ -238,9 +238,11 @@ class GpuOptimisticTransaction(
           }.toMap
       }
 
-      val gpuFileFormat = deltaLog.fileFormat(metadata) match {
-        case _: DeltaParquetFileFormat => new GpuParquetFileFormat
-        case f => throw new IllegalStateException(s"file format $f is not supported")
+      val deltaFileFormat = deltaLog.fileFormat(metadata)
+      val gpuFileFormat = if (deltaFileFormat.getClass == classOf[DeltaParquetFileFormat]) {
+        new GpuParquetFileFormat
+      } else {
+        throw new IllegalStateException(s"file format $deltaFileFormat is not supported")
       }
 
       try {

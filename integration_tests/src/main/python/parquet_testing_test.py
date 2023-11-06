@@ -20,7 +20,7 @@ from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_pre
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
-from spark_session import is_before_spark_330
+from spark_session import is_before_spark_330, is_spark_350_or_later
 import warnings
 
 _rebase_confs = {
@@ -39,11 +39,8 @@ _java_reader_confs = copy_and_update(
 # When the association is a pair rather than a string, it's a way to xfail the test
 # by providing the error string and xfail reason.
 _error_files = {
-    "fixed_length_byte_array.parquet": "Exception",
     "large_string_map.brotli.parquet": "Exception",
-    "lz4_raw_compressed.parquet": "Exception",
-    "lz4_raw_compressed_larger.parquet": "Exception",
-    "nation.dict-malformed.parquet": ("Exception", "https://github.com/NVIDIA/spark-rapids/issues/8644"),
+    "nation.dict-malformed.parquet": "Exception",
     "non_hadoop_lz4_compressed.parquet": "Exception",
     "PARQUET-1481.parquet": "Exception",
 }
@@ -52,6 +49,7 @@ _error_files = {
 # xfail reason message.
 _xfail_files = {
     "byte_array_decimal.parquet": "https://github.com/NVIDIA/spark-rapids/issues/8629",
+    "fixed_length_byte_array.parquet": "https://github.com/rapidsai/cudf/issues/14104",
     "datapage_v2.snappy.parquet": "datapage v2 not supported by cudf",
     "delta_binary_packed.parquet": "https://github.com/rapidsai/cudf/issues/13501",
     "delta_byte_array.parquet": "https://github.com/rapidsai/cudf/issues/13501",
@@ -61,10 +59,17 @@ _xfail_files = {
     "hadoop_lz4_compressed.parquet": "cudf does not support Hadoop LZ4 format",
     "hadoop_lz4_compressed_larger.parquet": "cudf does not support Hadoop LZ4 format",
     "nested_structs.rust.parquet": "PySpark cannot handle year 52951",
-    "repeated_no_annotation.parquet": "https://github.com/NVIDIA/spark-rapids/issues/8631",
 }
 if is_before_spark_330():
     _xfail_files["rle_boolean_encoding.parquet"] = "Spark CPU cannot decode V2 style RLE before 3.3.x"
+
+# Spark 3.5.0 adds support for lz4_raw compression codec, but we do not support that on GPU yet
+if is_spark_350_or_later():
+    _xfail_files["lz4_raw_compressed.parquet"] = "https://github.com/NVIDIA/spark-rapids/issues/9156"
+    _xfail_files["lz4_raw_compressed_larger.parquet"] = "https://github.com/NVIDIA/spark-rapids/issues/9156"
+else:
+    _error_files["lz4_raw_compressed.parquet"] = "Exception"
+    _error_files["lz4_raw_compressed_larger.parquet"] = "Exception"
 
 def locate_parquet_testing_files():
     """

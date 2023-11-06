@@ -2,14 +2,14 @@
 
 In order to do scale testing we need a way to generate lots of data in a
 deterministic way that gives us control over the number of unique values
-in a column, the skew of the values in a column, and the correlation of 
+in a column, the skew of the values in a column, and the correlation of
 data between tables for joins. To accomplish this we wrote
 `org.apache.spark.sql.tests.datagen`.
 
 ## Setup Environment
 
-To get started with big data generation the first thing you need to do is 
-to include the appropriate jar on the classpath for your version of Apache Spark. 
+To get started with big data generation the first thing you need to do is
+to include the appropriate jar on the classpath for your version of Apache Spark.
 Note that this does not run on the GPU, but it does use parts of the shim framework
 that the RAPIDS Accelerator does. The jar is specific to the version of Spark you
 are using and is not pushed to Maven Central. Because of this you will have to
@@ -22,17 +22,14 @@ mvn clean package -Dbuildver=$SPARK_VERSION
 
 Where `$SPARK_VERSION` is a compressed version number, like 330 for Spark 3.3.0.
 
-If you are building with a jdk version that is not 8, you will need to add in the 
-corresponding profile flag `-P<jdk11|jdk17>`
-
-After this the jar should be at 
+After this the jar should be at
 `target/datagen_2.12-$PLUGIN_VERSION-spark$SPARK_VERSION.jar`
-for example a Spark 3.3.0 jar for the 23.10.0 release would be
-`target/datagen_2.12-23.10.0-spark330.jar`
+for example a Spark 3.3.0 jar for the 23.12.0 release would be
+`target/datagen_2.12-23.12.0-spark330.jar`
 
-To get a spark shell with this you can run 
+To get a spark shell with this you can run
 ```shell
-spark-shell --jars target/datagen_2.12-23.10.0-spark330.jar
+spark-shell --jars target/datagen_2.12-23.12.0-spark330.jar
 ```
 
 After that you should be good to go.
@@ -97,7 +94,7 @@ the [advanced control section](#advanced-control).
 Generating nearly random data that fits a schema is great, but we want
 to process this data in interesting ways, like doing a hash aggregate to see
 how well it scales. To do that we really need to have a way to configure
-the number of unique values that appear in a column. The 
+the number of unique values that appear in a column. The
 [Internal Details](#internal-details) section describes how this works
 but here we will control this by setting a seed range. Let's start off by creating
 10 million rows of data to be processed.
@@ -211,7 +208,7 @@ around this.
 
 ### NormalDistribution
 
-Often data is distributed in a normal or Gaussian like distribution. 
+Often data is distributed in a normal or Gaussian like distribution.
 `NormalDistribution` takes a mean and a standard deviation to provide a way to
 insert some basic skew into your data. Please note that this will clamp
 the produced values to the configured seed range, so if seed range is not large
@@ -268,15 +265,15 @@ dataTable.toDF(spark).groupBy("a").count().orderBy(desc("count")).show()
 
 ### MultiDistribution
 
-There are times when you might want to combine more than one distribution. Like 
+There are times when you might want to combine more than one distribution. Like
 having a `NormalDistribution` along with a `FlatDistribution` so that the data
 is skewed, but there is still nearly full coverage of the seed range. Of you could
 combine two `NormalDistribution` instances to have two different sized bumps at
 different key ranges. `MultiDistribution` allows you to do this. It takes a
-`Seq` of weight/`LocationToSeedMapping` pairs. The weights are relative to 
+`Seq` of weight/`LocationToSeedMapping` pairs. The weights are relative to
 each other and determine how often on mapping will be used vs another. If
-you wanted a `NormalDistribution` to be used 10 times as often as a 
-`FlatDistribution` you would give the normal a weight of 10 and the flat a 
+you wanted a `NormalDistribution` to be used 10 times as often as a
+`FlatDistribution` you would give the normal a weight of 10 and the flat a
 weight of 1.
 
 
@@ -316,7 +313,7 @@ only showing top 20 rows
 ## Multi-Column Keys
 
 With the basic tools provided we can now replicate a lot of processing. We can do
-complicated things like a join with a fact table followed by an aggregation. 
+complicated things like a join with a fact table followed by an aggregation.
 
 ```scala
 val dbgen = DBGen()
@@ -327,7 +324,7 @@ dataTable("join_key").setSeedRange(0, 999)
 dataTable("agg_key").setSeedRange(0, 9)
 val fdf = factTable.toDF(spark)
 val ddf = dataTable.toDF(spark)
-spark.time(fdf.join(ddf).groupBy("agg_key").agg(min("value"), 
+spark.time(fdf.join(ddf).groupBy("agg_key").agg(min("value"),
   max("value"), sum("value")).orderBy("agg_key").show())
 +--------------------+-----------+----------+-------------------+
 |             agg_key| min(value)|max(value)|         sum(value)|
@@ -363,12 +360,12 @@ generate the seed is normalized so that for each row the same seed is passed int
 all the generator functions. (This is not 100% correct for arrays and maps, but it
 is close enough). This results in the generated data being correlated with each
 other so that if you set a seed range of 1 to 200, you will get 200 unique values
-in each column, and 200 unique values for any combination of the keys in that 
+in each column, and 200 unique values for any combination of the keys in that
 key group.
 
 This should work with any distribution and any type you want. The key to making
 this work is that you need to configure the value ranges the same for both sets
-of corresponding keys. In most cases you want the types to be the same as well, 
+of corresponding keys. In most cases you want the types to be the same as well,
 but Spark supports equi-joins where the left and right keys are different types.
 The default generators for integral types should produce the same values for the
 same input keys if the value range is the same for both. This is not true for
@@ -433,15 +430,15 @@ command to the final data in a column.
 
 ### LocationToSeedMapping
 
-The first level maps the current location of a data item 
-(table, column, row + sub-row) to a single 64-bit seed. The 
+The first level maps the current location of a data item
+(table, column, row + sub-row) to a single 64-bit seed. The
 `LocationToSeedMapping` class handles this. That mapping should produce a
 seed that corresponds to the user provided seed range. But it has full
 control over how it wants to do that. It could favor some seed more than
 others, or simply go off of the row itself.
 
-You can manually set this for columns or sub-columns through the 
-`configureKeyGroup` API in a `TableGen`. Or you can call 
+You can manually set this for columns or sub-columns through the
+`configureKeyGroup` API in a `TableGen`. Or you can call
 `setSeedMapping` on a column or sub-column. Be careful not to mix the two
 because they can conflict with each other and there are no guard rails.
 
@@ -452,8 +449,8 @@ level. If the user does not configure nulls, or if the type is not nullable
 this never runs.
 
 This can be set on any column or sub-column by calling either `setNullProbability`
-which will install a `NullProbabilityGenerationFunction` or by calling the 
-`setNullGen` API on that item. 
+which will install a `NullProbabilityGenerationFunction` or by calling the
+`setNullGen` API on that item.
 
 ### LengthGeneratorFunction
 
@@ -463,9 +460,9 @@ to avoid data skew in the resulting column. This is because the naive way to gen
 where all possible lengths have an equal probability produces skew in the
 resulting values. A length of 0 has one and only one possible value in it.
 So if we restrict the length to 0 or 1, then half of all values generated will be
-zero length strings, which is not ideal. 
+zero length strings, which is not ideal.
 
-If you want to set the length of a String or Array you can navigate to the 
+If you want to set the length of a String or Array you can navigate to the
 column or sub-column you want and call `setLength(fixedLen)` on it. This will install
 an updated `FixedLengthGeneratorFunction`. You may set a range of lengths using
 setLength(minLen, maxLen), but this may introduce skew in the resulting data.
@@ -486,7 +483,7 @@ dataTable.toDF(spark).show(false)
 +---+----------+----+
 ```
 
-You can also set a `LengthGeneratorFunction` instance for any column or sub-column 
+You can also set a `LengthGeneratorFunction` instance for any column or sub-column
 using the `setLengthGen` API.
 
 ### GeneratorFunction
@@ -494,7 +491,7 @@ using the `setLengthGen` API.
 The thing that actually produces data is a `GeneratorFunction`. It maps the key to
 a value in the desired value range if that range is supported. For nested
 types like structs or arrays parts of this can be delegated to child
-GeneratorFunctions. 
+GeneratorFunctions.
 
 You can set the `GeneratorFunction` for a column or sub-column with the
 `setValueGen` API.
@@ -508,12 +505,12 @@ control to decide how the location information is mapped to the values. By
 convention, it should honor things like the `LocationToSeedMapping`,
 but it is under no requirement to do so.
 
-This is similar for the `LocationToSeedMapping` and the `NullGeneratorFunction`. 
+This is similar for the `LocationToSeedMapping` and the `NullGeneratorFunction`.
 If you have a requirement to generate null values from row 1024 to row 9999999,
 you can write a `NullGeneratorFunction` to do that and install it on a column
 
 ```scala
-case class MyNullGen(minRow: Long, maxRow: Long, 
+case class MyNullGen(minRow: Long, maxRow: Long,
     gen: GeneratorFunction = null) extends NullGeneratorFunction {
 
   override def withWrapped(gen: GeneratorFunction): MyNullGen =

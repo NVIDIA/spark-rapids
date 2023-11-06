@@ -26,7 +26,7 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.collection.mutable
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
@@ -109,16 +109,6 @@ trait HostMemoryBuffersWithMetaDataBase {
 
 // This is a common trait for all kind of file formats
 trait MultiFileReaderFunctions {
-
-  // Add partitioned columns into the batch
-  protected def addPartitionValues(
-      batch: ColumnarBatch,
-      inPartitionValues: InternalRow,
-      partitionSchema: StructType): ColumnarBatch = {
-    MultiFileReaderUtils.addSinglePartitionValuesAndClose(batch, inPartitionValues,
-      partitionSchema)
-  }
-
   @scala.annotation.nowarn(
     "msg=method getAllStatistics in class FileSystem is deprecated"
   )
@@ -203,83 +193,6 @@ object MultiFileReaderUtils {
       anyAlluxioPathsReplaced: Boolean = false): Boolean =
     !coalescingEnabled || (multiThreadEnabled &&
       (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
-
-  /**
-   * Add all partition values found to the batch. There could be more then one partition
-   * value in the batch so we have to build up columns with the correct number of rows
-   * for each partition value.
-   *
-   * @param batch             - input batch, will be closed after the call returns
-   * @param partitionValues   - partition values collected from the batch
-   * @param partitionRows     - row numbers collected from the batch, and it should have
-   *                            the same size with "partitionValues"
-   * @param partitionSchema   - the partition schema
-   * @return a new columnar batch with partition values
-   */
-  def addMultiplePartitionValuesAndClose(batch: ColumnarBatch,
-      partitionValues: Array[InternalRow],
-      partitionRows: Array[Long],
-      partitionSchema: StructType): ColumnarBatch = {
-    if (partitionSchema.nonEmpty) {
-      if (partitionValues.length > 1) {
-        concatAndAddPartitionColsToBatchAndClose(batch, partitionRows, partitionValues,
-          partitionSchema)
-      } else {
-        // single partition, add like other readers
-        addSinglePartitionValuesAndClose(batch, partitionValues.head, partitionSchema)
-      }
-    } else {
-      batch
-    }
-  }
-
-  def addSinglePartitionValuesAndClose(batch: ColumnarBatch, partitionValues: InternalRow,
-      partitionSchema: StructType): ColumnarBatch = {
-    if (partitionSchema.nonEmpty) {
-      val partitionScalars = closeOnExcept(batch) { _ =>
-        ColumnarPartitionReaderWithPartitionValues.createPartitionValues(
-          partitionValues.toSeq(partitionSchema), partitionSchema)
-      }
-      withResource(partitionScalars) { _ =>
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch, partitionScalars,
-          GpuColumnVector.extractTypes(partitionSchema))
-      }
-    } else {
-      batch
-    }
-  }
-
-  private def concatAndAddPartitionColsToBatchAndClose(cb: ColumnarBatch, partRows: Array[Long],
-      partValues: Array[InternalRow], partSchema: StructType): ColumnarBatch = {
-    withResource(cb) { _ =>
-      closeOnExcept(buildPartitionsColumns(partRows, partValues, partSchema)) { partsCols =>
-        ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, partsCols)
-      }
-    }
-  }
-
-  private def buildPartitionsColumns(partRows: Array[Long], partValues: Array[InternalRow],
-      partSchema: StructType): Array[GpuColumnVector] = {
-    // build the partitions vectors for all partitions within each column
-    // and concatenate those together then go to the next column
-    val rowNumsAndValues = partRows.zip(partValues)
-    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
-      for ((field, colIndex) <- partSchema.zipWithIndex) {
-        val dataType = field.dataType
-        withResource(new Array[ColumnVector](partValues.length)) { onePartCols =>
-          rowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
-            val singleValue = valueRow.get(colIndex, dataType)
-            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
-              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
-            }
-          }
-          partsCols(colIndex) = GpuColumnVector.from(
-            ColumnVector.concatenate(onePartCols: _*), field.dataType)
-        }
-      }
-      partsCols
-    }
-  }
 }
 
 /**
@@ -302,6 +215,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   protected val targetBatchSizeBytes: Long = rapidsConf.gpuTargetBatchSizeBytes
+  protected val maxGpuColumnSizeBytes: Long = rapidsConf.maxGpuColumnSizeBytes
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
@@ -909,6 +823,7 @@ class BatchContext(
  * @param partitionSchema       schema of partitions
  * @param maxReadBatchSizeRows  soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param maxGpuColumnSizeBytes maximum number of bytes for a GPU column
  * @param numThreads            the size of the threadpool
  * @param execMetrics           metrics
  */
@@ -918,6 +833,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     partitionSchema: StructType,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
     numThreads: Int,
     execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
     with MultiFileReaderFunctions {
@@ -973,7 +889,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param batchContext the batch building context
    * @return the output size
    */
-  def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: Seq[DataBlockBase],
+  def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: collection.Seq[DataBlockBase],
       batchContext: BatchContext): Long
 
   /**
@@ -1162,7 +1078,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       }
       new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
-          currentChunkMeta.rowsPerPartition, partitionSchema).map { withParts =>
+        currentChunkMeta.rowsPerPartition, partitionSchema,
+        maxGpuColumnSizeBytes).map { withParts =>
         withResource(withParts) { _ =>
           finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
         }
@@ -1219,10 +1136,10 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           }
 
           // Fourth, calculate the final buffer size
-          val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks,
+          val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks.toSeq,
             batchContext)
 
-          (hmb, finalBufferSize, offset, allOutputBlocks)
+          (hmb, finalBufferSize, offset, allOutputBlocks.toSeq)
         }
 
       // The footer size can change vs the initial estimated because we are combining more
@@ -1358,7 +1275,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     logDebug(s"Loaded $numRows rows from ${getFileFormatShortName}. " +
       s"${getFileFormatShortName} bytes read: $numChunkBytes. Estimated GPU bytes: $numBytes. " +
       s"Number of different partitions: ${allPartValues.size}")
-    CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk,
+    CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk.toSeq,
       numRows, rowsPerPartition.toArray, allPartValues.toArray, extraInfo)
   }
 }

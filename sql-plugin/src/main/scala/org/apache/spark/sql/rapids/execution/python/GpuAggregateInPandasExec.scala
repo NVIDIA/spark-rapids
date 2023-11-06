@@ -32,6 +32,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -51,7 +52,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuAggregateInPandasExec(
     gpuGroupingExpressions: Seq[NamedExpression],
-    udfExpressions: Seq[GpuPythonUDF],
+    udfExpressions: Seq[GpuPythonFunction],
+    pyOutAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan)(
     cpuGroupingExpressions: Seq[NamedExpression])
@@ -73,14 +75,15 @@ case class GpuAggregateInPandasExec(
     }
   }
 
-  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  private def collectFunctions(udf: GpuPythonFunction):
+  (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
-      case Seq(u: GpuPythonUDF) =>
+      case Seq(u: GpuPythonFunction) =>
         val (chained, children) = collectFunctions(u)
         (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        assert(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
         (ChainedPythonFunctions(Seq(udf.func)), udf.children)
     }
   }
@@ -109,7 +112,6 @@ case class GpuAggregateInPandasExec(
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
     val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
-    val pyOutAttributes = udfExpressions.map(_.resultAttribute)
     val childOutput = child.output
     val resultExprs = resultExpressions
 
@@ -135,7 +137,7 @@ case class GpuAggregateInPandasExec(
     // Schema of input rows to the python runner
     val aggInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
       StructField(s"_$i", dt)
-    })
+    }.toArray)
 
     // Start processing
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -152,7 +154,7 @@ case class GpuAggregateInPandasExec(
       // necessary for the following processes.
       // Doing this can reduce the data size to be split, probably getting a better performance.
       val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions, childOutput)
-      val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs, childOutput)
+      val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs.toSeq, childOutput)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
         mNumInputRows += batch.numRows()
@@ -241,5 +243,27 @@ case class GpuAggregateInPandasExec(
       }
     }
   } // end of internalDoExecuteColumnar
+
+}
+
+object GpuAggregateInPandasExec {
+  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+      udfExpressions: Seq[GpuPythonFunction],
+      resultExpressions: Seq[NamedExpression],
+      child: SparkPlan)(
+      cpuGroupingExpressions: Seq[NamedExpression]) = {
+    new GpuAggregateInPandasExec(gpuGroupingExpressions, udfExpressions,
+      udfExpressions.map(_.resultAttribute), resultExpressions, child)(cpuGroupingExpressions)
+  }
+
+  def apply(gpuGroupingExpressions: Seq[NamedExpression],
+      udfExpressions: Seq[GpuPythonFunction],
+      pyOutAttributes: Seq[Attribute],
+      resultExpressions: Seq[NamedExpression],
+      child: SparkPlan)(
+      cpuGroupingExpressions: Seq[NamedExpression]) = {
+    new GpuAggregateInPandasExec(gpuGroupingExpressions, udfExpressions,
+      pyOutAttributes, resultExpressions, child)(cpuGroupingExpressions)
+  }
 
 }

@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.splitSpillableInHalfByRows
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.jni.RowConversion
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
@@ -125,9 +126,9 @@ class AcceleratedColumnarToRowIterator(
               // the output to know which kernel to call. If schema.length < 100 we call the
               // fixed-width optimized version, otherwise the generic one
               if (schema.length < 100) {
-                table.convertToRowsFixedWidthOptimized()
+                RowConversion.convertToRowsFixedWidthOptimized(table)
               } else {
-                table.convertToRows()
+                RowConversion.convertToRows(table)
               }
             }
           }
@@ -141,10 +142,12 @@ class AcceleratedColumnarToRowIterator(
           }
         }
         setCurrentBatch(pendingCvs.dequeue())
-        return true
+        true
       }
+    } else { // scb.numRows() <= 0
+      scb.close()
+      false
     }
-    false
   }
 
   private[this] def loadNextBatch(): Unit = {
@@ -220,7 +223,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     streamTime: GpuMetric,
     nullSafe: Boolean = false,
-    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] {
+    releaseSemaphore: Boolean = true) extends Iterator[InternalRow] with AutoCloseable {
   // GPU batches read in must be closed by the receiver (us)
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null
@@ -237,6 +240,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
       closeCurrentBatch()
     }
   }
+
+  override def close(): Unit = closeCurrentBatch()
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {

@@ -27,10 +27,12 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.storage
@@ -42,6 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.CheckedInputStream
 import javax.annotation.concurrent.GuardedBy
 
+import scala.collection
 import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Queue}
 import scala.util.{Failure, Success}
@@ -119,7 +122,7 @@ final class RapidsShuffleBlockFetcherIterator(
     shuffleClient: BlockStoreClient,
     blockManager: BlockManager,
     mapOutputTracker: MapOutputTracker,
-    blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+    blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
     streamWrapper: (BlockId, InputStream) => InputStream,
     maxBytesInFlight: Long,
     maxReqsInFlight: Int,
@@ -386,9 +389,10 @@ final class RapidsShuffleBlockFetcherIterator(
    * [[PushBasedFetchHelper]].
    */
   private[this] def partitionBlocksByFetchMode(
-      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+      blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
       localBlocks: mutable.LinkedHashSet[(BlockId, Int)],
-      hostLocalBlocksByExecutor: mutable.LinkedHashMap[BlockManagerId, Seq[(BlockId, Long, Int)]],
+      hostLocalBlocksByExecutor:
+        mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]],
       pushMergedLocalBlocks: mutable.LinkedHashSet[BlockId]): ArrayBuffer[FetchRequest] = {
     logDebug(s"maxBytesInFlight: $maxBytesInFlight, targetRemoteRequestSize: "
       + s"$targetRemoteRequestSize, maxBlocksInFlightPerAddress: $maxBlocksInFlightPerAddress")
@@ -465,7 +469,7 @@ final class RapidsShuffleBlockFetcherIterator(
   }
 
   private def createFetchRequest(
-      blocks: Seq[FetchBlockInfo],
+      blocks: collection.Seq[FetchBlockInfo],
       address: BlockManagerId,
       forMergedMetas: Boolean): FetchRequest = {
     logDebug(s"Creating fetch request of ${blocks.map(_.size).sum} at $address "
@@ -474,7 +478,7 @@ final class RapidsShuffleBlockFetcherIterator(
   }
 
   private def createFetchRequests(
-      curBlocks: Seq[FetchBlockInfo],
+      curBlocks: collection.Seq[FetchBlockInfo],
       address: BlockManagerId,
       isLast: Boolean,
       collectedRemoteRequests: ArrayBuffer[FetchRequest],
@@ -502,7 +506,7 @@ final class RapidsShuffleBlockFetcherIterator(
 
   private def collectFetchRequests(
       address: BlockManagerId,
-      blockInfos: Seq[(BlockId, Long, Int)],
+      blockInfos: collection.Seq[(BlockId, Long, Int)],
       collectedRemoteRequests: ArrayBuffer[FetchRequest]): Unit = {
     val iterator = blockInfos.iterator
     var curRequestSize = 0L
@@ -560,7 +564,7 @@ final class RapidsShuffleBlockFetcherIterator(
     }
   }
 
-  private def checkBlockSizes(blockInfos: Seq[(BlockId, Long, Int)]): Unit = {
+  private def checkBlockSizes(blockInfos: collection.Seq[(BlockId, Long, Int)]): Unit = {
     blockInfos.foreach { case (blockId, size, _) => assertPositiveBlockSize(blockId, size) }
   }
 
@@ -626,7 +630,8 @@ final class RapidsShuffleBlockFetcherIterator(
    */
   private[this] def fetchHostLocalBlocks(
       hostLocalDirManager: HostLocalDirManager,
-      hostLocalBlocksByExecutor: mutable.LinkedHashMap[BlockManagerId, Seq[(BlockId, Long, Int)]]):
+      hostLocalBlocksByExecutor:
+        mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]]):
     Unit = {
     val cachedDirsByExec = hostLocalDirManager.getCachedHostLocalDirs
     val (hostLocalBlocksWithCachedDirs, hostLocalBlocksWithMissingDirs) = {
@@ -679,7 +684,7 @@ final class RapidsShuffleBlockFetcherIterator(
   }
 
   private def fetchMultipleHostLocalBlocks(
-      bmIdToBlocks: Map[BlockManagerId, Seq[(BlockId, Long, Int)]],
+      bmIdToBlocks: Map[BlockManagerId, collection.Seq[(BlockId, Long, Int)]],
       localDirsByExecId: Map[String, Array[String]],
       cached: Boolean): Unit = {
     // We use `forall` because once there's a failed block fetch, `fetchHostLocalBlock` will put
@@ -703,7 +708,7 @@ final class RapidsShuffleBlockFetcherIterator(
     // Local blocks to fetch, excluding zero-sized blocks.
     val localBlocks = mutable.LinkedHashSet[(BlockId, Int)]()
     val hostLocalBlocksByExecutor =
-      mutable.LinkedHashMap[BlockManagerId, Seq[(BlockId, Long, Int)]]()
+      mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]]()
     val pushMergedLocalBlocks = mutable.LinkedHashSet[BlockId]()
     // Partition blocks by the different fetch modes: local, host-local, push-merged-local and
     // remote blocks.
@@ -732,7 +737,8 @@ final class RapidsShuffleBlockFetcherIterator(
   }
 
   private def fetchAllHostLocalBlocks(
-      hostLocalBlocksByExecutor: mutable.LinkedHashMap[BlockManagerId, Seq[(BlockId, Long, Int)]]):
+      hostLocalBlocksByExecutor:
+        mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]]):
     Unit = {
     if (hostLocalBlocksByExecutor.nonEmpty) {
       blockManager.hostLocalDirManager.foreach(fetchHostLocalBlocks(_, hostLocalBlocksByExecutor))
@@ -1215,10 +1221,11 @@ final class RapidsShuffleBlockFetcherIterator(
    * fallback.
    */
   private[storage] def fallbackFetch(
-      originalBlocksByAddr: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]): Unit = {
+      originalBlocksByAddr:
+        Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])]): Unit = {
     val originalLocalBlocks = mutable.LinkedHashSet[(BlockId, Int)]()
     val originalHostLocalBlocksByExecutor =
-      mutable.LinkedHashMap[BlockManagerId, Seq[(BlockId, Long, Int)]]()
+      mutable.LinkedHashMap[BlockManagerId, collection.Seq[(BlockId, Long, Int)]]()
     val originalMergedLocalBlocks = mutable.LinkedHashSet[BlockId]()
     val originalRemoteReqs = partitionBlocksByFetchMode(originalBlocksByAddr,
       originalLocalBlocks, originalHostLocalBlocksByExecutor, originalMergedLocalBlocks)
@@ -1408,8 +1415,8 @@ object RapidsShuffleBlockFetcherIterator {
    * @return the input blocks if doBatchFetch=false, or the merged blocks if doBatchFetch=true.
    */
   def mergeContinuousShuffleBlockIdsIfNeeded(
-      blocks: Seq[FetchBlockInfo],
-      doBatchFetch: Boolean): Seq[FetchBlockInfo] = {
+      blocks: collection.Seq[FetchBlockInfo],
+      doBatchFetch: Boolean): collection.Seq[FetchBlockInfo] = {
     val result = if (doBatchFetch) {
       val curBlocks = new ArrayBuffer[FetchBlockInfo]
       val mergedBlockInfo = new ArrayBuffer[FetchBlockInfo]
@@ -1496,7 +1503,7 @@ object RapidsShuffleBlockFetcherIterator {
    */
   case class FetchRequest(
       address: BlockManagerId,
-      blocks: Seq[FetchBlockInfo],
+      blocks: collection.Seq[FetchBlockInfo],
       forMergedMetas: Boolean = false) {
     val size = blocks.map(_.size).sum
   }
@@ -1620,7 +1627,7 @@ object RapidsShuffleBlockFetcherIterator {
       context: TaskContext,
       blockManager: BlockManager,
       sparkEnv: SparkEnv,
-      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])],
+      blocksByAddress: Iterator[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])],
       serializerManager: SerializerManager,
       readMetrics: ShuffleReadMetricsReporter,
       fetchContinuousBlocksInBatch: Boolean): RapidsShuffleBlockFetcherIterator = {

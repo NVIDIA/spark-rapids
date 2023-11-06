@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
- /*** spark-rapids-shim-json-lines
+/*** spark-rapids-shim-json-lines
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
 import java.math.BigInteger
@@ -38,8 +38,8 @@ object GpuCastShims {
     case _ => throw new IllegalArgumentException(s"Unsupported type in cast $t")
   }
 
-  def CastDecimalToString(decimalInput: ColumnView, ansiMode: Boolean): ColumnVector = {
-    if (ansiMode) {
+  def CastDecimalToString(decimalInput: ColumnView, usePlainString: Boolean): ColumnVector = {
+    if (usePlainString) {
       // This is equivalent to
       // https://docs.oracle.com/javase/8/docs/api/java/math/BigDecimal.html#toPlainString--
       // except there are a few corner cases, but they are really rare

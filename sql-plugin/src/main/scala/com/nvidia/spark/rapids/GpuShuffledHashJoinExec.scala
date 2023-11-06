@@ -165,11 +165,11 @@ case class GpuShuffledHashJoinExec(
     // iterators, setting as noop certain metrics that the coalesce iterators
     // normally update, but that in the case of the join they would produce
     // the wrong statistics (since there are conflicts)
-    val coalesceMetrics = allMetrics +
-      (GpuMetric.NUM_INPUT_ROWS -> NoopMetric,
-       GpuMetric.NUM_INPUT_BATCHES -> NoopMetric,
-       GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
-       GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
+    val coalesceMetrics = allMetrics ++
+      Map(GpuMetric.NUM_INPUT_ROWS -> NoopMetric,
+          GpuMetric.NUM_INPUT_BATCHES -> NoopMetric,
+          GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
+          GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
     val realTarget = realTargetBatchSize()
 
@@ -253,14 +253,14 @@ object GpuShuffledHashJoinExec extends Logging {
   (Either[ColumnarBatch, Iterator[ColumnarBatch]], Iterator[ColumnarBatch]) = {
     val buildTime = coalesceMetrics(GpuMetric.BUILD_TIME)
     val buildTypes = buildOutput.map(_.dataType).toArray
-    closeOnExcept(new CloseableBufferedIterator(buildIter.buffered)) { bufBuildIter =>
+    closeOnExcept(new CloseableBufferedIterator(buildIter)) { bufBuildIter =>
       val startTime = System.nanoTime()
       // Batches type detection
       val isBuildSerialized = bufBuildIter.hasNext && isBatchSerialized(bufBuildIter.head)
 
       // Let batches coalesce for size overflow check
       val coalesceBuiltIter = if (isBuildSerialized) {
-        new HostShuffleCoalesceIterator(bufBuildIter, targetSize, buildTypes, coalesceMetrics)
+        new HostShuffleCoalesceIterator(bufBuildIter, targetSize, coalesceMetrics)
       } else { // Batches on GPU have already coalesced to the target size by the given goal.
         bufBuildIter
       }
@@ -357,7 +357,7 @@ object GpuShuffledHashJoinExec extends Logging {
         // The size still overflows after filtering or sub-partitioning is enabled for test.
         logDebug("Return multiple batches as the build side data for the following " +
           "sub-partitioning join in null-filtering mode.")
-        val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf).map { sp =>
+        val safeIter = GpuSubPartitionHashJoin.safeIteratorFromSeq(spillBuf.toSeq).map { sp =>
           withResource(sp)(_.getColumnarBatch())
         } ++ filteredIter
         Right(new CollectTimeIterator("hash join build", safeIter, buildTime))
@@ -369,7 +369,7 @@ object GpuShuffledHashJoinExec extends Logging {
           spillBuf.append(
             SpillableColumnarBatch(filteredIter.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY))
         }
-        val spill = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(spillBuf)
+        val spill = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(spillBuf.toSeq)
         // There is a prior empty check so this `spill` can not be a None.
         assert(spill.isDefined, "The build data iterator should not be empty.")
         withResource(spill) { _ =>
@@ -401,7 +401,7 @@ object GpuShuffledHashJoinExec extends Logging {
     // will grab the semaphore when putting the first stream batch on the GPU, and
     // then we bring the build batch to the GPU and return.
     withResource(hostConcatResult) { _ =>
-      closeOnExcept(new CloseableBufferedIterator(streamIter.buffered)) { bufStreamIter =>
+      closeOnExcept(new CloseableBufferedIterator(streamIter)) { bufStreamIter =>
         withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
           if (bufStreamIter.hasNext) {
             bufStreamIter.head

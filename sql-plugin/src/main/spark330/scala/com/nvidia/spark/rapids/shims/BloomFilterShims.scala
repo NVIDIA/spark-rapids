@@ -20,10 +20,12 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -32,7 +34,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
-
+import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate
 
 object BloomFilterShims {
   val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {

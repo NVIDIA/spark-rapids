@@ -254,6 +254,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       case (Failure(cpu), Success(_)) =>
         fail(s"Query succeeded on GPU but failed on CPU: $cpu")
+
+      case _ =>
+        fail(s"Should never reach here")
     }
   }
 

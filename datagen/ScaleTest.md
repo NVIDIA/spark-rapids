@@ -44,7 +44,7 @@ $SPARK_HOME/bin/spark-submit \
 --conf spark.sql.parquet.datetimeRebaseModeInWrite=CORRECTED \
 --class com.nvidia.rapids.tests.scaletest.ScaleTestDataGen \ # the main class
 --jars $SPARK_HOME/examples/jars/scopt_2.12-3.7.1.jar \ # one dependency jar just shipped with Spark under $SPARK_HOME
-./target/datagen_2.12-23.10.0-SNAPSHOT-spark332.jar \
+./target/datagen_2.12-23.12.0-SNAPSHOT-spark332.jar \
 1 \
 10 \
 parquet \
@@ -55,7 +55,7 @@ Then a folder with name pattern: `SCALE_<scale factor>_<complexity>_<format>_<da
 will be created under the `<PATH_TO_SAVE_DATA>` that user just provided.
 
 ## Test Query Sets
-To be added.
+Please refer to [Query Sets](../integration_tests/ScaleTest.md#query-sets) in `integration_tests` module for more details.
 
 ## Table Metadata and Schema
 

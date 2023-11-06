@@ -492,7 +492,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                 client.connection.getPeerExecutorId, ucx.assignUniqueId())
               val brs = new BufferReceiveState(brsId,
                 perClientRequests.bounceBuffer,
-                perClientRequests.transferRequests,
+                perClientRequests.transferRequests.toSeq,
                 () => bufferReceiveStateComplete(brsId))
               pendingBrs.put(brs.id, ClientAndBufferReceiveState(client, brs))
               client.issueBufferReceives(brs)
@@ -521,7 +521,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
   override def queuePending(reqs: Seq[PendingTransferRequest]): Unit =
     altList.synchronized {
-      import collection.JavaConverters._
+      import scala.collection.JavaConverters._
       validHandlers.add(reqs.head.handler)
       altList.addAll(reqs.asJava)
       logDebug(s"THROTTLING ${altList.size} queued requests")

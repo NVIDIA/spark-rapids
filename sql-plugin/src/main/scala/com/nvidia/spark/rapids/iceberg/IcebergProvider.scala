@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,17 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{ScanRule, ShimLoader}
+import com.nvidia.spark.rapids.{ScanRule, ShimLoaderTemp}
 
 import org.apache.spark.sql.connector.read.Scan
 
 /** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
 trait IcebergProvider {
-  def isSupportedScan(scan: Scan): Boolean
-
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-
-  def copyScanWithInputFileTrue(scan: Scan): Scan
 }
 
 object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoader.newIcebergProvider()
+  def apply(): IcebergProvider = ShimLoaderTemp.newIcebergProvider()
 
   val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
 }

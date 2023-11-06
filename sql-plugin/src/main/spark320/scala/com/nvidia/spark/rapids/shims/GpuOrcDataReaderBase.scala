@@ -26,10 +26,12 @@
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
@@ -267,5 +269,12 @@ abstract class GpuOrcDataReaderBase(
       case e: IOException =>
         throw new IOException(s"Failed to read $filePathString $offset:$readSize", e)
     }
+  }
+
+  // [Scala 2.13] This is needed because org.apache.orc.DataReader defines a public clone() method 
+  // which should be overidden here as a public member. The Scala 2.13 compiler enforces this now
+  // which was a bug in the compiler previously.
+  override def clone(): DataReader = {
+    super.clone().asInstanceOf[DataReader]
   }
 }

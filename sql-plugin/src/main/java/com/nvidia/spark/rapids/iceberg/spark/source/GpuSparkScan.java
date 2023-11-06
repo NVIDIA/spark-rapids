@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.GpuScanWrapper;
 import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
-import com.nvidia.spark.rapids.ScanWithMetricsWrapper;
 import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
 import com.nvidia.spark.rapids.iceberg.spark.SparkReadConf;
 import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
@@ -67,7 +67,7 @@ import org.apache.spark.util.SerializableConfiguration;
  * GPU-accelerated Iceberg Scan.
  * This is derived from Apache Iceberg's SparkScan class.
  */
-abstract class GpuSparkScan extends ScanWithMetricsWrapper
+abstract class GpuSparkScan extends GpuScanWrapper
     implements Scan, SupportsReportStatistics {
   private static final Logger LOG = LoggerFactory.getLogger(GpuSparkScan.class);
 
@@ -282,7 +282,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
                          boolean queryUsesInputFile) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(), task.useChunkedReader(),
+          task.getTargetBatchSizeBytes(), task.getMaxGpuColumnSizeBytes(), task.useChunkedReader(),
           task.getParquetDebugDumpPrefix(), task.getParquetDebugDumpAlways(),
           task.getNumThreads(), task.getMaxNumFileProcessed(),
           useMultiThread, ff, metrics, queryUsesInputFile);
@@ -309,6 +309,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final long maxBatchSizeBytes;
 
     private final long targetBatchSizeBytes;
+    private final long maxGpuColumnSizeBytes;
     private final scala.Option<String> parquetDebugDumpPrefix;
     private final boolean parquetDebugDumpAlways;
     private final int numThreads;
@@ -334,6 +335,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       this.maxBatchSizeRows = rapidsConf.maxReadBatchSizeRows();
       this.maxBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes();
       this.targetBatchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes();
+      this.maxGpuColumnSizeBytes = rapidsConf.maxGpuColumnSizeBytes();
       this.parquetDebugDumpPrefix = rapidsConf.parquetDebugDumpPrefix();
       this.parquetDebugDumpAlways = rapidsConf.parquetDebugDumpAlways();
       this.numThreads = rapidsConf.multiThreadReadNumThreads();
@@ -372,6 +374,10 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
 
     public long getTargetBatchSizeBytes() {
       return targetBatchSizeBytes;
+    }
+
+    public long getMaxGpuColumnSizeBytes() {
+      return maxGpuColumnSizeBytes;
     }
 
     public scala.Option<String> getParquetDebugDumpPrefix() {

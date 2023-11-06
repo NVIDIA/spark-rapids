@@ -252,7 +252,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-abstract class GpuAddBase(failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
+abstract class GpuAddBase extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -281,8 +281,7 @@ abstract class GpuAddBase(failOnError: Boolean) extends CudfBinaryArithmetic wit
   }
 }
 
-abstract class GpuSubtractBase(failOnError: Boolean)
-    extends CudfBinaryArithmetic with Serializable {
+abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
@@ -401,13 +400,16 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
 
   def regularMultiply(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
-        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+      GpuCast.doCast(
+        lhs.getBase,
+        lhs.dataType(),
+        intermediateLhsType,
+        CastOptions.getArithmeticCastOptions(failOnError))
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
-        GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
-          legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+        GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType,
+          CastOptions.getArithmeticCastOptions(failOnError))
       }
       withResource(castRhs) { castRhs =>
         withResource(castLhs.mul(castRhs,
@@ -436,7 +438,7 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
     }
     withResource(ret) { ret =>
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
+        CastOptions.getArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
@@ -477,8 +479,6 @@ trait GpuDecimalMultiplyBase extends GpuExpression {
       regularMultiply(batch)
     }
   }
-
-  override def nullable: Boolean = left.nullable || right.nullable
 }
 
 object DecimalMultiplyChecks {
@@ -723,7 +723,8 @@ object GpuDivModLike {
 
 case class GpuMultiply(
     left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType multiplies need to be handled by GpuDecimalMultiply")
 
@@ -736,7 +737,6 @@ case class GpuMultiply(
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
-  lazy val failOnError: Boolean = SQLConf.get.ansiEnabled
 
   override def nullable: Boolean = true
 
@@ -851,14 +851,18 @@ trait GpuDecimalDivideBase extends GpuExpression {
 
   def regularDivide(batch: ColumnarBatch): GpuColumnVector = {
     val castLhs = withResource(left.columnarEval(batch)) { lhs =>
-      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
-        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+      GpuCast.doCast(
+        lhs.getBase,
+        lhs.dataType(),
+        intermediateLhsType,
+        CastOptions.getArithmeticCastOptions(failOnError))
+
     }
     val ret = withResource(castLhs) { castLhs =>
       val castRhs = withResource(right.columnarEval(batch)) { rhs =>
         withResource(divByZeroFixes(rhs.getBase)) { fixed =>
-          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
-            legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+          GpuCast.doCast(fixed, rhs.dataType(), intermediateRhsType,
+            CastOptions.getArithmeticCastOptions(failOnError))
         }
       }
       withResource(castRhs) { castRhs =>
@@ -871,7 +875,7 @@ trait GpuDecimalDivideBase extends GpuExpression {
       // in the common case with us. It will also handle rounding the result to the final scale
       // to match what Spark does.
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
-        ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
+        CastOptions.getArithmeticCastOptions(failOnError)),
         dataType)
     }
   }
@@ -1012,12 +1016,9 @@ object DecimalDivideChecks {
 }
 
 case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDivModLike {
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
-
-  override lazy val failOnError: Boolean = failOnErrorOverride
 
   override def inputType: AbstractDataType = DoubleType
 

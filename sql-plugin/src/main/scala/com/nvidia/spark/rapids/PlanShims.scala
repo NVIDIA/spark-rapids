@@ -26,7 +26,7 @@ trait PlanShims {
 }
 
 object PlanShims {
-  private lazy val shims = ShimLoader.newPlanShims()
+  private lazy val shims = ShimLoaderTemp.newPlanShims()
 
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = {
     shims.extractExecutedPlan(plan)

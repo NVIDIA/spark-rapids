@@ -29,6 +29,7 @@
 {"spark": "330cdh"}
 {"spark": "331"}
 {"spark": "332"}
+{"spark": "332cdh"}
 {"spark": "333"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
@@ -41,14 +42,20 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
+
+  protected val failOnError: Boolean
+
   override def dataType: DataType = left.dataType
   // arithmetic operations can overflow and throw exceptions in ANSI mode
   override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
+
+  override def nullable: Boolean = left.nullable || right.nullable
 }
 
 case class GpuIntegralDivide(
     left: Expression,
-    right: Expression) extends GpuIntegralDivideParent(left, right)
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuIntegralDivideParent(left, right)
 
 case class GpuDecimalDivide(
     left: Expression,
@@ -70,18 +77,30 @@ case class GpuDecimalMultiply(
     with GpuDecimalMultiplyBase {
 
   override def children: Seq[Expression] = Seq(left, right)
+
+  // In theory it should follow the nullability of GpuMultiply.
+  // (That is "left.nullable || right.nullable" for Spark31X, Spark32X, Spark33X).
+  // But GPU removes its wrapper expression "CheckOverflow" whose "nullable" is always
+  // true. So its "nullable" should be always true here.
+  override def nullable: Boolean = true
 }
 
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuAddBase(failOnError)
+    failOnError: Boolean) extends GpuAddBase
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuSubtractBase(failOnError)
+    failOnError: Boolean) extends GpuSubtractBase
 
-case class GpuRemainder(left: Expression, right: Expression) extends GpuRemainderBase(left, right)
+case class GpuRemainder(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuRemainderBase(left, right)
 
-case class GpuPmod(left: Expression, right: Expression) extends GpuPmodBase(left, right)
+case class GpuPmod(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuPmodBase(left, right)

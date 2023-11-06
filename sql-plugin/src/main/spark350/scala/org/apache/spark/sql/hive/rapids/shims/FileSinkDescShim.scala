@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.hive.rapids.shims
 
 import org.apache.hadoop.fs.Path

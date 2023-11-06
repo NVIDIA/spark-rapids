@@ -26,26 +26,8 @@ import org.apache.commons.lang3.mutable.MutableLong
 import org.apache.spark.SparkEnv
 import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
+import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 import org.apache.spark.storage.BlockManagerId
-
-/**
- * This is the first message sent from the executor to the driver.
- * @param id `BlockManagerId` for the executor
- */
-case class RapidsExecutorStartupMsg(id: BlockManagerId)
-
-/**
- * Executor heartbeat message.
- * This gives the driver an opportunity to respond with `RapidsExecutorUpdateMsg`
- */
-case class RapidsExecutorHeartbeatMsg(id: BlockManagerId)
-
-/**
- * Driver response to an startup or heartbeat message, with new (to the peer) executors
- * from the last heartbeat.
- */
-case class RapidsExecutorUpdateMsg(ids: Array[BlockManagerId])
 
 class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
                                     heartbeatTimeoutMillis: Long) extends Logging {
@@ -179,11 +161,6 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
   }
 }
 
-trait RapidsShuffleHeartbeatHandler {
-  /** Called when a new peer is seen via heartbeats */
-  def addPeer(peer: BlockManagerId): Unit
-}
-
 class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsConf)
   extends Logging with AutoCloseable {
   // Number of milliseconds between heartbeats to driver
@@ -240,8 +217,10 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
   }
 
   def registerShuffleHeartbeat(): Unit = {
-    val rapidsShuffleManager = SparkEnv.get.shuffleManager.asInstanceOf[Proxy].self
-        .asInstanceOf[RapidsShuffleInternalManagerBase]
+    val rapidsShuffleManagerProxy = SparkEnv.get.shuffleManager
+      .asInstanceOf[ProxyRapidsShuffleInternalManagerBase]
+    val rapidsShuffleManager = rapidsShuffleManagerProxy.getRealImpl
+      .asInstanceOf[RapidsShuffleInternalManagerBase]
     if (rapidsShuffleManager.isDriver) {
       logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
     } else {

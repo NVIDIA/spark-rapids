@@ -36,7 +36,7 @@ task/partition. The RAPIDS Accelerator does an unstable
 simply means that the sort algorithm allows for spilling parts of the data if it is larger than
 can fit in the GPU's memory, but it does not guarantee ordering of rows when the ordering of the
 keys is ambiguous. If you do rely on a stable sort in your processing you can request this by
-setting [spark.rapids.sql.stableSort.enabled](configs.md#sql.stableSort.enabled) to `true` and
+setting [spark.rapids.sql.stableSort.enabled](additional-functionality/advanced_configs.md#sql.stableSort.enabled) to `true` and
 RAPIDS will try to sort all the data for a given task/partition at once on the GPU. This may change
 in the future to allow for a spillable stable sort.
 
@@ -67,7 +67,7 @@ joins on a floating point value, which is not wise to do anyways, and the value 
 floating point aggregation then the join may fail to work properly with the plugin but would have
 worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with
 the config
-[`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
+[`spark.rapids.sql.variableFloatAgg.enabled`](additional-functionality/advanced_configs.md#sql.variableFloatAgg.enabled).
 
 ### `0.0` vs `-0.0`
 
@@ -123,9 +123,9 @@ Only a limited set of formats are supported when parsing dates.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
-despite the format asking for a `XXX` or `[XXX]`. As such it is off by default and you can enable it
-by setting [`spark.rapids.sql.csvTimestamps.enabled`](configs.md#sql.csvTimestamps.enabled) to
-`true`.
+despite the format asking for a `XXX` or `[XXX]`. The CSV parser does not support the `TimestampNTZ`
+type and will fall back to CPU if `spark.sql.timestampType` is set to `TIMESTAMP_NTZ` or if an 
+explicit schema is provided that contains the `TimestampNTZ` type.
 
 The formats supported for timestamps are limited similar to dates.  The first part of the format
 must be a supported date format.  The second part must start with a `'T'` to separate the time
@@ -315,25 +315,39 @@ In the current version, nested types (array, struct, and map types) are not yet 
 
 This particular function supports to output a map or struct type with limited functionalities.
 
-For struct output type, the function only supports struct of struct, array, string and int types. The output is incompatible if duplicated json key names are present in the input strings. For schemas that include IntegerType,
-if arbitrarily large numbers are specified in the JSON strings, the GPU implementation will cast the numbers to
-IntegerType, whereas CPU Spark will return null.
+The `from_json` function is disabled by default because it is experimental and has some known incompatibilities
+with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStructs=true`.
+
+There are several known issues:
+
+Dates and timestamps are not supported ([#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)).
+
+When reading numeric values, the GPU implementation always supports leading zeros regardless of the setting
+for the JSON option `allowNumericLeadingZeros` ([#9588](https://github.com/NVIDIA/spark-rapids/issues/9588)).
+
+For struct output type, the function only supports struct of struct, array, string,  integral, floating-point, and
+decimal types. The output is incompatible if duplicated json key names are present in the input strings. For schemas
+that include IntegerType, if arbitrarily large numbers are specified in the JSON strings, the GPU implementation will
+cast the numbers to IntegerType, whereas CPU Spark will return null.
 
 In particular, the output map is not resulted from a regular JSON parsing but instead it will just contain plain text of key-value pairs extracted directly from the input JSON string. Due to such limitations, the input JSON map type schema must be `MAP<STRING,STRING>` and nothing else. Furthermore, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. This may lead to some minor differences in the output if compared to the result of Spark CPU's `from_json`, such as:
  * Floating point numbers in the input JSON string such as `1.2000` will not be reformatted to `1.2`. Instead, the output will be the same as the input.
- * If the input JSON is given as multiple rows, any row containing invalid JSON format will lead to an application crash. On the other hand, Spark CPU version just produces nulls for the invalid rows, as shown below:
- ```
-scala> val df = Seq("{}", "BAD", "{\"A\": 100}").toDF
-df: org.apache.spark.sql.DataFrame = [value: string]
-scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
-+----------+
-|   entries|
-+----------+
-|        {}|
-|      null|
-|{A -> 100}|
-+----------+
-```
+ * If the input JSON is given as multiple rows, any row containing invalid JSON format will be parsed as an empty 
+   struct instead of a null value ([#9592](https://github.com/NVIDIA/spark-rapids/issues/9592)).
+
+### `to_json` function
+
+The `to_json` function is disabled by default because it is experimental and has some known incompatibilities 
+with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsToJson=true`.
+
+Known issues are:
+
+- String escaping is not implemented, so strings containing quotes, newlines, and other special characters will 
+  not produce valid JSON
+- There is no support for timestamp types
+- There can be rounding differences when formatting floating-point numbers as strings. For example, Spark may
+  produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
+- Not all JSON options are respected
 
 ### JSON Floating Point
 
@@ -349,6 +363,9 @@ Another limitation of the GPU JSON reader is that it will parse strings containi
 Spark will treat them as invalid inputs and will just return `null`.
 
 ### JSON Timestamps
+
+The JSON parser does not support the `TimestampNTZ` type and will fall back to CPU if `spark.sql.timestampType` is 
+set to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `TimestampNTZ` type.
 
 There is currently no support for reading numeric values as timestamps and null values are returned instead
 ([#4940](https://github.com/NVIDIA/spark-rapids/issues/4940)). A workaround would be to read as longs and then cast
@@ -510,13 +527,13 @@ GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19
 ```
 
 To enable byte-range windowing on the GPU, set
-[`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
+[`spark.rapids.sql.window.range.byte.enabled`](additional-functionality/advanced_configs.md#sql.window.range.byte.enabled) to true.
 
 We also provide configurations for other integral range types:
 
-- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled)
-- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled)
-- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.short.enabled`](additional-functionality/advanced_configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.int.enabled`](additional-functionality/advanced_configs.md#sql.window.range.int.enabled)
+- [`spark.rapids.sql.window.range.long.enabled`](additional-functionality/advanced_configs.md#sql.window.range.long.enabled)
 
 The reason why we default the configurations to false for byte/short and to true for int/long is that
 we think the most real-world queries are based on int or long.
@@ -560,7 +577,7 @@ extensively tested and may produce different results compared to the CPU. Known 
   values on GPU where Spark would treat the data as invalid and return null
 
 To attempt to use other formats on the GPU, set
-[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](additional-functionality/advanced_configs.md#sql.incompatibleDateFormats.enabled)
 to `true`.
 
 Formats that contain any of the following characters are unsupported and will fall back to CPU:
@@ -582,7 +599,7 @@ Formats that contain any of the following words are unsupported and will fall ba
 ### LEGACY timeParserPolicy
 
 With timeParserPolicy set to `LEGACY` and
-[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](additional-functionality/advanced_configs.md#sql.incompatibleDateFormats.enabled)
 set to `true`, and `spark.sql.ansi.enabled` set to `false`, the following formats are supported but not
 guaranteed to produce the same results as the CPU:
 
@@ -639,7 +656,7 @@ leads to restrictions:
 
 Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or
 later, set
-[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
+[`spark.rapids.sql.castFloatToDecimal.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToDecimal.enabled) to `false`
 
 ### Float to Integral Types
 
@@ -650,7 +667,7 @@ starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this 
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
 Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
-[`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
+[`spark.rapids.sql.castFloatToIntegralTypes.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
 
 This configuration setting is ignored when using Spark versions prior to 3.1.0.
@@ -661,8 +678,12 @@ The GPU will use different precision than Java's toString method when converting
 types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
+The `format_number` function will retain 10 digits of precision for the GPU when the input is a floating 
+point number, but Spark will retain up to 17 digits of precision, i.e. `format_number(1234567890.1234567890, 5)`
+will return `1,234,567,890.00000` on the GPU and `1,234,567,890.12346` on the CPU. To enable this on the GPU, set [`spark.rapids.sql.formatNumberFloat.enabled`](additional-functionality/advanced_configs.md#sql.formatNumberFloat.enabled) to `true`.
+
 Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
-[`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
+[`spark.rapids.sql.castFloatToString.enabled`](additional-functionality/advanced_configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
 
@@ -676,7 +697,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 Also, the GPU does not support casting from strings containing hex values.
 
 Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
+[`spark.rapids.sql.castStringToFloat.enabled`](additional-functionality/advanced_configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
 
@@ -700,7 +721,7 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 ### String to Timestamp
 
 To allow casts from string to timestamp on the GPU, enable the configuration property
-[`spark.rapids.sql.castStringToTimestamp.enabled`](configs.md#sql.castStringToTimestamp.enabled).
+[`spark.rapids.sql.castStringToTimestamp.enabled`](additional-functionality/advanced_configs.md#sql.castStringToTimestamp.enabled).
 
 Casting from string to timestamp currently has the following limitations.
 

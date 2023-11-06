@@ -17,12 +17,14 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330db"}
 {"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta}
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 
@@ -58,10 +60,10 @@ class GpuShuffleMeta(
     }
   }
 
-  override def convertToGpu(): GpuExec =
+  override protected def convertShuffleToGpu(newChild: SparkPlan): GpuExec =
     GpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
-      childPlans.head.convertIfNeeded(),
+      newChild,
       shuffle.shuffleOrigin
     )(shuffle.outputPartitioning)
 }

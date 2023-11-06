@@ -16,24 +16,27 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import java.util.concurrent.{Future => JFuture}
+
 import scala.collection.JavaConverters.asScalaIteratorConverter
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuColumnarToRowExec, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta, TargetSize}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
-import com.nvidia.spark.rapids.shims.{ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ShimBaseSubqueryExec, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BoundReference, Cast, Expression, NamedExpression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
-import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution, SubqueryBroadcastExec}
+import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{HashedRelationBroadcastMode, HashJoin}
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
@@ -170,7 +173,7 @@ case class GpuSubqueryBroadcastExec(
     index: Int,
     buildKeys: Seq[Expression],
     child: SparkPlan)(modeKeys: Option[Seq[Expression]])
-    extends BaseSubqueryExec with GpuExec with ShimUnaryExecNode {
+    extends ShimBaseSubqueryExec with GpuExec with ShimUnaryExecNode {
 
   override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
 
@@ -201,24 +204,25 @@ case class GpuSubqueryBroadcastExec(
   }
 
   @transient
-  private lazy val relationFuture: Future[Array[InternalRow]] = {
+  private lazy val relationFuture: JFuture[Array[InternalRow]] = {
     // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
 
-    Future {
+    SQLExecution.withThreadLocalCaptured[Array[InternalRow]](
+        session, GpuSubqueryBroadcastExec.executionContext) {
       // This will run in another thread. Set the execution id so that we can connect these jobs
       // with the correct execution.
-      SQLExecution.withExecutionId(sparkSession, executionId) {
+      SQLExecution.withExecutionId(session, executionId) {
         val broadcastBatch = child.executeBroadcast[Any]()
         val result: Array[InternalRow] = broadcastBatch.value match {
-          case b: SerializeConcatHostBuffersDeserializeBatch => projectSerializedBatchToRows(b)
+          case b: SerializeConcatHostBuffersDeserializeBatch =>  projectSerializedBatchToRows(b)
           case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
           case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
         }
 
         result
       }
-    }(GpuSubqueryBroadcastExec.executionContext)
+    }
   }
 
   private def projectSerializedBatchToRows(
@@ -290,5 +294,6 @@ case class GpuSubqueryBroadcastExec(
 
 object GpuSubqueryBroadcastExec {
   private[execution] val executionContext = ExecutionContext.fromExecutorService(
-    ThreadUtils.newDaemonCachedThreadPool("dynamicpruning", 16))
+    ThreadUtils.newDaemonCachedThreadPool("dynamicpruning",
+      SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
 }

@@ -134,9 +134,10 @@ pipeline {
                     container('cpu') {
                         // check if pre-merge dockerfile modified
                         def dockerfileModified = sh(returnStdout: true,
-                                script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
-                                        'git --no-pager diff --name-only HEAD $(git merge-base HEAD $BASE) ' +
-                                        "-- ${PREMERGE_DOCKERFILE} || true")
+script: """BASE=\$(git --no-pager log --oneline -1 | awk \'{ print \$NF }\')
+git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true""").trim()
+                        echo "$dockerfileModified"
+
                         if (!dockerfileModified?.trim()) {
                             TEMP_IMAGE_BUILD = false
                         }
@@ -228,6 +229,37 @@ pipeline {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
                                         sh "$PREMERGE_SCRIPT ci_2"
+                                    } finally {
+                                        common.publishPytestResult(this, "${STAGE_NAME}")
+                                        common.printJVMCoreDumps(this)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } // end of Unit Test stage
+
+                stage('CI scala 2.13') {
+                     options {
+                        lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+                    }
+                    agent {
+                        kubernetes {
+                            label "ci-scala213-${BUILD_TAG}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
+                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            customWorkspace "${CUSTOM_WORKSPACE}-scala-213" // Use different workspace to avoid conflict with IT
+                        }
+                    }
+
+                    steps {
+                        script {
+                            unstash "source_tree"
+                            container('gpu') {
+                                timeout(time: 4, unit: 'HOURS') {
+                                    try {
+                                        sh "$PREMERGE_SCRIPT ci_scala213"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                         common.printJVMCoreDumps(this)

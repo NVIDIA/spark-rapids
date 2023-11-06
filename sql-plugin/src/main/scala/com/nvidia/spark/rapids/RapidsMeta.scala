@@ -28,10 +28,12 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -501,7 +503,7 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends RapidsMeta[INPUT, Scan, Scan](scan, conf, parent, rule) {
+  extends RapidsMeta[INPUT, Scan, GpuScan](scan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
@@ -527,7 +529,7 @@ final class RuleNotFoundScanMeta[INPUT <: Scan](
     willNotWorkOnGpu(s"GPU does not currently support the operator ${scan.getClass}")
   }
 
-  override def convertToGpu(): Scan =
+  override def convertToGpu(): GpuScan =
     throw new IllegalStateException("Cannot be converted to GPU")
 }
 
@@ -650,8 +652,18 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         !childPlans.exists(_.supportsColumnar) &&
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.supportsColumnar))) {
+      // Some platforms can present a plan where the root of the plan is a shuffle followed by
+      // an AdaptiveSparkPlanExec. If it looks like the child AdaptiveSparkPlanExec will end up
+      // on the GPU than this shuffle should be GPU as well.
+      val shuffle = wrapped.asInstanceOf[ShuffleExchangeExec]
+      val isChildOnGpu = shuffle.child match {
+        case ap: AdaptiveSparkPlanExec if parent.isEmpty => GpuOverrides.probablyGpuPlan(ap, conf)
+        case _ => false
+      }
 
-      willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+      if (!isChildOnGpu) {
+        willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+      }
 
       childPlans.head.wrapped
           .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
@@ -683,11 +695,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
     InputFileBlockRule.apply(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
 
-    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
-    // feeding them are either all on the GPU or all on the CPU, because the hashing is not
-    // consistent between the two implementations. This is okay because it is only impacting
-    // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
-    // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
+    // 2) For shuffles, avoid replacing the shuffle if the child is not going to be replaced.
     fixUpExchangeOverhead()
 
     // 3) Some child nodes can't run on GPU if parent nodes can't run on GPU.
@@ -935,7 +943,15 @@ object ExpressionContext {
     parent.get.wrapped match {
       case agg: SparkPlan if SparkShimImpl.isWindowFunctionExec(agg) =>
         WindowAggExprContext
+      case agg: AggregateInPandasExec =>
+        if (agg.groupingExpressions.isEmpty) {
+          ReductionAggExprContext
+        } else {
+          GroupByAggExprContext
+        }
       case agg: BaseAggregateExec =>
+        // Since Spark 3.5, Python udfs are wrapped in AggregateInPandasExec. UDFs for earlier
+        // versions of Spark should be handled by the BaseAggregateExec
         if (agg.groupingExpressions.isEmpty) {
           ReductionAggExprContext
         } else {
