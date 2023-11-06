@@ -157,7 +157,7 @@ object GpuParquetScan {
   }
 
   def throwIfRebaseNeeded(table: Table, dateRebaseMode: DateTimeRebaseMode,
-                          timestampRebaseMode: DateTimeRebaseMode): Unit = {
+      timestampRebaseMode: DateTimeRebaseMode): Unit = {
     (0 until table.getNumberOfColumns).foreach { i =>
       val col = table.getColumn(i)
       if (dateRebaseMode != DateTimeRebaseCorrected &&
@@ -1810,8 +1810,8 @@ private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockB
 
 /** Parquet extra information containing rebase modes and whether there is int96 timestamp */
 class ParquetExtraInfo(val dateRebaseMode: DateTimeRebaseMode,
-                       val timestampRebaseMode: DateTimeRebaseMode,
-                       val hasInt96Timestamps: Boolean) extends ExtraInfo
+    val timestampRebaseMode: DateTimeRebaseMode,
+    val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(
