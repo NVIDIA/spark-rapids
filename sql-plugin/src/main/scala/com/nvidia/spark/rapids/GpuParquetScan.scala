@@ -221,13 +221,13 @@ object GpuParquetScan {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
-    sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
-      case DateTimeRebaseException.value => if (schemaMightNeedNestedRebase) {
+    DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey)) match {
+      case DateTimeRebaseException => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
             s"${SparkShimImpl.int96ParquetRebaseReadKey} is EXCEPTION")
       }
-      case DateTimeRebaseCorrected.value => // Good
-      case DateTimeRebaseLegacy.value => // really is EXCEPTION for us...
+      case DateTimeRebaseCorrected => // Good
+      case DateTimeRebaseLegacy =>
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
               s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
@@ -235,13 +235,13 @@ object GpuParquetScan {
       case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
     }
 
-    sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
-      case DateTimeRebaseException.value => if (schemaMightNeedNestedRebase) {
+    DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.parquetRebaseReadKey)) match {
+      case DateTimeRebaseException => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
           s"${SparkShimImpl.parquetRebaseReadKey} is EXCEPTION")
       }
-      case DateTimeRebaseCorrected.value => // Good
-      case DateTimeRebaseLegacy.value => // really is EXCEPTION for us...
+      case DateTimeRebaseCorrected => // Good
+      case DateTimeRebaseLegacy =>
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
             s"${SparkShimImpl.parquetRebaseReadKey} is LEGACY")
