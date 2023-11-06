@@ -32,7 +32,6 @@ ast_integral_descrs = [
 ast_arithmetic_descrs = ast_integral_descrs + [(float_gen, True), (double_gen, True)]
 
 # cudf AST cannot support comparing floating point until it is expressive enough to handle NaNs
-# cudf AST does not support strings yet
 ast_comparable_descrs = [
     (boolean_gen, True),
     (byte_gen, True),
@@ -43,7 +42,7 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    (string_gen, False)
+    (string_gen, True)
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
