@@ -58,23 +58,23 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
     verifyBuildSideWasReplaced(buildSide)
 
-    // If AST-able, try to split if needed. Otherwise, do post-filter
+    // If ast-able, try to split if needed. Otherwise, do post-filter
     val isAstCondition = canJoinCondAstAble()
 
     if(isAstCondition){
-      // Try to extract non-AST-able conditions from join conditions
+      // Try to extract non-ast-able conditions from join conditions
       val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
-        conditionMeta, left.allAttributes, right.allAttributes, true)
+        conditionMeta, left.output, right.output, true)
 
       // Reconstruct the childern with wrapped project node if needed.
       val leftChild =
         if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
       val rightChild =
         if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
-      val postBuildCondition =
+      val postBoardcastCondition =
         if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
 
-      // TODO: a code refactor is needed to skip passing in postBuildCondition as a parameter to
+      // TODO: a code refactor is needed to skip passing in postBoardcastCondition as a parameter to
       // instantiate GpuBroadcastNestedLoopJoinExec. This is because currently output columnar batch
       // of broadcast side is handled inside GpuBroadcastNestedLoopJoinExec. Have to manually build
       // a project node to build side batch.
@@ -82,7 +82,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         leftChild, rightChild,
         join.joinType, gpuBuildSide,
         remains,
-        postBuildCondition,
+        postBoardcastCondition,
         conf.gpuTargetBatchSizeBytes)
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
         joinExec

@@ -45,15 +45,15 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
     verifyBuildSideWasReplaced(buildSide)
 
-    // If AST-able, try to split if needed. Otherwise, do post-filter
+    // If ast-able, try to split if needed. Otherwise, do post-filter
     val isAstCondition = canJoinCondAstAble()
 
     if (isAstCondition) {
-      // Try to extract non-AST-able conditions from join conditions
-      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
-        conditionMeta, left.allAttributes, right.allAttributes, true)
+      // Try to extract non-ast-able conditions from join conditions
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
+        left.output, right.output, true)
 
-      // Reconstruct the childern with wrapped project node if needed.
+      // Reconstruct the child with wrapped project node if needed.
       val leftChild =
         if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
       val rightChild =
