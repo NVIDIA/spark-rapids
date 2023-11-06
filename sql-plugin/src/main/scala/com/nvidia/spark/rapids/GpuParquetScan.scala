@@ -322,16 +322,42 @@ object GpuParquetScan {
     }
   }
 
-  def rebaseDateTime(table: Table): Table = {
-    val newColumns = (0 until table.getNumberOfColumns).map { i =>
-      deepTransformRebase(table.getColumn(i))
+  def rebaseDateTime(table: Table, dateRebaseMode: DateTimeRebaseMode,
+                     timestampRebaseMode: DateTimeRebaseMode): Table = {
+    val tableHasDate = (0 until table.getNumberOfColumns).exists { i =>
+      columnHasDateTime(table.getColumn(i), { t => t == DType.TIMESTAMP_DAYS })
     }
-    withResource(newColumns) { newCols =>
-      new Table(newCols: _*)
+    val tableHasTimestamp = (0 until table.getNumberOfColumns).exists { i =>
+      columnHasDateTime(table.getColumn(i), { t => t.isTimestampType })
+    }
+
+    if ((tableHasDate && dateRebaseMode == DateTimeRebaseLegacy) ||
+      (tableHasTimestamp && timestampRebaseMode == DateTimeRebaseLegacy)) {
+      // Need to close the input table when returning a new table.
+      withResource(table) { tmpTable =>
+        val newColumns = (0 until tmpTable.getNumberOfColumns).map { i =>
+          deepTransformRebaseDateTime(tmpTable.getColumn(i))
+        }
+        withResource(newColumns) { newCols =>
+          new Table(newCols: _*)
+        }
+      }
+    } else {
+      table
     }
   }
 
-  private def deepTransformRebase(cv: ColumnVector): ColumnVector = {
+  private def columnHasDateTime(column: ColumnView, f: DType => Boolean): Boolean = {
+    column.getType match {
+      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
+        withResource(column.getChildColumnView(i)) { child =>
+          columnHasDateTime(child, f)
+        })
+      case t: DType => f(t)
+    }
+  }
+
+  private def deepTransformRebaseDateTime(cv: ColumnVector): ColumnVector = {
     ColumnCastUtil.deepTransform(cv) {
       case (cv, _) if cv.getType.isTimestampType =>
         if (cv.getType == DType.TIMESTAMP_DAYS || cv.getType == DType.TIMESTAMP_MICROSECONDS) {
@@ -2652,15 +2678,11 @@ object MakeParquetTableProducer extends Logging {
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
-      val output = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
+      val evolvedSchemaTable = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
         clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
-      if(dateRebaseMode == DateTimeRebaseLegacy || timestampRebaseMode == DateTimeRebaseLegacy) {
-        withResource(output) { outTbl =>
-          new SingleGpuDataProducer(GpuParquetScan.rebaseDateTime(outTbl))
-        }
-      } else {
-        new SingleGpuDataProducer(output)
-      }
+      val outputTable = GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode,
+        timestampRebaseMode)
+      new SingleGpuDataProducer(outputTable)
     }
   }
 }
@@ -2712,15 +2734,9 @@ case class ParquetTableReader(
       }
     }
     metrics(NUM_OUTPUT_BATCHES) += 1
-    val output = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
+    val evolvedSchemaTable = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
       clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
-    if (dateRebaseMode == DateTimeRebaseLegacy || timestampRebaseMode == DateTimeRebaseLegacy) {
-      withResource(output) { outTbl =>
-        GpuParquetScan.rebaseDateTime(outTbl)
-      }
-    } else {
-      output
-    }
+    GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode, timestampRebaseMode)
   }
 
   override def close(): Unit = {
