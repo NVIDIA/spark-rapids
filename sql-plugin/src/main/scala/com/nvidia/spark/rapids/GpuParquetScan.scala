@@ -181,8 +181,6 @@ object GpuParquetScan {
       sparkSession: SparkSession,
       readSchema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
-    val sqlConf = sparkSession.conf
-
     if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
       meta.willNotWorkOnGpu("GPU does not support spark.sql.legacy.parquet.nanosAsLong")
     }
