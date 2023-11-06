@@ -16,7 +16,7 @@
 
 package com.nvidia.spark
 
-import ai.rapids.cudf.{ColumnView, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
@@ -24,50 +24,54 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper {
-  private[this] def isRebaseNeeded(column: ColumnView, checkType: DType,
-                                   minGood: Scalar): Boolean = {
+  private[this] def isDateRebaseNeeded(column: ColumnVector,
+      startDay: Int): Boolean = {
+    // TODO update this for nested column checks
+    //  https://github.com/NVIDIA/spark-rapids/issues/1126
     val dtype = column.getType
-    require(!dtype.hasTimeResolution || dtype == DType.TIMESTAMP_MICROSECONDS)
+    if (dtype == DType.TIMESTAMP_DAYS) {
+      val hasBad = withResource(Scalar.timestampDaysFromInt(startDay)) {
+        column.lessThan
+      }
+      val anyBad = withResource(hasBad) {
+        _.any()
+      }
+      withResource(anyBad) { _ =>
+        anyBad.isValid && anyBad.getBoolean
+      }
+    } else {
+      false
+    }
+  }
 
-    dtype match {
-      case `checkType` =>
+  private[this] def isTimeRebaseNeeded(column: ColumnVector,
+      startTs: Long): Boolean = {
+    val dtype = column.getType
+    if (dtype.hasTimeResolution) {
+      require(dtype == DType.TIMESTAMP_MICROSECONDS)
+      withResource(
+        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
-          withResource(hasBad.any()) { anyBad =>
-            anyBad.isValid && anyBad.getBoolean
+          withResource(hasBad.any()) { a =>
+            a.isValid && a.getBoolean
           }
         }
-
-      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
-        withResource(column.getChildColumnView(i)) { child =>
-          isRebaseNeeded(child, checkType, minGood)
-        })
-
-      case _ => false
+      }
+    } else {
+      false
     }
   }
 
-  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
-    withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
-      isRebaseNeeded(column, DType.TIMESTAMP_DAYS, minGood)
-    }
-  }
-
-  private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
-    withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
-      isRebaseNeeded(column, DType.TIMESTAMP_MICROSECONDS, minGood)
-    }
-  }
-
-  def isDateRebaseNeededInRead(column: ColumnView): Boolean =
+  def isDateRebaseNeededInRead(column: ColumnVector): Boolean =
     isDateRebaseNeeded(column, RebaseDateTime.lastSwitchJulianDay)
 
-  def isTimeRebaseNeededInRead(column: ColumnView): Boolean =
+  def isTimeRebaseNeededInRead(column: ColumnVector): Boolean =
     isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchJulianTs)
 
-  def isDateRebaseNeededInWrite(column: ColumnView): Boolean =
+  def isDateRebaseNeededInWrite(column: ColumnVector): Boolean =
     isDateRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianDay)
 
-  def isTimeRebaseNeededInWrite(column: ColumnView): Boolean =
+  def isTimeRebaseNeededInWrite(column: ColumnVector): Boolean =
     isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianTs)
 
   def newRebaseExceptionInRead(format: String): Exception = {
