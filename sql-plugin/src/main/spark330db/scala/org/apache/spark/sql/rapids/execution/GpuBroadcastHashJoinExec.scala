@@ -17,6 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "330db"}
 {"spark": "332db"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
@@ -158,8 +159,7 @@ case class GpuBroadcastHashJoinExec(
 
     // Get all the broadcast data from the shuffle coalesced into a single partition 
     val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
-    val buildRelation = shuffleExchange.getShuffleRDD(partitionSpecs.toArray)
-        .asInstanceOf[RDD[ColumnarBatch]]
+    val buildRelation = ShuffleExchangeShim.getShuffleRDD(shuffleExchange, partitionSpecs)
 
     val rdd = streamedPlan.executeColumnar()
     val localBuildSchema = buildPlan.schema
