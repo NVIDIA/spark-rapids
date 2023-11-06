@@ -240,8 +240,7 @@ object GpuParquetScan {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
           s"${SparkShimImpl.parquetRebaseReadKey} is EXCEPTION")
       }
-      case DateTimeRebaseCorrected.value
-      => // Good
+      case DateTimeRebaseCorrected.value => // Good
       case DateTimeRebaseLegacy.value => // really is EXCEPTION for us...
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
