@@ -497,9 +497,10 @@ def test_from_json_struct(schema):
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @pytest.mark.parametrize('pattern', [
-    r'{ "bool": [truefalsTRUEFALS]{1,5} }',
-    r'{ "bool": "[truefalsTRUEFALS]{1,5}" }',
-    pytest.param(r'{ "bool": [0-9]{0,2}(\.[0-9]{1,2})? }', marks=pytest.mark.xfail(reason='TBD')),
+    r'{ "bool": (true|false|True|False|TRUE|FALSE) }',
+    pytest.param(r'{ "bool": "(true|false)" }', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
+    r'{ "bool": "(True|False|TRUE|FALSE)" }',
+    pytest.param(r'{ "bool": [0-9]{0,2}(\.[0-9]{1,2})? }', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
     r'{ "bool": "[0-9]{0,2}(\.[0-9]{1,2})?" }',
     r'{ "bool": [0-9]{4}-[0-9]{2}-[0-9]{2} }',
     r'{ "bool": "[0-9]{4}-[0-9]{2}-[0-9]{2}" }'
@@ -511,7 +512,6 @@ def test_from_json_struct_boolean(pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<bool:boolean>')),
-
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 def test_from_json_struct_decimal():
