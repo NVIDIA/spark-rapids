@@ -1146,6 +1146,7 @@ object GpuCast {
                 }
               }
             }
+            // add attribute value, or null literal string if value is null
             attrColumns += withResource(jsonAttr) { _ =>
               withResource(cv.isNull) { isNull =>
                 withResource(Scalar.fromString("null")) { nullScalar =>
