@@ -37,14 +37,6 @@ rebase_write_corrected_conf = {
     'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED'
 }
 
-# Set the rebase modes to CORRECTED because the default values are
-# LEGACY in Databricks which will preclude reading op from running on GPU.
-# Need to remove them or change to LEGACY value when it is supported.
-rebase_read_corrected_conf = {
-    'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-    'spark.sql.parquet.int96RebaseModeInRead': 'CORRECTED'
-}
-
 pandas_min_date = date(year=1677, month=9, day=22)   # Pandas.Timestamp.min, rounded up.
 pandas_max_date = date(year=2262, month=4, day=11)   # Pandas.Timestamp.max, rounded down.
 pandas_min_datetime = datetime(1677, 9, 21, 00, 12, 44, 0,
@@ -439,4 +431,4 @@ def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_
     # Read Parquet with CPU (Apache Spark) and GPU (plugin), and compare records.
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(hdfs_data_path),
-        rebase_read_corrected_conf)
+        rebase_write_corrected_conf)
