@@ -214,30 +214,6 @@ object GpuParquetScan {
     if (schemaHasTimestamps && sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
-
-    val schemaHasDates = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
-    }
-
-    sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey) match {
-      case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" => // really is EXCEPTION for us...
-        if (schemaHasTimestamps) {
-          meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
-        }
-      case other =>
-        meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
-    }
-
-    sqlConf.get(SparkShimImpl.parquetRebaseReadKey) match {
-      case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" => // really is EXCEPTION for us...
-        if (schemaHasDates || schemaHasTimestamps) {
-          meta.willNotWorkOnGpu("LEGACY rebase mode for dates and timestamps is not supported")
-        }
-      case other =>
-        meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
-    }
   }
 
   /**
