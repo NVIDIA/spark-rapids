@@ -389,16 +389,16 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
-            lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
-            conf=rebase_write_legacy_conf)
+        # LEGACY in read for int96 timestamps is not yet supported.
+        # We should add int96 output when LEGACY mode is ready.
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=rebase_write_legacy_conf)
     all_confs = copy_and_update(reader_confs,
                                 {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                                 # LEGACY in read for int96 timestamps is not yet supported.
-                                 # We should add int96 output when LEGACY mode is ready.
                                  'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'LEGACY'})
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read.parquet(data_path),
-            conf=all_confs)
+        lambda spark: spark.read.parquet(data_path),
+        conf=all_confs)
 
 # This is legacy format, which is totally different from datatime legacy rebase mode.
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, decimal_gen_32bit], decimal_gens,
