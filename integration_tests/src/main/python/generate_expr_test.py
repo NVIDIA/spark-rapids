@@ -226,8 +226,11 @@ def test_stack():
 # gpu stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True)
 def test_stack_mixed_types():
+    base_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, 
+                  boolean_gen, date_gen, timestamp_gen, null_gen, DecimalGen(precision=7, scale=3),
+                  DecimalGen(precision=12, scale=2), DecimalGen(precision=20, scale=2)]
     data_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in 
-                          enumerate(all_basic_gens + decimal_gens)], nullable=False)
+                          enumerate(base_gens)], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100)
                 .selectExpr('*', 'stack(2, child1, child2, child3, child4, child5, child6, ' + 
