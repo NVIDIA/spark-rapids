@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
+import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
@@ -68,27 +69,46 @@ case class GpuJsonToStructs(
           }
         }
         closeOnExcept(isNullOrEmptyInput) { _ =>
-          withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { cleaned =>
-            withResource(cudf.Scalar.fromString("\n")) { lineSep =>
-              withResource(cudf.Scalar.fromString("\r")) { returnSep =>
-                withResource(cleaned.stringContains(lineSep)) { inputHas =>
-                  withResource(inputHas.any()) { anyLineSep =>
-                    if (anyLineSep.isValid && anyLineSep.getBoolean) {
-                      throw new IllegalArgumentException("We cannot currently support parsing " +
-                          "JSON that contains a line separator in it")
+          withResource(isNullOrEmptyInput.ifElse(emptyRow, stripped)) { nullsReplaced =>
+            val isLiteralNull = withResource(Scalar.fromString("null")) { literalNull =>
+              nullsReplaced.equalTo(literalNull)
+            }
+            withResource(isLiteralNull) { _ =>
+              withResource(isLiteralNull.ifElse(emptyRow, nullsReplaced)) { cleaned =>
+                withResource(cudf.Scalar.fromString("\n")) { lineSep =>
+                  withResource(cudf.Scalar.fromString("\r")) { returnSep =>
+                    withResource(cleaned.stringContains(lineSep)) { inputHas =>
+                      withResource(inputHas.any()) { anyLineSep =>
+                        if (anyLineSep.isValid && anyLineSep.getBoolean) {
+                          throw new IllegalArgumentException(
+                            "We cannot currently support parsing " +
+                            "JSON that contains a line separator in it")
+                        }
+                      }
+                    }
+                    withResource(cleaned.stringContains(returnSep)) { inputHas =>
+                      withResource(inputHas.any()) { anyReturnSep =>
+                        if (anyReturnSep.isValid && anyReturnSep.getBoolean) {
+                          throw new IllegalArgumentException(
+                            "We cannot currently support parsing " +
+                            "JSON that contains a carriage return in it")
+                        }
+                      }
                     }
                   }
-                }
-                withResource(cleaned.stringContains(returnSep)) { inputHas =>
-                  withResource(inputHas.any()) { anyReturnSep =>
-                    if (anyReturnSep.isValid && anyReturnSep.getBoolean) {
-                      throw new IllegalArgumentException("We cannot currently support parsing " +
-                          "JSON that contains a carriage return in it")
+
+                  // if the last entry in a column is incomplete or invalid, then cuDF
+                  // will drop the row rather than replace with null if there is no newline, so we
+                  // add a newline here to prevent that
+                  val joined = withResource(cleaned.joinStrings(lineSep, emptyRow)) { joined =>
+                    withResource(ColumnVector.fromStrings("\n")) { newline =>
+                      ColumnVector.stringConcatenate(Array[ColumnView](joined, newline))
                     }
                   }
+
+                  (isNullOrEmptyInput, joined)
                 }
               }
-              (isNullOrEmptyInput, cleaned.joinStrings(lineSep, emptyRow))
             }
           }
         }
@@ -160,8 +180,8 @@ case class GpuJsonToStructs(
             val end = combinedHost.getEndListOffset(0)
             val length = end - start
 
-            withResource(cudf.Table.readJSON(cudf.JSONOptions.DEFAULT, data, start,
-              length)) { tableWithMeta =>
+            val jsonOptions = cudf.JSONOptions.builder().withRecoverWithNull(true).build()
+            withResource(cudf.Table.readJSON(jsonOptions, data, start, length)) { tableWithMeta =>
               val names = tableWithMeta.getColumnNames
               (names, tableWithMeta.releaseTable())
             }
