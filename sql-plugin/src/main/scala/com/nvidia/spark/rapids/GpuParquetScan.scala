@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy}
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.{ParquetFooter, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, SplitAndRetryOOM}
 import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
@@ -156,25 +156,8 @@ object GpuParquetScan {
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
-  def throwIfRebaseNeededInExceptionMode(table: Table, dateRebaseMode: DateTimeRebaseMode,
-                                         timestampRebaseMode: DateTimeRebaseMode): Unit = {
-    (0 until table.getNumberOfColumns).foreach { i =>
-      val col = table.getColumn(i)
-      if (dateRebaseMode == DateTimeRebaseException &&
-        DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-      else if (timestampRebaseMode == DateTimeRebaseException &&
-        DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-    }
-  }
-
-  def tagSupport(
-      sparkSession: SparkSession,
-      readSchema: StructType,
-      meta: RapidsMeta[_, _, _]): Unit = {
+  def tagSupport(sparkSession: SparkSession, readSchema: StructType,
+                 meta: RapidsMeta[_, _, _]): Unit = {
     val sqlConf = sparkSession.conf
 
     if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
@@ -196,10 +179,12 @@ object GpuParquetScan {
     val schemaHasTimestamps = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
-    def isTsOrDate(dt: DataType) : Boolean = dt match {
+
+    def isTsOrDate(dt: DataType): Boolean = dt match {
       case TimestampType | DateType => true
       case _ => false
     }
+
     val schemaMightNeedNestedRebase = readSchema.exists { field =>
       if (DataTypeUtils.isNestedType(field.dataType)) {
         TrampolineUtil.dataTypeExistsRecursively(field.dataType, isTsOrDate)
@@ -310,16 +295,54 @@ object GpuParquetScan {
    * @return the updated target batch size.
    */
   def splitTargetBatchSize(targetBatchSize: Long, useChunkedReader: Boolean): Long = {
-      if (!useChunkedReader) {
+    if (!useChunkedReader) {
       throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
-          "chunked parquet reader is configured off")
+        "chunked parquet reader is configured off")
     }
     val ret = targetBatchSize / 2
     if (targetBatchSize < minTargetBatchSizeMiB * 1024 * 1024) {
-           throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
-          s"target batch size to less than $minTargetBatchSizeMiB MiB")
+      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
+        s"target batch size to less than $minTargetBatchSizeMiB MiB")
     }
     ret
+  }
+
+  def throwIfRebaseNeededInExceptionMode(table: Table, dateRebaseMode: DateTimeRebaseMode,
+                                         timestampRebaseMode: DateTimeRebaseMode): Unit = {
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      if (dateRebaseMode == DateTimeRebaseException &&
+        DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+      else if (timestampRebaseMode == DateTimeRebaseException &&
+        DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+    }
+  }
+
+  def rebaseDateTime(table: Table): Table = {
+    val newColumns = (0 until table.getNumberOfColumns).map { i =>
+      deepTransformRebase(table.getColumn(i))
+    }
+    withResource(newColumns) { newCols =>
+      new Table(newCols: _*)
+    }
+  }
+
+  private def deepTransformRebase(cv: ColumnVector): ColumnVector = {
+    ColumnCastUtil.deepTransform(cv) {
+      case (cv, _) if cv.getType.isTimestampType =>
+        if (cv.getType == DType.TIMESTAMP_DAYS || cv.getType == DType.TIMESTAMP_MICROSECONDS) {
+          DateTimeRebase.rebaseJulianToGregorian(cv)
+        } else {
+          withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
+            DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)
+          }
+        }
+      case _ => cv.copyToColumnVector()
+    }
   }
 }
 
@@ -2629,9 +2652,15 @@ object MakeParquetTableProducer extends Logging {
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
-      val ret = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
+      val output = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
         clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
-      new SingleGpuDataProducer(ret)
+      if(dateRebaseMode == DateTimeRebaseLegacy || timestampRebaseMode == DateTimeRebaseLegacy) {
+        withResource(output) { outTbl =>
+          new SingleGpuDataProducer(GpuParquetScan.rebaseDateTime(outTbl))
+        }
+      } else {
+        new SingleGpuDataProducer(output)
+      }
     }
   }
 }
@@ -2683,8 +2712,15 @@ case class ParquetTableReader(
       }
     }
     metrics(NUM_OUTPUT_BATCHES) += 1
-    ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
+    val output = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
       clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
+    if (dateRebaseMode == DateTimeRebaseLegacy || timestampRebaseMode == DateTimeRebaseLegacy) {
+      withResource(output) { outTbl =>
+        GpuParquetScan.rebaseDateTime(outTbl)
+      }
+    } else {
+      output
+    }
   }
 
   override def close(): Unit = {
