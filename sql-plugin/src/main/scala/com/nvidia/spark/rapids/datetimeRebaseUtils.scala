@@ -24,35 +24,42 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
- * Mirror of Spark's LegacyBehaviorPolicy
+ * Mirror of Spark's LegacyBehaviorPolicy.
+ * <p>
+ * This is to provides a stable reference to other Java code in our codebase and also mitigate
+ * from Spark's breaking change that will cause issues with our code that uses Spark's
+ * LegacyBehaviorPolicy.
  */
 sealed abstract class DateTimeRebaseMode(val value: String) extends Serializable
 
+object DateTimeRebaseMode {
+  def fromName(name: String): DateTimeRebaseMode = name match {
+    case DateTimeRebaseException.value => DateTimeRebaseException
+    case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
+    case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
+    case _ => throw new IllegalArgumentException(
+      DateTimeRebaseUtils.invalidRebaseModeMessage(name))
+  }
+}
+
 /**
- * Mirror of Spark's LegacyBehaviorPolicy.EXCEPTION
+ * Mirror of Spark's LegacyBehaviorPolicy.EXCEPTION.
  */
 case object DateTimeRebaseException extends DateTimeRebaseMode("EXCEPTION")
 
 /**
- * Mirror of Spark's LegacyBehaviorPolicy.LEGACY
+ * Mirror of Spark's LegacyBehaviorPolicy.LEGACY.
  */
 case object DateTimeRebaseLegacy extends DateTimeRebaseMode("LEGACY")
 
 /**
- * Mirror of Spark's LegacyBehaviorPolicy.CORRECTED
+ * Mirror of Spark's LegacyBehaviorPolicy.CORRECTED.
  */
 case object DateTimeRebaseCorrected extends DateTimeRebaseMode("CORRECTED")
 
 object DateTimeRebaseUtils {
   def invalidRebaseModeMessage(name: String): String =
     s"Invalid datetime rebase mode: $name (must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')"
-
-  def rebaseModeFromName(name: String): DateTimeRebaseMode = name match {
-    case DateTimeRebaseException.value => DateTimeRebaseException
-    case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
-    case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
-    case _ => throw new IllegalArgumentException(invalidRebaseModeMessage(name))
-  }
 
   // Copied from Spark
   private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
@@ -61,9 +68,9 @@ object DateTimeRebaseUtils {
   private val SPARK_TIMEZONE_METADATA_KEY = "org.apache.spark.timeZone"
 
   private def rebaseModeFromFileMeta(lookupFileMeta: String => String,
-                                     modeByConfig: String,
-                                     minVersion: String,
-                                     metadataKey: String): DateTimeRebaseMode = {
+      modeByConfig: String,
+      minVersion: String,
+      metadataKey: String): DateTimeRebaseMode = {
 
     // If there is no version, we return the mode specified by the config.
     val mode = Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
@@ -76,7 +83,7 @@ object DateTimeRebaseUtils {
       } else {
         DateTimeRebaseCorrected
       }
-    }.getOrElse(rebaseModeFromName(modeByConfig))
+    }.getOrElse(DateTimeRebaseMode.fromName(modeByConfig))
 
     // Check the timezone of the file if the mode is LEGACY.
     if (mode == DateTimeRebaseLegacy) {
@@ -92,19 +99,19 @@ object DateTimeRebaseUtils {
   }
 
   def datetimeRebaseMode(lookupFileMeta: String => String,
-                         modeByConfig: String): DateTimeRebaseMode = {
+      modeByConfig: String): DateTimeRebaseMode = {
     rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.0.0",
       SPARK_LEGACY_DATETIME_METADATA_KEY)
   }
 
   def int96RebaseMode(lookupFileMeta: String => String,
-                      modeByConfig: String): DateTimeRebaseMode = {
+      modeByConfig: String): DateTimeRebaseMode = {
     rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.1.0",
       SPARK_LEGACY_INT96_METADATA_KEY)
   }
 
   private[this] def isDateRebaseNeeded(column: ColumnVector,
-                                       startDay: Int): Boolean = {
+      startDay: Int): Boolean = {
     // TODO update this for nested column checks
     //  https://github.com/NVIDIA/spark-rapids/issues/1126
     val dtype = column.getType
@@ -124,7 +131,7 @@ object DateTimeRebaseUtils {
   }
 
   private[this] def isTimeRebaseNeeded(column: ColumnVector,
-                                       startTs: Long): Boolean = {
+      startTs: Long): Boolean = {
     val dtype = column.getType
     if (dtype.hasTimeResolution) {
       require(dtype == DType.TIMESTAMP_MICROSECONDS)
