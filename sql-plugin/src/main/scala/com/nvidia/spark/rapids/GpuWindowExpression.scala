@@ -2011,7 +2011,7 @@ case class GpuPercentRank(children: Seq[Expression]) extends GpuReplaceWindowFun
     val rank = GpuWindowExpression(GpuRank(children), spec)
     val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi), DoubleType, isAnsi)
     val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi), DoubleType, isAnsi)
-    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnErrorOverride = isAnsi)
+    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnError = isAnsi)
     GpuCoalesce(Seq(divided, GpuLiteral(0.0)))
   }
 }

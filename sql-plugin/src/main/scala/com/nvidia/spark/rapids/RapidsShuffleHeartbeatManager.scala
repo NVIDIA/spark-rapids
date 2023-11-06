@@ -26,7 +26,7 @@ import org.apache.commons.lang3.mutable.MutableLong
 import org.apache.spark.SparkEnv
 import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
+import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 import org.apache.spark.storage.BlockManagerId
 
 class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
@@ -217,8 +217,10 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
   }
 
   def registerShuffleHeartbeat(): Unit = {
-    val rapidsShuffleManager = SparkEnv.get.shuffleManager.asInstanceOf[Proxy].self
-        .asInstanceOf[RapidsShuffleInternalManagerBase]
+    val rapidsShuffleManagerProxy = SparkEnv.get.shuffleManager
+      .asInstanceOf[ProxyRapidsShuffleInternalManagerBase]
+    val rapidsShuffleManager = rapidsShuffleManagerProxy.getRealImpl
+      .asInstanceOf[RapidsShuffleInternalManagerBase]
     if (rapidsShuffleManager.isDriver) {
       logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
     } else {

@@ -511,6 +511,7 @@ def test_from_json_struct_boolean(pattern):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<bool:boolean>')),
+
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 def test_from_json_struct_decimal():
