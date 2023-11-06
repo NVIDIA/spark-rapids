@@ -31,5 +31,5 @@ case class GpuShuffleExchangeExec(
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
-  extends GpuShuffleExchangeExecBase(gpuOutputPartitioning,
+  extends GpuDatabricksShuffleExchangeExecBase(gpuOutputPartitioning,
     child, shuffleOrigin)(cpuOutputPartitioning)

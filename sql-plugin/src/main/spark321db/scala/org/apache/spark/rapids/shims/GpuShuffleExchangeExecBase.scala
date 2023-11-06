@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
 
-abstract class GpuShuffleExchangeExecBase(
+abstract class GpuDatabricksShuffleExchangeExecBase(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)(
