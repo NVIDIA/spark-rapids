@@ -378,11 +378,9 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
 
+
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                            string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,
-                            pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
-                            pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
+                            string_gen, boolean_gen, date_gen, timestamp_gen]]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -391,9 +389,13 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
-            lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
+            lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
             conf=rebase_write_legacy_conf)
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 # LEGACY in read for int96 timestamps is not yet supported.
+                                 # We should add int96 output when LEGACY mode is ready.
+                                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'LEGACY'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
