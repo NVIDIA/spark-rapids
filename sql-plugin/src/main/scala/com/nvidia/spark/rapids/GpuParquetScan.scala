@@ -224,15 +224,18 @@ object GpuParquetScan {
     DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey)) match {
       case DateTimeRebaseException => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${SparkShimImpl.int96ParquetRebaseReadKey} is EXCEPTION")
+          s"${SparkShimImpl.int96ParquetRebaseReadKey} is EXCEPTION")
       }
       case DateTimeRebaseCorrected => // Good
       case DateTimeRebaseLegacy =>
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-              s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
+            s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
         }
-      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
     DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.parquetRebaseReadKey)) match {
@@ -246,7 +249,10 @@ object GpuParquetScan {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
             s"${SparkShimImpl.parquetRebaseReadKey} is LEGACY")
         }
-      case other => meta.willNotWorkOnGpu(DateTimeRebaseUtils.invalidRebaseModeMessage(other))
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
   }
 
