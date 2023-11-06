@@ -760,8 +760,10 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
     )
 
 def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, func):
-    conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-          'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase}
+    conf = {'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+          'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
+          'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase,
+          'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase}
 
     def create_table(spark, path):
         tmp_table = spark_tmp_table_factory.get()
@@ -780,7 +782,7 @@ def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
 
     def func_test(create_table, read_table, data_path, conf):
         assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path, conf=conf)
-        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path + '/CPU'))
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path + '/CPU'), conf=conf)
 
     hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, 'CORRECTED', func_test)
 

@@ -327,7 +327,13 @@ def test_ts_read_round_trip(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
                 'spark.sql.parquet.outputTimestampType': ts_write})
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 # Set the rebase modes to CORRECTED because the default values are
+                                 # LEGACY in Databricks which will preclude reading op from running on GPU.
+                                 # Need to remove them or change to LEGACY value when it is supported.
+                                 'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+                                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -352,7 +358,10 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
                 'spark.sql.parquet.outputTimestampType': ts_write})
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 'spark.sql.legacy.parquet.int96RebaseModeInRead': 'EXCEPTION',
+                                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'EXCEPTION'})
     with_gpu_session(
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
@@ -379,6 +388,8 @@ parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, 
                             pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
                             pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
 
+# This needs to wait until LEGACY mode is fully supported.
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9059')
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -418,7 +429,12 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(reader_confs,
             {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-             'spark.rapids.sql.batchSizeBytes': batch_size})
+             'spark.rapids.sql.batchSizeBytes': batch_size,
+             # Set the rebase modes to CORRECTED because the default values are
+             # LEGACY in Databricks which will preclude reading op from running on GPU.
+             # Need to remove them or change to LEGACY value when it is supported.
+             'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+             'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -586,7 +602,13 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
             lambda spark : gen_df(spark, second_gen_list).write.parquet(second_data_path),
             conf=rebase_write_corrected_conf)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 # Set the rebase modes to CORRECTED because the default values are
+                                 # LEGACY in Databricks which will preclude reading op from running on GPU.
+                                 # Need to remove them or change to LEGACY value when it is supported.
+                                 'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+                                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             conf=all_confs)
@@ -611,7 +633,12 @@ def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, re
             conf=rebase_write_corrected_conf)
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.parquet.mergeSchema': 'true'})
+        'spark.sql.parquet.mergeSchema': 'true',
+        # Set the rebase modes to CORRECTED because the default values are
+        # LEGACY in Databricks which will preclude reading op from running on GPU.
+        # Need to change them to LEGACY value when it is supported.
+        'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
@@ -1310,7 +1337,12 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
                               StructField("s", ShortType()),
                               StructField("b", ByteType())])
     conf = copy_and_update(reader_confs,
-                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                            # Set the rebase modes to CORRECTED because the default values are
+                            # LEGACY in Databricks which will preclude reading op from running on GPU.
+                            # Need to remove them or change to LEGACY value when it is supported.
+                            'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+                            'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
