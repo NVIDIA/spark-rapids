@@ -1643,12 +1643,12 @@ object RapidsConf {
     .createWithDefault(500 * 1024)
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
-      .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: lz4, copy, none")
-      .internal()
-      .startupOnly()
-      .stringConf
-      .createWithDefault("none")
+    .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
+      "Supported codecs: lz4, copy, none")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault("none")
 
   val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
@@ -2048,6 +2048,12 @@ object RapidsConf {
       .internal()
       .longConf
       .createOptional
+
+  val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
+    .doc("Only for tests: verify for IO encryption")
+    .internal()
+    .booleanConf
+    .createOptional
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

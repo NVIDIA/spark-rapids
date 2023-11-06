@@ -75,18 +75,18 @@
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
-
-        <!--
-            not a real module, workaround to enforce the build order
-            ROOT -> shim
-        -->
-        <module>shim-deps</module>
-
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
+
+        <!--
+            Workaround to enforce the build order
+            ROOT -> jdk-profiles -> shim-deps -> ...
+        -->
+        <module>shim-deps</module>
+        <module>jdk-profiles</module>
     </modules>
     <profiles>
         <profile>
@@ -548,24 +548,6 @@
                     </plugin>
                 </plugins>
             </build>
-        </profile>
-        <profile>
-            <id>jdk11</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>11</maven.compiler.release>
-                <maven.compiler.source>11</maven.compiler.source>
-                <maven.compiler.target>11</maven.compiler.target>
-            </properties>
-        </profile>
-        <profile>
-            <id>jdk17</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>17</maven.compiler.release>
-                <maven.compiler.source>17</maven.compiler.source>
-                <maven.compiler.target>17</maven.compiler.target>
-            </properties>
         </profile>
         <profile>
             <id>scala-2.12</id>
@@ -1084,7 +1066,6 @@
                             <arg>-Xsource:2.13</arg>
                             <!-- #if scala-2.13 --><!--
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
-                            <arg>-target:jvm-1.8</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
                             <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
@@ -1247,6 +1228,10 @@
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <requireJavaVersion>
+                            <message>Only Java 8, 11, and 17 are supported!</message>
+                            <version>[1.8,1.9),[11,12),[17,18)</version>
+                        </requireJavaVersion>
                         <!-- #if scala-2.13 --><!--
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>

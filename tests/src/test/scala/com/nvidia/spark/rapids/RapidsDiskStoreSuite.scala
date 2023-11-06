@@ -22,11 +22,15 @@ import java.math.RoundingMode
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import org.mockito.ArgumentMatchers
-import org.mockito.Mockito.{spy, times, verify}
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.{spy, times, verify, when}
 import org.scalatestplus.mockito.MockitoSugar
 
-import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
+import org.apache.spark.storage.{BlockId, ShuffleBlockId}
+
 
 class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
@@ -58,6 +62,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
 
   test("spill updates catalog") {
     val bufferId = MockRapidsBufferId(7, canShareDiskPaths = false)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
@@ -65,7 +72,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
       withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             assertResult(0)(diskStore.currentSize)
             hostStore.setSpillStore(diskStore)
             val (bufferSize, handle) =
@@ -92,9 +99,12 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     }
   }
 
-  test("get columnar batch") {
+  test("Get columnar batch") {
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     assert(!bufferPath.exists)
     val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
       DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
@@ -105,7 +115,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
       withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) {
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) {
             diskStore =>
               hostStore.setSpillStore(diskStore)
               val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
@@ -139,6 +149,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
   test("get memory buffer") {
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     assert(!bufferPath.exists)
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
@@ -147,10 +160,10 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
       withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             hostStore.setSpillStore(diskStore)
             val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
-            assert(!handle.id.getDiskPath(null).exists())
+            assert(!handle.id.getDiskPath(mockDiskBlockManager).exists())
             val expectedBuffer = withResource(catalog.acquireBuffer(handle)) { buffer =>
               assertResult(StorageTier.DEVICE)(buffer.storageTier)
               withResource(buffer.getMemoryBuffer) { devbuf =>
@@ -168,7 +181,157 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
                 withResource(buffer.getMemoryBuffer) { actualBuffer =>
                   assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
                   val actualHostBuffer = actualBuffer.asInstanceOf[HostMemoryBuffer]
-                  assertResult(expectedBuffer.asByteBuffer)(actualHostBuffer.asByteBuffer)
+                  assertResult(expectedBuffer.
+                    asByteBuffer.limit())(actualHostBuffer.asByteBuffer.limit())
+                }
+              }
+            }
+          }
+      }
+    }
+  }
+
+  test("Compression on with or without encryption for spill block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply())
+    }
+  }
+
+  test("Compression off with or without encryption for spill block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply())
+    }
+  }
+
+  test("Compression on with or without encryption for spill block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply(), TempSpillBufferId.apply())
+    }
+  }
+
+  test("Compression off with or without encryption for spill block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf, TempSpillBufferId.apply(), TempSpillBufferId.apply())
+    }
+  }
+
+  // ===== Tests for shuffle block =====
+
+  test("Compression on with or without encryption for shuffle block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf, ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1))
+    }
+  }
+
+  test("Compression off with or without encryption for shuffle block using single batch") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf, ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1))
+    }
+  }
+
+  test("Compression on with or without encryption for shuffle block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.io.compression.codec", "zstd")
+      conf.set("spark.shuffle.spill.compress", "true")
+      conf.set("spark.shuffle.compress", "true")
+      readWriteTestWithBatches(conf,
+        ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1), ShuffleBufferId(ShuffleBlockId(2, 2, 2), 2))
+    }
+  }
+
+  test("Compression off with or without encryption for shuffle block using multiple batches") {
+    Seq("true", "false").foreach { encryptionEnabled =>
+      val conf = new SparkConf()
+      conf.set(RapidsConf.TEST_IO_ENCRYPTION.key, encryptionEnabled)
+      conf.set("spark.shuffle.spill.compress", "false")
+      conf.set("spark.shuffle.compress", "false")
+      readWriteTestWithBatches(conf,
+        ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1), ShuffleBufferId(ShuffleBlockId(2, 2, 2), 2))
+    }
+  }
+
+  test("No encryption and compression for shuffle block using multiple batches") {
+    readWriteTestWithBatches(new SparkConf(),
+      ShuffleBufferId(ShuffleBlockId(1, 1, 1), 1), ShuffleBufferId(ShuffleBlockId(2, 2, 2), 2))
+  }
+
+  private def readWriteTestWithBatches(conf: SparkConf, bufferIds: RapidsBufferId*) = {
+    assert(bufferIds.size != 0)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(conf))
+
+    if (bufferIds(0).canShareDiskPaths) {
+      // Return the same path
+      val bufferPath = new File(TEST_FILES_ROOT, s"diskbuffer-${bufferIds(0).tableId}")
+      when(mockDiskBlockManager.getFile(any[BlockId]())).thenReturn(bufferPath)
+      if (bufferPath.exists) bufferPath.delete()
+    } else {
+      when(mockDiskBlockManager.getFile(any[BlockId]()))
+        .thenAnswer { invocation =>
+          new File(TEST_FILES_ROOT, s"diskbuffer-${invocation.getArgument[BlockId](0).name}")
+        }
+    }
+
+    val spillPriority = -7
+    val hostStoreMaxSize = 1L * 1024 * 1024
+    withResource(new RapidsDeviceMemoryStore) { devStore =>
+      val catalog = new RapidsBufferCatalog(devStore)
+      withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
+        hostStore =>
+          devStore.setSpillStore(hostStore)
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
+            hostStore.setSpillStore(diskStore)
+            bufferIds.foreach { bufferId =>
+              val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
+              val expectedBuffer = withResource(catalog.acquireBuffer(handle)) { buffer =>
+                assertResult(StorageTier.DEVICE)(buffer.storageTier)
+                withResource(buffer.getMemoryBuffer) { devbuf =>
+                  closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
+                    hostbuf.copyFromDeviceBuffer(devbuf.asInstanceOf[DeviceMemoryBuffer])
+                    hostbuf
+                  }
+                }
+              }
+              withResource(expectedBuffer) { expectedBuffer =>
+                catalog.synchronousSpill(devStore, 0)
+                catalog.synchronousSpill(hostStore, 0)
+                withResource(catalog.acquireBuffer(handle)) { buffer =>
+                  assertResult(StorageTier.DISK)(buffer.storageTier)
+                  withResource(buffer.getMemoryBuffer) { actualBuffer =>
+                    assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
+                    val actualHostBuffer = actualBuffer.asInstanceOf[HostMemoryBuffer]
+                    assertResult(expectedBuffer.asByteBuffer)(actualHostBuffer.asByteBuffer)
+                  }
                 }
               }
             }
@@ -181,13 +344,16 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
     assert(!bufferPath.exists)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     val spillPriority = -7
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
       withResource(new AlwaysFailingRapidsHostMemoryStore) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             hostStore.setSpillStore(diskStore)
             val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
             assert(!handle.id.getDiskPath(null).exists())
@@ -220,13 +386,16 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
     assert(!bufferPath.exists)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     val spillPriority = -7
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
       withResource(new AlwaysFailingRapidsHostMemoryStore) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             hostStore.setSpillStore(diskStore)
             val handle = addTableToCatalog(catalog, bufferId, spillPriority)
             withResource(buildTable()) { expectedTable =>
@@ -251,13 +420,16 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
     assert(!bufferPath.exists)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     val spillPriority = -7
     withResource(new RapidsDeviceMemoryStore(1L*1024*1024, 10)) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
       withResource(new AlwaysFailingRapidsHostMemoryStore) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             hostStore.setSpillStore(diskStore)
             val handle = addTableToCatalog(catalog, bufferId, spillPriority)
             withResource(buildTable()) { expectedTable =>
@@ -284,13 +456,16 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val bufferPath = bufferId.getDiskPath(null)
     val bufferId2 = MockRapidsBufferId(2, canShareDiskPaths = false)
     assert(!bufferPath.exists)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
       withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) { hostStore =>
         devStore.setSpillStore(hostStore)
-        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+        withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
           hostStore.setSpillStore(diskStore)
           val handle = addZeroRowsTableToCatalog(catalog, bufferId, spillPriority - 1)
           val handle2 = addTableToCatalog(catalog, bufferId2, spillPriority)
@@ -353,6 +528,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths)
     val bufferPath = bufferId.getDiskPath(null)
     assert(!bufferPath.exists)
+    val mockDiskBlockManager = mock[RapidsDiskBlockManager]
+    when(mockDiskBlockManager.getSerializerManager())
+      .thenReturn(new RapidsSerializerManager(new SparkConf()))
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     withResource(new RapidsDeviceMemoryStore) { devStore =>
@@ -360,7 +538,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with MockitoSugar {
       withResource(new RapidsHostMemoryStore(Some(hostStoreMaxSize))) {
         hostStore =>
           devStore.setSpillStore(hostStore)
-          withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager])) { diskStore =>
+          withResource(new RapidsDiskStore(mockDiskBlockManager)) { diskStore =>
             hostStore.setSpillStore(diskStore)
             val (_, handle) = addContiguousTableToCatalog(catalog, bufferId, spillPriority)
             val bufferPath = handle.id.getDiskPath(null)
