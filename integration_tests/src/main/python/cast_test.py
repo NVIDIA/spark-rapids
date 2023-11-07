@@ -302,13 +302,13 @@ def test_cast_array_to_string(data_gen, legacy):
         data_gen, 
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
     
-def test_cast_float_to_string_to_float():
+def test_cast_float_to_string():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, FloatGen()).selectExpr("cast(cast(a as string) as float)"),
         conf = {"spark.rapids.sql.castStringToFloat.enabled": True,
                 "spark.rapids.sql.castFloatToString.enabled": True})
 
-def test_cast_double_to_string_to_double():
+def test_cast_double_to_string():
     conf = {"spark.rapids.sql.castFloatToString.enabled": True}
     cast_func = lambda spark: unary_op_df(spark, DoubleGen()).selectExpr("cast(a as string)").collect()
     from_cpu = with_cpu_session(cast_func, conf)

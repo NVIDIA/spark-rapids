@@ -22,6 +22,7 @@ import ai.rapids.cudf.{CSVWriterOptions, DType, QuoteStyle, Scalar, Table, Table
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.jni.CastStrings
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
@@ -159,13 +160,7 @@ class GpuHiveTextWriter(override val path: String,
               // as `"Inf"`.
               // Hive's LazySimplSerDe expects such values to be written as `"Infinity"`.
               // All occurrences of `Inf` need to be replaced with `Infinity`.
-              val col = withResource(c.castTo(DType.STRING)) { asStrings =>
-                withResource(Scalar.fromString("Inf")) { infString =>
-                  withResource(Scalar.fromString("Infinity")) { infinityString =>
-                    asStrings.stringReplace(infString, infinityString)
-                  }
-                }
-              }
+              val col = CastStrings.fromFloat(c)
               GpuColumnVector.from(col, StringType)
             case c =>
               GpuColumnVector.from(c.incRefCount(), cb.column(i).dataType())
