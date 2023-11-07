@@ -332,20 +332,14 @@ def test_ts_read_round_trip(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
-def readParquetCatchException(spark, data_path):
-    with pytest.raises(Exception) as e_info:
-        df = spark.read.parquet(data_path).collect()
-    assert e_info.match(r".*SparkUpgradeException.*")
-
-# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with timestamp_gen
-@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc)),
-                                 ArrayGen(TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))),
-                                 ArrayGen(ArrayGen(TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))))], ids=idfn)
+# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
+# timestamp_gen
+@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))], ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
-@pytest.mark.parametrize('ts_rebase', ['LEGACY'])
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
+def test_ts_read_round_trip(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
@@ -353,31 +347,34 @@ def test_parquet_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_re
                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
                 'spark.sql.parquet.outputTimestampType': ts_write})
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
-    with_gpu_session(
-            lambda spark : readParquetCatchException(spark, data_path),
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
-
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                             string_gen, boolean_gen, date_gen, timestamp_gen]]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
+# LEGACY in read for int96 timestamps is not yet supported.
+# We should add int96 output when LEGACY mode is ready.
+# (Use `parquet_ts_write_options` for `ts_type`).
 @pytest.mark.parametrize('ts_type', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_round_trip_datetime_legacy(spark_tmp_path, parquet_gens, ts_type, reader_confs, v1_enabled_list):
+def test_parquet_read_round_trip_datetime_legacy(spark_tmp_path, parquet_gens, ts_type, ts_rebase,
+                                                 reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    write_confs = copy_and_update(rebase_write_legacy_conf, {'spark.sql.parquet.outputTimestampType': ts_type})
+    write_confs = {'spark.sql.parquet.outputTimestampType': ts_type,
+                   'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                   'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase}
+
     with_cpu_session(
-        # LEGACY in read for int96 timestamps is not yet supported.
-        # We should add int96 output when LEGACY mode is ready.
-        # (Use `parquet_ts_write_options` for `ts_type`).
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=write_confs)
-    read_confs = copy_and_update(reader_confs,
-                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'LEGACY'})
+    # Don't have to set the rebase config for read, as it is automatically retrieved from file.
+    read_confs = copy_and_update(reader_confs,{'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
         conf=read_confs)
