@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_spark_exception
+from conftest import is_utc, is_not_utc
 from data_gen import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
     is_databricks113_or_later
@@ -60,13 +61,32 @@ def test_cast_empty_string_to_int():
 def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
-@disable_timezone_test
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(DateType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.xfail(is_utc(), reason="TODO https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+def test_cast_string_date_valid_format_for_non_utc():
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(DateType())),
+            "Cast",
+            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
+
+def test_cast_string_date_valid_format():
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(DateType())),
+            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
+
 
 invalid_values_string_to_date = ['200', ' 1970A', '1970 A', '1970T',  # not conform to "yyyy" after trim
                                  '1970 T', ' 1970-01T', '1970-01 A',  # not conform to "yyyy-[M]M" after trim
