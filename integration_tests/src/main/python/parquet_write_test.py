@@ -310,22 +310,6 @@ def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory)
             lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name))
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
-@pytest.mark.parametrize('ts_rebase', ['LEGACY'])
-def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-            'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
-            'spark.sql.parquet.outputTimestampType': ts_write}
-    assert_gpu_fallback_write(
-            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            'DataWritingCommandExec',
-            conf=all_confs)
-
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
@@ -470,41 +454,17 @@ def test_write_map_nullable(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path)
 
-@pytest.mark.parametrize('ts_write_data_gen', [('INT96', TimestampGen()),
-                                               ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))),
-                                               ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
-@pytest.mark.parametrize('date_time_rebase_write', ["CORRECTED"])
-@pytest.mark.parametrize('date_time_rebase_read', ["EXCEPTION", "CORRECTED"])
-@pytest.mark.parametrize('int96_rebase_write', ["CORRECTED"])
-@pytest.mark.parametrize('int96_rebase_read', ["EXCEPTION", "CORRECTED"])
-def test_timestamp_roundtrip_no_legacy_rebase(spark_tmp_path, ts_write_data_gen,
-                                              date_time_rebase_read, date_time_rebase_write,
-                                              int96_rebase_read, int96_rebase_write):
-    ts_write, gen = ts_write_data_gen
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = {'spark.sql.parquet.outputTimestampType': ts_write}
-    all_confs.update({'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': date_time_rebase_write,
-                      'spark.sql.legacy.parquet.int96RebaseModeInWrite': int96_rebase_write})
-    all_confs.update({'spark.sql.legacy.parquet.datetimeRebaseModeInRead': date_time_rebase_read,
-                      'spark.sql.legacy.parquet.int96RebaseModeInRead': int96_rebase_read})
-    assert_gpu_and_cpu_writes_are_equal_collect(
-        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
-        lambda spark, path: spark.read.parquet(path),
-        data_path,
-        conf=all_confs)
-
-# This should be merged to `test_timestamp_roundtrip_no_legacy_rebase` above when
-# we have rebase for int96 supported.
-@pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
-def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, ts_write, data_gen):
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase_write', ['CORRECTED', 'LEGACY'])
+@pytest.mark.parametrize('ts_rebase_read', ['CORRECTED', 'LEGACY'])
+def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, data_gen, ts_write, ts_rebase_write, ts_rebase_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY',
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-                 # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-                 'spark.sql.legacy.parquet.int96RebaseModeInWrite' : 'CORRECTED',
-                 'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED'}
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write,
+                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write,
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read,
+                 'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read}
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
