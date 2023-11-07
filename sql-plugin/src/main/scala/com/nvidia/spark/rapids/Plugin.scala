@@ -111,6 +111,16 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
+  def detectMultiplePluginJars(): Unit = {
+    val cl = classOf[com.nvidia.spark.rapids.SparkShimServiceProvider].getClassLoader
+    val rapidsJarURLs = cl.getResources("rapids4spark-version-info.properties").asScala.toList
+    if (rapidsJarURLs.size > 1) {
+      val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
+      throw new RuntimeException(s"Multiple rapids4spark jars found in the classpath: " +
+          s"$rapidsJars. Please make sure there is only one rapids4spark jar in the classpath.")
+    }
+  }
+
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
   // to handle.
   def estimateCoresOnExec(conf: SparkConf): Int = {
@@ -306,6 +316,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
   override def init(
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
+    RapidsPluginUtils.detectMultiplePluginJars()
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
@@ -352,6 +363,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
+      // Fail if there are multiple plugin jars in the classpath.
+      RapidsPluginUtils.detectMultiplePluginJars()
+
       if (Cuda.getComputeCapabilityMajor < 6) {
         throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
           " is unsupported, requires 6.0+")
