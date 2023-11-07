@@ -369,9 +369,13 @@ object GpuParquetScan {
         if (cv.getType == DType.TIMESTAMP_DAYS || cv.getType == DType.TIMESTAMP_MICROSECONDS) {
           DateTimeRebase.rebaseJulianToGregorian(cv)
         } else {
+          // This is just a backup: it should not be reached out since timestamps is already
+          // converted into MICROSECONDS when reading Parquet files.
+          val oldType = cv.getType
           withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
-            // Don't have to cast back to the old type.
-            DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)
+            withResource(DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)) { rebasedTs =>
+              rebasedTs.castTo(oldType)
+            }
           }
         }
       case _ => cv.copyToColumnVector()
