@@ -65,15 +65,10 @@ function bloopInstall() {
       bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
       mkdir -p $bloopTmpConfigDir
       $MVN -B clean install \
-        ch.epfl.scala:bloop-maven-plugin:bloopInstall \
-        -pl aggregator -am \
+        -DbloopInstall \
         -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
-        -Dbuildver="$bv" \
-        -DskipTests \
-        -Dskip \
-        -Dmaven.scalastyle.skip=true \
-        -Dmaven.updateconfig.skip=true
+        -Dbuildver="$bv"
 
       specifier="spark$bv"
       bloopDir=$PWD/.bloop-$specifier
