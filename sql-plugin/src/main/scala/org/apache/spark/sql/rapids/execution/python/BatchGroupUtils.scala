@@ -28,6 +28,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.python.shims.GpuPythonArrowOutput
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
 

@@ -75,18 +75,18 @@
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
-
-        <!--
-            not a real module, workaround to enforce the build order
-            ROOT -> shim
-        -->
-        <module>shim-deps</module>
-
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
+
+        <!--
+            Workaround to enforce the build order
+            ROOT -> jdk-profiles -> shim-deps -> ...
+        -->
+        <module>shim-deps</module>
+        <module>jdk-profiles</module>
     </modules>
     <profiles>
         <profile>
@@ -550,24 +550,6 @@
             </build>
         </profile>
         <profile>
-            <id>jdk11</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>11</maven.compiler.release>
-                <maven.compiler.source>11</maven.compiler.source>
-                <maven.compiler.target>11</maven.compiler.target>
-            </properties>
-        </profile>
-        <profile>
-            <id>jdk17</id>
-            <properties>
-                <scala.plugin.version>4.6.1</scala.plugin.version>
-                <maven.compiler.release>17</maven.compiler.release>
-                <maven.compiler.source>17</maven.compiler.source>
-                <maven.compiler.target>17</maven.compiler.target>
-            </properties>
-        </profile>
-        <profile>
             <id>scala-2.12</id>
             <properties>
                 <scala.binary.version>2.12</scala.binary.version>
@@ -586,6 +568,57 @@
             <properties>
                 <jni.classifier>${cuda.version}-arm64</jni.classifier>
             </properties>
+        </profile>
+        <profile>
+            <id>bloopInstall</id>
+            <activation>
+                <property>
+                    <name>bloopInstall</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <skipTests>true</skipTests>
+                <maven.scaladoc.skip>true</maven.scaladoc.skip>
+                <maven.scalastyle.skip>true</maven.scalastyle.skip>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>enforce-bloop-rules</id>
+                                <goals><goal>enforce</goal></goals>
+                                <configuration>
+                                    <rules>
+                                        <requireJavaVersion>
+                                            <message>Metals semantic database requires JAVA_HOME pointing to JDK 11+, actual Java version: ${java.version}</message>
+                                            <version>[11,)</version>
+                                        </requireJavaVersion>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>ch.epfl.scala</groupId>
+                        <artifactId>bloop-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>generate-bloop-projects</id>
+                                <goals><goal>bloopInstall</goal></goals>
+                                <phase>${bloop.installPhase}</phase>
+                                <configuration>
+                                    <!-- Metals looks at the repo root. so to accomodate scala 2.13  define -->
+                                    <bloopConfigDir>${bloop.configDirectory}</bloopConfigDir>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 
@@ -673,6 +706,7 @@
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
+        <maven.scaladoc.skip>false</maven.scaladoc.skip>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
         <spark330.iceberg.version>0.14.1</spark330.iceberg.version>
@@ -783,6 +817,8 @@
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
+        <bloop.installPhase>install</bloop.installPhase>
+        <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
     </properties>
 
     <dependencyManagement>
@@ -1061,6 +1097,7 @@
                                     <arg>-doc-external-doc:${settings.localRepository}/${scala.local-lib.path}#https://scala-lang.org/api/${scala.version}/</arg>
                                     <arg>-doc-external-doc:${settings.localRepository}/org/apache/spark/spark-sql_${scala.binary.version}/${spark.version}/spark-sql_${scala.binary.version}-${spark.version}.jar#https://spark.apache.org/docs/${spark.version}/api/scala/index.html</arg>
                                 </args>
+                                <skip>${maven.scaladoc.skip}</skip>
                             </configuration>
                         </execution>
                     </executions>
@@ -1084,7 +1121,6 @@
                             <arg>-Xsource:2.13</arg>
                             <!-- #if scala-2.13 -->
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
-                            <arg>-target:jvm-1.8</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
                             <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
@@ -1232,6 +1268,21 @@
 
         <plugins>
             <plugin>
+                <groupId>ch.epfl.scala</groupId>
+                <artifactId>bloop-maven-plugin</artifactId>
+                <version>2.0.0</version>
+                <executions>
+                    <execution>
+                        <id>default-cli</id>
+                        <configuration>
+                            <skip>true</skip>
+                            <!-- workaround: skip is not skipping -->
+                            <bloopConfigDir>/dev/null/ERROR: Do not specify the bloop-maven-plugin on the command line. Instead invoke `mvn install -DbloopInstall ...`</bloopConfigDir>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
                 <version>3.3.0</version>
@@ -1247,6 +1298,10 @@
                           <message>Minimum Maven version 3.6.x required</message>
                           <version>[3.6,)</version>
                         </requireMavenVersion>
+                        <requireJavaVersion>
+                            <message>Only Java 8, 11, and 17 are supported!</message>
+                            <version>[1.8,1.9),[11,12),[17,18)</version>
+                        </requireJavaVersion>
                         <!-- #if scala-2.13 -->
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>

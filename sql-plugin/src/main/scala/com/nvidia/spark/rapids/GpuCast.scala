@@ -217,7 +217,8 @@ class CastOptions(
     legacyCastComplexTypesToString: Boolean,
     ansiMode: Boolean,
     stringToDateAnsiMode: Boolean,
-    val castToJsonString: Boolean = false) extends Serializable {
+    val castToJsonString: Boolean = false,
+    val ignoreNullFieldsInStructs: Boolean = true) extends Serializable {
 
   /**
    * Retuns the left bracket to use when surrounding brackets when converting
@@ -1098,7 +1099,7 @@ object GpuCast {
    * The main differences are:
    *
    * - Struct field names are included
-   * - Null fields are omitted
+   * - Null fields are optionally omitted
    */
   def castStructToJsonString(input: ColumnView,
       inputSchema: Array[StructField],
@@ -1120,28 +1121,57 @@ object GpuCast {
             attrColumns += ColumnVector.fromScalar(name, rowCount)
             attrColumns += colon.incRefCount()
           }
-          // write the value
-          val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
-          if (needsQuoting) {
-            attrColumns += quote.incRefCount()
-            attrColumns += escapeJsonString(attrValue)
-            attrColumns += quote.incRefCount()
-          } else {
-            attrColumns += attrValue
-          }
-          // now concatenate
-          val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
-            ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
-          }
-          // add an empty string or the attribute
-          val jsonAttrOrEmptyString = withResource(jsonAttr) { _ =>
-            withResource(cv.isNull) { isNull =>
-              withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-                isNull.ifElse(nullScalar, jsonAttr)
+          if (options.ignoreNullFieldsInStructs) {
+            // write the value
+            val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
+            if (needsQuoting) {
+              attrColumns += quote.incRefCount()
+              attrColumns += escapeJsonString(attrValue)
+              attrColumns += quote.incRefCount()
+            } else {
+              attrColumns += attrValue
+            }
+            // now concatenate
+            val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
+              ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
+            }
+            // add an empty string or the attribute
+            withResource(jsonAttr) { _ =>
+              withResource(cv.isNull) { isNull =>
+                withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+                  isNull.ifElse(nullScalar, jsonAttr)
+                }
               }
             }
+          } else {
+            val jsonAttr = withResource(ArrayBuffer.empty[ColumnVector]) { attrValues =>
+              withResource(castToString(cv, inputSchema(fieldIndex).dataType, options)) {
+                  attrValue =>
+                if (needsQuoting) {
+                  attrValues += quote.incRefCount()
+                  attrValues += escapeJsonString(attrValue.incRefCount())
+                  attrValues += quote.incRefCount()
+                  withResource(Scalar.fromString("")) { emptyString =>
+                    ColumnVector.stringConcatenate(emptyString, emptyString, attrValues.toArray)
+                  }
+                } else {
+                  attrValue.incRefCount()
+                }
+              }
+            }
+            // add attribute value, or null literal string if value is null
+            attrColumns += withResource(jsonAttr) { _ =>
+              withResource(cv.isNull) { isNull =>
+                withResource(Scalar.fromString("null")) { nullScalar =>
+                  isNull.ifElse(nullScalar, jsonAttr)
+                }
+              }
+            }
+            // now concatenate
+            withResource(Scalar.fromString("")) { emptyString =>
+              ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
+            }
           }
-          jsonAttrOrEmptyString
         }
       }
     }
