@@ -378,7 +378,6 @@ object GpuParquetScan {
             }
           }
         }
-      case _ => cv.copyToColumnVector()
     }
   }
 }
