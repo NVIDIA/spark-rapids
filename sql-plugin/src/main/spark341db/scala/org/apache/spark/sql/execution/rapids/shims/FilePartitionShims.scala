@@ -14,15 +14,22 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.spark341db
+package org.apache.spark.sql.execution.rapids.shims
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
+import org.apache.spark.paths.SparkPath
+import org.apache.spark.sql.execution.PartitionedFileUtil
+import org.apache.spark.sql.execution.datasources._
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
+object FilePartitionShims extends SplitFiles {
+  def getPartitions(selectedPartitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
+    selectedPartitions.flatMap { p =>
+      p.files.map { f =>
+        PartitionedFileUtil.getPartitionedFile(f, p.values, Some(SparkPath.fromPath(f.getPath)))
+      }
+    }
+  }
+}

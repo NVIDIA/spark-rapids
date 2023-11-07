@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,23 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
-{"spark": "321db"}
 {"spark": "330db"}
 {"spark": "332db"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.rapids.shims
+package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.GpuPartitioning
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.execution.CoalescedPartitionSpec
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.ShuffleOrigin
+object ShuffleExchangeShim {
+  def getShuffleRDD(
+      shuffleExchange: GpuShuffleExchangeExec,
+      partitionSpecs: Seq[CoalescedPartitionSpec]): RDD[ColumnarBatch] = {
+    shuffleExchange.getShuffleRDD(partitionSpecs.toArray)
+      .asInstanceOf[RDD[ColumnarBatch]]
+  }
 
-case class GpuShuffleExchangeExec(
-    gpuOutputPartitioning: GpuPartitioning,
-    child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)(
-    cpuOutputPartitioning: Partitioning)
-  extends GpuDatabricksShuffleExchangeExecBase(gpuOutputPartitioning,
-    child, shuffleOrigin)(cpuOutputPartitioning)
+}
