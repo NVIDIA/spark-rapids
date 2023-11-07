@@ -21,10 +21,9 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc, is_before_spark_340, with_cpu_session
+from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests
 import time
 import os
 from functools import lru_cache
@@ -749,10 +748,6 @@ class BinaryGen(DataGen):
             return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
 
-def skip_if_not_utc():
-    if (not is_tz_utc()):
-        skip_unless_precommit_tests('The java system time zone is not set to UTC')
-
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
@@ -770,10 +765,6 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
         src = data_gen
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
-
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
 
     data = gen_df_help(src, length, seed)
 
