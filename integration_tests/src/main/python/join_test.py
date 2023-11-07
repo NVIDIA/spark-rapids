@@ -406,7 +406,7 @@ def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type)
         left, right = create_df(spark, data_gen, 50, 25)
         # AST does not support cast or logarithm yet
         return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
-    assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec')
+    assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)

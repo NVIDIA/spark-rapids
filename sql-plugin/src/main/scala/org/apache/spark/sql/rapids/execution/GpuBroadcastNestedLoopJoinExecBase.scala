@@ -358,7 +358,8 @@ object GpuBroadcastNestedLoopJoinExecBase {
           val streamBatch = streamSpillable.getBatch
           val existsCol: ColumnVector = if (builtBatch.numRows == 0) {
             withResource(Scalar.fromBool(false)) { falseScalar =>
-              GpuColumnVector.from(cudf.ColumnVector.fromScalar(falseScalar, streamBatch.numRows),
+              GpuColumnVector.from(
+                cudf.ColumnVector.fromScalar(falseScalar, streamBatch.numRows),
                 BooleanType)
             }
           } else {
@@ -373,6 +374,21 @@ object GpuBroadcastNestedLoopJoinExecBase {
           }
         }
       }
+    }
+  }
+
+  def output(joinType: JoinType, left: Seq[Attribute], right: Seq[Attribute]): Seq[Attribute] = {
+    joinType match {
+      case _: InnerLike => left ++ right
+      case LeftOuter => left ++ right.map(_.withNullability(true))
+      case RightOuter => left.map(_.withNullability(true)) ++ right
+      case FullOuter =>
+        left.map(_.withNullability(true)) ++ right.map(_.withNullability(true))
+      case j: ExistenceJoin => left :+ j.exists
+      case LeftExistence(_) => left
+      case x =>
+        throw new IllegalArgumentException(
+          s"BroadcastNestedLoopJoin should not take $x as the JoinType")
     }
   }
 
@@ -465,23 +481,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   override def output: Seq[Attribute] = {
-    joinType match {
-      case _: InnerLike =>
-        left.output ++ right.output
-      case LeftOuter =>
-        left.output ++ right.output.map(_.withNullability(true))
-      case RightOuter =>
-        left.output.map(_.withNullability(true)) ++ right.output
-      case FullOuter =>
-        left.output.map(_.withNullability(true)) ++ right.output.map(_.withNullability(true))
-      case j: ExistenceJoin =>
-        left.output :+ j.exists
-      case LeftExistence(_) =>
-        left.output
-      case x =>
-        throw new IllegalArgumentException(
-          s"BroadcastNestedLoopJoin should not take $x as the JoinType")
-    }
+    GpuBroadcastNestedLoopJoinExecBase.output(joinType, left.output, right.output)
   }
 
   protected def makeBroadcastBuiltBatch(

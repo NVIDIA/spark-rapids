@@ -74,8 +74,12 @@ class GpuBroadcastNestedLoopJoinMeta(
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
         joinExec
       } else {
-        // Remove the intermediate attributes from left and right side project nodes
-        GpuProjectExec((left.output ++ right.output).toList, joinExec)(false)
+        // Remove the intermediate attributes from left and right side project nodes. Output
+        // attributes need to be updated based on types
+        GpuProjectExec(
+          GpuBroadcastNestedLoopJoinExecBase.output(
+            join.joinType, left.output, right.output).toList,
+          joinExec)(false)
       }
     } else {
       val condition = conditionMeta.map(_.convertToGpu())
