@@ -383,16 +383,19 @@ parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, 
                             string_gen, boolean_gen, date_gen, timestamp_gen]]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
+@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, reader_confs):
+def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, ts_type, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
+    write_confs = copy_and_update(rebase_write_legacy_conf, {'spark.sql.parquet.outputTimestampType': ts_type})
     with_cpu_session(
         # LEGACY in read for int96 timestamps is not yet supported.
         # We should add int96 output when LEGACY mode is ready.
+        # (Use `parquet_ts_write_options` for `ts_type`).
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
-        conf=rebase_write_legacy_conf)
+        conf=write_confs)
     all_confs = copy_and_update(reader_confs,
                                 {'spark.sql.sources.useV1SourceList': v1_enabled_list,
                                  'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'LEGACY'})
