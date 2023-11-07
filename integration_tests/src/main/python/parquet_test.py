@@ -396,12 +396,12 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, ts_type, r
         # (Use `parquet_ts_write_options` for `ts_type`).
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=write_confs)
-    all_confs = copy_and_update(reader_confs,
+    read_confs = copy_and_update(reader_confs,
                                 {'spark.sql.sources.useV1SourceList': v1_enabled_list,
                                  'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'LEGACY'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
-        conf=all_confs)
+        conf=read_confs)
 
 # This is legacy format, which is totally different from datatime legacy rebase mode.
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, decimal_gen_32bit], decimal_gens,
