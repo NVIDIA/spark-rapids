@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark
+package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -23,7 +23,93 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
-object RebaseHelper {
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.
+ * <p>
+ * This is to provides a stable reference to other Java code in our codebase and also mitigate
+ * from Spark's breaking changes that may cause issues if our code uses Spark's
+ * LegacyBehaviorPolicy.
+ */
+sealed abstract class DateTimeRebaseMode(val value: String) extends Serializable
+
+object DateTimeRebaseMode {
+  def fromName(name: String): DateTimeRebaseMode = name match {
+    case DateTimeRebaseException.value => DateTimeRebaseException
+    case DateTimeRebaseLegacy.value => DateTimeRebaseLegacy
+    case DateTimeRebaseCorrected.value => DateTimeRebaseCorrected
+    case _ => throw new IllegalArgumentException(
+      DateTimeRebaseUtils.invalidRebaseModeMessage(name))
+  }
+}
+
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.EXCEPTION.
+ */
+case object DateTimeRebaseException extends DateTimeRebaseMode("EXCEPTION")
+
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.LEGACY.
+ */
+case object DateTimeRebaseLegacy extends DateTimeRebaseMode("LEGACY")
+
+/**
+ * Mirror of Spark's LegacyBehaviorPolicy.CORRECTED.
+ */
+case object DateTimeRebaseCorrected extends DateTimeRebaseMode("CORRECTED")
+
+object DateTimeRebaseUtils {
+  def invalidRebaseModeMessage(name: String): String =
+    s"Invalid datetime rebase mode: $name (must be either 'EXCEPTION', 'LEGACY', or 'CORRECTED')"
+
+  // Copied from Spark
+  private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
+  private val SPARK_LEGACY_DATETIME_METADATA_KEY = "org.apache.spark.legacyDateTime"
+  private val SPARK_LEGACY_INT96_METADATA_KEY = "org.apache.spark.legacyINT96"
+  private val SPARK_TIMEZONE_METADATA_KEY = "org.apache.spark.timeZone"
+
+  private def rebaseModeFromFileMeta(lookupFileMeta: String => String,
+      modeByConfig: String,
+      minVersion: String,
+      metadataKey: String): DateTimeRebaseMode = {
+
+    // If there is no version, we return the mode specified by the config.
+    val mode = Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
+      // Files written by Spark 2.4 and earlier follow the legacy hybrid calendar and we need to
+      // rebase the datetime values.
+      // Files written by `minVersion` and latter may also need the rebase if they were written
+      // with the "LEGACY" rebase mode.
+      if (version < minVersion || lookupFileMeta(metadataKey) != null) {
+        DateTimeRebaseLegacy
+      } else {
+        DateTimeRebaseCorrected
+      }
+    }.getOrElse(DateTimeRebaseMode.fromName(modeByConfig))
+
+    // Check the timezone of the file if the mode is LEGACY.
+    if (mode == DateTimeRebaseLegacy) {
+      val fileTimeZone = lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)
+      if (fileTimeZone != null && fileTimeZone != "UTC") {
+        throw new UnsupportedOperationException(
+          "LEGACY datetime rebase mode is only supported for files written in UTC timezone. " +
+            s"Actual file timezone: $fileTimeZone")
+      }
+    }
+
+    mode
+  }
+
+  def datetimeRebaseMode(lookupFileMeta: String => String,
+      modeByConfig: String): DateTimeRebaseMode = {
+    rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.0.0",
+      SPARK_LEGACY_DATETIME_METADATA_KEY)
+  }
+
+  def int96RebaseMode(lookupFileMeta: String => String,
+      modeByConfig: String): DateTimeRebaseMode = {
+    rebaseModeFromFileMeta(lookupFileMeta, modeByConfig, "3.1.0",
+      SPARK_LEGACY_INT96_METADATA_KEY)
+  }
+
   private[this] def isDateRebaseNeeded(column: ColumnVector,
       startDay: Int): Boolean = {
     // TODO update this for nested column checks
