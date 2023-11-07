@@ -110,59 +110,38 @@ object DateTimeRebaseUtils {
       SPARK_LEGACY_INT96_METADATA_KEY)
   }
 
-  private[this] def isDateRebaseNeeded(column: ColumnVector,
-      startDay: Int): Boolean = {
-    // TODO update this for nested column checks
-    //  https://github.com/NVIDIA/spark-rapids/issues/1126
+  private[this] def isRebaseNeeded(column: ColumnView, checkType: DType,
+      minGood: Scalar): Boolean = {
     val dtype = column.getType
-    if (dtype == DType.TIMESTAMP_DAYS) {
-      val hasBad = withResource(Scalar.timestampDaysFromInt(startDay)) {column.lessThan}
-      val anyBad = withResource(hasBad) {_.any()}
-      withResource(anyBad) { _ => anyBad.isValid && anyBad.getBoolean }
-    } else if (dtype == DType.LIST) {
-      withResource(column.getChildColumnView(0)) { child =>
-        isDateRebaseNeeded(child, startDay)
-      }
-    } else if(dtype == DType.STRUCT) {
-      for (i <- 0 until column.getNumChildren) {
-        withResource(column.getChildColumnView(i)) { child =>
-          if(isDateRebaseNeeded(child, startDay)) {
-            return true
+    require(!dtype.hasTimeResolution || dtype == DType.TIMESTAMP_MICROSECONDS)
+
+    dtype match {
+      case `checkType` =>
+        withResource(column.lessThan(minGood)) { hasBad =>
+          withResource(hasBad.any()) { anyBad =>
+            anyBad.isValid && anyBad.getBoolean
           }
         }
-      }
-      // if we get here then none of the children needed a rebase and will return false below
+
+      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
+        withResource(column.getChildColumnView(i)) { child =>
+          isRebaseNeeded(child, checkType, minGood)
+        })
+
+      case _ => false
     }
-   false // default for everything else
+  }
+
+  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
+    withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
+      isRebaseNeeded(column, DType.TIMESTAMP_DAYS, minGood)
+    }
   }
 
   private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
-    val dtype = column.getType
-    if (dtype.hasTimeResolution) {
-      require(dtype == DType.TIMESTAMP_MICROSECONDS)
-      withResource(
-        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
-        withResource(column.lessThan(minGood)) { hasBad =>
-          withResource(hasBad.any()) { a =>
-            a.isValid && a.getBoolean
-          }
-        }
-      }
-    } else if (dtype == DType.LIST) {
-      withResource(column.getChildColumnView(0)) { child =>
-        isTimeRebaseNeeded(child, startTs)
-      }
-    } else if (dtype == DType.STRUCT) {
-      for (i <- 0 until column.getNumChildren) {
-        withResource(column.getChildColumnView(i)) { child =>
-          if (isTimeRebaseNeeded(child, startTs)) {
-            return true
-          }
-        }
-      }
-      // if we get here then none of the children needed a rebase and will return false below
+    withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+      isRebaseNeeded(column, DType.TIMESTAMP_MICROSECONDS, minGood)
     }
-    false // default for everything else
   }
 
   def isDateRebaseNeededInRead(column: ColumnView): Boolean =

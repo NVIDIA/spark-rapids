@@ -157,9 +157,7 @@ object GpuParquetScan {
   }
 
   def tagSupport(sparkSession: SparkSession, readSchema: StructType,
-                 meta: RapidsMeta[_, _, _]): Unit = {
-    val sqlConf = sparkSession.conf
-
+      meta: RapidsMeta[_, _, _]): Unit = {
     if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
       meta.willNotWorkOnGpu("GPU does not support spark.sql.legacy.parquet.nanosAsLong")
     }
@@ -176,23 +174,6 @@ object GpuParquetScan {
 
     FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
 
-    val schemaHasTimestamps = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
-    }
-
-    def isTsOrDate(dt: DataType): Boolean = dt match {
-      case TimestampType | DateType => true
-      case _ => false
-    }
-
-    val schemaMightNeedNestedRebase = readSchema.exists { field =>
-      if (DataTypeUtils.isNestedType(field.dataType)) {
-        TrampolineUtil.dataTypeExistsRecursively(field.dataType, isTsOrDate)
-      } else {
-        false
-      }
-    }
-
     // Currently timestamp conversion is not supported.
     // If support needs to be added then we need to follow the logic in Spark's
     // ParquetPartitionReaderFactory and VectorizedColumnReader which essentially
@@ -202,42 +183,11 @@ object GpuParquetScan {
     //     were written in that timezone and convert them to UTC timestamps.
     // Essentially this should boil down to a vector subtract of the scalar delta
     // between the configured timezone's delta from UTC on the timestamp data.
+    val schemaHasTimestamps = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
+    }
     if (schemaHasTimestamps && sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
-    }
-
-    DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.int96ParquetRebaseReadKey)) match {
-      case DateTimeRebaseException => if (schemaMightNeedNestedRebase) {
-        meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-          s"${SparkShimImpl.int96ParquetRebaseReadKey} is EXCEPTION")
-      }
-      case DateTimeRebaseCorrected => // Good
-      case DateTimeRebaseLegacy =>
-        if (schemaMightNeedNestedRebase) {
-          meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${SparkShimImpl.int96ParquetRebaseReadKey} is LEGACY")
-        }
-      // This should never be reached out, since invalid mode is handled in
-      // `DateTimeRebaseMode.fromName`.
-      case other => meta.willNotWorkOnGpu(
-        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
-    }
-
-    DateTimeRebaseMode.fromName(sqlConf.get(SparkShimImpl.parquetRebaseReadKey)) match {
-      case DateTimeRebaseException => if (schemaMightNeedNestedRebase) {
-        meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-          s"${SparkShimImpl.parquetRebaseReadKey} is EXCEPTION")
-      }
-      case DateTimeRebaseCorrected => // Good
-      case DateTimeRebaseLegacy =>
-        if (schemaMightNeedNestedRebase) {
-          meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${SparkShimImpl.parquetRebaseReadKey} is LEGACY")
-        }
-      // This should never be reached out, since invalid mode is handled in
-      // `DateTimeRebaseMode.fromName`.
-      case other => meta.willNotWorkOnGpu(
-        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
   }
 
