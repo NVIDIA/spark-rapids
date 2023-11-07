@@ -370,7 +370,7 @@ object GpuParquetScan {
           DateTimeRebase.rebaseJulianToGregorian(cv)
         } else {
           withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
-            // We did up-cast to microseconds thus don't have to down-cast back to the old type.
+            // Don't have to cast back to the old type.
             DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)
           }
         }
