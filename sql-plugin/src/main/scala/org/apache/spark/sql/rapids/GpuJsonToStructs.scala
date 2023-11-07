@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
@@ -205,8 +205,14 @@ case class GpuJsonToStructs(
                 GpuColumnVector.columnVectorFromNull(numRows, dtype)
               } else {
                 val col = rawTable.getColumn(i)
-                // getSparkType is only used to get the from type for cast
-                doCast(col, getSparkType(col), dtype)
+                // getSparkType is only used to get the "from type" for cast
+                val sparkType = getSparkType(col)
+                (sparkType, dtype) match {
+                  case (DataTypes.StringType, DataTypes.BooleanType) =>
+                    castJsonStringToBool(col)
+                  case _ => doCast(col, sparkType, dtype)
+                }
+
               }
             }
 
@@ -224,6 +230,29 @@ case class GpuJsonToStructs(
       }
       case _ => throw new IllegalArgumentException(
         s"GpuJsonToStructs currently does not support schema of type $schema.")
+    }
+  }
+
+  private def castJsonStringToBool(input: ColumnVector): ColumnVector = {
+    val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
+        input.equalTo(trueStr)
+    }
+    withResource(isTrue) { _ =>
+      val isFalse = withResource(Scalar.fromString("false")) { falseStr =>
+        input.equalTo(falseStr)
+      }
+      val falseOrNull = withResource(isFalse) { _ =>
+        withResource(Scalar.fromBool(false)) { falseLit =>
+          withResource(Scalar.fromNull(DType.BOOL8)) { nul =>
+            isFalse.ifElse(falseLit, nul)
+          }
+        }
+      }
+      withResource(falseOrNull) { _ =>
+        withResource(Scalar.fromBool(true)) { trueLit =>
+          isTrue.ifElse(trueLit, falseOrNull)
+        }
+      }
     }
   }
 
