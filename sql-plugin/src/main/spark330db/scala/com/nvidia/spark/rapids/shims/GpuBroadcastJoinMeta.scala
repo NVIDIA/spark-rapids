@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
 
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
@@ -51,18 +51,21 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
+    def isOnGpu(sqse: ShuffleQueryStageExec): Boolean = sqse.plan match {
+      case _: GpuShuffleExchangeExecBase => true
+      case ReusedExchangeExec(_, _: GpuShuffleExchangeExecBase) => true
+      case _ => false
+    }
     val buildSideOnGpu = buildSide match {
       case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
               bqse.plan.asInstanceOf[ReusedExchangeExec]
                   .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
-          sqse.plan.isInstanceOf[ReusedExchangeExec] &&
-          sqse.plan.asInstanceOf[ReusedExchangeExec]
-              .child.isInstanceOf[GpuShuffleExchangeExecBase]
+      case sqse: ShuffleQueryStageExec => isOnGpu(sqse)
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
           reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
       case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
+      case GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _) => isOnGpu(sqse)
       case _ => false
     }
     if (!buildSideOnGpu) {
