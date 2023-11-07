@@ -353,35 +353,31 @@ def test_ts_read_round_trip(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
-parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                            string_gen, boolean_gen, date_gen, timestamp_gen]]
+def readParquetCatchException(spark, data_path):
+    with pytest.raises(Exception) as e_info:
+        df = spark.read.parquet(data_path).collect()
+    assert e_info.match(r".*SparkUpgradeException.*")
 
-@pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
-# LEGACY in read for int96 timestamps is not yet supported.
-# We should add int96 output when LEGACY mode is ready.
-# (Use `parquet_ts_write_options` for `ts_type`).
-@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
-@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
+# Once https://github.com/NVIDIA/spark-rapids/issues/1126 is fixed nested timestamps and dates should be added in
+# Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
+# timestamp_gen
+@pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))], ids=idfn)
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_round_trip_datetime_legacy(spark_tmp_path, parquet_gens, ts_type, ts_rebase,
-                                                 reader_confs, v1_enabled_list):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    write_confs = {'spark.sql.parquet.outputTimestampType': ts_type,
-                   'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-                   'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase}
-
     with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
-        conf=write_confs)
-    # Don't have to set the rebase config for read, as it is automatically retrieved from file.
-    read_confs = copy_and_update(reader_confs,{'spark.sql.sources.useV1SourceList': v1_enabled_list})
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path),
-        conf=read_confs)
+            lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
+                'spark.sql.parquet.outputTimestampType': ts_write})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_gpu_session(
+            lambda spark : readParquetCatchException(spark, data_path),
+            conf=all_confs)
 
-# This is legacy format, which is totally different from datatime legacy rebase mode.
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, decimal_gen_32bit], decimal_gens,
                                           [ArrayGen(decimal_gen_32bit, max_length=10)],
                                           [StructGen([['child0', decimal_gen_32bit]])]], ids=idfn)
@@ -392,10 +388,31 @@ def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, re
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
-        lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
-        conf={'spark.sql.parquet.writeLegacyFormat': 'true'})
+            lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
+            conf={'spark.sql.parquet.writeLegacyFormat': 'true'})
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
+
+
+parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                            string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,
+                            pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
+                            pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
+
+@pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, reader_confs):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
+            conf=rebase_write_legacy_conf)
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path),
+            conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -986,7 +1003,7 @@ def test_parquet_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp
 
 
 conf_for_parquet_aggregate_pushdown = {
-    "spark.sql.parquet.aggregatePushdown": "true",
+    "spark.sql.parquet.aggregatePushdown": "true", 
     "spark.sql.sources.useV1SourceList": ""
 }
 
@@ -1473,7 +1490,7 @@ def test_parquet_read_count(spark_tmp_path):
 def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_confs, col_name):
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list})
-    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)),
+    gen_list =[('k0', LongGen(nullable=False, min_val=0, max_val=0)), 
             ('k1', LongGen(nullable=False, min_val=1, max_val=1)),
             ('k2', LongGen(nullable=False, min_val=2, max_val=2)),
             ('k3', LongGen(nullable=False, min_val=3, max_val=3)),
@@ -1481,7 +1498,7 @@ def test_read_case_col_name(spark_tmp_path, read_func, v1_enabled_list, reader_c
             ('v1', LongGen()),
             ('v2', LongGen()),
             ('v3', LongGen())]
-
+ 
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/PAR_DATA'
     reader = read_func(data_path)

@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.{CopyRange, LocalCopy}
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{ParquetFooter, SplitAndRetryOOM}
 import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
@@ -156,7 +156,24 @@ object GpuParquetScan {
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
-  def tagSupport(sparkSession: SparkSession, readSchema: StructType,
+  def throwIfRebaseNeeded(table: Table, dateRebaseMode: DateTimeRebaseMode,
+      timestampRebaseMode: DateTimeRebaseMode): Unit = {
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      if (dateRebaseMode != DateTimeRebaseCorrected &&
+        DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+      else if (timestampRebaseMode != DateTimeRebaseCorrected &&
+        DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+    }
+  }
+
+  def tagSupport(
+      sparkSession: SparkSession,
+      readSchema: StructType,
       meta: RapidsMeta[_, _, _]): Unit = {
     val sqlConf = sparkSession.conf
 
@@ -179,12 +196,10 @@ object GpuParquetScan {
     val schemaHasTimestamps = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
-
-    def isTsOrDate(dt: DataType): Boolean = dt match {
+    def isTsOrDate(dt: DataType) : Boolean = dt match {
       case TimestampType | DateType => true
       case _ => false
     }
-
     val schemaMightNeedNestedRebase = readSchema.exists { field =>
       if (DataTypeUtils.isNestedType(field.dataType)) {
         TrampolineUtil.dataTypeExistsRecursively(field.dataType, isTsOrDate)
@@ -301,84 +316,16 @@ object GpuParquetScan {
    * @return the updated target batch size.
    */
   def splitTargetBatchSize(targetBatchSize: Long, useChunkedReader: Boolean): Long = {
-    if (!useChunkedReader) {
+      if (!useChunkedReader) {
       throw new SplitAndRetryOOM("GPU OutOfMemory: could not split inputs " +
-        "chunked parquet reader is configured off")
+          "chunked parquet reader is configured off")
     }
     val ret = targetBatchSize / 2
     if (targetBatchSize < minTargetBatchSizeMiB * 1024 * 1024) {
-      throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
-        s"target batch size to less than $minTargetBatchSizeMiB MiB")
+           throw new SplitAndRetryOOM("GPU OutOfMemory: could not split input " +
+          s"target batch size to less than $minTargetBatchSizeMiB MiB")
     }
     ret
-  }
-
-  def throwIfRebaseNeededInExceptionMode(table: Table, dateRebaseMode: DateTimeRebaseMode,
-      timestampRebaseMode: DateTimeRebaseMode): Unit = {
-    (0 until table.getNumberOfColumns).foreach { i =>
-      val col = table.getColumn(i)
-      if (dateRebaseMode == DateTimeRebaseException &&
-        DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-      else if (timestampRebaseMode == DateTimeRebaseException &&
-        DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-    }
-  }
-
-  def rebaseDateTime(table: Table, dateRebaseMode: DateTimeRebaseMode,
-      timestampRebaseMode: DateTimeRebaseMode): Table = {
-    val tableHasDate = (0 until table.getNumberOfColumns).exists { i =>
-      checkTypeRecursively(table.getColumn(i), { dtype => dtype == DType.TIMESTAMP_DAYS })
-    }
-    val tableHasTimestamp = (0 until table.getNumberOfColumns).exists { i =>
-      checkTypeRecursively(table.getColumn(i), { dtype => dtype.isTimestampType })
-    }
-
-    if ((tableHasDate && dateRebaseMode == DateTimeRebaseLegacy) ||
-      (tableHasTimestamp && timestampRebaseMode == DateTimeRebaseLegacy)) {
-      // Need to close the input table when returning a new table.
-      withResource(table) { tmpTable =>
-        val newColumns = (0 until tmpTable.getNumberOfColumns).map { i =>
-          deepTransformRebaseDateTime(tmpTable.getColumn(i))
-        }
-        withResource(newColumns) { newCols =>
-          new Table(newCols: _*)
-        }
-      }
-    } else {
-      table
-    }
-  }
-
-  private def checkTypeRecursively(column: ColumnView, f: DType => Boolean): Boolean = {
-    column.getType match {
-      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
-        withResource(column.getChildColumnView(i)) { child =>
-          checkTypeRecursively(child, f)
-        })
-      case t: DType => f(t)
-    }
-  }
-
-  private def deepTransformRebaseDateTime(cv: ColumnVector): ColumnVector = {
-    ColumnCastUtil.deepTransform(cv) {
-      case (cv, _) if cv.getType.isTimestampType =>
-        if (cv.getType == DType.TIMESTAMP_DAYS || cv.getType == DType.TIMESTAMP_MICROSECONDS) {
-          DateTimeRebase.rebaseJulianToGregorian(cv)
-        } else {
-          // This is just a backup: it should not be reached out since timestamps is already
-          // converted into MICROSECONDS when reading Parquet files.
-          val oldType = cv.getType
-          withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
-            withResource(DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)) { rebasedTs =>
-              rebasedTs.castTo(oldType)
-            }
-          }
-        }
-    }
   }
 }
 
@@ -2680,7 +2627,7 @@ object MakeParquetTableProducer extends Logging {
             logWarning(s"Wrote data for ${splits.mkString(", ")} to $p")
           }
         }
-        GpuParquetScan.throwIfRebaseNeededInExceptionMode(table, dateRebaseMode,
+        GpuParquetScan.throwIfRebaseNeeded(table, dateRebaseMode,
           timestampRebaseMode)
         if (readDataSchema.length < table.getNumberOfColumns) {
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
@@ -2688,11 +2635,9 @@ object MakeParquetTableProducer extends Logging {
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
-      val evolvedSchemaTable = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
+      val ret = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
         clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
-      val outputTable = GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode,
-        timestampRebaseMode)
-      new SingleGpuDataProducer(outputTable)
+      new SingleGpuDataProducer(ret)
     }
   }
 }
@@ -2737,16 +2682,15 @@ case class ParquetTableReader(
     }
 
     closeOnExcept(table) { _ =>
-      GpuParquetScan.throwIfRebaseNeededInExceptionMode(table, dateRebaseMode, timestampRebaseMode)
+      GpuParquetScan.throwIfRebaseNeeded(table, dateRebaseMode, timestampRebaseMode)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
           s"but read ${table.getNumberOfColumns} from $splitsString")
       }
     }
     metrics(NUM_OUTPUT_BATCHES) += 1
-    val evolvedSchemaTable = ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
+    ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table,
       clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
-    GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode, timestampRebaseMode)
   }
 
   override def close(): Unit = {
