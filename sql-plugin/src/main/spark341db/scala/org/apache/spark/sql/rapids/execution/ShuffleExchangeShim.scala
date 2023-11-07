@@ -17,12 +17,19 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.spark341db
+package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.execution.CoalescedPartitionSpec
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
+object ShuffleExchangeShim {
+  def getShuffleRDD(
+      shuffleExchange: GpuShuffleExchangeExec,
+      partitionSpecs: Seq[CoalescedPartitionSpec]): RDD[ColumnarBatch] = {
+    shuffleExchange.getShuffleRDD(partitionSpecs.toArray, lazyFetching = true)
+      .asInstanceOf[RDD[ColumnarBatch]]
+  }
+
+}
