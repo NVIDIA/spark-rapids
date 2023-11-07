@@ -385,69 +385,63 @@ abstract class GpuBroadcastExchangeExecBase(
     val buildTime = gpuLongMetric(BUILD_TIME)
     val broadcastTime = gpuLongMetric("broadcastTime")
 
-    val task = new Callable[Broadcast[Any]]() {
-      override def call(): Broadcast[Any] = {
-        // This will run in another thread. Set the execution id so that we can connect these jobs
-        // with the correct execution.
-        SQLExecution.withExecutionId(sparkSession, executionId) {
-          try {
-            // Setup a job group here so later it may get cancelled by groupId if necessary.
-            sparkContext.setJobGroup(runId.toString, s"broadcast exchange (runId ${runId})",
-              interruptOnCancel = true)
-            val broadcastResult = {
-              val collected =
-                withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-                  collectTime)) { _ =>
-                  val childRdd = child.executeColumnar()
+    SQLExecution.withThreadLocalCaptured[Broadcast[Any]](
+        session, GpuBroadcastExchangeExecBase.executionContext) {
+      try {
+        // Setup a job group here so later it may get cancelled by groupId if necessary.
+        sparkContext.setJobGroup(runId.toString, s"broadcast exchange (runId ${runId})",
+          interruptOnCancel = true)
+        val broadcastResult = {
+          val collected =
+            withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
+              collectTime)) { _ =>
+              val childRdd = child.executeColumnar()
 
-                  // collect batches from the executors
-                  val data = childRdd.map(withResource(_) { cb =>
-                    new SerializeBatchDeserializeHostBuffer(cb)
-                  })
-                  data.collect()
-                }
-              withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
-                buildTime)) { _ =>
-                val emptyRelation = if (collected.isEmpty) {
-                  SparkShimImpl.tryTransformIfEmptyRelation(mode)
-                } else {
-                  None
-                }
-                emptyRelation.getOrElse {
-                  GpuBroadcastExchangeExecBase.makeBroadcastBatch(
-                    collected, output, numOutputBatches, numOutputRows, dataSize)
-                }
-              }
+              // collect batches from the executors
+              val data = childRdd.map(withResource(_) { cb =>
+                new SerializeBatchDeserializeHostBuffer(cb)
+              })
+              data.collect()
             }
-            val broadcasted =
-              withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
-                  broadcastTime)) { _ =>
-                // Broadcast the relation
-                sparkContext.broadcast(broadcastResult)
+          withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
+            buildTime)) { _ =>
+            val emptyRelation = if (collected.isEmpty) {
+              SparkShimImpl.tryTransformIfEmptyRelation(mode)
+            } else {
+              None
             }
-            SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
-            promise.success(broadcasted)
-            broadcasted
-          } catch {
-            // SPARK-24294: To bypass scala bug: https://github.com/scala/bug/issues/9554, we throw
-            // SparkFatalException, which is a subclass of Exception. ThreadUtils.awaitResult
-            // will catch this exception and re-throw the wrapped fatal throwable.
-            case oe: OutOfMemoryError =>
-              val ex = createOutOfMemoryException(oe)
-              promise.failure(ex)
-              throw ex
-            case e if !NonFatal(e) =>
-              val ex = new Exception(e)
-              promise.failure(ex)
-              throw ex
-            case e: Throwable =>
-              promise.failure(e)
-              throw e
+            emptyRelation.getOrElse {
+              GpuBroadcastExchangeExecBase.makeBroadcastBatch(
+                collected, output, numOutputBatches, numOutputRows, dataSize)
+            }
           }
         }
+        val broadcasted =
+          withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
+              broadcastTime)) { _ =>
+            // Broadcast the relation
+            sparkContext.broadcast(broadcastResult)
+        }
+        SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
+        promise.success(broadcasted)
+        broadcasted
+      } catch {
+        // SPARK-24294: To bypass scala bug: https://github.com/scala/bug/issues/9554, we throw
+        // SparkFatalException, which is a subclass of Exception. ThreadUtils.awaitResult
+        // will catch this exception and re-throw the wrapped fatal throwable.
+        case oe: OutOfMemoryError =>
+          val ex = createOutOfMemoryException(oe)
+          promise.failure(ex)
+          throw ex
+        case e if !NonFatal(e) =>
+          val ex = new Exception(e)
+          promise.failure(ex)
+          throw ex
+        case e: Throwable =>
+          promise.failure(e)
+          throw e
       }
     }
-    GpuBroadcastExchangeExecBase.executionContext.submit[Broadcast[Any]](task)
   }
 
 

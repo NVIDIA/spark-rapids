@@ -68,8 +68,8 @@ object GpuExecutorBroadcastHelper {
     // grab and release the semaphore while doing I/O
     val iter = shuffleDataIterator(shuffleData)
     new GpuShuffleCoalesceIterator(
-      new HostShuffleCoalesceIterator(iter, targetSize, dataTypes, metricsMap),
-        dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
+      new HostShuffleCoalesceIterator(iter, targetSize, metricsMap),
+      dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
   }
 
   /**
