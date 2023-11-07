@@ -366,7 +366,7 @@ def readParquetCatchException(spark, data_path):
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
+def test_parquet_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : unary_op_df(spark, gen).write.parquet(data_path),
@@ -386,7 +386,7 @@ parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, 
 @pytest.mark.parametrize('ts_type', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, ts_type, reader_confs, v1_enabled_list):
+def test_parquet_read_round_trip_datetime_legacy(spark_tmp_path, parquet_gens, ts_type, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_confs = copy_and_update(rebase_write_legacy_conf, {'spark.sql.parquet.outputTimestampType': ts_type})
