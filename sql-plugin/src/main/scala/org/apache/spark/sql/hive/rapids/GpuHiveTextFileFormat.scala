@@ -156,10 +156,6 @@ class GpuHiveTextWriter(override val path: String,
               }
               GpuColumnVector.from(col, StringType)
             case c if c.getType == DType.FLOAT32 || c.getType == DType.FLOAT64 =>
-              // By default, the CUDF CSV writer writes floats with value `Infinity`
-              // as `"Inf"`.
-              // Hive's LazySimplSerDe expects such values to be written as `"Infinity"`.
-              // All occurrences of `Inf` need to be replaced with `Infinity`.
               val col = CastStrings.fromFloat(c)
               GpuColumnVector.from(col, StringType)
             case c =>
