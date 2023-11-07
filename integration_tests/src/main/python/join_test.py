@@ -401,12 +401,13 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
-def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type):
+def test_broadcast_nested_loop_join_with_non_ast_condition_push_down(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # AST does not support cast or logarithm yet
+        # AST does not support cast or logarithm yet which is supposed to be extracted into child nodes
         return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
+
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)

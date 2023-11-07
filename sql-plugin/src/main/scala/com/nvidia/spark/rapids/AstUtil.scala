@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.rapids.catalyst.expressions.{GpuEquivalentExpressions, GpuExpressionEquals}
 
 
@@ -40,7 +40,7 @@ object AstUtil {
       val exprRef = expr.wrapped.asInstanceOf[Expression]
       val leftTree = exprRef.references.exists(left.contains(_))
       val rightTree = exprRef.references.exists(right.contains(_))
-      // Can't extra a condition involving columns from both sides
+      // Can't extract a condition involving columns from both sides
       !(rightTree && leftTree)
     } else {
       // Check whether any child contains the case not able to split
@@ -61,9 +61,13 @@ object AstUtil {
   def extractNonAstFromJoinCond(condition: Option[BaseExprMeta[_]],
       left: AttributeSeq, right: AttributeSeq, skipCheck: Boolean):
   (Option[Expression], List[NamedExpression], List[NamedExpression]) = {
-    // Choose side with smaller key size
-    val (childAtt, isLeft) =
-      if (left.attrs.size < right.attrs.size) (left, true) else (right, false)
+    // Choose side with smaller key size. Use expr ID to check the side which project expr
+    // belonging to.
+    val (exprIds, isLeft) = if (left.attrs.size < right.attrs.size) {
+      (left.attrs.map(_.exprId), true)
+    } else {
+      (right.attrs.map(_.exprId), false)
+    }
     // List of expression pushing down to left side child
     val leftExprs: ListBuffer[NamedExpression] = ListBuffer.empty
     // List of expression pushing down to right side child
@@ -75,7 +79,7 @@ object AstUtil {
     // No need to consider common sub-expressions here since project node will use tiered execution
     condition.foreach(c =>
       if (skipCheck || canExtractNonAstConditionIfNeed(c, left.attrs, right.attrs)) {
-        splitNonAstInternal(c, childAtt.attrs, leftExprs, rightExprs, substitutionMap, isLeft)
+        splitNonAstInternal(c, exprIds, leftExprs, rightExprs, substitutionMap, isLeft)
       })
 
     // 2nd step to replace expression pushing down to child plans in depth first fashion
@@ -85,7 +89,7 @@ object AstUtil {
           substitutionMap))), leftExprs.toList, rightExprs.toList)
   }
 
-  private[this] def splitNonAstInternal(condition: BaseExprMeta[_], childAtt: Seq[Attribute],
+  private[this] def splitNonAstInternal(condition: BaseExprMeta[_], childAtt: Seq[ExprId],
       left: ListBuffer[NamedExpression], right: ListBuffer[NamedExpression],
       substitutionMap: mutable.HashMap[GpuExpressionEquals, Expression], isLeft: Boolean): Unit = {
     for (child <- condition.childExprs) {
@@ -95,7 +99,7 @@ object AstUtil {
         val alias = substitutionMap.get(GpuExpressionEquals(gpuProj)) match {
           case Some(_) => None
           case None =>
-            if (exprRef.references.exists(childAtt.contains(_)) ^ isLeft) {
+            if (exprRef.references.exists(r => childAtt.contains(r.exprId)) ^ isLeft) {
               val alias = GpuAlias(gpuProj, s"_agpu_non_ast_r_${left.size}")()
               right += alias
               Some(alias)
