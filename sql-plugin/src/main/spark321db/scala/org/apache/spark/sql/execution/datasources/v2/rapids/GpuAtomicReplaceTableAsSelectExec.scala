@@ -35,7 +35,8 @@ import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, Stagin
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
-import org.apache.spark.sql.execution.datasources.v2.{AtomicReplaceTableAsSelectExec, TableWriteExecHelper}
+import org.apache.spark.sql.execution.datasources.v2.TableWriteExecHelper
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -52,23 +53,21 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * is left untouched.
  */
 case class GpuAtomicReplaceTableAsSelectExec(
-    cpuExec: AtomicReplaceTableAsSelectExec,
+    override val output: Seq[Attribute],
     catalog: StagingTableCatalog,
-    query: SparkPlan) extends TableWriteExecHelper with GpuExec with ColumnarToRowTransition {
-
-  override val output: Seq[Attribute] = cpuExec.output
-  val ident: Identifier = cpuExec.ident
-  val partitioning: Seq[Transform] = cpuExec.partitioning
-  val plan: LogicalPlan = cpuExec.plan
-  val tableSpec: TableSpec = cpuExec.tableSpec
-  val writeOptions = cpuExec.writeOptions
-  val orCreate: Boolean = cpuExec.orCreate
-  val invalidateCache: (TableCatalog, Table, Identifier) => Unit = cpuExec.invalidateCache
+    ident: Identifier,
+    partitioning: Seq[Transform],
+    plan: LogicalPlan,
+    query: SparkPlan,
+    tableSpec: TableSpec,
+    writeOptions: CaseInsensitiveStringMap,
+    orCreate: Boolean,
+    invalidateCache: (TableCatalog, Table, Identifier) => Unit)
+  extends TableWriteExecHelper with GpuExec with ColumnarToRowTransition {
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
   override def supportsColumnar: Boolean = false
-
   override protected def run(): Seq[InternalRow] = {
     val schema = CharVarcharUtils.getRawSchema(query.schema, conf).asNullable
     if (catalog.tableExists(ident)) {

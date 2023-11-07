@@ -25,7 +25,7 @@ import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge, WriteIntoDelta}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaCatalog, GpuDeltaLog, GpuWriteIntoDelta}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuWriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
@@ -38,7 +38,6 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
-import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
@@ -47,7 +46,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 /**
  * Common implementation of the DeltaProvider interface for all Databricks versions.
  */
-object DatabricksDeltaProvider extends DeltaProviderImplBase {
+trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
     Seq(
@@ -141,17 +140,7 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      getWriteOptions(cpuExec), cpuExec.session)
-  }
-
-  override def convertToGpu(
-      cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-    GpuAtomicCreateTableAsSelectExec(
-      cpuExec,
-      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      meta.childPlans.head.convertIfNeeded()
-    )
+      getWriteOptions(cpuExec.writeOptions), cpuExec.session)
   }
 
   override def tagForGpu(
@@ -169,17 +158,7 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      getWriteOptions(cpuExec), cpuExec.session)
-  }
-
-  override def convertToGpu(
-      cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
-    GpuAtomicReplaceTableAsSelectExec(
-      cpuExec,
-      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      meta.childPlans.head.convertIfNeeded()
-    )
+      getWriteOptions(cpuExec.writeOptions), cpuExec.session)
   }
 
   private case class DeltaWriteV1Config(
@@ -359,13 +338,4 @@ class DeltaCreatableRelationProviderMeta(
   }
 
   override def convertToGpu(): GpuCreatableRelationProvider = new GpuDeltaDataSource(conf)
-}
-
-/**
- * Implements the Delta Probe interface for probing the Delta Lake provider on Databricks.
- * @note This is instantiated via reflection from ShimLoader.
- */
-class DeltaProbeImpl extends DeltaProbe {
-  // Delta Lake is built-in for Databricks instances, so no probing is necessary.
-  override def getDeltaProvider: DeltaProvider = DatabricksDeltaProvider
 }

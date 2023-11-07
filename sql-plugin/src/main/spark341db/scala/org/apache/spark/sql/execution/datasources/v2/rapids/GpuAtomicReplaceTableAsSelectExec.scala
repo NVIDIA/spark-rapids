@@ -33,7 +33,7 @@ import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, Stagin
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.datasources.v2.{AtomicReplaceTableAsSelectExec, V2CreateTableAsSelectBaseExec}
+import org.apache.spark.sql.execution.datasources.v2.V2CreateTableAsSelectBaseExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -50,18 +50,18 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * is left untouched.
  */
 case class GpuAtomicReplaceTableAsSelectExec(
-    cpuExec: AtomicReplaceTableAsSelectExec,
+    override val output: Seq[Attribute],
     catalog: StagingTableCatalog,
-    query: SparkPlan) extends V2CreateTableAsSelectBaseExec with GpuExec {
+    ident: Identifier,
+    partitioning: Seq[Transform],
+    plan: LogicalPlan,
+    query: SparkPlan,
+    tableSpec: TableSpec,
+    writeOptions: Map[String, String],
+    orCreate: Boolean,
+    invalidateCache: (TableCatalog, Table, Identifier) => Unit)
+  extends V2CreateTableAsSelectBaseExec with GpuExec {
 
-  override val output: Seq[Attribute] = cpuExec.output
-  val ident: Identifier = cpuExec.ident
-  val partitioning: Seq[Transform] = cpuExec.partitioning
-  val plan: LogicalPlan = cpuExec.query
-  val tableSpec: TableSpec = cpuExec.tableSpec
-  val writeOptions: Map[String, String] = cpuExec.writeOptions
-  val orCreate: Boolean = cpuExec.orCreate
-  val invalidateCache: (TableCatalog, Table, Identifier) => Unit = cpuExec.invalidateCache
 
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 

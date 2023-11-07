@@ -26,7 +26,7 @@ import java.net.URI
 import scala.collection.mutable.ListBuffer
 
 import com.databricks.sql.transaction.tahoe._
-import com.databricks.sql.transaction.tahoe.actions.{AddFile, FileAction, Protocol}
+import com.databricks.sql.transaction.tahoe.actions.{AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, Constraints}
 import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -239,7 +239,7 @@ class GpuOptimisticTransaction(
                 key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
           }.toMap
       }
-      val deltaFileFormat = deltaLog.fileFormat(Protocol(), metadata)
+      val deltaFileFormat = deltaLog.fileFormat(deltaLog.unsafeVolatileSnapshot.protocol, metadata)
       val gpuFileFormat = if (deltaFileFormat.getClass == classOf[DeltaParquetFileFormat]) {
         new GpuParquetFileFormat
       } else {

@@ -13,20 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids.delta
 
-package com.nvidia.spark.rapids.delta.shims
-
-import com.databricks.sql.transaction.tahoe.DeltaLog
-import com.databricks.sql.transaction.tahoe.actions.Metadata
-
-import org.apache.spark.sql.execution.datasources.FileFormat
-
-object DeltaLogShim {
-  def fileFormat(deltaLog: DeltaLog): FileFormat = {
-    deltaLog.fileFormat(deltaLog.unsafeVolatileSnapshot.protocol,
-      deltaLog.unsafeVolatileSnapshot.metadata)
-  }
-  def getMetadata(deltaLog: DeltaLog): Metadata = {
-    deltaLog.unsafeVolatileSnapshot.metadata
-  }
+/**
+ * Implements the Delta Probe interface for probing the Delta Lake provider on Databricks.
+ * @note This is instantiated via reflection from ShimLoader.
+ */
+class DeltaProbeImpl extends DeltaProbe {
+  // Delta Lake is built-in for Databricks instances, so no probing is necessary.
+  override def getDeltaProvider: DeltaProvider = DeltaSpark332DBProvider
 }

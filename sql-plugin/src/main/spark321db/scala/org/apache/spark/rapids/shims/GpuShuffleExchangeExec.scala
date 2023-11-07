@@ -23,11 +23,10 @@ package org.apache.spark.rapids.shims
 import com.nvidia.spark.rapids.GpuPartitioning
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
+import org.apache.spark.sql.execution.exchange.ShuffleOrigin
+import org.apache.spark.sql.rapids.execution.ShuffledBatchRDD
 
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
