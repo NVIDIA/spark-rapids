@@ -71,7 +71,7 @@ def test_cast_string_date_valid_format():
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.xfail(is_utc(), reason="TODO https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 def test_cast_string_date_valid_format_for_non_utc():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
@@ -119,11 +119,23 @@ def test_cast_string_date_invalid_ansi_before_320():
 
 # test Spark versions >= 320 and databricks, ANSI mode, valid values
 @pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-@disable_timezone_test
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 def test_cast_string_date_valid_ansi():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
+              'spark.sql.ansi.enabled': 'true'})
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+def test_cast_string_date_valid_ansi_for_non_utc():
+    data_rows = [(v,) for v in valid_values_string_to_date]
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        'Cast',
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'})
 
@@ -161,7 +173,7 @@ def test_try_cast_fallback_340(invalid):
         conf={'spark.rapids.sql.hasExtendedYearValues': False,
               'spark.sql.ansi.enabled': True})
 
-@disable_timezone_test
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 # test all Spark versions, non ANSI mode, invalid value will be converted to NULL
 def test_cast_string_date_non_ansi():
     data_rows = [(v,) for v in values_string_to_data]
@@ -169,11 +181,23 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+# test all Spark versions, non ANSI mode, invalid value will be converted to NULL
+def test_cast_string_date_non_ansi_for_non_utc():
+    data_rows = [(v,) for v in values_string_to_data]
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        'Cast',
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
+
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to TimeStampType")
 @pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
                                       StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
                                       StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
                         ids=idfn)
-@disable_timezone_test
 def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
@@ -181,6 +205,22 @@ def test_cast_string_ts_valid_format(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
                 'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to TimeStampType")
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
+                        ids=idfn)
+def test_cast_string_ts_valid_format_for_non_utc(data_gen):
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
+            'Cast',
+            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
+                'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
