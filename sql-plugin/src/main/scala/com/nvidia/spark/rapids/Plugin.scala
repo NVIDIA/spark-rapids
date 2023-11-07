@@ -112,8 +112,9 @@ object RapidsPluginUtils extends Logging {
   }
 
   def detectMultiplePluginJars(): Unit = {
-    val cl = classOf[com.nvidia.spark.rapids.SparkShimServiceProvider].getClassLoader
-    val rapidsJarURLs = cl.getResources("rapids4spark-version-info.properties").asScala.toList
+    val classloader = classOf[com.nvidia.spark.rapids.SparkShimServiceProvider].getClassLoader
+    val rapidsJarURLs = classloader.getResources("rapids4spark-version-info.properties")
+        .asScala.toList
     if (rapidsJarURLs.size > 1) {
       val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
       throw new RuntimeException(s"Multiple rapids4spark jars found in the classpath: " +
