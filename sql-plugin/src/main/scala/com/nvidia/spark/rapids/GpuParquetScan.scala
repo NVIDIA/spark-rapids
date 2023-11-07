@@ -369,12 +369,9 @@ object GpuParquetScan {
         if (cv.getType == DType.TIMESTAMP_DAYS || cv.getType == DType.TIMESTAMP_MICROSECONDS) {
           DateTimeRebase.rebaseJulianToGregorian(cv)
         } else {
-          val oldType = cv.getType
           withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
-            withResource(DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)) { rebasedTs =>
-              // Need to cast back to the old type before rebasing.
-              rebasedTs.castTo(oldType)
-            }
+            // We did up-cast to microseconds thus don't have to down-cast back to the old type.
+            DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)
           }
         }
       case _ => cv.copyToColumnVector()
