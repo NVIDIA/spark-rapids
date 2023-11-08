@@ -115,28 +115,31 @@ object RapidsPluginUtils extends Logging {
     val classloader = ShimLoader.getShimClassLoader()
     val rapidsJarURLs = classloader.getResources(PLUGIN_PROPS_FILENAME)
         .asScala.toList
-    lazy val rapidsJars = rapidsJarURLs.map { 
+    lazy val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
+    lazy val rapidsJarsVers = rapidsJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
     }.mkString(",")
     require(rapidsJarURLs.size <= 1,
-        s"Multiple rapids4spark jars found in the classpath, please make sure there is only " +
-        s"one rapids4spark jar in the classpath. Version info: \n$rapidsJars")
+        s"Multiple rapids4spark jars found in the classpath: $rapidsJars, please make sure " +
+        s"there is only one rapids4spark jar in the classpath. Version info: \n$rapidsJarsVers")
     val cudfJarURLs = classloader.getResources(CUDF_PROPS_FILENAME)
         .asScala.toList
-    lazy val cudfJars = cudfJarURLs.map { 
+    lazy val cudfJars = cudfJarURLs.map(_.toString.split("!").head).mkString(",")
+    lazy val cudfJarsVers = cudfJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
     }.mkString(",")
     require(cudfJarURLs.size <= 1,
-        s"Multiple cudf jars found in the classpath, please make sure there is only " +
-        s"one cudf jar in the classpath. Version info: \n$cudfJars")
+        s"Multiple cudf jars found in the classpath: $cudfJars, please make sure there is only " +
+        s"one cudf jar in the classpath. Version info: \n$cudfJarsVers")
     val jniJarURLs = classloader.getResources(JNI_PROPS_FILENAME)
         .asScala.toList
-    lazy val jniJars = jniJarURLs.map { 
+    lazy val jniJars = jniJarURLs.map(_.toString.split("!").head).mkString(",")
+    lazy val jniJarsVers = jniJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
     }.mkString(",")
     require(jniJarURLs.size <= 1,
-        s"Multiple spark-rapids-jni jars found in the classpath, please make sure there is only " +
-        s"one spark-rapids-jni jar in the classpath. Version info: \n$jniJars")
+        s"Multiple spark-rapids-jni jars found in the classpath: $jniJars, please make sure " +
+        s"there is only one spark-rapids-jni jar in the classpath. Version info: \n$jniJarsVers")
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
