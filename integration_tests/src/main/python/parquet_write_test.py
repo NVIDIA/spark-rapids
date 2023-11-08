@@ -455,6 +455,25 @@ def test_write_map_nullable(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path)
 
+
+def writeParquetCatchException(spark, data_gen, data_path):
+    with pytest.raises(Exception) as e_info:
+        unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path)
+    assert e_info.match(r".*SparkUpgradeException.*")
+
+@pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase_write', ['EXCEPTION'])
+def test_datetime_write_fails_datetime_legacy(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write,
+                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write}
+    with_gpu_session(
+        lambda spark: writeParquetCatchException(spark, data_gen, data_path),
+        conf=all_confs)
+
+
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', ['CORRECTED', 'LEGACY'])
