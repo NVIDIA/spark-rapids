@@ -324,7 +324,11 @@ with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStr
 
 There are several known issues:
 
-Dates and timestamps are not supported ([#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)).
+Dates are partially supported but there are known issues:
+
+- Strings in the format `yyyy` and `yyyy-md` are parsed as null 
+
+Timestamps are not supported ([#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)).
 
 When reading numeric values, the GPU implementation always supports leading zeros regardless of the setting
 for the JSON option `allowNumericLeadingZeros` ([#9588](https://github.com/NVIDIA/spark-rapids/issues/9588)).

@@ -86,7 +86,9 @@ def _assert_equal(cpu, gpu, float_check, path):
     elif isinstance(cpu, datetime):
         assert cpu == gpu, "GPU and CPU timestamp values are different at {}".format(path)
     elif isinstance(cpu, date):
-        assert cpu == gpu, "GPU and CPU date values are different at {}".format(path)
+        if cpu != gpu:
+            print("DATE",cpu,gpu)
+        assert cpu == gpu, "GPU and CPU date values are different at {}: {} != {}".format(path, cpu, gpu)
     elif isinstance(cpu, bool):
         assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
     elif isinstance(cpu, Decimal):
@@ -97,6 +99,7 @@ def _assert_equal(cpu, gpu, float_check, path):
         # Used by interval type DayTimeInterval for Pyspark 3.3.0+
         assert cpu == gpu, "GPU and CPU timedelta values are different at {}".format(path)
     elif (cpu == None):
+        print("NULL",cpu,gpu)
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
         assert False, "Found unexpected type {} at {}".format(t, path)

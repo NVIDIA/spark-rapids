@@ -40,7 +40,8 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -103,11 +104,17 @@ object GpuJsonScan {
   }
 
   def tagJsonToStructsSupport(options:Map[String, String],
+                              dt: DataType,
                               meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions = new JSONOptionsInRead(
       options,
       SQLConf.get.sessionLocalTimeZone,
       SQLConf.get.columnNameOfCorruptRecord)
+
+    val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
+    if (hasDates && options.getOrElse("dateFormat", "yyyy-MM-dd") != "yyyy-MM-dd") {
+      meta.willNotWorkOnGpu("GpuJsonScan only supports dateFormat yyyy-MM-dd")
+    }
 
     tagSupportOptions(parsedOptions, meta)
   }

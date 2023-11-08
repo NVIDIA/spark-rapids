@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuCast, GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
@@ -210,6 +210,10 @@ case class GpuJsonToStructs(
                 (sparkType, dtype) match {
                   case (DataTypes.StringType, DataTypes.BooleanType) =>
                     castJsonStringToBool(col)
+                  case (DataTypes.StringType, DataTypes.DateType) =>
+                    castJsonStringToDate(col)
+                  case (_, DataTypes.DateType) =>
+                    castToNullDate(input.getBase)
                   case _ => doCast(col, sparkType, dtype)
                 }
 
@@ -235,7 +239,7 @@ case class GpuJsonToStructs(
 
   private def castJsonStringToBool(input: ColumnVector): ColumnVector = {
     val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
-        input.equalTo(trueStr)
+      input.equalTo(trueStr)
     }
     withResource(isTrue) { _ =>
       val isFalse = withResource(Scalar.fromString("false")) { falseStr =>
@@ -253,6 +257,22 @@ case class GpuJsonToStructs(
           isTrue.ifElse(trueLit, falseOrNull)
         }
       }
+    }
+  }
+
+  private def castJsonStringToDate(input: ColumnVector): ColumnVector = {
+    options.getOrElse("dateFormat", "yyyy-MM-dd") match {
+      case "yyyy-MM-dd" =>
+        GpuCast.castStringToDate(input)
+      case other =>
+        // should be unreachable due to GpuOverrides checks
+        throw new IllegalStateException(s"Unsupported dateFormat $other")
+    }
+  }
+
+  private def castToNullDate(input: ColumnVector): ColumnVector = {
+    withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+      ColumnVector.fromScalar(nullScalar, input.getRowCount.toInt)
     }
   }
 
