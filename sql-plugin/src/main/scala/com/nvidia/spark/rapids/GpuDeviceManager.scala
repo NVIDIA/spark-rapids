@@ -395,7 +395,7 @@ object GpuDeviceManager extends Logging {
       val confLimit = conf.offHeapLimit
       // TODO the min limit size of overhead + 1 GiB is arbitrary and we should have some
       ///  better tests to see what an ideal value really should be.
-      val minMemoryLimit = totalOverhead // + (1024 * 1024 * 1024)
+      val minMemoryLimit = totalOverhead + (1024 * 1024 * 1024)
 
       val memoryLimit = if (confLimit.isDefined) {
         confLimit.get
