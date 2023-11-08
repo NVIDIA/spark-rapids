@@ -106,9 +106,9 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillDevice2HostTime" -> spillGpu2HostTimeNs,
     "gpuSpillDevice2DiskTime" -> spillGpu2DiskTimeNs,
     "gpuSpillHost2DiskTime" -> spillHost2DiskTimeNs,
-    "gpuUnspillHost2DeviceTime" -> readSpillHost2GpuTimeNs,
-    "gpuUnspillDisk2DeviceTime" -> readSpillDisk2GpuTimeNs,
-    "gpuUnspillDisk2HostTime" -> readSpillDisk2HostTimeNs,
+    "gpuReadSpillHost2DeviceTime" -> readSpillHost2GpuTimeNs,
+    "gpuReadSpillDisk2DeviceTime" -> readSpillDisk2GpuTimeNs,
+    "gpuReadSpillDisk2HostTime" -> readSpillDisk2HostTimeNs,
     "gpuHostAllocationWaitTime" -> hostAllocWaitTimeNs
   )
 

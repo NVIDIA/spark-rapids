@@ -161,14 +161,16 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         val memBuffer = if (serializerManager.isRapidsSpill(id)) {
           // Only go through serializerManager's stream wrapper for spill case
           closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
-            withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
-              c.position(fileOffset)
-              withResource(Channels.newInputStream(c)) { compressed =>
-                withResource(serializerManager.wrapStream(id, compressed)) { in =>
-                  withResource(new HostMemoryOutputStream(decompressed)) { out =>
-                    IOUtils.copy(in, out)
+            GpuTaskMetrics.get.readSpillDisk2HostTime {
+              withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
+                c.position(fileOffset)
+                withResource(Channels.newInputStream(c)) { compressed =>
+                  withResource(serializerManager.wrapStream(id, compressed)) { in =>
+                    withResource(new HostMemoryOutputStream(decompressed)) { out =>
+                      IOUtils.copy(in, out)
+                    }
+                    decompressed
                   }
-                  decompressed
                 }
               }
             }
