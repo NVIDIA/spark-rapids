@@ -35,6 +35,17 @@ object AstUtil {
   def canExtractNonAstConditionIfNeed(expr: BaseExprMeta[_], left: Seq[Attribute],
       right: Seq[Attribute]): Boolean = {
     if (!expr.canSelfBeAst) {
+      // Returns false directly since can't split non-ast-able root node into child
+      false
+    } else {
+      // Check whether any child contains the case not able to split
+      expr.childExprs.isEmpty || expr.childExprs.forall(canExtractInternal(_, left, right))
+    }
+  }
+
+  private[this] def canExtractInternal(expr: BaseExprMeta[_], left: Seq[Attribute],
+      right: Seq[Attribute]): Boolean = {
+    if (!expr.canSelfBeAst) {
       // It needs to be split since not ast-able. Check itself and childerns to ensure
       // pushing-down can be made, which doesn't need attributions from both sides.
       val exprRef = expr.wrapped.asInstanceOf[Expression]
@@ -44,8 +55,7 @@ object AstUtil {
       !(rightTree && leftTree)
     } else {
       // Check whether any child contains the case not able to split
-      expr.childExprs.isEmpty || expr.childExprs.forall(
-        canExtractNonAstConditionIfNeed(_, left, right))
+      expr.childExprs.isEmpty || expr.childExprs.forall(canExtractInternal(_, left, right))
     }
   }
 

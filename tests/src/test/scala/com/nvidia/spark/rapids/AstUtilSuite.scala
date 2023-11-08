@@ -119,7 +119,7 @@ class AstUtilSuite extends GpuUnitTests {
 
   test("Single node tree for ast split if needed") {
     for ((canAstSplitIfNeeded, containsNonAstAble, crossMultiChildPlan) <- Seq(
-      (false, true, true), (true, true, false), (true, false, true), (true, false, false))) {
+      (false, true, true), (false, true, false), (true, false, true), (true, false, false))) {
       assertResult(
         canAstSplitIfNeeded)(testSingleNode(containsNonAstAble, crossMultiChildPlan))
     }
