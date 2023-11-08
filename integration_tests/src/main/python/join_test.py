@@ -431,7 +431,7 @@ def test_broadcast_nested_loop_join_with_array_contains_no_fallback(data_gen, jo
     literal = with_cpu_session(lambda spark: gen_scalar(data_gen))
     def do_join(spark):
         left, right = create_df(spark, arr_gen, 50, 25)
-        # AST does not support cast or logarithm yet for double type
+        # Array_contains should be pushed down since ast doesn't support it.
         return broadcast(left).join(right, array_contains(col('a'), literal.cast(data_gen.data_type)))
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
