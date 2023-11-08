@@ -1183,10 +1183,15 @@ def split_list(input_list, split_item_strings):
     """
     include = []
     rest = []
-    for split_item_str in split_item_strings:
-        for item in input_list:
+    for item in input_list:
+        find = False
+        for split_item_str in split_item_strings:
             if (split_item_str == str(item)):
                 include.append(item)
-            else:
-                rest.append(item)
+                find = True
+                break;
+        if find:
+            include.append(item)
+        else:
+            rest.append(item)
     return (rest, include)
