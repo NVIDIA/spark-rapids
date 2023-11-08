@@ -113,13 +113,30 @@ object RapidsPluginUtils extends Logging {
 
   def detectMultiplePluginJars(): Unit = {
     val classloader = classOf[com.nvidia.spark.rapids.SparkShimServiceProvider].getClassLoader
-    val rapidsJarURLs = classloader.getResources("rapids4spark-version-info.properties")
+    val rapidsJarURLs = classloader.getResources(PLUGIN_PROPS_FILENAME)
         .asScala.toList
-    if (rapidsJarURLs.size > 1) {
-      val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
-      throw new RuntimeException(s"Multiple rapids4spark jars found in the classpath: " +
-          s"$rapidsJars. Please make sure there is only one rapids4spark jar in the classpath.")
-    }
+    lazy val rapidsJars = rapidsJarURLs.map { 
+      url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
+    }.mkString(",")
+    require(rapidsJarURLs.size <= 1,
+        s"Multiple rapids4spark jars found in the classpath, please make sure there is only " +
+        s"one rapids4spark jar in the classpath. Version info: \n$rapidsJars")
+    val cudfJarURLs = classloader.getResources(CUDF_PROPS_FILENAME)
+        .asScala.toList
+    lazy val cudfJars = cudfJarURLs.map { 
+      url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
+    }.mkString(",")
+    require(cudfJarURLs.size <= 1,
+        s"Multiple cudf jars found in the classpath, please make sure there is only " +
+        s"one cudf jar in the classpath. Version info: \n$cudfJars")
+    val jniJarURLs = classloader.getResources(JNI_PROPS_FILENAME)
+        .asScala.toList
+    lazy val jniJars = jniJarURLs.map { 
+      url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
+    }.mkString(",")
+    require(jniJarURLs.size <= 1,
+        s"Multiple spark-rapids-jni jars found in the classpath, please make sure there is only " +
+        s"one spark-rapids-jni jar in the classpath. Version info: \n$jniJars")
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
