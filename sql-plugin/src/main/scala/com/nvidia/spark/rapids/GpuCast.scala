@@ -304,7 +304,6 @@ object GpuCast {
       fromDataType: DataType,
       toDataType: DataType,
       options: CastOptions = CastOptions.DEFAULT_CAST_OPTIONS): ColumnVector = {
-
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
     }
