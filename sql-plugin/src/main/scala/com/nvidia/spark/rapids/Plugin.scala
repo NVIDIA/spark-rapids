@@ -334,10 +334,12 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
   override def init(
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
-    RapidsPluginUtils.detectMultiplePluginJars()
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
+    if (!conf.allowMultipleJars) {
+      RapidsPluginUtils.detectMultiplePluginJars()
+    }
     RapidsPluginUtils.logPluginMode(conf)
     GpuCoreDumpHandler.driverInit(sc, conf)
 
@@ -381,8 +383,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
-      // Fail if there are multiple plugin jars in the classpath.
-      RapidsPluginUtils.detectMultiplePluginJars()
 
       if (Cuda.getComputeCapabilityMajor < 6) {
         throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
@@ -394,6 +394,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
+
+      if (!conf.allowMultipleJars) {
+        // Fail if there are multiple plugin jars in the classpath.
+        RapidsPluginUtils.detectMultiplePluginJars()
+      }
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled

@@ -1839,6 +1839,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
+    .internal()
+    .startupOnly()
+    .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
+      "Spark will take the first one it finds, so the version may not be expected. ")
+    .booleanConf
+    .createWithDefault(false)
+
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
     .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
@@ -2633,6 +2641,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val allowMultipleJars: Boolean = get(ALLOW_MULTIPLE_JARS)
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
