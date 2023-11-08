@@ -530,7 +530,7 @@ def test_from_json_struct_decimal():
     "\"[1-8]{1}[0-9]{3}-[0-3]{1,2}\"",
     # "yyyy"
     "\"[0-9]{4}\"",
-    # dd/MM/yyyy
+    # "dd/MM/yyyy"
     "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
     # special constant values
     "\"(now|today|tomorrow|epoch)\"",
@@ -545,7 +545,7 @@ def test_from_json_struct_decimal():
 ])
 @pytest.mark.parametrize('date_format', [
     "yyyy-MM-dd",
-    pytest.param("dd/MM/yyyy", marks=pytest.mark.xfail(reason="TODO file follow-on issue")),
+    pytest.param("dd/MM/yyyy", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9667")),
 ])
 def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
