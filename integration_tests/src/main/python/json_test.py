@@ -537,7 +537,7 @@ def test_from_json_struct_decimal():
     # "nnnnn" (number of days since epoch)
     pytest.param("\"[0-9]{5}\"", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
-    "[0-9]{5}",
+    "[0-9]{1,5}",
     # floating-point
     "[0-9]{0,2}\.[0-9]{1,2}"
     # boolean
@@ -548,7 +548,8 @@ def test_from_json_struct_decimal():
     pytest.param("dd/MM/yyyy", marks=pytest.mark.xfail(reason="TODO file follow-on issue")),
 ])
 def test_from_json_struct_date(date_gen, date_format):
-    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }')
+    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('null')
     options = { 'dateFormat': date_format }
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
