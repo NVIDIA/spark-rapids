@@ -1175,3 +1175,18 @@ writer_confs_for_DB = {
     'spark.sql.parquet.int96RebaseModeInWrite' : 'CORRECTED',
     'spark.sql.parquet.int96RebaseModeInRead' : 'CORRECTED'
 }
+
+
+def split_list(input_list, split_item_strings):
+    """
+    Split a list to 2 sub-list
+    """
+    include = []
+    rest = []
+    for split_item_str in split_item_strings:
+        for item in input_list:
+            if (split_item_str == str(item)):
+                include.append(item)
+            else:
+                rest.append(item)
+    return (rest, include)

@@ -352,15 +352,37 @@ def _assert_cast_to_string_equal (data_gen, conf):
         conf
     )
 
+# split all_array_gens_for_cast_to_string
+# remove below split and merge tests: "TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from Date to String"
+gens_for_non_utc_strs = [
+    "Array(Date)", "Array(Timestamp)", "Array(Map(Byte(not_null),Date))", "Array(Struct(['child0', Byte],['child1', String],['child2', Date]))"]
+gens_for_utc, gens_for_non_utc = split_list(all_array_gens_for_cast_to_string, gens_for_non_utc_strs)
 
-@pytest.mark.parametrize('data_gen', all_array_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('data_gen', gens_for_utc, ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@disable_timezone_test
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from Date to String")
+@pytest.mark.parametrize('data_gen', gens_for_non_utc, ids=idfn)
+@pytest.mark.parametrize('legacy', ['true', 'false'])
+def test_cast_array_to_string_2(data_gen, legacy):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast("STRING")),
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for from Date to String")
+@pytest.mark.parametrize('data_gen', gens_for_non_utc, ids=idfn)
+@pytest.mark.parametrize('legacy', ['true', 'false'])
+def test_cast_array_to_string_2_for_non_utc(data_gen, legacy):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast("STRING")),
+        'Cast',
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_struct_array_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
