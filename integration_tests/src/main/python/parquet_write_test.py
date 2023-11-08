@@ -70,8 +70,11 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
                                                     MapGen(StringGen(pattern='key_[0-9]', nullable=False),
                                                            simple_string_to_string_map_gen)]
 
-parquet_datetime_gen_simple = [DateGen(end=date(3000, 1, 1)),
-                               TimestampGen(end=datetime(3000, 1, 1, tzinfo=timezone.utc))]
+parquet_datetime_gen_simple = [DateGen(start=date(1, 1, 1), end=date(2000, 1, 1))
+                               .with_special_case(date(1000, 1, 1), weight=10.0),
+                               TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
+                                            end=datetime(2000, 1, 1, tzinfo=timezone.utc))
+                               .with_special_case(datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)]
 parquet_datetime_in_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)]),
     StructGen([['child0', StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]])]
 parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_datetime_gen_simple + parquet_datetime_in_struct_gen] + [
