@@ -92,7 +92,6 @@ class GpuTaskMetrics extends Serializable {
 
   // Reverse Spill
   private val readSpillHost2GpuTimeNs = new NanoSecondAccumulator
-  private val readSpillDisk2GpuTimeNs = new NanoSecondAccumulator
   private val readSpillDisk2HostTimeNs = new NanoSecondAccumulator
 
   private val hostAllocWaitTimeNs = new NanoSecondAccumulator
@@ -107,7 +106,6 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillDevice2DiskTime" -> spillGpu2DiskTimeNs,
     "gpuSpillHost2DiskTime" -> spillHost2DiskTimeNs,
     "gpuReadSpillHost2DeviceTime" -> readSpillHost2GpuTimeNs,
-    "gpuReadSpillDisk2DeviceTime" -> readSpillDisk2GpuTimeNs,
     "gpuReadSpillDisk2HostTime" -> readSpillDisk2HostTimeNs,
     "gpuHostAllocationWaitTime" -> hostAllocWaitTimeNs
   )
@@ -162,10 +160,6 @@ class GpuTaskMetrics extends Serializable {
 
   def readSpillHost2GpuTime[A](f: => A): A = {
     timeIt(readSpillHost2GpuTimeNs, "readSpillHost2GpuTimeNs", NvtxColor.ORANGE, f)
-  }
-
-  def readSpillDisk2GpuTime[A](f: => A): A = {
-    timeIt(readSpillDisk2GpuTimeNs, "readSpillDisk2GpuTimeNs", NvtxColor.ORANGE, f)
   }
 
   def readSpillDisk2HostTime[A](f: => A): A = {
