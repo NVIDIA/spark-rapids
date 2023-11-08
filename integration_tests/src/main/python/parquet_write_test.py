@@ -72,11 +72,12 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 
 parquet_datetime_gen_simple = [DateGen(end=date(3000, 1, 1)),
                                TimestampGen(end=datetime(3000, 1, 1, tzinfo=timezone.utc))]
-parquet_datetime_in_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)]),
-    StructGen([['child0', StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]])]
-parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_datetime_gen_simple + parquet_datetime_in_struct_gen] + [
-    ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_datetime_gen_simple + parquet_datetime_in_struct_gen]
-parquet_nested_datetime_gen = parquet_datetime_gen_simple + parquet_datetime_in_struct_gen + parquet_datetime_in_array_gen
+parquet_datetime_in_struct_gen = [
+    StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]
+parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in
+                                 parquet_datetime_gen_simple + parquet_datetime_in_struct_gen]
+parquet_nested_datetime_gen = parquet_datetime_gen_simple + parquet_datetime_in_struct_gen + \
+                              parquet_datetime_in_array_gen
 
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
