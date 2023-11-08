@@ -6,6 +6,9 @@ permalink: /
 description: This site serves as a collection of documentation about the RAPIDS accelerator for Apache Spark
 ---
 # Overview
+**If you are a customer looking for information on how to adopt RAPIDS Accelerator for Apache Spark
+for your Spark workloads, please go to our User Guide for more information: [link](https://docs.nvidia.com/spark-rapids/user-guide/latest/index.html).**
+
 The RAPIDS Accelerator for Apache Spark leverages GPUs to accelerate processing via the
 [RAPIDS libraries](http://rapids.ai).
 
@@ -19,5 +22,3 @@ the scale of the Spark distributed computing framework.  The RAPIDS Accelerator 
 built-in accelerated shuffle based on [UCX](https://github.com/openucx/ucx/) that can be configured to leverage GPU-to-GPU
 communication and RDMA capabilities.
 
-**If you are a customer looking for information on how to adopt RAPIDS Accelerator for Apache Spark
-for your Spark workloads, please go to our User Guide for more information: [link](https://docs.nvidia.com/spark-rapids/user-guide/latest/index.html).**
