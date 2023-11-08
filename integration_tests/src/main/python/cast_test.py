@@ -19,7 +19,7 @@ from conftest import is_utc, is_not_utc
 from data_gen import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
     is_databricks113_or_later
-from marks import allow_non_gpu, approximate_float, disable_timezone_test
+from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
@@ -435,12 +435,23 @@ def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
     )
 
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from Date/Timestamp to String")
 @pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
 @pytest.mark.parametrize('legacy', ['true', 'false'])
-@disable_timezone_test
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
         data_gen, 
+        {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
+    )
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from Date/Timestamp to String")
+@pytest.mark.parametrize('data_gen', [StructGen([[str(i), gen] for i, gen in enumerate(basic_array_struct_gens_for_cast_to_string)] + [["map", MapGen(ByteGen(nullable=False), null_gen)]])], ids=idfn)
+@pytest.mark.parametrize('legacy', ['true', 'false'])
+def test_cast_struct_to_string_for_non_utc(data_gen, legacy):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast("STRING")),
+        'Cast',
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -608,11 +619,21 @@ def test_cast_timestamp_to_numeric_non_ansi():
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
                         "cast(a as float)", "cast(a as double)"))
-@disable_timezone_test
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from Timestamp to String")
 def test_cast_timestamp_to_string():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as string)"))
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from Timestamp to String")
+def test_cast_timestamp_to_string_non_utc():
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen)
+            .selectExpr("cast(a as string)"),
+        'Cast')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():
