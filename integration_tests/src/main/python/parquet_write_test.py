@@ -491,6 +491,22 @@ def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, data_gen, ts_writ
         data_path,
         conf=all_confs)
 
+@pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
+@pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
+def test_datetime_roundtrip_with_mixed_legacy_rebase_modes(spark_tmp_path, data_gen, ts_rebase_write):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    (ts_rebase_date, ts_rebase_time) = ts_rebase_write
+    all_confs = {'spark.sql.parquet.outputTimestampType': 'INT96',
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_date,
+                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_time,
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_date,
+                 'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_time}
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=all_confs)
+
 test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() or is_databricks122_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]
 
 @pytest.mark.allow_non_gpu(*test_non_empty_ctas_non_gpu_execs)
