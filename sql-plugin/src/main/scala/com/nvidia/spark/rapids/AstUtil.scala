@@ -50,6 +50,9 @@ object AstUtil {
   }
 
   /**
+   * Extract non-AST functions from join conditions and update the original join condition. Based
+   * on the attributes, it decides which side the split condition belongs to. The replaced
+   * condition is wrapped with GpuAlias with new intermediate attributes.
    *
    * @param condition to be split if needed
    * @param left attributions from left child

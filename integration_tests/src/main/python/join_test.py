@@ -404,7 +404,8 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
 def test_broadcast_nested_loop_join_with_non_ast_condition_push_down(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # AST does not support cast or logarithm yet which is supposed to be extracted into child nodes
+        # AST does not support cast or logarithm yet which is supposed to be extracted into child
+        # nodes
         return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
