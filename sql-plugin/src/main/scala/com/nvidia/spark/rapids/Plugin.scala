@@ -112,8 +112,8 @@ object RapidsPluginUtils extends Logging {
   }
 
   def detectMultiplePluginJars(): Unit = {
-    val classloader = classOf[com.nvidia.spark.rapids.SparkShimServiceProvider].getClassLoader
-    val rapidsJarURLs = classloader.getResources("rapids4spark-version-info.properties")
+    val classloader = ShimLoader.getShimClassLoader()
+    val rapidsJarURLs = classloader.getResources(PLUGIN_PROPS_FILENAME)
         .asScala.toList
     if (rapidsJarURLs.size > 1) {
       val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
