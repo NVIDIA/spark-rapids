@@ -19,5 +19,5 @@ the scale of the Spark distributed computing framework.  The RAPIDS Accelerator 
 built-in accelerated shuffle based on [UCX](https://github.com/openucx/ucx/) that can be configured to leverage GPU-to-GPU
 communication and RDMA capabilities.
 
-If you are a customer looking for information on how to adopt RAPIDS Accelerator for Apache Spark
-for your Spark workloads, please go to our User Guide for more information: [link](https://docs.nvidia.com/spark-rapids/user-guide/latest/index.html).
+*If you are a customer looking for information on how to adopt RAPIDS Accelerator for Apache Spark
+for your Spark workloads, please go to our User Guide for more information: [link](https://docs.nvidia.com/spark-rapids/user-guide/latest/index.html).*

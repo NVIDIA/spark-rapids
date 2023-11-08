@@ -18,6 +18,8 @@
 remote_theme: pmarsceill/just-the-docs
 
 aux_links:
+  "Spark Rapids User Guide":
+    - "//docs.nvidia.com/spark-rapids/user-guide/latest/index.html"
   "Spark Rapids Plugin on Github":
     - "//github.com/nvidia/spark-rapids"
 
