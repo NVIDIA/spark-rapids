@@ -525,7 +525,7 @@ def test_from_json_struct_decimal():
 
 @pytest.mark.parametrize('date_gen', [
     # "yyyy-MM-dd"
-    "\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\"", # yyyy-MM-dd
+    "\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\"",
     # "yyyy-MM"
     "\"[1-8]{1}[0-9]{3}-[0-3]{1,2}\"",
     # "yyyy"

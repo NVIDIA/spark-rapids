@@ -322,11 +322,11 @@ This particular function supports to output a map or struct type with limited fu
 The `from_json` function is disabled by default because it is experimental and has some known incompatibilities
 with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStructs=true`.
 
-There are several known issues:
+Dates are partially supported but there are some known issues:
 
-Dates are partially supported but there are known issues:
-
-- Strings containing numbers with more than four digits, representing the number of days since the epoch, will be 
+- Only the default `dateFormat` of `yyyy-MM-dd` is supported. The query will fall back to CPU if any other format
+  is specified ([#9667](https://github.com/NVIDIA/spark-rapids/issues/9667))
+- Strings containing numbers with more than four digits, representing the number of days since the epoch, will be
   parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664))
 
 Timestamps are not supported ([#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)).
