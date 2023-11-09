@@ -122,7 +122,7 @@ object RapidsPluginUtils extends Logging {
     complainFun(rapidsJarURLs.size <= 1,
         s"Multiple $jarName jars found in the classpath: $rapidsJars, please make sure there " +
         s"is only one $jarName jar in the classpath. If it is impossible to fix the classpath " + 
-        s"you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to true" + 
+        s"you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to true. " + 
         s"Version info: \n$rapidsJarsVers")
   }
 
