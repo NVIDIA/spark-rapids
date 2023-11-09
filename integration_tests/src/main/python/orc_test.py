@@ -806,8 +806,7 @@ def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, kee
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.orc(data_path), conf=all_confs)
 
-
-@pytest.mark.skipif(is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_spark_340_or_later() and (not (is_databricks_runtime() and spark_version() == "3.4.1")), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
@@ -820,8 +819,7 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
 
 
 @allow_non_gpu("ProjectExec")
-@pytest.mark.skipif(is_before_spark_340(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
-@pytest.mark.skipif(is_databricks_runtime() and spark_version() == "3.4.1", reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_before_spark_340() or (is_databricks_runtime() and spark_version() == "3.4.1"), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):
