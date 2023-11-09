@@ -114,7 +114,7 @@ object RapidsPluginUtils extends Logging {
   private def detectMultipleJar(propName: String, jarName: String, 
       complainFun: (Boolean, String) => Unit): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val rapidsJarURLs = classloader.getResources(propName).asScala.toList
+    val rapidsJarURLs = classloader.getResources(propName).asScala.toSet
     lazy val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
     lazy val rapidsJarsVers = rapidsJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
