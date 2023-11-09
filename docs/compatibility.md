@@ -326,8 +326,9 @@ Dates are partially supported but there are some known issues:
 
 - Only the default `dateFormat` of `yyyy-MM-dd` is supported. The query will fall back to CPU if any other format
   is specified ([#9667](https://github.com/NVIDIA/spark-rapids/issues/9667))
-- Strings containing numbers with more than four digits, representing the number of days since the epoch, will be
-  parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664))
+- Strings containing integers with more than four digits will be 
+  parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4 
+  will parse these numbers as number of days since the epoch, and in Spark 3.4 and later, an exception will be thrown.
 
 Timestamps are not supported ([#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)).
 

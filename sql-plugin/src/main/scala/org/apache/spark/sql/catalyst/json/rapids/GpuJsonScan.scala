@@ -104,16 +104,22 @@ object GpuJsonScan {
   }
 
   def tagJsonToStructsSupport(options:Map[String, String],
-                              dt: DataType,
-                              meta: RapidsMeta[_, _, _]): Unit = {
+      dt: DataType,
+      meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions = new JSONOptionsInRead(
       options,
       SQLConf.get.sessionLocalTimeZone,
       SQLConf.get.columnNameOfCorruptRecord)
 
+    meta.tagForGpu()
+
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
-    if (hasDates && options.getOrElse("dateFormat", "yyyy-MM-dd") != "yyyy-MM-dd") {
-      meta.willNotWorkOnGpu("GpuJsonToStructs only supports dateFormat yyyy-MM-dd")
+    if (hasDates) {
+      options.get("dateFormat") match {
+        case Some(dateFormat) if dateFormat != "yyyy-MM-dd" =>
+          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
+        case _ =>
+      }
     }
 
     tagSupportOptions(parsedOptions, meta)

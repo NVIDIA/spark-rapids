@@ -18,11 +18,12 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{GpuCast, GpuColumnVector, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
+import com.nvidia.spark.rapids.shims.GpuJsonToStructsShim
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -211,7 +212,7 @@ case class GpuJsonToStructs(
                   case (DataTypes.StringType, DataTypes.BooleanType) =>
                     castJsonStringToBool(col)
                   case (DataTypes.StringType, DataTypes.DateType) =>
-                    castJsonStringToDate(col)
+                    GpuJsonToStructsShim.castJsonStringToDate(col, options)
                   case (_, DataTypes.DateType) =>
                     castToNullDate(input.getBase)
                   case _ => doCast(col, sparkType, dtype)
@@ -257,16 +258,6 @@ case class GpuJsonToStructs(
           isTrue.ifElse(trueLit, falseOrNull)
         }
       }
-    }
-  }
-
-  private def castJsonStringToDate(input: ColumnVector): ColumnVector = {
-    options.getOrElse("dateFormat", "yyyy-MM-dd") match {
-      case "yyyy-MM-dd" =>
-        GpuCast.castStringToDate(input)
-      case other =>
-        // should be unreachable due to GpuOverrides checks
-        throw new IllegalStateException(s"Unsupported dateFormat $other")
     }
   }
 

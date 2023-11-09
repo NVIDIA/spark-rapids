@@ -544,13 +544,14 @@ def test_from_json_struct_decimal():
     "(true|false)"
 ])
 @pytest.mark.parametrize('date_format', [
+    "",
     "yyyy-MM-dd",
     pytest.param("dd/MM/yyyy", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9667")),
 ])
 def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('null')
-    options = { 'dateFormat': date_format }
+    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
