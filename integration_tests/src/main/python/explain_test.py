@@ -15,6 +15,7 @@
 import pytest
 
 from data_gen import *
+from conftest import is_not_utc, is_utc
 from marks import *
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
@@ -49,7 +50,7 @@ def test_explain_join(spark_tmp_path, data_gen):
 
     with_cpu_session(do_join_explain)
 
-@disable_timezone_test
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 def test_explain_set_config():
     conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
             'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}
@@ -62,6 +63,27 @@ def test_explain_set_config():
         explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
         print(explain_str)
         assert "timestamp) will run on GPU" in explain_str
+        spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'false')
+        explain_str_cast_off = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+        print(explain_str_cast_off)
+        assert "timestamp) cannot run on GPU" in explain_str_cast_off
+
+    with_cpu_session(do_explain)
+
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@allow_non_gpu("ProjectExec")
+def test_explain_set_config_for_non_utc():
+    conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
+            'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}
+
+    def do_explain(spark):
+        df = unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType()))
+        # a bit brittle if these get turned on by default
+        spark.conf.set('spark.rapids.sql.hasExtendedYearValues', 'false')
+        spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'true')
+        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+        print(explain_str)
+        assert "timestamp) cannot run on GPU" in explain_str
         spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'false')
         explain_str_cast_off = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
         print(explain_str_cast_off)

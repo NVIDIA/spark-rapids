@@ -242,7 +242,7 @@ def test_conditional_with_side_effects_sequence(data_gen):
         conf = ansi_enabled_conf)
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
 def test_conditional_with_side_effects_sequence_for_non_utc(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -264,7 +264,7 @@ def test_conditional_with_side_effects_sequence_cast(data_gen):
         conf = ansi_enabled_conf)
 
 @allow_non_gpu('ProjectExec')
-@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 @pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
 def test_conditional_with_side_effects_sequence_cast_for_non_utc(data_gen):

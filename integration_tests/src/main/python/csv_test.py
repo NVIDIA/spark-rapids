@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_write, \
     assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
-from conftest import get_non_gpu_allowed
+from conftest import get_non_gpu_allowed, is_not_utc, is_utc
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -197,8 +197,6 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
     ('Performance_2007Q3.txt_0', _perf_schema, {'sep': '|'}),
     ('ts.csv', _date_schema, {}),
     ('date.csv', _date_schema, {}),
-    ('ts.csv', _ts_schema, {}),
-    ('str.csv', _ts_schema, {}),
     ('str.csv', _bad_str_schema, {'header': 'true'}),
     ('str.csv', _good_str_schema, {'header': 'true'}),
     ('no-comments.csv', _three_str_schema, {}),
@@ -249,7 +247,6 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
-@disable_timezone_test
 def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
     updated_conf=copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -257,6 +254,35 @@ def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_ena
     })
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
             conf=updated_conf)
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@approximate_float
+@pytest.mark.parametrize('name,schema,options', [('ts.csv', _ts_schema, {}), ('str.csv', _ts_schema, {}),], ids=idfn)
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_csv_read_with_tz(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
+    updated_conf=copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
+                                         conf=updated_conf)
+
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@approximate_float
+@pytest.mark.parametrize('name,schema,options', [('ts.csv', _ts_schema, {}), ('str.csv', _ts_schema, {}),], ids=idfn)
+@pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+def test_basic_csv_read_with_tz_for_non_utc(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
+    updated_conf=copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.ansi.enabled': ansi_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
+                                         conf=updated_conf)
 
 @pytest.mark.parametrize('name,schema,options', [
     pytest.param('small_float_values.csv', _float_schema, {'header': 'true'}),
@@ -273,7 +299,7 @@ def test_csv_read_small_floats(std_input_path, name, schema, options, read_func,
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, spark_tmp_table_factory, options),
                                          conf=updated_conf)
 
-csv_supported_gens = [
+csv_supported_gens_without_ts = [
         # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
         # This would require multiLine reads to work correctly so we avoid these chars
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
@@ -284,13 +310,13 @@ csv_supported_gens = [
         DoubleGen(no_nans=False),
         pytest.param(double_gen),
         pytest.param(FloatGen(no_nans=False)),
-        pytest.param(float_gen),
-        TimestampGen()]
+        pytest.param(float_gen)]
+
+csv_supported_gens = csv_supported_gens_without_ts + [TimestampGen()]
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', csv_supported_gens_without_ts, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-@disable_timezone_test
 def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
@@ -301,6 +327,37 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(schema).csv(data_path),
             conf=updated_conf)
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@approximate_float
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_round_trip_with_ts(spark_tmp_path, data_gen, v1_enabled_list):
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+        lambda spark : gen_df(spark, gen).write.csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.schema(schema).csv(data_path),
+        conf=updated_conf)
+
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@approximate_float
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_round_trip_with_ts_for_non_utc(spark_tmp_path, data_gen, v1_enabled_list):
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+        lambda spark : gen_df(spark, gen).write.csv(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.schema(schema).csv(data_path),
+        conf=updated_conf)
 
 @allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
@@ -404,10 +461,10 @@ csv_supported_ts_parts = ['', # Just the date
         "'T'HH:mm[:ss]",
         "'T'HH:mm"]
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-@disable_timezone_test
 def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -426,6 +483,30 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_
                     .option('timestampFormat', full_format)\
                     .csv(data_path),
             conf=updated_conf)
+
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
+@pytest.mark.parametrize('date_format', csv_supported_date_formats)
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_ts_formats_round_trip_for_non_utc(spark_tmp_path, date_format, ts_part, v1_enabled_list):
+    full_format = date_format + ts_part
+    data_gen = TimestampGen()
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = gen.data_type
+    with_cpu_session(
+        lambda spark : gen_df(spark, gen).write \
+            .option('timestampFormat', full_format) \
+            .csv(data_path))
+    updated_conf = copy_and_update(_enable_all_types_conf,
+                                   {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read \
+            .schema(schema) \
+            .option('timestampFormat', full_format) \
+            .csv(data_path),
+        conf=updated_conf)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 def test_input_meta(spark_tmp_path, v1_enabled_list):
@@ -620,12 +701,15 @@ def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timesta
             non_exist_classes = cpu_scan_class,
             conf = conf)
 
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
-@disable_timezone_test
 def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
-    # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
-    data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
+    # start date ""0002-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
+    # Can not use ""0001-01-02" as start date since in some timezone, it may be converted to 0000
+    # for year which is not supported by pySpark
+    data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(2, 1, 2))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     data_path = spark_tmp_path + '/CSV_DATA'
 
@@ -639,6 +723,28 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
         lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path),
         exist_classes = 'GpuFileSourceScanExec',
         non_exist_classes = 'FileSourceScanExec')
+
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
+def test_csv_prefer_date_with_infer_schema_for_non_utc(spark_tmp_path):
+    # start date ""0002-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
+    # Can not use ""0001-01-02" as start date since in some timezone, it may be converted to 0000
+    # for year which is not supported by pySpark
+    data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(2, 1, 2))]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
+        exist_classes = 'FileSourceScanExec',
+        non_exist_classes = 'GpuFileSourceScanExec')
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path),
+        exist_classes = 'FileSourceScanExec',
+        non_exist_classes = 'GpuFileSourceScanExec')
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
