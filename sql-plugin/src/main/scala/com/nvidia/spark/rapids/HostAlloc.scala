@@ -22,7 +22,6 @@ import ai.rapids.cudf.{ColumnView, HostMemoryBuffer, HostMemoryReservation, Memo
 import com.nvidia.spark.rapids.HostAlloc.align
 
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 private class HostAlloc(nonPinnedLimit: Long) {
   private var currentNonPinnedAllocated: Long = 0L
