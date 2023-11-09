@@ -213,6 +213,21 @@ def _prep_func_for_compare(func, mode):
             return (df.collect(), df)
         collect_type = 'COLLECT'
         return (bring_back, collect_type)
+    elif mode == "COLLECT_ERROR_WITH_DATAFRAME":
+        def bring_back(spark):
+            """
+            return collect error and df
+            if there is no error, collect error is empty string
+            """
+            df = limit_func(spark)
+            collect_error = ""
+            try:
+                df.collect()
+            except Exception as e:
+                collect_error = str(e)
+            return (collect_error, df)
+        collect_type = 'COLLECT'
+        return (bring_back, collect_type)
     else:
         bring_back = lambda spark: limit_func(spark).toLocalIterator()
         collect_type = 'ITERATOR'
@@ -443,6 +458,30 @@ def assert_gpu_fallback_collect(func,
         from_gpu.sort(key=_RowCmp)
 
     assert_equal(from_cpu, from_gpu)
+
+def assert_gpu_fallback_and_collect_with_error(func,
+        cpu_fallback_class_name,
+        error_message,
+        conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT_ERROR_WITH_DATAFRAME')
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    collect_error, cpu_df = with_cpu_session(bring_back, conf=conf)
+    assert error_message in collect_error, f"Expected error '{error_message}' did not appear in '{collect_error}'"
+    cpu_end = time.time()
+
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    collect_error, gpu_df = with_gpu_session(bring_back, conf=conf)
+    assert error_message in collect_error, f"Expected error '{error_message}' did not appear in '{collect_error}'"
+    gpu_end = time.time()
+    jvm = spark_jvm()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertDidFallBack(gpu_df._jdf, cpu_fallback_class_name)
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
+        gpu_end - gpu_start, cpu_end - cpu_start))
+
 
 def assert_gpu_sql_fallback_collect(df_fun, cpu_fallback_class_name, table_name, sql, conf=None, debug=False):
     if conf is None:

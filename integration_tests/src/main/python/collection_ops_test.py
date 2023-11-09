@@ -14,9 +14,10 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_and_collect_with_error
+from conftest import is_utc, is_not_utc
 from data_gen import *
-from marks import disable_timezone_test
+from marks import allow_non_gpu, disable_timezone_test
 from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
@@ -249,7 +250,7 @@ sequence_normal_integral_gens = [
 sequence_normal_no_step_integral_gens = [(gens[0], gens[1]) for
     gens in sequence_normal_integral_gens]
 
-@disable_timezone_test
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 @pytest.mark.parametrize('start_gen,stop_gen', sequence_normal_no_step_integral_gens, ids=idfn)
 def test_sequence_without_step(start_gen, stop_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -258,8 +259,23 @@ def test_sequence_without_step(start_gen, stop_gen):
             "sequence(a, 20)",
             "sequence(20, b)"))
 
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
+@pytest.mark.parametrize('start_gen,stop_gen', sequence_normal_no_step_integral_gens, ids=idfn)
+def test_sequence_without_step_for_non_utc(start_gen, stop_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: two_col_df(spark, start_gen, stop_gen).selectExpr(
+            "sequence(a, b)",
+            "sequence(a, 20)",
+            "sequence(20, b)"),
+        'Sequence')
+
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
-@disable_timezone_test
+
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get a step scalar from the 'step_gen' which follows the rules.
     step_gen.start(random.Random(0))
@@ -273,6 +289,24 @@ def test_sequence_with_step(start_gen, stop_gen, step_gen):
             "sequence(20, b, c)",
             "sequence(20, 20, c)",
             "sequence(20, b, {})".format(step_lit)))
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
+@pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
+def test_sequence_with_step_for_non_utc(start_gen, stop_gen, step_gen):
+    # Get a step scalar from the 'step_gen' which follows the rules.
+    step_gen.start(random.Random(0))
+    step_lit = step_gen.gen()
+    assert_gpu_fallback_collect(
+        lambda spark: three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
+            "sequence(a, b, c)",
+            "sequence(a, b, {})".format(step_lit),
+            "sequence(a, 20, c)",
+            "sequence(a, 20, {})".format(step_lit),
+            "sequence(20, b, c)",
+            "sequence(20, 20, c)",
+            "sequence(20, b, {})".format(step_lit)),
+        'Sequence')
 
 # Illegal sequence boundaries:
 #     step > 0, but start > stop
@@ -305,10 +339,12 @@ sequence_illegal_boundaries_integral_gens = [
 @disable_timezone_test
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_illegal_boundaries_integral_gens, ids=idfn)
 def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
-    assert_gpu_and_cpu_error(
+    assert_gpu_fallback_and_collect_with_error(
         lambda spark:three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
-            "sequence(a, b, c)").collect(),
-        conf = {}, error_message = "Illegal sequence boundaries")
+            "sequence(a, b, c)"),
+        'Sequence',
+        error_message = "Illegal sequence boundaries",
+        conf = {})
 
 # Exceed the max length of a sequence
 #     "Too long sequence: xxxxxxxxxx. Should be <= 2147483632"
@@ -317,14 +353,29 @@ sequence_too_long_length_gens = [
     LongGen(min_val=2147483635, max_val=2147483635, special_cases=[None])
 ]
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
 @disable_timezone_test
 def test_sequence_too_long_sequence(stop_gen):
-    assert_gpu_and_cpu_error(
+    assert_gpu_fallback_and_collect_with_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
         lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
-            "sequence(0, a)").collect(),
-        conf = {}, error_message = "Too long sequence")
+            "sequence(0, a)"),
+        'Sequence',
+        error_message = "Too long sequence",
+        conf = {})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
+@pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
+def test_sequence_too_long_sequence_for_non_utc(stop_gen):
+    assert_gpu_fallback_and_collect_with_error(
+        # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
+        lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
+            "sequence(0, a)"),
+        'Sequence',
+        error_message = "Too long sequence",
+        conf = {})
 
 def get_sequence_cases_mixed_df(spark, length=2048):
     # Generate the sequence data following the 3 rules mixed in a single dataset.
@@ -359,9 +410,18 @@ def get_sequence_cases_mixed_df(spark, length=2048):
         SparkContext.getOrCreate().parallelize(get_sequence_data(data_gen, length)),
         mixed_schema)
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 # test for 3 cases mixed in a single dataset
-@disable_timezone_test
 def test_sequence_with_step_mixed_cases():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: get_sequence_cases_mixed_df(spark)
             .selectExpr("sequence(a, b, c)"))
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
+def test_sequence_with_step_mixed_cases_for_non_utc():
+    assert_gpu_fallback_collect(
+        lambda spark: get_sequence_cases_mixed_df(spark)
+            .selectExpr("sequence(a, b, c)"),
+        'Sequence')
