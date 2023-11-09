@@ -86,13 +86,10 @@ class GpuTaskMetrics extends Serializable {
   private val retryComputationTime = new NanoSecondAccumulator
 
   // Spill
-  private val spillGpu2HostTimeNs = new NanoSecondAccumulator
-  private val spillGpu2DiskTimeNs = new NanoSecondAccumulator
-  private val spillHost2DiskTimeNs = new NanoSecondAccumulator
-
-  // Reverse Spill
-  private val readSpillHost2GpuTimeNs = new NanoSecondAccumulator
-  private val readSpillDisk2HostTimeNs = new NanoSecondAccumulator
+  private val spillToHostTimeNs = new NanoSecondAccumulator
+  private val spillToDiskTimeNs = new NanoSecondAccumulator
+  private val readSpillFromHostTimeNs = new NanoSecondAccumulator
+  private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
   private val hostAllocWaitTimeNs = new NanoSecondAccumulator
 
@@ -102,11 +99,10 @@ class GpuTaskMetrics extends Serializable {
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
     "gpuRetryBlockTime" -> retryBlockTime,
     "gpuRetryComputationTime" -> retryComputationTime,
-    "gpuSpillDevice2HostTime" -> spillGpu2HostTimeNs,
-    "gpuSpillDevice2DiskTime" -> spillGpu2DiskTimeNs,
-    "gpuSpillHost2DiskTime" -> spillHost2DiskTimeNs,
-    "gpuReadSpillHost2DeviceTime" -> readSpillHost2GpuTimeNs,
-    "gpuReadSpillDisk2HostTime" -> readSpillDisk2HostTimeNs,
+    "gpuSpillToHostTime" -> spillToHostTimeNs,
+    "gpuSpillToDiskTime" -> spillToDiskTimeNs,
+    "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
+    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
     "gpuHostAllocationWaitTime" -> hostAllocWaitTimeNs
   )
 
@@ -146,24 +142,20 @@ class GpuTaskMetrics extends Serializable {
 
   def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, "Acquire GPU", NvtxColor.RED, f)
 
-  def spillGpu2HostTime[A](f: => A): A = {
-    timeIt(spillGpu2HostTimeNs, "spillGpu2HostTime", NvtxColor.RED, f)
+  def spillToHostTime[A](f: => A): A = {
+    timeIt(spillToHostTimeNs, "spillToHostTime", NvtxColor.RED, f)
   }
 
-  def spillGpu2DiskTime[A](f: => A): A = {
-    timeIt(spillGpu2DiskTimeNs, "spillGpu2DiskTime", NvtxColor.RED, f)
-  }
-
-  def spillHost2DiskTime[A](f: => A): A = {
-    timeIt(spillHost2DiskTimeNs, "spillHost2DiskTime", NvtxColor.RED, f)
+  def spillToDiskTime[A](f: => A): A = {
+    timeIt(spillToDiskTimeNs, "spillToDiskTime", NvtxColor.RED, f)
   }
 
   def readSpillHost2GpuTime[A](f: => A): A = {
-    timeIt(readSpillHost2GpuTimeNs, "readSpillHost2GpuTimeNs", NvtxColor.ORANGE, f)
+    timeIt(readSpillFromHostTimeNs, "readSpillFromHostTime", NvtxColor.ORANGE, f)
   }
 
   def readSpillDisk2HostTime[A](f: => A): A = {
-    timeIt(readSpillDisk2HostTimeNs, "readSpillDisk2HostTime", NvtxColor.ORANGE, f)
+    timeIt(readSpillFromDiskTimeNs, "readSpillFromDiskTime", NvtxColor.ORANGE, f)
   }
 
   def hostAllocTime[A](f: => A): A = {

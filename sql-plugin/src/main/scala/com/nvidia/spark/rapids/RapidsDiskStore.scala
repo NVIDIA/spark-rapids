@@ -102,11 +102,6 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
       stream: Cuda.Stream): (Long, Long, Long) = {
     incoming match {
       case fileWritable: RapidsBufferChannelWritable =>
-        val metricFn = incoming.storageTier match {
-          case StorageTier.DEVICE => GpuTaskMetrics.get.spillGpu2DiskTime[(Long, Long, Long)] _
-          case StorageTier.HOST => GpuTaskMetrics.get.spillHost2DiskTime[(Long, Long, Long)] _
-          case unknown => sys.error("INFEASIBLE spilling to Disk from storage tier: " + unknown)
-        }
         val option = if (append) {
           Array(StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } else {
@@ -114,7 +109,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         }
         var currentPos, writtenBytes = 0L
 
-        metricFn {
+        GpuTaskMetrics.get.spillToDiskTime {
           withResource(FileChannel.open(path.toPath, option: _*)) { fc =>
             currentPos = fc.position()
             withResource(Channels.newOutputStream(fc)) { os =>

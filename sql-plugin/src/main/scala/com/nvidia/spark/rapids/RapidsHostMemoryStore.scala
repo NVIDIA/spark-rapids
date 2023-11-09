@@ -88,7 +88,6 @@ class RapidsHostMemoryStore(
       buffer: RapidsBuffer,
       catalog: RapidsBufferCatalog,
       stream: Cuda.Stream): Boolean = {
-    if (System.nanoTime() % 2 == 0) return false
     maxSize.forall { ms =>
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
@@ -125,7 +124,7 @@ class RapidsHostMemoryStore(
         val totalCopySize = otherBufferIterator.getTotalCopySize
         closeOnExcept(HostAlloc.allocHighPriority(totalCopySize)) { hb =>
           hb.map { hostBuffer =>
-            val spillNs = GpuTaskMetrics.get.spillGpu2HostTime {
+            val spillNs = GpuTaskMetrics.get.spillToHostTime {
               var hostOffset = 0L
               val start = System.nanoTime()
               while (otherBufferIterator.hasNext) {
