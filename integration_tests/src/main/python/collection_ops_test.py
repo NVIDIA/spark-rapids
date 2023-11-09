@@ -336,15 +336,25 @@ sequence_illegal_boundaries_integral_gens = [
         IntegerGen(min_val=0, max_val=0, special_cases=[]))
 ]
 
-@disable_timezone_test
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_illegal_boundaries_integral_gens, ids=idfn)
 def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark:three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
+            "sequence(a, b, c)").collect(),
+        conf = {}, error_message = "Illegal sequence boundaries")
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_illegal_boundaries_integral_gens, ids=idfn)
+def test_sequence_illegal_boundaries_for_non_utc(start_gen, stop_gen, step_gen):
     assert_gpu_fallback_and_collect_with_error(
         lambda spark:three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
             "sequence(a, b, c)"),
         'Sequence',
         error_message = "Illegal sequence boundaries",
         conf = {})
+
 
 # Exceed the max length of a sequence
 #     "Too long sequence: xxxxxxxxxx. Should be <= 2147483632"
@@ -355,15 +365,12 @@ sequence_too_long_length_gens = [
 
 @pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
-@disable_timezone_test
 def test_sequence_too_long_sequence(stop_gen):
-    assert_gpu_fallback_and_collect_with_error(
+    assert_gpu_and_cpu_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
         lambda spark:unary_op_df(spark, stop_gen, 1).selectExpr(
-            "sequence(0, a)"),
-        'Sequence',
-        error_message = "Too long sequence",
-        conf = {})
+            "sequence(0, a)").collect(),
+        conf = {}, error_message = "Too long sequence")
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Sequence")
