@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSeq, Expression, ExprId, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.rapids.catalyst.expressions.{GpuEquivalentExpressions, GpuExpressionEquals}
 
 
@@ -32,30 +32,20 @@ object AstUtil {
    *         attributes from both join sides. In such case, it's not able
    *         to push down into single child.
    */
-  def canExtractNonAstConditionIfNeed(expr: BaseExprMeta[_], left: Seq[Attribute],
-      right: Seq[Attribute]): Boolean = {
-    if (!expr.canSelfBeAst) {
-      // Returns false directly since can't split non-ast-able root node into child
-      false
-    } else {
-      // Check whether any child contains the case not able to split
-      expr.childExprs.isEmpty || expr.childExprs.forall(canExtractInternal(_, left, right))
-    }
-  }
-
-  private[this] def canExtractInternal(expr: BaseExprMeta[_], left: Seq[Attribute],
-      right: Seq[Attribute]): Boolean = {
+  def canExtractNonAstConditionIfNeed(expr: BaseExprMeta[_], left: Seq[ExprId],
+      right: Seq[ExprId]): Boolean = {
     if (!expr.canSelfBeAst) {
       // It needs to be split since not ast-able. Check itself and childerns to ensure
       // pushing-down can be made, which doesn't need attributions from both sides.
       val exprRef = expr.wrapped.asInstanceOf[Expression]
-      val leftTree = exprRef.references.exists(left.contains(_))
-      val rightTree = exprRef.references.exists(right.contains(_))
+      val leftTree = exprRef.references.exists(r => left.contains(r.exprId))
+      val rightTree = exprRef.references.exists(r => right.contains(r.exprId))
       // Can't extract a condition involving columns from both sides
       !(rightTree && leftTree)
     } else {
       // Check whether any child contains the case not able to split
-      expr.childExprs.isEmpty || expr.childExprs.forall(canExtractInternal(_, left, right))
+      expr.childExprs.isEmpty || expr.childExprs.forall(
+        canExtractNonAstConditionIfNeed(_, left, right))
     }
   }
 
@@ -91,7 +81,8 @@ object AstUtil {
     // 1st step to construct 1) left expr list; 2) right expr list; 3) substitutionMap
     // No need to consider common sub-expressions here since project node will use tiered execution
     condition.foreach(c =>
-      if (skipCheck || canExtractNonAstConditionIfNeed(c, left.attrs, right.attrs)) {
+      if (skipCheck || canExtractNonAstConditionIfNeed(c, left.attrs.map(_.exprId), right.attrs
+          .map(_.exprId))) {
         splitNonAstInternal(c, exprIds, leftExprs, rightExprs, substitutionMap, isLeft)
       })
 

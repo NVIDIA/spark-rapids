@@ -45,7 +45,8 @@ class AstUtilSuite extends GpuUnitTests {
     when(exprMeta.canSelfBeAst).thenReturn(!containsNonAstAble)
     when(exprMeta.wrapped).thenReturn(expr)
 
-    AstUtil.canExtractNonAstConditionIfNeed(exprMeta, Seq(l1, l2), Seq(r1, r2))
+    AstUtil.canExtractNonAstConditionIfNeed(exprMeta, Seq(l1, l2).map(_.exprId), Seq(r1, r2).map
+    (_.exprId))
   }
 
   private[this] def testMultiNodes(containsNonAstAble: Boolean, crossMultiChildPlan: Boolean)
@@ -71,7 +72,8 @@ class AstUtilSuite extends GpuUnitTests {
 
     when(rootExprMeta.canSelfBeAst).thenReturn(true)
 
-    AstUtil.canExtractNonAstConditionIfNeed(rootExprMeta, Seq(l1, l2), Seq(r1, r2))
+    AstUtil.canExtractNonAstConditionIfNeed(rootExprMeta, Seq(l1, l2).map(_.exprId), Seq(r1, r2)
+        .map(_.exprId))
   }
 
   private[this] def buildLeaf(attributeSet: AttributeSet, containsNonAstAble: Boolean)
@@ -114,12 +116,13 @@ class AstUtilSuite extends GpuUnitTests {
     when(rootExprMeta.childExprs).thenReturn(Seq(leftExprMeta, rightExprMeta))
     when(rootExprMeta.canSelfBeAst).thenReturn(true)
 
-    AstUtil.canExtractNonAstConditionIfNeed(rootExprMeta, Seq(l1, l2), Seq(r1, r2))
+    AstUtil.canExtractNonAstConditionIfNeed(rootExprMeta, Seq(l1, l2).map(_.exprId), Seq(r1, r2)
+        .map(_.exprId))
   }
 
   test("Single node tree for ast split if needed") {
     for ((canAstSplitIfNeeded, containsNonAstAble, crossMultiChildPlan) <- Seq(
-      (false, true, true), (false, true, false), (true, false, true), (true, false, false))) {
+      (false, true, true), (true, true, false), (true, false, true), (true, false, false))) {
       assertResult(
         canAstSplitIfNeeded)(testSingleNode(containsNonAstAble, crossMultiChildPlan))
     }

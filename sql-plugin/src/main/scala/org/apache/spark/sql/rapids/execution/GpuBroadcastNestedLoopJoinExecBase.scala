@@ -64,7 +64,7 @@ abstract class GpuBroadcastNestedLoopJoinMetaBase(
       val Seq(leftPlan, rightPlan) = childPlans
       conditionMeta match {
         case Some(e) => isAstCond = AstUtil.canExtractNonAstConditionIfNeed(
-          e, leftPlan.outputAttributes, rightPlan.outputAttributes)
+          e, leftPlan.outputAttributes.map(_.exprId), rightPlan.outputAttributes.map(_.exprId))
         case None => isAstCond = true
       }
       taggedForAstCheck = true
