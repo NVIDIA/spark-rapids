@@ -46,12 +46,15 @@
             <source>${spark.rapids.source.basedir}/integration_tests/requirements.txt</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
-        <file>
-            <source>${project.build.directory}/extra-resources/rapids4spark-version-info.properties</source>
-            <outputDirectory>integration_tests</outputDirectory>
-        </file>
     </files>
     <fileSets>
+        <fileSet>
+            <directory>${project.build.directory}/extra-resources</directory>
+            <outputDirectory>integration_tests</outputDirectory>
+            <includes>
+                <include>rapids-4-spark-integration-tests_2.1*-version-info.properties</include>
+            </includes>
+        </fileSet>
         <fileSet>
             <directory>${spark.rapids.source.basedir}/integration_tests/src/main/python</directory>
             <outputDirectory>integration_tests/src/main/python</outputDirectory>

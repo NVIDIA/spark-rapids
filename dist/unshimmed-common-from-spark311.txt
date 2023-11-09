@@ -16,4 +16,4 @@ com/nvidia/spark/rapids/optimizer/SQLOptimizerPlugin*
 org/apache/spark/sql/rapids/AdaptiveSparkPlanHelperShim*
 org/apache/spark/sql/rapids/ExecutionPlanCaptureCallback*
 rapids/*.py
-rapids4spark-version-info.properties
+rapids-4-spark_2.1?-version-info.properties
