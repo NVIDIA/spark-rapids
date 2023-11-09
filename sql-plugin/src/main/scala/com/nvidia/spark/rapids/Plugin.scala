@@ -111,35 +111,29 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  def detectMultiplePluginJars(): Unit = {
+  private def detectMultipleJar(propName: String, jarName: String, 
+      complainFun: (Boolean, String) => Unit): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val rapidsJarURLs = classloader.getResources(PLUGIN_PROPS_FILENAME)
-        .asScala.toList
+    val rapidsJarURLs = classloader.getResources(propName).asScala.toList
     lazy val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
     lazy val rapidsJarsVers = rapidsJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
     }.mkString(",")
-    require(rapidsJarURLs.size <= 1,
-        s"Multiple rapids4spark jars found in the classpath: $rapidsJars, please make sure " +
-        s"there is only one rapids4spark jar in the classpath. Version info: \n$rapidsJarsVers")
-    val cudfJarURLs = classloader.getResources(CUDF_PROPS_FILENAME)
-        .asScala.toList
-    lazy val cudfJars = cudfJarURLs.map(_.toString.split("!").head).mkString(",")
-    lazy val cudfJarsVers = cudfJarURLs.map { 
-      url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
-    }.mkString(",")
-    require(cudfJarURLs.size <= 1,
-        s"Multiple cudf jars found in the classpath: $cudfJars, please make sure there is only " +
-        s"one cudf jar in the classpath. Version info: \n$cudfJarsVers")
-    val jniJarURLs = classloader.getResources(JNI_PROPS_FILENAME)
-        .asScala.toList
-    lazy val jniJars = jniJarURLs.map(_.toString.split("!").head).mkString(",")
-    lazy val jniJarsVers = jniJarURLs.map { 
-      url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
-    }.mkString(",")
-    require(jniJarURLs.size <= 1,
-        s"Multiple spark-rapids-jni jars found in the classpath: $jniJars, please make sure " +
-        s"there is only one spark-rapids-jni jar in the classpath. Version info: \n$jniJarsVers")
+    complainFun(rapidsJarURLs.size <= 1,
+        s"Multiple $jarName jars found in the classpath: $rapidsJars, please make sure there " +
+        s"is only one $jarName jar in the classpath. If it is impossible to fix the classpath " + 
+        s"you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to true" + 
+        s"Version info: \n$rapidsJarsVers")
+  }
+
+  def detectMultipleJars(conf: RapidsConf): Unit = {
+    val complainFun: (Boolean, String) => Unit = conf.allowMultipleJars match {
+      case true => (request: Boolean, msg: String) => if (!request) logWarning(msg)
+      case false => (request: Boolean, msg: String) => require(request, msg)
+    }
+    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids4spark", complainFun)
+    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", complainFun)
+    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", complainFun)
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
@@ -340,9 +334,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
-    if (!conf.allowMultipleJars) {
-      RapidsPluginUtils.detectMultiplePluginJars()
-    }
+    RapidsPluginUtils.detectMultipleJars(conf)
     RapidsPluginUtils.logPluginMode(conf)
     GpuCoreDumpHandler.driverInit(sc, conf)
 
@@ -398,10 +390,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
-      if (!conf.allowMultipleJars) {
-        // Fail if there are multiple plugin jars in the classpath.
-        RapidsPluginUtils.detectMultiplePluginJars()
-      }
+      // Fail if there are multiple plugin jars in the classpath.
+      RapidsPluginUtils.detectMultipleJars(conf)
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
