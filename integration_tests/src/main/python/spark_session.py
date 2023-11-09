@@ -71,10 +71,10 @@ def _set_all_confs(conf):
         _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
     else:
         _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
-    # if disable_timezone_test():
-    #     _spark.conf.set("spark.sql.session.timeZone", "UTC")
-    # else:
-    #     _spark.conf.set("spark.sql.session.timeZone", "Asia/Shanghai")
+    if disable_timezone_test():
+        _spark.conf.set("spark.sql.session.timeZone", "UTC")
+    else:
+        _spark.conf.set("spark.sql.session.timeZone", "Asia/Shanghai")
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:
