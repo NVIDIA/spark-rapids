@@ -416,9 +416,7 @@ object HostAlloc {
   }
 
   def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
-    GpuTaskMetrics.get.hostAllocTime {
-      getSingleton.alloc(amount, preferPinned)
-    }
+    getSingleton.alloc(amount, preferPinned)
   }
 
   /**

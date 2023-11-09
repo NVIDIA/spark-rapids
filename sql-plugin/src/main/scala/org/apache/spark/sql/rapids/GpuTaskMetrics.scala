@@ -91,8 +91,6 @@ class GpuTaskMetrics extends Serializable {
   private val readSpillFromHostTimeNs = new NanoSecondAccumulator
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
 
-  private val hostAllocWaitTimeNs = new NanoSecondAccumulator
-
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
     "gpuRetryCount" -> retryCount,
@@ -102,8 +100,7 @@ class GpuTaskMetrics extends Serializable {
     "gpuSpillToHostTime" -> spillToHostTimeNs,
     "gpuSpillToDiskTime" -> spillToDiskTimeNs,
     "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
-    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
-    "gpuHostAllocationWaitTime" -> hostAllocWaitTimeNs
+    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs
   )
 
   def register(sc: SparkContext): Unit = {
@@ -156,10 +153,6 @@ class GpuTaskMetrics extends Serializable {
 
   def readSpillDisk2HostTime[A](f: => A): A = {
     timeIt(readSpillFromDiskTimeNs, "readSpillFromDiskTime", NvtxColor.ORANGE, f)
-  }
-
-  def hostAllocTime[A](f: => A): A = {
-    timeIt(hostAllocWaitTimeNs, "hostAllocWaitTime", NvtxColor.RED, f)
   }
 
   def updateRetry(taskAttemptId: Long): Unit = {
