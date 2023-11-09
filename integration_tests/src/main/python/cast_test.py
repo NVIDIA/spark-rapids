@@ -102,8 +102,22 @@ values_string_to_data = invalid_values_string_to_date + valid_values_string_to_d
 # Spark 320+ and databricks support Ansi mode when casting string to date
 # This means an exception will be thrown when casting invalid string to date on Spark 320+ or databricks
 # test Spark versions < 3.2.0 and non databricks, ANSI mode
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 @pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
 def test_cast_string_date_invalid_ansi_before_320():
+    data_rows = [(v,) for v in values_string_to_data]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
+        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
+              'spark.sql.ansi.enabled': 'true'}, )
+
+# Spark 320+ and databricks support Ansi mode when casting string to date
+# This means an exception will be thrown when casting invalid string to date on Spark 320+ or databricks
+# test Spark versions < 3.2.0 and non databricks, ANSI mode
+@allow_non_gpu("ProjectExec")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(not is_before_spark_320(), reason="ansi cast(string as date) throws exception only in 3.2.0+ or db")
+def test_cast_string_date_invalid_ansi_before_320_for_non_utc():
     data_rows = [(v,) for v in values_string_to_data]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
