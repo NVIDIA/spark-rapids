@@ -813,10 +813,6 @@ def _gen_scalars_common(data_gen, count, seed=0):
     else:
         src = data_gen
 
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
-
     rand = random.Random(seed)
     src.start(rand)
     return src
@@ -1186,7 +1182,7 @@ def split_list(input_list, split_item_strings):
     for item in input_list:
         find = False
         for split_item_str in split_item_strings:
-            if (split_item_str == str(item)):
+            if (str(split_item_str) == str(item)):
                 include.append(item)
                 find = True
                 break;

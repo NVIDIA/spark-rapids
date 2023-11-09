@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -545,6 +545,22 @@ SELECT_SQL = [
 ("SELECT CASE WHEN doubleF > 5 THEN 5  ELSE doubleF/2 END FROM test_table", "CASE WHEN doubleF > 5.0 THEN 5.0 ELSE doubleF/2 END"),
 ("SELECT CASE WHEN dateF >= '1994-01-01'   THEN 'good day' ELSE 'bad day'  END FROM test_table", "CASE WHEN dateF >= '1994-01-01' THEN 'good day' ELSE 'bad day' END"),
 ("SELECT CASE WHEN timestampF > '2020-05-01 12:01:015' THEN 'good time' ELSE 'bad time' END FROM test_table", "CASE WHEN timestampF > '2020-05-01 12:01:015' THEN 'good time' ELSE 'bad time' END"),
+]
+
+SELECT_SQL_UTC_ONLY = [
+("SELECT dayofmonth(timestampF) from test_table", "dayofmonth(timestampF)"),
+("SELECT hour(timestampF) from test_table", "hour(timestampF)"),
+("SELECT minute(timestampF) from test_table", "minute(timestampF)"),
+("SELECT second(timestampF) from test_table", "second(timestampF)"),
+("SELECT year(timestampF) from test_table", "year(timestampF)"),
+("SELECT month(timestampF) from test_table", "month(timestampF)"),
+("SELECT IFNULL(dateF, 'nobody') as if_null FROM test_table", "IFNULL(dateF, 'nobody')"),
+("SELECT IFNULL(timestampF, 'nobody') as if_null FROM test_table", "IFNULL(timestampF, 'nobody')"),
+("SELECT NVL(dateF, '1990-1-1') as nvl_value FROM test_table", "NVL(dateF, '1990-1-1')"),
+("SELECT NVL(timestampF, '2022-12-01 12:01:01') as nvl_value FROM test_table", "NVL(timestampF, '2022-12-01 12:01:01')"),
+("SELECT dateF, COALESCE(dateF,'N/A') FROM test_table", "dateF, COALESCE(dateF,'N/A')"),
+("SELECT timestampF, COALESCE(timestampF,'N/A') FROM test_table", "timestampF, COALESCE(timestampF,'N/A')"),
+("SELECT  SUM(byteF) OVER (PARTITION BY byteF ORDER BY CAST(dateF AS TIMESTAMP) RANGE BETWEEN INTERVAL 1 DAYS PRECEDING AND INTERVAL 1 DAYS FOLLOWING ) as sum_total FROM test_table", "SUM(byteF) OVER (PARTITION BY byteF ORDER BY CAST(dateF AS TIMESTAMP) RANGE BETWEEN INTERVAL 1 DAYS PRECEDING AND INTERVAL 1 DAYS FOLLOWING ) as sum_total"),
 ]
 
 SELECT_NEEDS_SORT_SQL = [

@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_spark_exception
+from conftest import is_utc, is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
@@ -500,10 +501,10 @@ def test_timestamp_roundtrip_no_legacy_rebase(spark_tmp_path, ts_write_data_gen,
 
 # This should be merged to `test_timestamp_roundtrip_no_legacy_rebase` above when
 # we have rebase for int96 supported.
-@disable_timezone_test
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
-def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, ts_write, data_gen):
+def test_datetime_roundtrip_with_legacy_rebase_for_utc(spark_tmp_path, ts_write, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
                  'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY',
@@ -515,6 +516,27 @@ def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, ts_write, data_ge
         lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path,
+        conf=all_confs)
+    
+# This should be merged to `test_timestamp_roundtrip_no_legacy_rebase` above when
+# we have rebase for int96 supported.
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
+@pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
+def test_datetime_roundtrip_with_legacy_rebase_for_non_utc(spark_tmp_path, ts_write, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY',
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+                 # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+                 'spark.sql.legacy.parquet.int96RebaseModeInWrite' : 'CORRECTED',
+                 'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED'}
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        ['DataWritingCommandExec'],
         conf=all_confs)
 
 test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTable", "WriteFilesExec"] if is_spark_340_or_later() or is_databricks122_or_later() else ["DataWritingCommandExec", "HiveTableScanExec"]

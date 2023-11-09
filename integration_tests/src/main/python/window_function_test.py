@@ -14,7 +14,8 @@
 import math
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_sql_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_sql_fallback_collect, assert_gpu_fallback_sql
+from conftest import is_utc, is_not_utc
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -1447,10 +1448,9 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
         'SELECT a, b, c, ' + exprs_for_nth_first_last_ignore_nulls +
         'FROM window_agg_table')
 
-
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
 @ignore_order(local=True)
-@disable_timezone_test
-def test_to_date_with_window_functions():
+def test_to_date_with_window_functions_for_utc():
     """
     This test ensures that date expressions participating alongside window aggregations
     are initialized correctly. (See: https://github.com/NVIDIA/spark-rapids/issues/5984)
@@ -1487,6 +1487,22 @@ def test_to_date_with_window_functions():
         """
     )
 
+@allow_non_gpu('ProjectExec')
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@ignore_order(local=True)
+def test_to_date_with_window_functions_for_non_utc():
+    assert_gpu_fallback_sql(
+        df_fun=lambda spark: gen_df(spark, [('id', RepeatSeqGen(int_gen, 20)),
+                                            ('date_1', DateGen()),
+                                            ('date_2', DateGen())]),
+        table_name="window_input",
+        sql="""
+        SELECT TO_DATE( CAST(date_1 AS STRING), 'yyyy-MM-dd' ) AS my_date,
+               SUM(1) OVER(PARTITION BY id ORDER BY date_2) AS my_sum
+        FROM window_input
+        """,
+        fallback_class_name="Cast"
+    )
 
 @ignore_order(local=True)
 @approximate_float

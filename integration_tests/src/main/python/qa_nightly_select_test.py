@@ -18,12 +18,14 @@ from pyspark import SparkConf, SparkContext, SQLContext
 import pyspark.sql.functions as f
 import datetime
 from argparse import ArgumentParser
+from conftest import is_utc, is_not_utc
+from data_gen import split_list
 from decimal import Decimal
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from qa_nightly_sql import *
 import pytest
 from spark_session import with_cpu_session, is_jvm_charset_utf8
-from marks import approximate_float, ignore_order, incompat, qarun, disable_timezone_test
+from marks import approximate_float, ignore_order, incompat, qarun, allow_non_gpu
 from data_gen import copy_and_update
 
 def num_stringDf(spark):
@@ -154,11 +156,12 @@ _first_last_qa_conf = copy_and_update(_qa_conf, {
     # some of the first/last tests need a single partition to work reliably when run on a large cluster.
     'spark.sql.shuffle.partitions': '1'})
 
+SELECT_SQL_ALL_PASSED, SELECT_SQL_UTC = split_list(SELECT_SQL, SELECT_SQL_UTC_ONLY)
+
 @approximate_float
 @incompat
 @qarun
-@pytest.mark.parametrize('sql_query_line', SELECT_SQL, ids=idfn)
-@disable_timezone_test
+@pytest.mark.parametrize('sql_query_line', SELECT_SQL_ALL_PASSED, ids=idfn)
 def test_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -166,18 +169,70 @@ def test_select(sql_query_line, pytestconfig):
         with_cpu_session(num_stringDf)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
 
+@qarun
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.parametrize('sql_query_line', SELECT_SQL_UTC, ids=idfn)
+def test_select_for_utc(sql_query_line, pytestconfig):
+    sql_query = sql_query_line[0]
+    if sql_query:
+        print(sql_query)
+        with_cpu_session(num_stringDf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
+
+@qarun
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('sql_query_line', SELECT_SQL_UTC, ids=idfn)
+def test_select_for_non_utc(sql_query_line, pytestconfig):
+    sql_query = sql_query_line[0]
+    if sql_query:
+        print(sql_query)
+        if ("hour" in sql_query):
+            fallback_class = "Hour"
+        elif ("minute" in sql_query):
+            fallback_class = "Minute"
+        elif ("second" in sql_query):
+            fallback_class = "Second"
+        else:
+            fallback_class = "Cast"
+        with_cpu_session(num_stringDf)
+        assert_gpu_fallback_collect(lambda spark: spark.sql(sql_query), fallback_class, conf=_qa_conf)
+
+SELECT_NEEDS_SORT_SQL_ALL_PASSED, SELECT_NEEDS_SORT_SQL_UTC = split_list(SELECT_NEEDS_SORT_SQL, SELECT_SQL_UTC_ONLY)
+
 @ignore_order
 @approximate_float
 @incompat
 @qarun
-@pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL, ids=idfn)
-@disable_timezone_test
+@pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL_ALL_PASSED, ids=idfn)
 def test_needs_sort_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
         print(sql_query)
         with_cpu_session(num_stringDf)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
+
+@ignore_order
+@qarun
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL_UTC, ids=idfn)
+def test_needs_sort_select_for_utc(sql_query_line, pytestconfig):
+    sql_query = sql_query_line[0]
+    if sql_query:
+        print(sql_query)
+        with_cpu_session(num_stringDf)
+        assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
+
+@ignore_order
+@qarun
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL_UTC, ids=idfn)
+def test_needs_sort_select_for_non_utc(sql_query_line, pytestconfig):
+    sql_query = sql_query_line[0]
+    if sql_query:
+        with_cpu_session(num_stringDf)
+        assert_gpu_fallback_collect(lambda spark: spark.sql(sql_query), "Cast", conf=_qa_conf)
 
 @approximate_float
 @incompat

@@ -622,6 +622,25 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
+def assert_gpu_fallback_sql(df_fun, table_name, sql, fallback_class_name, conf=None):
+    """
+    Assert that the specified SQL query produces equal results on CPU and GPU.
+    :param df_fun: a function that will create the dataframe
+    :param table_name: Name of table to be created with the dataframe
+    :param sql: SQL query to be run on the specified table
+    :param fallback_class_name: Name of the class that GPU falls back to
+    :param conf: Any user-specified confs. Empty by default.
+    :return: Assertion failure, if results from CPU and GPU do not match.
+    """
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        return spark.sql(sql)
+    assert_gpu_fallback_collect(do_it_all, fallback_class_name, conf)
+    
+
 def assert_spark_exception(func, error_message):
     """
     Assert that a specific Java exception is thrown
