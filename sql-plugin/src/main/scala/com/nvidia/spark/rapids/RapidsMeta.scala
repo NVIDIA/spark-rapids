@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.types.DataType
@@ -168,13 +169,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.recursiveSparkPlanRemoved())
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
     childRunnableCmds.foreach(_.recursiveSparkPlanRemoved())
-  }
-
-  final def inputFilePreventsRunningOnGpu(): Unit = {
-    if (canThisBeReplaced) {
-      willNotWorkOnGpu("Removed by InputFileBlockRule preventing plans " +
-        "[SparkPlan(with input_file_xxx), FileScan) running on GPU")
-    }
   }
 
   /**
@@ -672,6 +666,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
+  private def fixUpBroadcastHashJoin(): Unit = {
+    childPlans.foreach(_.fixUpBroadcastHashJoin())
+    if(wrapped.isInstanceOf[BroadcastHashJoinExec]) {
+      // Run the tagging again to fix up the break caused by InputFileBlockRule.
+      tagPlanForGpu()
+    }
+  }
+
   /**
    * Run rules that happen for the entire tree after it has been tagged initially.
    */
@@ -693,7 +695,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // So input_file_xxx in the following GPU operators will get empty value.
     // InputFileBlockRule is to prevent the SparkPlans
     // [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
-    InputFileBlockRule.apply(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
+    InputFileBlockRule(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
 
     // 2) For shuffles, avoid replacing the shuffle if the child is not going to be replaced.
     fixUpExchangeOverhead()
@@ -702,6 +704,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // WriteFilesExec is a new operator from Spark version 340,
     // Did not extract a shim code for simplicity
     tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
+
+    // 4) InputFileBlockRule may change the meta of BroadcastHashJoinExec and its child plans,
+    //    and this change may break the rule of BroadcastHashJoinExec running on GPU, leading
+    //    to errors.
+    fixUpBroadcastHashJoin()
   }
 
   /**
