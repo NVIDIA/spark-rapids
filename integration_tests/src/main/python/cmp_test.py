@@ -14,9 +14,10 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from conftest import is_utc, is_not_utc
 from data_gen import *
-from marks import disable_timezone_test
+from marks import allow_non_gpu
 from spark_session import with_cpu_session, is_before_spark_330
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -291,8 +292,8 @@ def test_filter_with_project(data_gen):
 # no columns to actually filter. We are making it happen here with a sub-query
 # and some constants that then make it so all we need is the number of rows
 # of input.
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for DateAddInterval")
 @pytest.mark.parametrize('op', ['>', '<'])
-@disable_timezone_test
 def test_empty_filter(op, spark_tmp_path):
 
     def do_it(spark):
@@ -308,6 +309,26 @@ def test_empty_filter(op, spark_tmp_path):
         spark.sql("select current_date, ((select last(current_date) from empty_filter_test_curDate) + interval 1 day) as test from empty_filter_test_curDate").createOrReplaceTempView("empty_filter_test2")
         return spark.sql(f"select * from empty_filter_test2 where test {op} current_date")
     assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+@allow_non_gpu('ProjectExec', 'FilterExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for DateAddInterval")
+@pytest.mark.parametrize('op', ['>', '<'])
+def test_empty_filter_for_non_utc(op, spark_tmp_path):
+
+    def do_it(spark):
+        df = spark.createDataFrame([(14, "Tom"), (23, "Alice"), (16, "Bob")], ["age", "name"])
+        # we repartition the data to 1 because for some reason Spark can write 4 files for 3 rows.
+        # In this case that causes a race condition with the last aggregation which can result
+        # in a null being returned. For some reason this happens a lot on the GPU in local mode
+        # and not on the CPU in local mode.
+        df.repartition(1).write.mode("overwrite").parquet(spark_tmp_path)
+        df = spark.read.parquet(spark_tmp_path)
+        curDate = df.withColumn("current_date", f.current_date())
+        curDate.createOrReplaceTempView("empty_filter_test_curDate")
+        spark.sql("select current_date, ((select last(current_date) from empty_filter_test_curDate) + interval 1 day) as test from empty_filter_test_curDate").createOrReplaceTempView("empty_filter_test2")
+        return spark.sql(f"select * from empty_filter_test2 where test {op} current_date")
+    assert_gpu_fallback_collect(do_it, 'DateAddInterval')
 
 def test_nondeterministic_filter():
     assert_gpu_and_cpu_are_equal_collect(
