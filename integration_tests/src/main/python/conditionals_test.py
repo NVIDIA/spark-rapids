@@ -16,7 +16,8 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import disable_timezone_test
+from conftest import is_not_utc, is_utc
+from marks import allow_non_gpu
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -230,8 +231,8 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 ELSE -1 END'),
                 conf = test_conf)
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
-@disable_timezone_test
 def test_conditional_with_side_effects_sequence(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -240,10 +241,33 @@ def test_conditional_with_side_effects_sequence(data_gen):
             ELSE null END'),
         conf = ansi_enabled_conf)
 
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+def test_conditional_with_side_effects_sequence_for_non_utc(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE \
+            WHEN length(a) > 0 THEN sequence(1, length(a), 1) \
+            ELSE null END'),
+        conf = ansi_enabled_conf)
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
 @pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
-@disable_timezone_test
 def test_conditional_with_side_effects_sequence_cast(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'CASE \
+            WHEN length(a) > 0 THEN CAST(sequence(1, length(a), 1) AS STRING) \
+            ELSE null END'),
+        conf = ansi_enabled_conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC")
+@pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
+@pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+def test_conditional_with_side_effects_sequence_cast_for_non_utc(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             'CASE \
