@@ -159,7 +159,7 @@ def test_timesub_from_subquery_for_non_utc():
 # [SPARK-34896][SQL] Return day-time interval from dates subtraction
 # 1. Add the SQL config `spark.sql.legacy.interval.enabled` which will control when Spark SQL should use `CalendarIntervalType` instead of ANSI intervals.
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for DateAddInterval")
 def test_dateaddinterval(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
@@ -168,7 +168,7 @@ def test_dateaddinterval(data_gen):
             'a - (interval {} days {} seconds)'.format(days, seconds)),
         legacy_interval_enabled_conf)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for DateAddInterval")
 @allow_non_gpu('ProjectExec', 'RDDScanExec')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_dateaddinterval_for_non_utc(data_gen):
@@ -177,7 +177,7 @@ def test_dateaddinterval_for_non_utc(data_gen):
         lambda spark : unary_op_df(spark, DateGen(start=date(200, 1, 1), end=date(800, 1, 1)), seed=1)
             .selectExpr('a + (interval {} days {} seconds)'.format(days, seconds),
             'a - (interval {} days {} seconds)'.format(days, seconds)),
-        'Cast')
+        'DateAddInterval')
 
 # test add days(not specify hours, minutes, seconds, milliseconds, microseconds) in ANSI mode.
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
