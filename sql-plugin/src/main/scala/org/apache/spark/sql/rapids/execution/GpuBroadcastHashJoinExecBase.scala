@@ -78,6 +78,22 @@ abstract class GpuBroadcastHashJoinMetaBase(
     }
   }
 
+  // Called in runAfterTagRules for a special post tagging for broadcast hash join.
+  def checkTagForBuildSide(): Unit = {
+    val Seq(leftChild, rightChild) = childPlans
+    val buildSideMeta = buildSide match {
+      case GpuBuildLeft => leftChild
+      case GpuBuildRight => rightChild
+    }
+    // Check both of the conditions to avoid duplicate reason string.
+    if (!canThisBeReplaced && canBuildSideBeReplaced(buildSideMeta)) {
+      buildSideMeta.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
+    }
+    if (canThisBeReplaced && !canBuildSideBeReplaced(buildSideMeta)) {
+      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+    }
+  }
+
   def convertToGpu(): GpuExec
 }
 

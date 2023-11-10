@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinMetaBase
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -669,8 +670,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpBroadcastHashJoin(): Unit = {
     childPlans.foreach(_.fixUpBroadcastHashJoin())
     if(wrapped.isInstanceOf[BroadcastHashJoinExec]) {
-      // Run the tagging again to fix up the break caused by InputFileBlockRule.
-      tagPlanForGpu()
+      // Check the tagging if it can not run on GPU, because this fallback may
+      // be caused by InputFileBlockRule.
+      this.asInstanceOf[GpuBroadcastHashJoinMetaBase].checkTagForBuildSide()
     }
   }
 
@@ -706,8 +708,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
 
     // 4) InputFileBlockRule may change the meta of BroadcastHashJoinExec and its child plans,
-    //    and this change may break the rule of BroadcastHashJoinExec running on GPU, leading
-    //    to errors.
+    //    and this change may cause mismatch between the BroadcastHashJoinExec and
+    //    its build side BroadcastExchangeExec, leading to errors.
     fixUpBroadcastHashJoin()
   }
 
