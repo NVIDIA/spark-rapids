@@ -78,7 +78,7 @@ abstract class GpuBroadcastHashJoinMetaBase(
     }
   }
 
-  // Called in runAfterTagRules for a special post tagging for broadcast hash join.
+  // Called in runAfterTagRules for a special post tagging for this broadcast join.
   def checkTagForBuildSide(): Unit = {
     val Seq(leftChild, rightChild) = childPlans
     val buildSideMeta = buildSide match {

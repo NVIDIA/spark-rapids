@@ -32,10 +32,10 @@ import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinMetaBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMetaBase, GpuBroadcastNestedLoopJoinMetaBase}
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -667,12 +667,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
-  private def fixUpBroadcastHashJoin(): Unit = {
-    childPlans.foreach(_.fixUpBroadcastHashJoin())
-    if(wrapped.isInstanceOf[BroadcastHashJoinExec]) {
-      // Check the tagging if it can not run on GPU, because this fallback may
-      // be caused by InputFileBlockRule.
-      this.asInstanceOf[GpuBroadcastHashJoinMetaBase].checkTagForBuildSide()
+  private def fixUpBroadcastJoins(): Unit = {
+    childPlans.foreach(_.fixUpBroadcastJoins())
+    wrapped match {
+      case _: BroadcastHashJoinExec =>
+        this.asInstanceOf[GpuBroadcastHashJoinMetaBase].checkTagForBuildSide()
+      case _: BroadcastNestedLoopJoinExec =>
+        this.asInstanceOf[GpuBroadcastNestedLoopJoinMetaBase].checkTagForBuildSide()
+      case _ => // noop
     }
   }
 
@@ -707,10 +709,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // Did not extract a shim code for simplicity
     tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
 
-    // 4) InputFileBlockRule may change the meta of BroadcastHashJoinExec and its child plans,
-    //    and this change may cause mismatch between the BroadcastHashJoinExec and
-    //    its build side BroadcastExchangeExec, leading to errors.
-    fixUpBroadcastHashJoin()
+    // 4) InputFileBlockRule may change the meta of broadcast join and its child plans,
+    //    and this change may cause mismatch between the join and its build side
+    //    BroadcastExchangeExec, leading to errors.
+    fixUpBroadcastJoins()
   }
 
   /**
