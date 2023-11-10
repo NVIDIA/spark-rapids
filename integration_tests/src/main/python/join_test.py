@@ -1047,7 +1047,8 @@ def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, is_gpu_pa
     def do_join(spark):
         left = spark.read.parquet(data_path_parquet)
         right = spark.read.orc(data_path_orc)
-        return right.join(left, "id", "inner").selectExpr("*", "input_file_block_length()")
+        return left.join(broadcast(right), "id", "inner")\
+            .selectExpr("*", "input_file_block_length()")
 
     join_class = 'GpuBroadcastHashJoinExec'\
         if is_gpu_parquet and is_gpu_broadcast else 'BroadcastHashJoinExec'
@@ -1055,6 +1056,38 @@ def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, is_gpu_pa
         do_join,
         exist_classes=join_class,
         conf={"spark.sql.autoBroadcastJoinThreshold": "10M",
+              "spark.sql.sources.useV1SourceList": "",
+              "spark.rapids.sql.input.ParquetScan": is_gpu_parquet,
+              "spark.rapids.sql.exec.BroadcastExchangeExec": is_gpu_broadcast})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec', 'BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec',
+               'FilterExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize("is_gpu_parquet", [True, False],
+                         ids=["GpuParquetScan", "ParquetScan"])
+@pytest.mark.parametrize("is_gpu_broadcast", [True, False],
+                         ids=["GpuBroadcastExchange", "BroadcastExchange"])
+def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, is_gpu_parquet,
+                                                       is_gpu_broadcast):
+    data_path_parquet = spark_tmp_path + "/parquet"
+    data_path_orc = spark_tmp_path + "/orc"
+    # The smaller one (orc) will be the build side, when disabling parquet scan,
+    # the join exec node will be put on CPU by InputFileBlockRule.
+    with_cpu_session(lambda spark: spark.range(50).write.orc(data_path_orc))
+    with_cpu_session(lambda spark: spark.range(500).withColumn("id2", col("id") + 10)
+                     .write.parquet(data_path_parquet))
+    def do_join(spark):
+        left = spark.read.parquet(data_path_parquet)
+        right = spark.read.orc(data_path_orc)
+        return left.crossJoin(broadcast(left)).selectExpr("*", "input_file_block_length()")
+
+    join_class = 'GpuBroadcastNestedLoopJoinExec' \
+        if is_gpu_parquet and is_gpu_broadcast else 'BroadcastNestedLoopJoinExec'
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes=join_class,
+        conf={"spark.sql.autoBroadcastJoinThreshold": "-1",
               "spark.sql.sources.useV1SourceList": "",
               "spark.rapids.sql.input.ParquetScan": is_gpu_parquet,
               "spark.rapids.sql.exec.BroadcastExchangeExec": is_gpu_broadcast})
