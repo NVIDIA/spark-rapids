@@ -1026,3 +1026,35 @@ def test_bloom_filter_join_with_merge_all_null_filters(spark_tmp_path):
         right = spark.read.parquet(data_path2)
         return right.filter("cast(id2 as bigint) % 3 = 4").join(left, left.id == right.id, "inner")
     assert_gpu_and_cpu_are_equal_collect(do_join, bloom_filter_confs)
+
+
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec', 'BroadcastHashJoinExec', 'BroadcastExchangeExec',
+               'FilterExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize("is_gpu_parquet", [True, False],
+                         ids=["GpuParquetScan", "ParquetScan"])
+@pytest.mark.parametrize("is_gpu_broadcast", [True, False],
+                         ids=["GpuBroadcastExchange", "BroadcastExchange"])
+def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, is_gpu_parquet,
+                                                       is_gpu_broadcast):
+    data_path_parquet = spark_tmp_path + "/parquet"
+    data_path_orc = spark_tmp_path + "/orc"
+    # The smaller one (orc) will be the build side, when disabling parquet scan,
+    # the join exec node will be put on CPU by InputFileBlockRule.
+    with_cpu_session(lambda spark: spark.range(100).write.orc(data_path_orc))
+    with_cpu_session(lambda spark: spark.range(10000).withColumn("id2", col("id") + 10)
+                     .write.parquet(data_path_parquet))
+    def do_join(spark):
+        left = spark.read.parquet(data_path_parquet)
+        right = spark.read.orc(data_path_orc)
+        return right.join(left, "id", "inner").selectExpr("*", "input_file_block_length()")
+
+    join_class = 'GpuBroadcastHashJoinExec'\
+        if is_gpu_parquet and is_gpu_broadcast else 'BroadcastHashJoinExec'
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes=join_class,
+        conf={"spark.sql.autoBroadcastJoinThreshold": "10M",
+              "spark.sql.sources.useV1SourceList": "",
+              "spark.rapids.sql.input.ParquetScan": is_gpu_parquet,
+              "spark.rapids.sql.exec.BroadcastExchangeExec": is_gpu_broadcast})
