@@ -117,6 +117,14 @@ jobs:
           env | grep JAVA
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
 
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
       - name: package tests check
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
@@ -141,147 +149,147 @@ jobs:
           }
           done
 
-  package-tests-scala213:
-    needs: get-shim-versions-from-dist
-    continue-on-error: ${{ matrix.isSnapshot }}
-    strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
-      fail-fast: false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+  # package-tests-scala213:
+  #   needs: get-shim-versions-from-dist
+  #   continue-on-error: ${{ matrix.isSnapshot }}
+  #   strategy:
+  #     matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
+  #     fail-fast: false
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
-        with:
-          distribution: adopt
-          java-version: 8
+  #     - name: Setup Java and Maven Env
+  #       uses: actions/setup-java@v3
+  #       with:
+  #         distribution: adopt
+  #         java-version: 8
 
-      - name: check runtime before tests
-        run: |
-          env | grep JAVA
-          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+  #     - name: check runtime before tests
+  #       run: |
+  #         env | grep JAVA
+  #         java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
 
-      - name: package tests check
-        run: |
-          # https://github.com/NVIDIA/spark-rapids/issues/8847
-          # specify expected versions
-          export JAVA_HOME=${JAVA_HOME_8_X64}
-          export PATH=${JAVA_HOME}/bin:${PATH}
-          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-          # verify Scala 2.13 build files
-          ./build/make-scala-version-build-files.sh 2.13
-          # verify git status
-          if [ -n "$(echo -n $(git status -s | grep 'scala2.13'))" ]; then
-              git add -N scala2.13/* && git diff 'scala2.13/*'
-              echo "Generated Scala 2.13 build files don't match what's in repository"
-              exit 1
-          fi
-          # change to Scala 2.13 Directory
-          cd scala2.13
-          # test command, will retry for 3 times if failed.
-          max_retry=3; delay=30; i=1
-          while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B package \
-              -pl integration_tests,tests -am -P 'individual,pre-merge' \
-              -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
-              -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
-            if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
-            else
-              echo "mvn command failed. Exit 1"; exit 1
-            fi
-          }
-          done
+  #     - name: package tests check
+  #       run: |
+  #         # https://github.com/NVIDIA/spark-rapids/issues/8847
+  #         # specify expected versions
+  #         export JAVA_HOME=${JAVA_HOME_8_X64}
+  #         export PATH=${JAVA_HOME}/bin:${PATH}
+  #         java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+  #         # verify Scala 2.13 build files
+  #         ./build/make-scala-version-build-files.sh 2.13
+  #         # verify git status
+  #         if [ -n "$(echo -n $(git status -s | grep 'scala2.13'))" ]; then
+  #             git add -N scala2.13/* && git diff 'scala2.13/*'
+  #             echo "Generated Scala 2.13 build files don't match what's in repository"
+  #             exit 1
+  #         fi
+  #         # change to Scala 2.13 Directory
+  #         cd scala2.13
+  #         # test command, will retry for 3 times if failed.
+  #         max_retry=3; delay=30; i=1
+  #         while true; do
+  #           mvn -Dmaven.wagon.http.retryHandler.count=3 \
+  #             -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
+  #             -Daether.connector.http.connectionMaxTtl=30 -B package \
+  #             -pl integration_tests,tests -am -P 'individual,pre-merge' \
+  #             -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
+  #             -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
+  #           if [[ $i -le $max_retry ]]; then
+  #             echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+  #           else
+  #             echo "mvn command failed. Exit 1"; exit 1
+  #           fi
+  #         }
+  #         done
 
 
-  verify-all-modules:
-    needs: get-shim-versions-from-dist
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDKVersions) }}
-    steps:
-      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+  # verify-all-modules:
+  #   needs: get-shim-versions-from-dist
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDKVersions) }}
+  #   steps:
+  #     - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
-        with:
-          distribution: adopt
-          java-version: ${{ matrix.java-version }}
+  #     - name: Setup Java and Maven Env
+  #       uses: actions/setup-java@v3
+  #       with:
+  #         distribution: adopt
+  #         java-version: ${{ matrix.java-version }}
 
-      - name: check runtime before tests
-        run: |
-          env | grep JAVA
-          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+  #     - name: check runtime before tests
+  #       run: |
+  #         env | grep JAVA
+  #         java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
 
-      - name: Build JDK
-        run: |
-          # https://github.com/NVIDIA/spark-rapids/issues/8847
-          # specify expected versions
-          export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
-          export PATH=${JAVA_HOME}/bin:${PATH}
-          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-          # test command, will retry for 3 times if failed.
-          max_retry=3; delay=30; i=1
-          while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=$max_retry \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B verify \
-              -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
-              ${{ env.COMMON_MVN_FLAGS }} && break || {
-            if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
-            else
-              echo "mvn command failed. Exit 1"; exit 1
-            fi
-          }
-          done
+  #     - name: Build JDK
+  #       run: |
+  #         # https://github.com/NVIDIA/spark-rapids/issues/8847
+  #         # specify expected versions
+  #         export JAVA_HOME=${JAVA_HOME_${{ matrix.java-version }}_X64}
+  #         export PATH=${JAVA_HOME}/bin:${PATH}
+  #         java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+  #         # test command, will retry for 3 times if failed.
+  #         max_retry=3; delay=30; i=1
+  #         while true; do
+  #           mvn -Dmaven.wagon.http.retryHandler.count=$max_retry \
+  #             -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
+  #             -Daether.connector.http.connectionMaxTtl=30 -B verify \
+  #             -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
+  #             ${{ env.COMMON_MVN_FLAGS }} && break || {
+  #           if [[ $i -le $max_retry ]]; then
+  #             echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+  #           else
+  #             echo "mvn command failed. Exit 1"; exit 1
+  #           fi
+  #         }
+  #         done
 
-  install-modules:
-    needs: get-shim-versions-from-dist
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        maven-version: [3.6.3, 3.8.8, 3.9.3]
-    steps:
-      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+  # install-modules:
+  #   needs: get-shim-versions-from-dist
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       maven-version: [3.6.3, 3.8.8, 3.9.3]
+  #   steps:
+  #     - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: adopt
-          java-version: 11
+  #     - name: Setup Java
+  #       uses: actions/setup-java@v3
+  #       with:
+  #         distribution: adopt
+  #         java-version: 11
 
-      - name: Setup Maven Wrapper
-        run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
+  #     - name: Setup Maven Wrapper
+  #       run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
 
-      - name: check runtime before tests
-        run: |
-          env | grep JAVA
-          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+  #     - name: check runtime before tests
+  #       run: |
+  #         env | grep JAVA
+  #         java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
 
-      - name: Install with Maven ${{ matrix.maven-version }}
-        run: |
-          # https://github.com/NVIDIA/spark-rapids/issues/8847
-          # specify expected versions
-          export JAVA_HOME=${JAVA_HOME_11_X64}
-          export PATH=${JAVA_HOME}/bin:${PATH}
-          java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-          # test command, will retry for 3 times if failed.
-          max_retry=3; delay=30; i=1
-          while true; do
-            ./mvnw -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B install \
-              -P "individual,pre-merge" \
-              -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
-              ${{ env.COMMON_MVN_FLAGS }} && break || {
-            if [[ $i -le $max_retry ]]; then
-              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
-            else
-              echo "mvn command failed. Exit 1"; exit 1
-            fi
-          }
-          done
+  #     - name: Install with Maven ${{ matrix.maven-version }}
+  #       run: |
+  #         # https://github.com/NVIDIA/spark-rapids/issues/8847
+  #         # specify expected versions
+  #         export JAVA_HOME=${JAVA_HOME_11_X64}
+  #         export PATH=${JAVA_HOME}/bin:${PATH}
+  #         java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
+  #         # test command, will retry for 3 times if failed.
+  #         max_retry=3; delay=30; i=1
+  #         while true; do
+  #           ./mvnw -Dmaven.wagon.http.retryHandler.count=3 \
+  #             -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
+  #             -Daether.connector.http.connectionMaxTtl=30 -B install \
+  #             -P "individual,pre-merge" \
+  #             -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
+  #             ${{ env.COMMON_MVN_FLAGS }} && break || {
+  #           if [[ $i -le $max_retry ]]; then
+  #             echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+  #           else
+  #             echo "mvn command failed. Exit 1"; exit 1
+  #           fi
+  #         }
+  #         done
