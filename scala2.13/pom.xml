@@ -1134,8 +1134,8 @@
                             <arg>-Xfatal-warnings</arg>
                             --><!-- #endif scala-2.12 -->
                             <arg>-Wconf:cat=lint-adapted-args:e</arg>
-                            <arg>-Xsource:2.13</arg>
                             <!-- #if scala-2.13 -->
+                            <arg>-Xsource:2.13</arg>
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
