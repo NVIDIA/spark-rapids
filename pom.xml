@@ -976,12 +976,21 @@
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
+                                <exec executable="git" outputproperty="git.head.revision">
+                                    <arg value="rev-parse"/>
+                                    <arg value="HEAD"/>
+                                </exec>
+                                <property file="${build.info.path}" prefix="saved.build-info"/>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <not>
-                                        <equals arg1="gera" arg2="gera"/>
+                                        <equals arg1="${git.head.revision}" arg2="${saved.build-info.revision}"/>
                                     </not>
                                     <then>
+                                        <echo>Regenerating build info properties because head revision changed:
+ previous=${saved.build-info.revision}
+ current=${git.head.revision}
+                                        </echo>
                                         <mkdir dir="${project.build.directory}/extra-resources"/>
                                         <mkdir dir="${project.build.directory}/tmp"/>
                                         <exec executable="bash"
@@ -1000,7 +1009,7 @@
                                                 </not>
                                             </condition>
                                         </fail>
-                                        </then>
+                                    </then>
                                 </ac:if>
                             </target>
                         </configuration>
