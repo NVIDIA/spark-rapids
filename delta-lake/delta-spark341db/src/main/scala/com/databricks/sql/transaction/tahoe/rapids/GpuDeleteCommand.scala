@@ -22,8 +22,10 @@
 package com.databricks.sql.transaction.tahoe.rapids
 
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOperations, DeltaTableUtils, DeltaUDF, OptimisticTransaction}
-import com.databricks.sql.transaction.tahoe.actions.{Action, AddCDCFile, FileAction}
-import com.databricks.sql.transaction.tahoe.commands.{DeleteCommandMetrics, DeleteMetric, DeltaCommand}
+import com.databricks.sql.transaction.tahoe.DeltaCommitTag._
+import com.databricks.sql.transaction.tahoe.RowTracking
+import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, FileAction}
+import com.databricks.sql.transaction.tahoe.commands.{DeleteCommandMetrics, DeleteMetric, DeltaCommand, DMLUtils}
 import com.databricks.sql.transaction.tahoe.commands.MergeIntoCommandBase.totalBytesAndDistinctPartitionValues
 import com.databricks.sql.transaction.tahoe.files.TahoeBatchFileIndex
 import com.databricks.sql.transaction.tahoe.rapids.GpuDeleteCommand.{rewritingFilesMsg, FINDING_TOUCHED_FILES_MSG}
@@ -77,9 +79,10 @@ case class GpuDeleteCommand(
     recordDeltaOperation(gpuDeltaLog.deltaLog, "delta.dml.delete") {
       gpuDeltaLog.withNewTransaction { txn =>
         DeltaLog.assertRemovable(txn.snapshot)
-        val deleteActions = performDelete(sparkSession, deltaLog, txn)
+        val deleteCommitTags = performDelete(sparkSession, deltaLog, txn)
+        val deleteActions = deleteCommitTags.actions
         if (deleteActions.nonEmpty) {
-          txn.commit(deleteActions, DeltaOperations.Delete(condition.toSeq))
+          txn.commitIfNeeded(deleteActions, DeltaOperations.Delete(condition.toSeq), deleteCommitTags.stringTags)
         }
       }
       // Re-cache all cached plans(including this relation itself, if it's cached) that refer to
@@ -101,7 +104,7 @@ case class GpuDeleteCommand(
   def performDelete(
       sparkSession: SparkSession,
       deltaLog: DeltaLog,
-      txn: OptimisticTransaction): Seq[Action] = {
+      txn: OptimisticTransaction): DMLUtils.TaggedCommitData = {
     import com.databricks.sql.transaction.tahoe.implicits._
 
     var numRemovedFiles: Long = 0
@@ -125,7 +128,7 @@ case class GpuDeleteCommand(
     val startTime = System.nanoTime()
     val numFilesTotal = txn.snapshot.numOfFiles
 
-    val deleteActions: Seq[Action] = condition match {
+    val deleteActions: Seq[FileAction] = condition match {
       case None =>
         // Case 1: Delete the whole table if the condition is true
         val allFiles = txn.filterFiles(Nil)
@@ -252,8 +255,8 @@ case class GpuDeleteCommand(
             numCopiedRows = Some(metrics("numTouchedRows").value - metrics("numDeletedRows").value)
 
             val operationTimestamp = System.currentTimeMillis()
-            removeFilesFromPaths(deltaLog, nameToAddFileMap, filesToRewrite, operationTimestamp) ++
-                rewrittenActions
+            removeFilesFromPaths(deltaLog, nameToAddFileMap, filesToRewrite,
+              operationTimestamp) ++ rewrittenActions
           }
         }
     }
@@ -310,7 +313,9 @@ case class GpuDeleteCommand(
         rewriteTimeMs)
     )
 
-    deleteActions
+    DMLUtils.TaggedCommitData(deleteActions)
+      .withTag(PreservedRowTrackingTag, RowTracking.isEnabled(txn.protocol, txn.metadata))
+      .withTag(NoRowsCopiedTag, metrics("numCopiedRows").value == 0)
   }
 
   /**

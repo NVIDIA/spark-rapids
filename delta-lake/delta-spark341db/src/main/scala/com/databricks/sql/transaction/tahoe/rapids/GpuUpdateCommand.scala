@@ -22,8 +22,10 @@
 package com.databricks.sql.transaction.tahoe.rapids
 
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOperations, DeltaTableUtils, DeltaUDF, OptimisticTransaction}
+import com.databricks.sql.transaction.tahoe.DeltaCommitTag._
+import com.databricks.sql.transaction.tahoe.RowTracking
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
-import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, UpdateCommand, UpdateMetric}
+import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, DMLUtils, UpdateCommand, UpdateMetric}
 import com.databricks.sql.transaction.tahoe.files.{TahoeBatchFileIndex, TahoeFileIndex}
 import com.nvidia.spark.rapids.delta.GpuDeltaMetricUpdateUDF
 import org.apache.hadoop.fs.Path
@@ -207,7 +209,10 @@ case class GpuUpdateCommand(
       metrics("numDeletionVectorsAdded").set(0)
       metrics("numDeletionVectorsRemoved").set(0)
       txn.registerSQLMetrics(sparkSession, metrics)
-      txn.commit(totalActions, DeltaOperations.Update(condition))
+      val tags = DMLUtils.TaggedCommitData.EMPTY
+        .withTag(PreservedRowTrackingTag, RowTracking.isEnabled(txn.protocol, txn.metadata))
+        .withTag(NoRowsCopiedTag, metrics("numCopiedRows").value == 0)
+      txn.commitIfNeeded(totalActions, DeltaOperations.Update(condition), tags.stringTags)
       // This is needed to make the SQL metrics visible in the Spark UI
       val executionId = sparkSession.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
       SQLMetrics.postDriverMetricUpdates(
