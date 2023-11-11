@@ -80,6 +80,7 @@
         <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
+        <module>delta-lake/common</module>
 
         <!--
             Workaround to enforce the build order
@@ -126,6 +127,7 @@
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <modules>
+                <module>deltal-lake/common</module>
                 <module>delta-lake/delta-stub</module>
                 <module>api_validation</module>
             </modules>
@@ -145,6 +147,7 @@
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <modules>
+                <module>deltal-lake/common</module>
                 <module>delta-lake/delta-stub</module>
                 <module>api_validation</module>
             </modules>
@@ -819,6 +822,7 @@
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
+        <build.info.path>${project.build.directory}/extra-resources/rapids4spark-version-info.properties</build.info.path>
     </properties>
 
     <dependencyManagement>
@@ -972,24 +976,41 @@
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash"
-                                      output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties"
-                                      resultproperty="build-info.exitCode"
-                                      errorproperty="build-info.errorMsg"
-                                      failonerror="false">
-                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
-                                    <arg value="${project.version}"/>
-                                    <arg value="${spark-rapids-jni.version}"/>
+                                <exec executable="git" outputproperty="git.head.revision">
+                                    <arg value="rev-parse"/>
+                                    <arg value="HEAD"/>
                                 </exec>
-                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
-                                    <condition>
-                                        <not>
-                                            <equals arg1="${build-info.exitCode}" arg2="0"/>
-                                        </not>
-                                    </condition>
-                                </fail>
+                                <property file="${build.info.path}" prefix="saved.build-info"/>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <not>
+                                        <equals arg1="${git.head.revision}" arg2="${saved.build-info.revision}"/>
+                                    </not>
+                                    <then>
+                                        <echo>Regenerating build info properties because head revision changed:
+ previous=${saved.build-info.revision}
+ current=${git.head.revision}
+                                        </echo>
+                                        <mkdir dir="${project.build.directory}/extra-resources"/>
+                                        <mkdir dir="${project.build.directory}/tmp"/>
+                                        <exec executable="bash"
+                                            output="${build.info.path}"
+                                            resultproperty="build-info.exitCode"
+                                            errorproperty="build-info.errorMsg"
+                                            failonerror="false">
+                                            <arg value="${spark.rapids.source.basedir}/build/build-info"/>
+                                            <arg value="${project.version}"/>
+                                            <arg value="${spark-rapids-jni.version}"/>
+                                        </exec>
+                                        <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
+                                            <condition>
+                                                <not>
+                                                    <equals arg1="${build-info.exitCode}" arg2="0"/>
+                                                </not>
+                                            </condition>
+                                        </fail>
+                                    </then>
+                                </ac:if>
                             </target>
                         </configuration>
 
