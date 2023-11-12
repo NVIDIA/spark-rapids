@@ -104,6 +104,7 @@
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
     </dependencies>
+
     <profiles>
         <profile>
             <id>release321</id>
@@ -196,6 +197,7 @@
             </activation>
         </profile>
     </profiles>
+
     <build>
         <plugins>
             <plugin>
