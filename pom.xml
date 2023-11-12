@@ -696,7 +696,7 @@
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark350.version>3.5.0</spark350.version>
         <mockito.version>3.12.4</mockito.version>
-        <scala.plugin.version>4.8.0</scala.plugin.version>
+        <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
         <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
