@@ -511,8 +511,6 @@
         </profile>
         <profile>
             <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=341db -->
-            <!-- TODO: This comment may not be relevant. Copied from 332db profile -->
-            <!-- Note that 332db backports many features from Spark3.4.0 -->
             <id>release341db</id>
             <activation>
                 <property>
@@ -521,7 +519,6 @@
                 </property>
             </activation>
             <properties>
-                <!-- TODO: May not be relevant to downgrade the scala plugin -->
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <spark.version.classifier>spark341db</spark.version.classifier>
