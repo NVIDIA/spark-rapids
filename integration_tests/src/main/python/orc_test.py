@@ -19,6 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_an
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from spark_init_internal import spark_version
 from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh, is_spark_340_or_later
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime

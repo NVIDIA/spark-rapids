@@ -15,21 +15,26 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuWindowExpression
+import org.apache.spark.paths.SparkPath
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
+object PartitionedFileUtilsShim {
+  // Wrapper for case class constructor so Java code can access
+  // the default values across Spark versions.
+  def newPartitionedFile(
+      partitionValues: InternalRow,
+      filePath: String,
+      start: Long,
+      length: Long): PartitionedFile = {
+    PartitionedFile(partitionValues, SparkPath.fromPathString(filePath), start, length)
+  }
 
-object PythonUDFShim {
-  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDAF] = {
-    exp.map {
-      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuAggregateExpression]
-        .aggregateFunction.asInstanceOf[GpuPythonUDAF]
-    }
+  def withNewLocations(pf: PartitionedFile, locations: Seq[String]): PartitionedFile = {
+    pf.copy(locations = locations)
   }
 }

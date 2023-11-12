@@ -19,10 +19,12 @@
 {"spark": "332db"}
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
 
 import org.apache.spark.memory.MemoryMode
+import org.apache.spark.sql.catalyst.util.ResolveDefaultColumns.getExistenceDefaultValues
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector
 import org.apache.spark.sql.types.StructType
 
@@ -38,7 +40,7 @@ object ParquetCVShims {
       missingColumns: java.util.Set[ParquetColumn],
       isTopLevel: Boolean): ParquetColumnVector = {
     val defaultValue = if (sparkSchema != null) {
-      sparkSchema.existenceDefaultValues(idx)
+      getExistenceDefaultValues(sparkSchema)
     } else null
     new ParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel,
       defaultValue)
