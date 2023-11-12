@@ -154,7 +154,7 @@
                     <target>
                       <!-- copy NOTICE-binary to NOTICE -->
                       <copy
-                          todir="${project.build.directory}/classes/META-INF/"
+                          todir="${project.build.outputDirectory}/META-INF/"
                           verbose="true">
                         <fileset dir="${spark.rapids.source.basedir}">
                           <include name="NOTICE-binary"/>
@@ -171,13 +171,25 @@
                       <goal>run</goal>
                   </goals>
                   <configuration>
-                      <target>
-                          <property name="servicesDir"
-                                    value="${project.build.directory}/extra-resources/META-INF/services"/>
-                          <mkdir dir="${servicesDir}"/>
-                          <echo file="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"
-                                message="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider${line.separator}"/>
-                      </target>
+                    <target>
+                        <taskdef resource="net/sf/antcontrib/antcontrib.properties" />
+                        <property name="servicesDir"
+                            value="${project.build.outputDirectory}/META-INF/services" />
+                        <property name="serviceFile"
+                            value="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider" />
+                        <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                            <available file="${serviceFile}" property="service.file.exists" />
+                            <then>
+                                <echo>Skipping shim service file generation, already exists</echo>
+                            </then>
+                            <else>
+                                <mkdir dir="${servicesDir}" />
+                                <echo
+                                    file="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                    message="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider${line.separator}" />
+                            </else>
+                        </ac:if>
+                    </target>
                   </configuration>
                 </execution>
               </executions>

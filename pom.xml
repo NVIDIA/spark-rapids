@@ -822,7 +822,7 @@
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
-        <build.info.path>${project.build.directory}/extra-resources/rapids4spark-version-info.properties</build.info.path>
+        <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
     </properties>
 
     <dependencyManagement>
@@ -981,18 +981,24 @@
                                     <arg value="HEAD"/>
                                 </exec>
                                 <property file="${build.info.path}" prefix="saved.build-info"/>
+                                <echo>
+Comparing git revisions:
+    previous=${saved.build-info.revision}
+     current=${git.head.revision}
+                                </echo>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <not>
-                                        <equals arg1="${git.head.revision}" arg2="${saved.build-info.revision}"/>
-                                    </not>
+                                    <equals arg1="${git.head.revision}" arg2="${saved.build-info.revision}"/>
                                     <then>
-                                        <echo>Regenerating build info properties because head revision changed:
- previous=${saved.build-info.revision}
- current=${git.head.revision}
+                                        <echo>
+Git revisions unchanged: skipping version info file generation.
+Delete ${build.info.path} or mvn clean if regeneration desired.
+This will force full Scala code rebuild in downstream modules.
                                         </echo>
-                                        <mkdir dir="${project.build.directory}/extra-resources"/>
-                                        <mkdir dir="${project.build.directory}/tmp"/>
+                                    </then>
+                                    <else>
+                                        <echo>Generating new version info file</echo>
+                                        <mkdir dir="${project.build.outputDirectory}"/>
                                         <exec executable="bash"
                                             output="${build.info.path}"
                                             resultproperty="build-info.exitCode"
@@ -1009,7 +1015,7 @@
                                                 </not>
                                             </condition>
                                         </fail>
-                                    </then>
+                                    </else>
                                 </ac:if>
                             </target>
                         </configuration>
