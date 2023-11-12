@@ -19,7 +19,7 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import is_before_spark_320, is_databricks_runtime, \
-    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session
+    supports_delta_lake_deletion_vectors, with_cpu_session, with_gpu_session, is_spark_340_or_later
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
@@ -71,6 +71,7 @@ def assert_delta_sql_update_collect(spark_tmp_path, use_cdf, dest_table_func, up
                           delta_writes_enabled_conf  # Test disabled by default
                           ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9675")
 def test_delta_update_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
