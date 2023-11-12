@@ -152,18 +152,18 @@
             <properties>
                 <included_buildvers>${buildver}</included_buildvers>
             </properties>
-	    <dependencies>
-		<dependency>
+            <dependencies>
+                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-common-utils_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
-	        </dependency>
+                </dependency>
                 <dependency>
-		    <groupId>org.apache.spark</groupId>
-		    <artifactId>spark-sql-api_${scala.binary.version}</artifactId>
-		    <version>${spark.version}</version>
-		    <scope>provided</scope>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql-api_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
