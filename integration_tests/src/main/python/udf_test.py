@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_340_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -123,6 +123,7 @@ def test_single_aggregate_udf_more_types(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
@@ -140,6 +141,7 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.skipif(is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -181,6 +183,7 @@ window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Pre
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+@pytest.mark.skipif(is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 def test_window_aggregate_udf(data_gen, window):
 
     @f.pandas_udf('long')
@@ -199,6 +202,7 @@ def test_window_aggregate_udf(data_gen, window):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+@pytest.mark.skipif(is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 def test_window_aggregate_udf_array_from_python(data_gen, window):
 
     @f.pandas_udf(returnType=ArrayType(LongType()))
@@ -326,6 +330,7 @@ def create_df(spark, data_gen, left_length, right_length):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ShortGen(nullable=False)], ids=idfn)
+@pytest.mark.skipif(is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 def test_cogroup_apply_udf(data_gen):
     def asof_join(l, r):
         return pd.merge_asof(l, r, on='a', by='b')
