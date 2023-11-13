@@ -33,7 +33,6 @@ object DeltaSpark341DBProvider extends DatabricksDeltaProviderBase {
       cpuExec.ident,
       cpuExec.partitioning,
       cpuExec.query,
-      meta.childPlans.head.convertIfNeeded(),
       cpuExec.tableSpec,
       cpuExec.writeOptions,
       cpuExec.ifNotExists)
