@@ -133,6 +133,9 @@ jobs:
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command, will retry for 3 times if failed.
+
+          mvn help:effective-settings
+
           max_retry=3; delay=30; i=1
           while true; do
             mvn -Dmaven.wagon.http.retryHandler.count=3 \
