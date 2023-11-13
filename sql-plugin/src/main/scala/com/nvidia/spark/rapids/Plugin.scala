@@ -55,7 +55,8 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
   val JNI_PROPS_FILENAME = "spark-rapids-jni-version-info.properties"
-  val PLUGIN_PROPS_FILENAME = "rapids-4-spark_2.12-version-info.properties"
+  val SCALA_VERSION = scala.util.Properties.versionNumberString.split("\\.").take(2).mkString(".")
+  val PLUGIN_PROPS_FILENAME = "rapids-4-spark_" + SCALA_VERSION + "-version-info.properties"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
@@ -378,7 +379,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
-
       if (Cuda.getComputeCapabilityMajor < 6) {
         throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" +
           " is unsupported, requires 6.0+")

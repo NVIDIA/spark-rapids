@@ -974,7 +974,6 @@
                             <target name="build-info">
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
-                                <echo message="!!!!!! ${project.artifactId}-version-info.properties"/>
                                 <exec executable="bash"
                                       output="${project.build.directory}/extra-resources/${project.artifactId}-version-info.properties"
                                       resultproperty="build-info.exitCode"
