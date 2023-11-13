@@ -112,29 +112,31 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  private def detectMultipleJar(propName: String, jarName: String, 
-      complainFun: (Boolean, String) => Unit): Unit = {
+  private def detectMultipleJar(propName: String, jarName: String, conf: RapidsConf): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
     val rapidsJarURLs = classloader.getResources(propName).asScala.toSet
     lazy val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
     lazy val rapidsJarsVers = rapidsJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
     }.mkString(",")
-    complainFun(rapidsJarURLs.size <= 1,
-        s"Multiple $jarName jars found in the classpath: $rapidsJars, please make sure there " +
-        s"is only one $jarName jar in the classpath. If it is impossible to fix the classpath " + 
-        s"you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to true. " + 
-        s"Version info: \n$rapidsJarsVers")
+    lazy val msg = s"Multiple $jarName jars found in the classpath: $rapidsJars, please make " + 
+        s"sure there is only one $jarName jar in the classpath. If it is impossible to fix the " +
+        s"classpath you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key}" + 
+        s"to true. Version info: \n$rapidsJarsVers"
+    conf.allowMultipleJars match {
+      case true => {
+        if (rapidsJarURLs.size > 1) {
+          logWarning(msg)
+        }
+      }
+      case false => require(rapidsJarURLs.size <= 1, msg)
+    }
   }
 
   def detectMultipleJars(conf: RapidsConf): Unit = {
-    val complainFun: (Boolean, String) => Unit = conf.allowMultipleJars match {
-      case true => (request: Boolean, msg: String) => if (!request) logWarning(msg)
-      case false => (request: Boolean, msg: String) => require(request, msg)
-    }
-    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids4spark", complainFun)
-    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", complainFun)
-    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", complainFun)
+    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids4spark", conf)
+    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", conf)
+    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", conf)
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
