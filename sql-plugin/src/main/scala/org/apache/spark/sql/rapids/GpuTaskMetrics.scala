@@ -147,11 +147,11 @@ class GpuTaskMetrics extends Serializable {
     timeIt(spillToDiskTimeNs, "spillToDiskTime", NvtxColor.RED, f)
   }
 
-  def readSpillHost2GpuTime[A](f: => A): A = {
+  def readSpillFromHostTime[A](f: => A): A = {
     timeIt(readSpillFromHostTimeNs, "readSpillFromHostTime", NvtxColor.ORANGE, f)
   }
 
-  def readSpillDisk2HostTime[A](f: => A): A = {
+  def readSpillFromDiskTime[A](f: => A): A = {
     timeIt(readSpillFromDiskTimeNs, "readSpillFromDiskTime", NvtxColor.ORANGE, f)
   }
 
