@@ -35,7 +35,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
 object GpuJsonToStructsShim {
@@ -43,8 +43,10 @@ object GpuJsonToStructsShim {
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
     options.getOrElse("dateFormat", "yyyy-MM-dd") match {
       case "yyyy-MM-dd" =>
-        withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDate(trimmed)
+        withResource(Scalar.fromString(" ")) { space =>
+          withResource(input.strip(space)) { trimmed =>
+            GpuCast.castStringToDate(trimmed)
+          }
         }
       case other =>
         // should be unreachable due to GpuOverrides checks

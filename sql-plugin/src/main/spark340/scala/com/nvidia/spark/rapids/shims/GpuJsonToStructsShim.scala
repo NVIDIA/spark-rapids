@@ -21,7 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
 
@@ -31,8 +31,10 @@ object GpuJsonToStructsShim {
     options.get("dateFormat") match {
       case None =>
         // legacy behavior
-        withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDate(trimmed)
+        withResource(Scalar.fromString(" ")) { space =>
+          withResource(input.strip(space)) { trimmed =>
+            GpuCast.castStringToDate(trimmed)
+          }
         }
       case Some("yyyy-MM-dd") =>
         GpuCast.convertDateOrNull(input, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "%Y-%m-%d")

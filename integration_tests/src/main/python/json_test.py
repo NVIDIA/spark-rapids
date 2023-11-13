@@ -525,11 +525,11 @@ def test_from_json_struct_decimal():
 
 @pytest.mark.parametrize('date_gen', [
     # "yyyy-MM-dd"
-    "\"[ ]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}[ ]?\"",
+    "\"[ \t]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}[ \t]?\"",
     # "yyyy-MM"
-    "\"[ ]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ ]?\"",
+    "\"[ \t]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ \t]?\"",
     # "yyyy"
-    "\"[ ]?[0-9]{4}[ ]?\"",
+    "\"[ \t]?[0-9]{4}[ \t]?\"",
     # "dd/MM/yyyy"
     "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
     # special constant values
@@ -550,6 +550,7 @@ def test_from_json_struct_decimal():
 ])
 def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('{ "a": null }') \
         .with_special_case('null')
     options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
     assert_gpu_and_cpu_are_equal_collect(
