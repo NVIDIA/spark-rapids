@@ -2051,6 +2051,7 @@ object RapidsConf {
 
   val NON_UTC_TIME_ZONE_ENABLED = conf("spark.rapids.sql.nonUtc.enabled")
     .doc("An option to enable/disable non UTC time zone support.")
+    .startupOnly()
     .internal()
     .booleanConf
     .createWithDefault(true)

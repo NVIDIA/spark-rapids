@@ -1022,6 +1022,17 @@ class ExecChecks private(
     override val shown: Boolean = true)
     extends TypeChecks[Map[String, SupportLevel]] {
 
+  def nonUtcTimeZoneEnable(): Boolean = {
+    val key = RapidsConf.NON_UTC_TIME_ZONE_ENABLED.key
+    val nonUtc = SQLConf.get.getConfString(key, "true")
+    try {
+      nonUtc.trim.toBoolean
+    } catch {
+      case _: IllegalArgumentException =>
+        throw new IllegalArgumentException(s"$key should be boolean, but was $nonUtc")
+    }
+  }
+
   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
     val meta = rapidsMeta.asInstanceOf[SparkPlanMeta[_]]
 
@@ -1041,6 +1052,7 @@ class ExecChecks private(
         s"is missing ExecChecks for ${missing.mkString(",")}")
     }
 
+    val checkUtcTz = !nonUtcTimeZoneEnable()
     namedChecks.foreach {
       case (fieldName, pc) =>
         val fieldMeta = namedChildExprs(fieldName)
@@ -1048,7 +1060,7 @@ class ExecChecks private(
           .zipWithIndex
           .map(t => StructField(s"c${t._2}", t._1))
         tagUnsupportedTypes(meta, pc.cudf, fieldMeta,
-          s"unsupported data types in '$fieldName': %s")
+          s"unsupported data types in '$fieldName': %s", checkUtcTz)
     }
   }
 
