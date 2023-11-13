@@ -67,7 +67,7 @@
         <!-- use aggregator jar because accessing internal classes -->
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+            <artifactId>rapids-4-spark-aggregator-tmp_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
             <scope>test</scope>
