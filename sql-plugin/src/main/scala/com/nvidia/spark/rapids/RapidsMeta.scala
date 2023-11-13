@@ -1072,7 +1072,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   val isFoldableNonLitAllowed: Boolean = false
 
   // For common expr like AttributeReference, just skip the UTC checking
-  lazy val skipUtcCheckForCommonExpr = conf.nonUtcTimeZoneEnabled &&
+  lazy val skipUtcCheckForCommonExpr: Boolean = conf.nonUtcTimeZoneEnabled &&
       expr.isInstanceOf[AttributeReference]
 
   final override def tagSelfForGpu(): Unit = {
