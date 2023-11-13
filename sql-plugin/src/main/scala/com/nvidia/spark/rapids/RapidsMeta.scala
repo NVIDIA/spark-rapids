@@ -711,7 +711,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
     // 4) InputFileBlockRule may change the meta of broadcast join and its child plans,
     //    and this change may cause mismatch between the join and its build side
-    //    BroadcastExchangeExec, leading to errors.
+    //    BroadcastExchangeExec, leading to errors. Need to fix the mismatch.
     fixUpBroadcastJoins()
   }
 
