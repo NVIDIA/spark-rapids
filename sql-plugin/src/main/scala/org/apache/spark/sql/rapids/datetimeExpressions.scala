@@ -1044,18 +1044,22 @@ class FromUTCTimestampExprMeta(
     rule: DataFromReplacementRule)
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
+  private[this] var timezoneId: ZoneId = null
+
+  lazy val supportedZoneIds = Seq("UTC", "America/Los_Angeles", "Asia/Shanghai")
+    .map(ZoneId.of(_).normalized)
+
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
       case None =>
         willNotWorkOnGpu("timezone input must be a literal string")
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
-          val utc = ZoneId.of("UTC").normalized
           // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
-          val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
+          timezoneId = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
             ZoneId.SHORT_IDS).normalized
 
-          if (timezone != utc) {
+          if (supportedZoneIds.forall(id => id != timezoneId)) {
             willNotWorkOnGpu("only timezones equivalent to UTC are supported")
           }
         }
@@ -1063,10 +1067,10 @@ class FromUTCTimestampExprMeta(
   }
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone)
+    GpuFromUTCTimestamp(timestamp, timezone, timezoneId)
 }
 
-case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
+case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression, zoneId: ZoneId)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
       with NullIntolerant {
@@ -1078,8 +1082,7 @@ case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (rhs.getBase.isValid) {
-      // Just a no-op.
-      lhs.getBase.incRefCount()
+      TimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
     } else {
       // All-null output column.
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
