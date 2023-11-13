@@ -39,6 +39,9 @@
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.shim.jar.test.phase>none</rapids.shim.jar.test.phase>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.default.jar.phase>initialize</rapids.default.jar.phase>
+        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -73,7 +76,6 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
-                    <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
                     <artifactSet>
                         <excludes>
                             <exclude>org.slf4j:*</exclude>
@@ -108,10 +110,53 @@
                 <executions>
                     <execution>
                         <id>main-${spark.version.classifier}</id>
-                        <phase>package</phase>
+                        <phase>compile</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>create-aggregator-for-downstream-if-md5-changed</id>
+                        <goals><goal>run</goal></goals>
+                        <phase>process-classes</phase>
+                        <configuration>
+                            <target>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <property name="realAggJar"
+                                          value="${project.build.outputDirectory}/../${project.build.finalName}-shaded.jar"/>
+                                <property name="aggJarForDownstream"
+                                          value="${project.build.outputDirectory}/../${project.build.finalName}-${spark.version.classifier}.jar"/>
+                                <echo>Checking if need to recreate: ${aggJarForDownstream}</echo>
+                                <!-- using diff instead of checksum to deal with the expected zip metadata diff -->
+                                <exec executable="diff" output="${project.build.outputDirectory}/../agg-jar-diff.out">
+                                    <arg value="-a"/>
+                                    <arg value="${realAggJar}"/>
+                                    <arg value="${aggJarForDownstream}"/>
+                                </exec>
+                                <exec executable="diff" resultproperty="diff.diff.result" output="${project.build.outputDirectory}/../agg-jar-diff-diff.out">
+                                    <arg value="${project.build.outputDirectory}/../agg-jar-diff.out"/>
+                                    <arg value="${project.basedir}/build/expected-jar-metadata.diff"/>
+                                </exec>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <equals arg1="0" arg2="${diff.diff.result}"/>
+                                    <then>
+                                        <echo>Aggregator jar unchanged</echo>
+                                    </then>
+                                    <else>
+                                        <echo>Recreating final jar</echo>
+                                        <move file="${aggJarForDownstream}" tofile="${aggJarForDownstream}.bak"/>
+                                        <delete failonerror="false" dir="${project.build.outputDirectory}"/>
+                                        <unzip src="${realAggJar}" dest="${project.build.outputDirectory}"/>
+                                    </else>
+                                </ac:if>
+                            </target>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -164,17 +209,6 @@
                                 </fileset>
                             </filesets>
                         </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>promote-if-checksum-changed</id>
-                        <phase>post-package</phase>
-                        <goals><goal>run</goal></goals>
                     </execution>
                 </executions>
             </plugin>
