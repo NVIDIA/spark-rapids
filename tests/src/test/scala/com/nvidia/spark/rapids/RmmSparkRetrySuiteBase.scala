@@ -32,6 +32,7 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     super.beforeEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
+    RmmSpark.clearEventHandler()
     if (!Rmm.isInitialized) {
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)

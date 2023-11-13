@@ -514,8 +514,10 @@ object RmmRapidsRetryIterator extends Logging {
    */
   class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
       extends Iterator[K] {
+    // We want to be sure that retry will work in all cases
+    TaskRegistryTracker.registerThreadForRetry()
     // used to figure out if we should inject an OOM (only for tests)
-    private val config = new RapidsConf(SQLConf.get)
+    private val config = Option(SQLConf.get).map(new RapidsConf(_))
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
@@ -561,7 +563,7 @@ object RmmRapidsRetryIterator extends Logging {
         doSplit = false
         try {
           // call the user's function
-          if (config.testRetryOOMInjectionEnabled && !injectedOOM) {
+          if (config.exists(_.testRetryOOMInjectionEnabled) && !injectedOOM) {
             injectedOOM = true
             // ensure we have associated our thread with the running task, as
             // `forceRetryOOM` requires a prior association.

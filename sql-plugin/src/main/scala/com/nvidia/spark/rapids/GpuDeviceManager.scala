@@ -425,9 +425,9 @@ object GpuDeviceManager extends Logging {
       } else {
         memoryLimit
       }
-      // TODO need to configure the limits when we have those APIs available, and log what those
-      //  limits are
-      if (confPinnedSize + totalOverhead <= finalMemoryLimit) {
+
+      // Now we need to know the pinned vs non-pinned limits
+      val pinnedLimit = if (confPinnedSize + totalOverhead <= finalMemoryLimit) {
         confPinnedSize
       } else {
         val ret = finalMemoryLimit - totalOverhead
@@ -437,6 +437,14 @@ object GpuDeviceManager extends Logging {
             s"dropping pinned memory to ${ret / 1024 / 1024.0} MiB")
         ret
       }
+      val nonPinnedLimit = finalMemoryLimit - totalOverhead - pinnedLimit
+      // TODO make this debug???
+      logWarning(s"Off Heap Host Memory configured to be " +
+          s"${pinnedLimit / 1024 / 1024.0} MiB pinned, " +
+          s"${nonPinnedLimit / 1024 / 1024.0} MiB non-pinned, and " +
+          s"${totalOverhead / 1024 / 1024.0} MiB of untracked overhead.")
+      HostAlloc.initialize(nonPinnedLimit)
+      pinnedLimit
     } else {
       conf.pinnedPoolSize
     }
