@@ -1071,6 +1071,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
+  // For common expr like AttributeReference, just skip the UTC checking
+  lazy val skipUtcCheckForCommonExpr = conf.nonUtcTimeZoneEnabled &&
+      expr.isInstanceOf[AttributeReference]
+
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
       willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
@@ -1079,10 +1083,12 @@ abstract class BaseExprMeta[INPUT <: Expression](
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
 
-    // if expr is time zone aware and GPU does not support non UTC tz for this expr yet,
-    // ensure it's in UTC tz
-    if (!tagTimeZoneBySelf && isTimeZoneAwareExpr && !supportsNonUTCTimeZone) {
-      checkTimeZoneId(expr.asInstanceOf[TimeZoneAwareExpression].zoneId)
+    if (!skipUtcCheckForCommonExpr) {
+      // if expr is time zone aware and GPU does not support non UTC tz for this expr yet,
+      // ensure it's in UTC tz
+      if (!tagTimeZoneBySelf && isTimeZoneAwareExpr && !supportsNonUTCTimeZone) {
+        checkTimeZoneId(expr.asInstanceOf[TimeZoneAwareExpression].zoneId)
+      }
     }
   }
 
