@@ -26,7 +26,7 @@ function check-shims-revisions() {
   parallel_dir=${PWD}/parallel-world
   pre_revision=""
   pre_shim_version_path=""
-  
+
   IFS=","
   for shim in ${included_buildvers}; do
     # trim
