@@ -2049,6 +2049,12 @@ object RapidsConf {
       .longConf
       .createOptional
 
+  val NON_UTC_TIME_ZONE_ENABLED = conf("spark.rapids.sql.nonUtc.enabled")
+    .doc("An option to enable/disable non UTC time zone support.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2740,6 +2746,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
+
+  lazy val nonUtcTimeZoneEnabled: Boolean = get(NON_UTC_TIME_ZONE_ENABLED)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

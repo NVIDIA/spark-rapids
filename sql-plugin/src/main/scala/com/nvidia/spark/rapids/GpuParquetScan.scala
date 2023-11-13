@@ -199,7 +199,9 @@ object GpuParquetScan {
         s"${RapidsConf.ENABLE_PARQUET_READ} to true")
     }
 
-    FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
+    val checkUtc = !meta.conf.nonUtcTimeZoneEnabled
+    FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp,
+      checkUtcTimeZone = checkUtc)
 
     val schemaHasTimestamps = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])

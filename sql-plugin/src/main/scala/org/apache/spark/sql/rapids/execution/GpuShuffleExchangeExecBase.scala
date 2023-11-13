@@ -93,8 +93,10 @@ abstract class GpuShuffleMetaBase(
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig +
             TypeSig.ARRAY.nested(GpuOverrides.gpuCommonTypes)
 
+        // shuffle does not require UTC time zone, so skip UTC time zone check
+        val checkUtc = !conf.nonUtcTimeZoneEnabled
         shuffle.output.map(_.dataType)
-            .filterNot(orderableTypes.isSupportedByPlugin)
+            .filterNot(orderableTypes.isSupportedByPlugin(_, checkUtcTimeZone = checkUtc))
             .foreach { dataType =>
               willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
                   s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")

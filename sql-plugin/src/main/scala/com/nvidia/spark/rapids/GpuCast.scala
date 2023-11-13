@@ -98,8 +98,9 @@ abstract class CastExprMetaBase[INPUT <: UnaryExpression with TimeZoneAwareExpre
       toDataType: DataType = toType,
       depth: Int = 0): Unit = {
     val checks = rule.getChecks.get.asInstanceOf[CastChecks]
+    val checkUtc = !conf.nonUtcTimeZoneEnabled
     if (depth > 0 &&
-        !checks.gpuCanCast(fromDataType, toDataType)) {
+        !checks.gpuCanCast(fromDataType, toDataType, checkUtcTimeZone = checkUtc)) {
       willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
     }
 

@@ -321,11 +321,14 @@ final class TypeSig private(
 
   /**
    * Check if this type is supported by the plugin or not.
+   *
    * @param dataType the data type to be checked
+   * @param checkUtcTimeZone whether to check UTC time zone.
+   * Set false when fully support time zones(utc and non utc)
    * @return true if it is allowed else false.
    */
-  def isSupportedByPlugin(dataType: DataType): Boolean =
-    isSupported(initialTypes, dataType)
+  def isSupportedByPlugin(dataType: DataType, checkUtcTimeZone: Boolean = true): Boolean =
+    isSupported(initialTypes, dataType, checkUtcTimeZone)
 
   private [this] def isLitOnly(dataType: DataType): Boolean = dataType match {
     case BooleanType => litOnlyTypes.contains(TypeEnum.BOOLEAN)
@@ -348,12 +351,24 @@ final class TypeSig private(
     case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType)
   }
 
-  def isSupportedBySpark(dataType: DataType): Boolean =
-    isSupported(initialTypes, dataType)
+  /**
+   *
+   * @param checkUtcTimeZone whether to check UTC time zone.
+   * Set false when fully support time zones(utc and non utc)
+   * @return
+   */
+  def isSupportedBySpark(dataType: DataType, checkUtcTimeZone: Boolean = true): Boolean =
+    isSupported(initialTypes, dataType, checkUtcTimeZone)
 
+  /**
+   *
+   * @param checkUtcTimeZone whether to check UTC time zone.
+   * Set false when fully support time zones(utc and non utc)
+   */
   private[this] def isSupported(
       check: TypeEnum.ValueSet,
-      dataType: DataType): Boolean =
+      dataType: DataType,
+      checkUtcTimeZone: Boolean): Boolean =
     dataType match {
       case BooleanType => check.contains(TypeEnum.BOOLEAN)
       case ByteType => check.contains(TypeEnum.BYTE)
@@ -363,7 +378,12 @@ final class TypeSig private(
       case FloatType => check.contains(TypeEnum.FLOAT)
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
-      case TimestampType => check.contains(TypeEnum.TIMESTAMP)
+      case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
+        if (checkUtcTimeZone) {
+          TypeChecks.areTimestampsSupported()
+        } else {
+          true
+        }
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -372,13 +392,13 @@ final class TypeSig private(
       case BinaryType => check.contains(TypeEnum.BINARY)
       case CalendarIntervalType => check.contains(TypeEnum.CALENDAR)
       case ArrayType(elementType, _) if check.contains(TypeEnum.ARRAY) =>
-        isSupported(childTypes, elementType)
+        isSupported(childTypes, elementType, checkUtcTimeZone)
       case MapType(keyType, valueType, _) if check.contains(TypeEnum.MAP) =>
-        isSupported(childTypes, keyType) &&
-            isSupported(childTypes, valueType)
+        isSupported(childTypes, keyType, checkUtcTimeZone) &&
+            isSupported(childTypes, valueType, checkUtcTimeZone)
       case StructType(fields) if check.contains(TypeEnum.STRUCT) =>
         fields.map(_.dataType).forall { t =>
-          isSupported(childTypes, t)
+          isSupported(childTypes, t, checkUtcTimeZone)
         }
       case _ => TypeSigUtil.isSupported(check, dataType)
     }
@@ -478,7 +498,7 @@ final class TypeSig private(
     }
 
   def areAllSupportedByPlugin(types: Seq[DataType]): Boolean =
-    types.forall(isSupportedByPlugin)
+    types.forall(isSupportedByPlugin(_))
 
   /**
    * Get the level of support for a given type compared to what Spark supports.
@@ -807,10 +827,11 @@ abstract class TypeChecks[RET] {
     meta: RapidsMeta[_, _, _],
     sig: TypeSig,
     fields: Seq[StructField],
-    msgFormat: String
+    msgFormat: String,
+    checkUtcTimeZone: Boolean = true
     ): Unit = {
     val unsupportedTypes: Map[DataType, Set[String]] = fields
-      .filterNot(attr => sig.isSupportedByPlugin(attr.dataType))
+      .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, checkUtcTimeZone))
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet).toMap
 
@@ -944,9 +965,10 @@ class FileFormatChecks private (
   def tag(meta: RapidsMeta[_, _, _],
       schema: StructType,
       fileType: FileFormatType,
-      op: FileFormatOp): Unit = {
+      op: FileFormatOp,
+      checkUtcTimeZone: Boolean): Unit = {
     tagUnsupportedTypes(meta, sig, schema.fields,
-      s"unsupported data types %s in $op for $fileType")
+      s"unsupported data types %s in $op for $fileType", checkUtcTimeZone)
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
@@ -981,8 +1003,9 @@ object FileFormatChecks {
   def tag(meta: RapidsMeta[_, _, _],
       schema: StructType,
       fileType: FileFormatType,
-      op: FileFormatOp): Unit = {
-    GpuOverrides.fileFormats(fileType)(op).tag(meta, schema, fileType, op)
+      op: FileFormatOp,
+      checkUtcTimeZone: Boolean = true): Unit = {
+    GpuOverrides.fileFormats(fileType)(op).tag(meta, schema, fileType, op, checkUtcTimeZone)
   }
 }
 
@@ -1475,7 +1498,9 @@ class CastChecks extends ExprChecks {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
     val from = cast.child.dataType
     val to = cast.dataType
-    if (!gpuCanCast(from, to)) {
+
+    val checkUtc = !meta.conf.nonUtcTimeZoneEnabled
+    if (!gpuCanCast(from, to, checkUtc)) {
       willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
     }
   }
@@ -1495,12 +1520,15 @@ class CastChecks extends ExprChecks {
     sparkSig.isSupportedBySpark(to)
   }
 
-  def gpuCanCast(from: DataType, to: DataType): Boolean = {
+  def gpuCanCast(from: DataType, to: DataType, checkUtcTimeZone: Boolean = true): Boolean = {
     val (checks, _) = getChecksAndSigs(from)
-    checks.isSupportedByPlugin(to) && gpuCanCastConsiderTimezone(from, to)
+
+    checks.isSupportedByPlugin(to, checkUtcTimeZone) &&
+      gpuCanCastConsiderTimezone(from, to)
   }
 
-  def gpuCanCastConsiderTimezone(from: DataType, to: DataType) = {
+  // Check UTC in this method
+  private def gpuCanCastConsiderTimezone(from: DataType, to: DataType): Boolean = {
     // remove this check after non UTC timezone is supported for cast
     (from, to) match {
       case (StringType, TimestampType | DateType) => TypeChecks.areTimestampsSupported()

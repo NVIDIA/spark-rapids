@@ -941,3 +941,12 @@ def test_timezone_for_operator_from_utc_timestamp_with_utc():
         df.createOrReplaceTempView("tab")
         return spark.sql("select from_utc_timestamp(ts_col, '+00:00') from tab").collect()
     with_gpu_session(gen_sql_df)
+
+
+def test_timezone_from_utc_timestamp():
+    conf = {}
+    def gen_sql_df(spark):
+        df = get_timezone_df(spark)
+        df.createOrReplaceTempView("tab")
+        return spark.sql("select from_utc_timestamp(ts_col, 'Iran') from tab")
+    assert_gpu_and_cpu_are_equal_collect(gen_sql_df, conf)
