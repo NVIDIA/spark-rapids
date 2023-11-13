@@ -28,7 +28,7 @@ import scala.collection.mutable
 
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
-import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction, Protocol}
+import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.commands.DeltaCommand
 import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -956,7 +956,8 @@ case class GpuMergeIntoCommand(
       // because under column mapping, the reference schema within DeltaParquetFileFormat
       // that is used to populate metadata needs to be updated
       if (deltaTxn.metadata.columnMappingMode != NoMapping) {
-        val updatedFileFormat = deltaTxn.deltaLog.fileFormat(Protocol(), deltaTxn.metadata)
+        val updatedFileFormat = deltaTxn.deltaLog.fileFormat(
+          deltaTxn.deltaLog.unsafeVolatileSnapshot.protocol, deltaTxn.metadata)
         DeltaTableUtils.replaceFileFormat(transformed, updatedFileFormat)
       } else {
         transformed
