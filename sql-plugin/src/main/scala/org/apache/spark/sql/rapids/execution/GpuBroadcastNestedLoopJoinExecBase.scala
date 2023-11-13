@@ -178,20 +178,26 @@ class ConditionalNestedLoopJoinIterator(
     }
   }
 
-  override def computeNumJoinRows(cb: ColumnarBatch): Long = {
-    withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
-      withResource(GpuColumnVector.from(cb)) { streamTable =>
-        val (left, right) = buildSide match {
-          case GpuBuildLeft => (builtTable, streamTable)
-          case GpuBuildRight => (streamTable, builtTable)
-        }
-        joinType match {
-          case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition)
-          case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
-          case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
-          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
-          case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
-          case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
+  override def computeNumJoinRows(scb: LazySpillableColumnarBatch): Long = {
+    scb.checkpoint()
+    builtBatch.checkpoint()
+    withRetryNoSplit {
+      withRestoreOnRetry(Seq(builtBatch, scb)) {
+        withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
+          withResource(GpuColumnVector.from(scb.getBatch)) { streamTable =>
+            val (left, right) = buildSide match {
+              case GpuBuildLeft => (builtTable, streamTable)
+              case GpuBuildRight => (streamTable, builtTable)
+            }
+            joinType match {
+              case _: InnerLike => left.conditionalInnerJoinRowCount(right, condition)
+              case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
+              case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
+              case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
+              case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
+              case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
+            }
+          }
         }
       }
     }

@@ -3300,6 +3300,19 @@ object GpuOverrides extends Logging {
         override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
+    expr[Stack](
+      "Separates expr1, ..., exprk into n rows.",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("n", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+        Some(RepeatingParamCheck("expr",
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+              TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all))),
+      (a, conf, p, r) => new GpuStackMeta(a, conf, p, r)
+    ),
     expr[ReplicateRows](
       "Given an input row replicates the row N times",
       ExprChecks.projectOnly(
@@ -3556,17 +3569,20 @@ object GpuOverrides extends Logging {
     expr[JsonToStructs](
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
-        TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
-              "MAP only supports keys and values that are of STRING type"),
+        TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.integral +
+          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN) +
+          TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
+          "MAP only supports keys and values that are of STRING type"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
         override def tagExprForGpu(): Unit =
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
+            case _: StructType => ()
             case _ =>
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
-                               "input schema")
+                "or StructType schema")
           }
           GpuJsonScan.tagJsonToStructsSupport(a.options, this)
 
@@ -3588,9 +3604,6 @@ object GpuOverrides extends Logging {
         ))),
       (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (a.options.get("ignoreNullFields").exists(_.equalsIgnoreCase("false"))) {
-            willNotWorkOnGpu("to_json option ignore_null_fields=false is not supported")
-          }
           if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
             willNotWorkOnGpu("to_json option pretty=true is not supported")
           }

@@ -17,12 +17,13 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.google.common.base.Objects
-import com.nvidia.spark.rapids.{GpuBatchScanExecMetrics, GpuScan}
+import com.nvidia.spark.rapids.GpuScan
 
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
@@ -30,13 +31,11 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{KeyGroupedPartitioning, Partitioning, SinglePartition}
-import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowComparableWrapper}
+import org.apache.spark.sql.catalyst.util.InternalRowComparableWrapper
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
-import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
@@ -48,11 +47,7 @@ case class GpuBatchScanExec(
     commonPartitionValues: Option[Seq[(InternalRow, Int)]] = None,
     applyPartialClustering: Boolean = false,
     replicatePartitions: Boolean = false)
-    extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
-  @transient lazy val batch: Batch = scan.toBatch
-
-  // All expressions are filter expressions used on the CPU.
-  override def gpuExpressions: Seq[Expression] = Nil
+    extends GpuBatchScanExecBase(scan, runtimeFilters) {
 
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
@@ -69,7 +64,7 @@ case class GpuBatchScanExec(
 
   @transient override lazy val inputPartitions: Seq[InputPartition] = batch.planInputPartitions()
 
-  @transient private lazy val filteredPartitions: Seq[Seq[InputPartition]] = {
+  @transient override protected lazy val filteredPartitions: Seq[Seq[InputPartition]] = {
     val dataSourceFilters = runtimeFilters.flatMap {
       case DynamicPruningExpression(e) => DataSourceStrategyUtils.translateRuntimeFilter(e)
       case _ => None
@@ -240,21 +235,6 @@ case class GpuBatchScanExec(
       runtimeFilters = QueryPlan.normalizePredicates(
         runtimeFilters.filterNot(_ == DynamicPruningExpression(Literal.TrueLiteral)),
         output))
-  }
-
-  override def simpleString(maxFields: Int): String = {
-    val truncatedOutputString = truncatedString(output, "[", ", ", "]", maxFields)
-    val runtimeFiltersString = s"RuntimeFilters: ${runtimeFilters.mkString("[", ",", "]")}"
-    val result = s"$nodeName$truncatedOutputString ${scan.description()} $runtimeFiltersString"
-    redact(result)
-  }
-
-  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
-    inputRDD.asInstanceOf[RDD[ColumnarBatch]].map { b =>
-      numOutputRows += b.numRows()
-      b
-    }
   }
 
   override def nodeName: String = {

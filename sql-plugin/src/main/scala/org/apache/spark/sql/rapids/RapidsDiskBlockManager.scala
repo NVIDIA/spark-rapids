@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids
 
 import java.io.File
 
+import com.nvidia.spark.rapids.RapidsSerializerManager
+
 import org.apache.spark.SparkConf
 import org.apache.spark.rapids.shims.storage.ShimDiskBlockManager
 import org.apache.spark.storage.BlockId
@@ -25,8 +27,11 @@ import org.apache.spark.storage.BlockId
 /** Maps logical blocks to local disk locations. */
 class RapidsDiskBlockManager(conf: SparkConf) {
   private[this] val blockManager = new ShimDiskBlockManager(conf, true)
+  private[this] val serializerManager = new RapidsSerializerManager(conf)
 
   def getFile(blockId: BlockId): File = blockManager.getFile(blockId)
 
   def getFile(file: String): File = blockManager.getFile(file)
+
+  def getSerializerManager(): RapidsSerializerManager = serializerManager
 }

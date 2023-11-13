@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,25 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+/*** spark-rapids-shim-json-lines
+{"spark": "332db"}
+{"spark": "340"}
+{"spark": "341"}
+spark-rapids-shim-json-lines ***/
+package org.apache.spark.sql.hive.rapids.shims
 
-import scala.collection.mutable.ArrayStack
+import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
-class ScalaStack[T] extends ArrayStack[T]
+import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+
+trait CreateFunctions {
+
+  def createFunction(a: HiveSimpleUDF): UDF = {
+    a.function
+  }
+
+  def createFunction(a: HiveGenericUDF): GenericUDF = {
+    a.function
+  }
+}

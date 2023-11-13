@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,19 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+/*** spark-rapids-shim-json-lines
+{"spark": "320"}
+{"spark": "321"}
+{"spark": "321cdh"}
+{"spark": "321db"}
+{"spark": "322"}
+{"spark": "323"}
+{"spark": "324"}
+spark-rapids-shim-json-lines ***/
+package com.nvidia.spark.rapids.shims
 
-import scala.collection.mutable.Stack
+import org.apache.spark.sql.connector.read._
 
-class ScalaStack[T] extends Stack[T]
+trait FilteredPartitions {
+  @transient protected val filteredPartitions: Seq[InputPartition]
+}

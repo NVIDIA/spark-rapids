@@ -15,21 +15,23 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "350"}
+{"spark": "341db"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark341db
 
-import com.nvidia.spark.rapids.GpuWindowExpression
+import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
+import org.apache.spark.SparkEnv
 
-object PythonUDFShim {
-  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDAF] = {
-    exp.map {
-      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuAggregateExpression]
-        .aggregateFunction.asInstanceOf[GpuPythonUDAF]
-    }
+object SparkShimServiceProvider {
+  val VERSION = DatabricksShimVersion(3, 4, 1)
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+
+  def matchesVersion(version: String): Boolean = {
+    SparkEnv.get.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "").startsWith("13.3.")
   }
 }

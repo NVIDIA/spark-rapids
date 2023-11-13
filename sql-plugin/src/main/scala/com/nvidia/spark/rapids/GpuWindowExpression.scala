@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
+import scala.util.{Left, Right}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -947,6 +948,12 @@ trait BatchedUnboundedToUnboundedWindowFixer extends AutoCloseable {
 trait GpuBatchedRunningWindowWithFixer {
 
   /**
+   * Checks whether the running window can be fixed up. This should be called before
+   * newFixer(), to check whether the fixer would work.
+   */
+  def canFixUp: Boolean = true
+
+  /**
    * Get a new class that can be used to fix up batched running window operations.
    */
   def newFixer(): BatchedRunningWindowFixer
@@ -1131,6 +1138,216 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
   override def close(): Unit = {
     previousResult.foreach(_.close())
     previousResult = None
+  }
+}
+
+/**
+ * Common base class for batched running window fixers for FIRST() and LAST() window functions.
+ * This mostly handles the checkpoint logic. The fixup logic is left to the concrete subclass.
+ *
+ * @param name Name of the function (E.g. "FIRST").
+ * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
+ */
+abstract class FirstLastRunningWindowFixerBase(val name: String, val ignoreNulls: Boolean = false)
+  extends BatchedRunningWindowFixer with Logging {
+
+  /**
+   * Saved "carry-over" result that might be applied to the next batch.
+   */
+  protected[this] var previousResult: Option[Scalar] = None
+
+  /**
+   * Checkpoint result, in case it needs to be rolled back.
+   */
+  protected[this] var chkptPreviousResult: Option[Scalar] = None
+
+  /**
+   * Saves the last row from the `finalOutputColumn`, to carry over to the next
+   * column processed by this fixer.
+   */
+  protected[this] def resetPrevious(finalOutputColumn: cudf.ColumnVector): Unit = {
+    val numRows = finalOutputColumn.getRowCount.toInt
+    if (numRows > 0) {
+      val lastIndex = numRows - 1
+      logDebug(s"$name: updateState from $previousResult to...")
+      previousResult.foreach(_.close)
+      previousResult = Some(finalOutputColumn.getScalarElement(lastIndex))
+      logDebug(s"$name: ... $previousResult")
+    }
+  }
+
+  /**
+   * Save the state, so it can be restored in the case of a retry.
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def checkpoint(): Unit = chkptPreviousResult = previousResult
+
+  /**
+   * Restore the state that was saved by calling to "checkpoint".
+   * (This is called inside a Spark task context on executors.)
+   */
+  override def restore(): Unit = {
+    // If there is a previous checkpoint result, restore it to previousResult.
+    if (chkptPreviousResult.isDefined) {
+      // Close erstwhile previousResult.
+      previousResult match {
+        case Some(r) if r != chkptPreviousResult.get => r.close()
+        case _ => // Nothing to close if result is None, or matches the checkpoint.
+      }
+    }
+    previousResult = chkptPreviousResult
+    chkptPreviousResult = None
+  }
+
+  override def close(): Unit = {
+    previousResult.foreach(_.close)
+    previousResult = None
+  }
+}
+
+/**
+ * Batched running window fixer for `FIRST() ` window functions. Supports fixing for batched
+ * execution for `ROWS` and `RANGE` based window specifications.
+ * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
+ */
+class FirstRunningWindowFixer(ignoreNulls: Boolean = false)
+  extends FirstLastRunningWindowFixerBase(name="First", ignoreNulls=ignoreNulls) {
+  /**
+   * Fix up `windowedColumnOutput` with any stored state from previous batches.
+   * Like all window operations the input data will have been sorted by the partition
+   * by columns and the order by columns.
+   *
+   * @param samePartitionMask    a mask that uses `true` to indicate the row
+   *                             is for the same partition by keys that was the last row in the
+   *                             previous batch or `false` to indicate it is not. If this is known
+   *                             to be all true or all false values a single boolean is used. If
+   *                             it can change for different rows than a column vector is provided.
+   *                             Only values that are for the same partition by keys should be
+   *                             modified. Because the input data is sorted by the partition by
+   *                             columns the boolean values will be grouped together.
+   * @param sameOrderMask        Similar mask for ordering. Unused for `FIRST`.
+   * @param unfixedWindowResults the output of the windowAggregation without anything
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
+   * @return a fixed ColumnVector that was with outputs updated for items that were in the same
+   *         group by key as the last row in the previous batch.
+   */
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+                     sameOrderMask: Option[Either[ColumnVector, Boolean]],
+                     unfixedWindowResults: ColumnView): ColumnVector = {
+    // `sameOrderMask` is irrelevant for this operation.
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) =>
+        // No previous result. Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(prev), Right(allRowsInSamePartition)) => // Boolean flag.
+        // All the current batch results may be replaced.
+        if (allRowsInSamePartition) {
+          if (!ignoreNulls || prev.isValid) {
+            // If !ignoreNulls, `prev` is the result for all rows.
+            // If ignoreNulls *AND* `prev` isn't null, `prev` is the result for all rows.
+            ColumnVector.fromScalar(prev, unfixedWindowResults.getRowCount.toInt)
+          } else {
+            // If ignoreNulls, *AND* `prev` is null, keep the current result.
+            incRef(unfixedWindowResults)
+          }
+        } else {
+          // No rows in the same partition. Current result needs no fixing.
+          incRef(unfixedWindowResults)
+        }
+      case (Some(prev), Left(someRowsInSamePartition)) => // Boolean vector.
+        if (!ignoreNulls || prev.isValid) {
+          someRowsInSamePartition.ifElse(prev, unfixedWindowResults)
+        } else {
+          incRef(unfixedWindowResults)
+        }
+    }
+    // Reset previous result.
+    closeOnExcept(ret) { ret =>
+      resetPrevious(ret)
+      ret
+    }
+  }
+}
+
+/**
+ * Batched running window fixer for `LAST() ` window functions. Supports fixing for batched
+ * execution for `ROWS` and `RANGE` based window specifications.
+ * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
+ */
+class LastRunningWindowFixer(ignoreNulls: Boolean = false)
+  extends FirstLastRunningWindowFixerBase(name="Last", ignoreNulls=ignoreNulls) {
+  /**
+   * Fixes up `unfixedWindowResults` with stored state from previous batch(es).
+   * In this case (i.e. `LAST`), the previous result only comes into it if:
+   *   1. There was a previous result at all.
+   *   2. Nulls have to be ignored (i.e. ignoreNulls == true).
+   *   3. The previous result (row) from the last batch is not null.
+   *   4. There exists at least one `unfixedWindowResults` row that is NULL, and
+   *      belongs to the same partition/group as the previous result.
+   * In all other cases, the `unfixedWindowResults` prevail.
+   *
+   * @param samePartitionMask    a mask that uses `true` to indicate the row
+   *                             is for the same partition by keys that was the last row in the
+   *                             previous batch or `false` to indicate it is not. If this is known
+   *                             to be all true or all false values a single boolean is used. If
+   *                             it can change for different rows than a column vector is provided.
+   *                             Only values that are for the same partition by keys should be
+   *                             modified. Because the input data is sorted by the partition by
+   *                             columns the boolean values will be grouped together.
+   * @param sameOrderMask        Similar mask for ordering. Unused for `LAST`.
+   * @param unfixedWindowResults the output of the windowAggregation without anything
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
+   * @return a fixed ColumnVector that was with outputs updated for items that were in the same
+   *         group by key as the last row in the previous batch.
+   */
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+                     sameOrderMask: Option[Either[ColumnVector, Boolean]], // Irrelevant to LAST.
+                     unfixedWindowResults: ColumnView): ColumnVector = {
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) =>
+        // No previous result. Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(_), Right(false)) => // samePartitionMask == false.
+        // No rows in this batch correspond to the previousResult's partition.
+        // Current result needs no fixing.
+        incRef(unfixedWindowResults)
+      case (Some(prev), Right(true)) => // samePartitionMask == true.
+        // All the rows in this batch correspond to the previousResult's partition.
+        if (!ignoreNulls || !prev.isValid) {
+          // If !ignoreNulls, current result needs no fixing. The latest answer is the right one.
+          // If ignoreNulls, but prev is NULL, current result is again the right answer.
+          incRef(unfixedWindowResults)
+        } else {
+          // ignoreNulls *and* prev.isValid. => Final result now depends on the unfixed results.
+          // `prev` must replace all null rows from the same group in the unfixed results.
+          // In this case, that includes the entire column.
+          unfixedWindowResults.replaceNulls(prev)
+        }
+      case (Some(prev), Left(someRowsInSamePartition)) => // samePartitionMask is a Boolean vector.
+        if (!ignoreNulls || !prev.isValid) {
+          // If !ignoreNulls, current result needs no fixing. The latest answer is the right one.
+          // If ignoreNulls, but prev is NULL, current result is again the right answer.
+          incRef(unfixedWindowResults)
+        } else {
+          // ignoreNulls==true, *and* prev.isValid.
+          // prev must replace nulls for all rows that belong in the same group.
+          val mustReplace = withResource(unfixedWindowResults.isNull) { isNull =>
+            isNull.and(someRowsInSamePartition)
+          }
+          withResource(mustReplace) { mustReplace =>
+            mustReplace.ifElse(prev, unfixedWindowResults)
+          }
+        }
+    }
+    // Reset previous result.
+    closeOnExcept(ret) { ret =>
+      resetPrevious(ret)
+      ret
+    }
   }
 }
 
@@ -1900,7 +2117,7 @@ case class GpuPercentRank(children: Seq[Expression]) extends GpuReplaceWindowFun
     val rank = GpuWindowExpression(GpuRank(children), spec)
     val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi), DoubleType, isAnsi)
     val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi), DoubleType, isAnsi)
-    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnErrorOverride = isAnsi)
+    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnError = isAnsi)
     GpuCoalesce(Seq(divided, GpuLiteral(0.0)))
   }
 }
