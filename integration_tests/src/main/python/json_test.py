@@ -525,17 +525,17 @@ def test_from_json_struct_decimal():
 
 @pytest.mark.parametrize('date_gen', [
     # "yyyy-MM-dd"
-    "\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\"",
+    "\"[ ]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}[ ]?\"",
     # "yyyy-MM"
-    "\"[1-8]{1}[0-9]{3}-[0-3]{1,2}\"",
+    "\"[ ]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ ]?\"",
     # "yyyy"
-    "\"[0-9]{4}\"",
+    "\"[ ]?[0-9]{4}[ ]?\"",
     # "dd/MM/yyyy"
     "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
     # special constant values
     "\"(now|today|tomorrow|epoch)\"",
-    # "nnnnn" (number of days since epoch)
-    pytest.param("\"[0-9]{5}\"", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
+    # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
+    pytest.param("\"[0-9]{5}\"", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
     "[0-9]{1,5}",
     # floating-point

@@ -22,6 +22,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
 
 object GpuJsonToStructsShim {
@@ -30,9 +31,11 @@ object GpuJsonToStructsShim {
     options.get("dateFormat") match {
       case None =>
         // legacy behavior
-        GpuCast.castStringToDate(input)
+        withResource(input.strip()) { trimmed =>
+          GpuCast.castStringToDate(trimmed)
+        }
       case Some("yyyy-MM-dd") =>
-        GpuCast.convertDateOrNull(input, "[0-9]{4}-[0-9]{2}-[0-9]{2}", "%Y-%m-%d")
+        GpuCast.convertDateOrNull(input, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "%Y-%m-%d")
       case other =>
         // should be unreachable due to GpuOverrides checks
         throw new IllegalStateException(s"Unsupported dateFormat $other")
