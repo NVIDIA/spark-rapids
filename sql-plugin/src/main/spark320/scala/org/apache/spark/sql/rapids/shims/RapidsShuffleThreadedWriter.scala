@@ -55,6 +55,7 @@ class RapidsShuffleThreadedWriter[K, V](
     mapId: Long,
     sparkConf: SparkConf,
     writeMetrics: ShuffleWriteMetricsReporter,
+    maxBytesInFlight: Long,
     shuffleExecutorComponents: ShuffleExecutorComponents,
     numWriterThreads: Int)
   extends RapidsShuffleThreadedWriterBase[K, V](
@@ -63,6 +64,7 @@ class RapidsShuffleThreadedWriter[K, V](
     mapId,
     sparkConf,
     writeMetrics,
+    maxBytesInFlight,
     shuffleExecutorComponents,
     numWriterThreads)
       with org.apache.spark.shuffle.checksum.ShuffleChecksumSupport {
