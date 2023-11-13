@@ -1831,6 +1831,30 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     ).toDF("doubles", "more_doubles")
   }
 
+  def stringWithTailingSpaces(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.String, java.lang.Double)](
+      ("Foo   ", 1.0d),
+      ("Barr  ", Double.NaN),
+      ("BAZZZ ", 3.0d),
+      ("QuxXx ", 4.0d),
+      ("Freed ", Double.NaN),
+      ("ThuddD", 6.0d)
+    ).toDF("name", "number_double")
+  }
+
+  def stringWithTailingSpaces2(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(java.lang.String, java.lang.Long)](
+      ("Foo2   ", 1),
+      ("Barr2  ", null),
+      ("BAZZZ2 ", 3),
+      ("QuxXx2 ", 4),
+      ("Freed2 ", null),
+      ("ThuddD2", 6)
+    ).toDF("name", "number_int")
+  }
+
   def decimals(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(String, BigDecimal)](
