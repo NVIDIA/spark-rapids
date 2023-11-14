@@ -1046,7 +1046,7 @@ class FromUTCTimestampExprMeta(
 
   private[this] var timezoneId: ZoneId = null
 
-  lazy val supportedZoneStrList = Seq("UTC", "America/Los_Angeles", "Asia/Shanghai")
+  lazy val supportedZoneStrList = Seq("UTC", "Asia/Shanghai")
   lazy val supportedZoneIds = supportedZoneStrList.map(ZoneId.of(_).normalized)
 
   override def tagExprForGpu(): Unit = {

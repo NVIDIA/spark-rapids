@@ -278,7 +278,7 @@ def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
     'FromUTCTimestamp')
 
 
-@pytest.mark.parametrize('time_zone', ["UTC", "America/Los_Angeles", "Asia/Shanghai"], ids=idfn)
+@pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 def test_from_utc_timestamp_supported_timezones(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
