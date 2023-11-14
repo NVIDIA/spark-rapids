@@ -41,7 +41,8 @@
         <rapids.shim.jar.test.phase>none</rapids.shim.jar.test.phase>
         <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
         <rapids.default.jar.phase>initialize</rapids.default.jar.phase>
-        <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
+        <!-- Maven to register attached artifact , which we later replace -->
+        <rapids.shim.jar.phase>initialize</rapids.shim.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -123,7 +124,7 @@
                 <executions>
                     <execution>
                         <id>generate-build-info</id>
-                        <phase>generate-test-sources</phase>
+                        <phase>none</phase>
                     </execution>
                     <execution>
                         <id>create-aggregator-for-downstream-if-content-changed</id>
@@ -133,32 +134,38 @@
                             <target>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <property name="realAggJar"
-                                          value="${project.build.outputDirectory}/../${project.build.finalName}-shaded.jar"/>
+                                          location="${project.build.outputDirectory}/../${project.build.finalName}-shaded.jar"/>
                                 <property name="aggJarForDownstream"
-                                          value="${project.build.outputDirectory}/../${project.build.finalName}-${spark.version.classifier}.jar"/>
-                                <property name="newClassesDir" value="${project.build.outputDirectory}/../new-classes"/>
+                                          location="${project.build.outputDirectory}/../${project.build.finalName}-${spark.version.classifier}.jar"/>
+                                <property name="newClassesDir" location="${project.build.outputDirectory}/../new-classes"/>
+                                <property name="oldClassesDir" location="${project.build.outputDirectory}/../old-classes"/>
                                 <echo>Checking if need to recreate: ${aggJarForDownstream}</echo>
                                 <!-- using diff instead of checksum to deal with the expected zip metadata diff -->
-                                <delete failonerror="false" dir="${newClassesDir}"/>
+
+                                <!-- make sure we start with a clean new dir -->
+                                <mkdir dir="${newClassesDir}"/>
+                                <delete dir="${newClassesDir}"/>
                                 <unzip src="${realAggJar}" dest="${newClassesDir}"/>
+                                <mkdir dir="${oldClassesDir}"/>
+
                                 <exec executable="diff"
-                                      resultproperty="diff.result"
-                                      output="${project.build.outputDirectory}/../agg-jar-diff.out">
+                                      resultproperty="diff.result">
+                                    <arg value="-q"/>
                                     <arg value="-r"/>
-                                    <arg value="${project.build.outputDirectory}"/>
+                                    <arg value="${oldClassesDir}"/>
                                     <arg value="${newClassesDir}"/>
                                 </exec>
+
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <equals arg1="0" arg2="${diff.result}"/>
                                     <then>
                                         <echo>Aggregator jar unchanged</echo>
                                     </then>
                                     <else>
-                                        <echo>Recreating final jar</echo>
-                                        <move file="${aggJarForDownstream}" tofile="${aggJarForDownstream}.bak"
-                                            failonerror="false" quiet="false"/>
-                                        <delete failonerror="false" dir="${project.build.outputDirectory}"/>
-                                        <move file="${newClassesDir}" tofile="${project.build.outputDirectory}"/>
+                                        <echo>Aggregator jar changed, recreating final jar</echo>
+                                        <delete dir="${oldClassesDir}"/>
+                                        <move file="${newClassesDir}" tofile="${oldClassesDir}"/>
+                                        <move file="${realAggJar}" tofile="${aggJarForDownstream}"/>
                                     </else>
                                 </ac:if>
                             </target>
