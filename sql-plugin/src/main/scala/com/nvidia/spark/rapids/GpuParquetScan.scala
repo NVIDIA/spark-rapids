@@ -182,6 +182,8 @@ object GpuParquetScan {
 
     def isTsOrDate(dt: DataType): Boolean = dt match {
       case TimestampType | DateType => true
+      // Timestamp without timezone (TimestampNTZType, since Spark 3.4) is not yet supported
+      // See https://github.com/NVIDIA/spark-rapids/issues/9707.
       case _ => false
     }
 
@@ -320,8 +322,7 @@ object GpuParquetScan {
       if (dateRebaseMode == DateTimeRebaseException &&
         DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-      else if (timestampRebaseMode == DateTimeRebaseException &&
+      } else if (timestampRebaseMode == DateTimeRebaseException &&
         DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
