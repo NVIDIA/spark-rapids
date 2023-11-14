@@ -535,11 +535,11 @@ def test_from_json_struct_decimal():
     # special constant values
     "\"(now|today|tomorrow|epoch)\"",
     # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
-    pytest.param("\"[0-9]{5}\"", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
+    pytest.param("\"[0-9]{5}\"", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
     # integral
     "[0-9]{1,5}",
     # floating-point
-    "[0-9]{0,2}\.[0-9]{1,2}"
+    "[0-9]{0,2}\\.[0-9]{1,2}"
     # boolean
     "(true|false)"
 ])
