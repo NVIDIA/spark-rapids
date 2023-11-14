@@ -621,7 +621,7 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
         .with_special_case('\'a\'') \
         .with_special_case('\\\'a\\\''),
     pytest.param(StringGen('\u001a', nullable=True), marks=pytest.mark.xfail(
-        reason='cuDF represents two-digit unicode characters in hex format such as \x1a'))
+        reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
 ], ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('pretty', [
