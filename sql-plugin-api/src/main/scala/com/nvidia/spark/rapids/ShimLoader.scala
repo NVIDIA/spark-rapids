@@ -203,6 +203,7 @@ object ShimLoader extends Logging {
   private def detectShimProvider(): String = {
     val sparkVersion = getSparkVersion
     logInfo(s"Loading shim for Spark version: $sparkVersion")
+    logInfo(s"Loading shim for Spark version: $sparkVersion")
     logInfo("Complete Spark build info: " + sparkBuildInfo.mkString(", "))
     logInfo("Scala version: " + util.Properties.versionString)
 

@@ -122,6 +122,10 @@
                 <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
                     <execution>
+                        <id>generate-build-info</id>
+                        <phase>generate-test-sources</phase>
+                    </execution>
+                    <execution>
                         <id>create-aggregator-for-downstream-if-md5-changed</id>
                         <goals><goal>run</goal></goals>
                         <phase>process-classes</phase>
@@ -132,27 +136,29 @@
                                           value="${project.build.outputDirectory}/../${project.build.finalName}-shaded.jar"/>
                                 <property name="aggJarForDownstream"
                                           value="${project.build.outputDirectory}/../${project.build.finalName}-${spark.version.classifier}.jar"/>
+                                <property name="newClassesDir" value="${project.build.outputDirectory}/../new-classes"/>
                                 <echo>Checking if need to recreate: ${aggJarForDownstream}</echo>
                                 <!-- using diff instead of checksum to deal with the expected zip metadata diff -->
-                                <exec executable="diff" output="${project.build.outputDirectory}/../agg-jar-diff.out">
-                                    <arg value="-a"/>
-                                    <arg value="${realAggJar}"/>
-                                    <arg value="${aggJarForDownstream}"/>
-                                </exec>
-                                <exec executable="diff" resultproperty="diff.diff.result" output="${project.build.outputDirectory}/../agg-jar-diff-diff.out">
-                                    <arg value="${project.build.outputDirectory}/../agg-jar-diff.out"/>
-                                    <arg value="${project.basedir}/build/expected-jar-metadata.diff"/>
+                                <delete failonerror="false" dir="${newClassesDir}"/>
+                                <unzip src="${realAggJar}" dest="${newClassesDir}"/>
+                                <exec executable="diff"
+                                      resultproperty="diff.result"
+                                      output="${project.build.outputDirectory}/../agg-jar-diff.out">
+                                    <arg value="-r"/>
+                                    <arg value="${project.build.outputDirectory}"/>
+                                    <arg value="${newClassesDir}"/>
                                 </exec>
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <equals arg1="0" arg2="${diff.diff.result}"/>
+                                    <equals arg1="0" arg2="${diff.result}"/>
                                     <then>
                                         <echo>Aggregator jar unchanged</echo>
                                     </then>
                                     <else>
                                         <echo>Recreating final jar</echo>
-                                        <move file="${aggJarForDownstream}" tofile="${aggJarForDownstream}.bak"/>
+                                        <move file="${aggJarForDownstream}" tofile="${aggJarForDownstream}.bak"
+                                            failonerror="false" quiet="false"/>
                                         <delete failonerror="false" dir="${project.build.outputDirectory}"/>
-                                        <unzip src="${realAggJar}" dest="${project.build.outputDirectory}"/>
+                                        <move file="${newClassesDir}" tofile="${project.build.outputDirectory}"/>
                                     </else>
                                 </ac:if>
                             </target>

@@ -72,7 +72,6 @@
     <!-- modules shared among profiles -->
     <modules>
         <module>aggregator</module>
-        <module>aggregator-tmp</module>
         <module>datagen</module>
         <module>dist</module>
         <module>integration_tests</module>
