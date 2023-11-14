@@ -287,11 +287,13 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
+      1024 * 1024,
       shuffleExecutorComponents,
       numWriterThreads)
     writer.write(Iterator.empty)
     writer.stop( /* success = */ true)
     assert(writer.getPartitionLengths.sum === 0)
+    assert(writer.getBytesInFlight == 0)
     assert(outputFile.exists())
     assert(outputFile.length() === 0)
     assert(temporaryFilesCreated.isEmpty)
@@ -313,6 +315,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         0L, // MapId
         transferConf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
+        1024 * 1024,
         shuffleExecutorComponents,
         numWriterThreads)
       writer.write(records)
@@ -320,6 +323,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       assert(temporaryFilesCreated.nonEmpty)
       assert(writer.getPartitionLengths.sum === outputFile.length())
       assert(writer.getPartitionLengths.count(_ == 0L) === 4) // should be 4 zero length files
+      assert(writer.getBytesInFlight == 0)
       assert(temporaryFilesCreated.count(_.exists()) === 0) // check that temp files were deleted
       val shuffleWriteMetrics = taskContext.taskMetrics().shuffleWriteMetrics
       assert(shuffleWriteMetrics.bytesWritten === outputFile.length())
@@ -349,6 +353,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
+      1024 * 1024,
       shuffleExecutorComponents,
       numWriterThreads)
 
@@ -362,6 +367,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
 
     writer.stop( /* success = */ false)
     assert(temporaryFilesCreated.count(_.exists()) === 0) // check that temporary files were deleted
+    assert(writer.getBytesInFlight == 0)
   }
 
   test("cleanup of intermediate files after errors") {
@@ -371,6 +377,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
+      1024 * 1024,
       shuffleExecutorComponents,
       numWriterThreads)
     intercept[SparkException] {
@@ -384,6 +391,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
     assert(temporaryFilesCreated.nonEmpty)
     writer.stop( /* success = */ false)
     assert(temporaryFilesCreated.count(_.exists()) === 0)
+    assert(writer.getBytesInFlight == 0)
   }
 
   test("write checksum file") {
@@ -426,11 +434,13 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       mapId,
       conf,
       new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
+      1024 * 1024,
       new LocalDiskShuffleExecutorComponents(conf, blockManager, blockResolver),
       numWriterThreads)
 
     writer.write(Iterator((0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)))
     writer.stop( /* success = */ true)
+    assert(writer.getBytesInFlight == 0)
     assert(checksumFile.exists())
     assert(checksumFile.length() === 8 * numPartition)
     compareChecksums(numPartition, checksumAlgorithm, checksumFile, dataFile, indexFile)
@@ -455,6 +465,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
         0L, // MapId
         conf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
+        1024 * 1024,
         shuffleExecutorComponents,
         numWriterThreads)
       assertThrows[IOException] {
@@ -469,6 +480,7 @@ class RapidsShuffleThreadedWriterSuite extends AnyFunSuite
       }
       assert(temporaryFilesCreated.nonEmpty)
       assert(writer.getPartitionLengths == null)
+      assert(writer.getBytesInFlight == 0)
       assert(temporaryFilesCreated.count(_.exists()) === 0) // check that temp files were deleted
     }
   }

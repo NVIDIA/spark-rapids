@@ -819,6 +819,7 @@ def test_parquet_read_nano_as_longs_not_configured(std_input_path):
 @pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
 @pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
 @pytest.mark.skipif(is_databricks_runtime() and spark_version() == '3.3.2', reason='Config not in DB 12.2')
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() == '3.4.1', reason='Config not in DB 13.3')
 @allow_non_gpu('FileSourceScanExec, ColumnarToRowExec')
 def test_parquet_read_nano_as_longs_true(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)

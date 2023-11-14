@@ -106,6 +106,10 @@ it and they should be avoided.
 Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
 
+The GPU accelerated CSV parser does not replace invalid UTF-8 characters with the Unicode
+replacement character �.  Instead it just passes them through as described in this
+[issue](https://github.com/NVIDIA/spark-rapids/issues/9560).
+
 ### CSV Dates
 
 Only a limited set of formats are supported when parsing dates.
