@@ -126,7 +126,7 @@
                         <phase>generate-test-sources</phase>
                     </execution>
                     <execution>
-                        <id>create-aggregator-for-downstream-if-md5-changed</id>
+                        <id>create-aggregator-for-downstream-if-content-changed</id>
                         <goals><goal>run</goal></goals>
                         <phase>process-classes</phase>
                         <configuration>
