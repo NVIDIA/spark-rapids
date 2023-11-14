@@ -975,13 +975,14 @@
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
                                 <exec executable="bash"
-                                      output="${project.build.directory}/extra-resources/${project.artifactId}-version-info.properties"
+                                      output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties"
                                       resultproperty="build-info.exitCode"
                                       errorproperty="build-info.errorMsg"
                                       failonerror="false">
                                     <arg value="${spark.rapids.source.basedir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${spark-rapids-jni.version}"/>
+                                    <arg value="${project.artifactId}"/>
                                 </exec>
                                 <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
                                     <condition>

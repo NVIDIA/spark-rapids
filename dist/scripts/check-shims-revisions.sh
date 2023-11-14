@@ -31,8 +31,7 @@ function check-shims-revisions() {
   for shim in ${included_buildvers}; do
     # trim
     shim=$(echo "${shim}" | xargs)
-    shim_version_files=("${parallel_dir}/spark${shim}"/rapids-4-spark*version-info.properties )
-    shim_version_path="${shim_version_files[0]}"
+    shim_version_path="${parallel_dir}/spark${shim}/rapids4spark-version-info.properties"
     if [[ -f "$shim_version_path" ]] ; then
       curr_revision=$(grep "revision=" "${shim_version_path}" | cut -d'=' -f2)
       if [ -n "$pre_revision" ] && [[ "$curr_revision" != "$pre_revision" ]] ; then
