@@ -1652,7 +1652,7 @@ def test_hash_groupby_approx_percentile_double_single(aqe_enabled):
 @ignore_order(local=True)
 @allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
     'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
-@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
+@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9490")
 def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
     conf = {
         'spark.rapids.sql.hashAgg.replaceMode': 'partial',
