@@ -56,7 +56,7 @@ object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
   val JNI_PROPS_FILENAME = "spark-rapids-jni-version-info.properties"
   val SCALA_VERSION = scala.util.Properties.versionNumberString.split("\\.").take(2).mkString(".")
-  val PLUGIN_PROPS_FILENAME = "rapids-4-spark_" + SCALA_VERSION + "-version-info.properties"
+  val PLUGIN_PROPS_FILENAME = s"rapids-4-spark_$SCALA_VERSION-version-info.properties"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
@@ -112,9 +112,11 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  private def detectMultipleJar(propName: String, jarName: String, conf: RapidsConf): Unit = {
+  private def detectMultipleJar(propNames: Seq[String], jarName: String, conf: RapidsConf): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val rapidsJarURLs = classloader.getResources(propName).asScala.toSet
+    val rapidsJarURLs = propNames.flatMap(propName =>
+      classloader.getResources(propName).asScala
+    ).toSet
     lazy val rapidsJars = rapidsJarURLs.map(_.toString.split("!").head).mkString(",")
     lazy val rapidsJarsVers = rapidsJarURLs.map { 
       url => scala.io.Source.fromInputStream(url.openStream()).mkString("") 
@@ -134,9 +136,13 @@ object RapidsPluginUtils extends Logging {
   }
 
   def detectMultipleJars(conf: RapidsConf): Unit = {
-    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", conf)
-    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", conf)
-    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", conf)
+    val propsName212 = "rapids-4-spark_2.12-version-info.properties"
+    val propsName213 = "rapids-4-spark_2.13-version-info.properties"
+    val propsNameOld = "rapids4spark-version-info.properties"
+    val possibleProps = Seq(propsName212, propsName213, propsNameOld)
+    detectMultipleJar(possibleProps, "rapids-4-spark", conf)
+    detectMultipleJar(Seq(JNI_PROPS_FILENAME), "spark-rapids-jni", conf)
+    detectMultipleJar(Seq(CUDF_PROPS_FILENAME), "cudf", conf)
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need

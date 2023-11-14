@@ -78,11 +78,11 @@ getRevision() {
 set +x
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
-p_ver=$(getRevision $RAPIDS_PLUGIN_JAR rapids-4-spark_2.12-version-info.properties)
+p_ver=$(getRevision $RAPIDS_PLUGIN_JAR rapids-4-spark_${SCALA_BINARY_VER}-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"
-it_ver=$(getRevision $RAPIDS_TEST_JAR rapids-4-spark-integration-tests_2.12-version-info.properties)
+it_ver=$(getRevision $RAPIDS_TEST_JAR rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-version-info.properties)
 echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" >> "$tmp_info"
-pt_ver=$(getRevision $RAPIDS_INT_TESTS_TGZ integration_tests/rapids-4-spark-integration-tests_2.12-version-info.properties)
+pt_ver=$(getRevision $RAPIDS_INT_TESTS_TGZ integration_tests/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-version-info.properties)
 echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
 set -x
 cat "$tmp_info" || true
