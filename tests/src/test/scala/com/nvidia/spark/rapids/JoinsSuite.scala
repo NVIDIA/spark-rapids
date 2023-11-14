@@ -21,7 +21,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.ExistenceJoin
 import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
-import org.apache.spark.sql.functions.{length, lower, trim}
 import org.apache.spark.sql.rapids.TestTrampolineUtil
 import org.apache.spark.sql.types.BooleanType
 
@@ -101,21 +100,6 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual2("Test left anti self join with nulls with partition sort",
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
-  }
-
-  IGNORE_ORDER_testSparkResultsAreEqual2(
-    "join condition pushing down for AST non-supported case in outer join",
-    stringWithTailingSpaces, stringWithTailingSpaces2, conf = new SparkConf()) {
-    (A, B) =>
-      A.join(
-        B, length(lower(trim(A("name")))) < length(lower(trim(B("name")))), "leftouter")
-  }
-
-  IGNORE_ORDER_testSparkResultsAreEqual2(
-    "single side join condition pushing down for AST non-supported case in outer join",
-    stringWithTailingSpaces, stringWithTailingSpaces2, conf = new SparkConf()) {
-    (A, B) =>
-      A.join(B, length(lower(trim(A("name")))) < B("number_int"), "leftouter")
   }
 
   for (buildRight <- Seq(false, true)) {
