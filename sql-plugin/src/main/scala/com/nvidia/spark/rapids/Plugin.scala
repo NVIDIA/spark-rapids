@@ -122,7 +122,6 @@ object RapidsPluginUtils extends Logging {
     val (rapidsJarsURLs, rapidsJarsVers) = possibleRapidsJarURLs.flatMap { 
       url => {
         val ver = scala.io.Source.fromInputStream(url.openStream()).mkString("") 
-        println(ver)
         if (propsName.exists(ver.contains(_))) {
           Some((url, ver))
         } else {
