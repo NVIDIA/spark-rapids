@@ -982,6 +982,7 @@
                                     <arg value="${spark.rapids.source.basedir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${spark-rapids-jni.version}"/>
+                                    <arg value="${project.artifactId}"/>
                                 </exec>
                                 <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
                                     <condition>
