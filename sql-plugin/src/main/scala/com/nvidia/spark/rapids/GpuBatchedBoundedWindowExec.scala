@@ -57,7 +57,6 @@ class GpuBatchedBoundedWindowIterator(
           val ret = withResource(computeBasicWindow(cb)) { cols =>
             convertToBatch(outputTypes, cols)
           }
-          GpuColumnVector.debug("Output: ", ret)
           numOutputBatches += 1
           numOutputRows += ret.numRows()
           ret
