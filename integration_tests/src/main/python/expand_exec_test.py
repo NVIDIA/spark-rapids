@@ -16,12 +16,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 import pyspark.sql.functions as f
-from marks import ignore_order, datagen_overrides
+from marks import ignore_order
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Many Spark versions have issues sorting large decimals,
 # see https://issues.apache.org/jira/browse/SPARK-40089.
-@datagen_overrides(seed=0)
 @ignore_order(local=True)
 def test_expand_exec(data_gen):
     def op_df(spark, length=2048):

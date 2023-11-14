@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
-from marks import allow_non_gpu, ignore_order, datagen_overrides
+from marks import allow_non_gpu, ignore_order
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -36,7 +36,6 @@ def four_op_df(spark, gen, length=2048):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@datagen_overrides(seed=0)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_explode_makearray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -45,7 +44,6 @@ def test_explode_makearray(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@datagen_overrides(seed=0)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_explode_litarray(data_gen):
     array_lit = with_cpu_session(
@@ -126,7 +124,6 @@ def test_explode_outer_nested_array_data(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@datagen_overrides(seed=0)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_posexplode_makearray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -135,7 +132,6 @@ def test_posexplode_makearray(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@datagen_overrides(seed=0)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
 def test_posexplode_litarray(data_gen):
     array_lit = with_cpu_session(

@@ -19,7 +19,7 @@ from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 from join_test import create_df
-from marks import incompat, allow_non_gpu, ignore_order, datagen_overrides
+from marks import incompat, allow_non_gpu, ignore_order
 import pyspark.mllib.linalg as mllib
 import pyspark.ml.linalg as ml
 
@@ -91,7 +91,6 @@ def test_cached_join_filter(data_gen, enable_vectorized_conf):
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
-@datagen_overrides(seed=0)
 def test_cache_expand_exec(data_gen, enable_vectorized_conf):
     def op_df(spark, length=2048):
         cached = gen_df(spark, StructGen([
