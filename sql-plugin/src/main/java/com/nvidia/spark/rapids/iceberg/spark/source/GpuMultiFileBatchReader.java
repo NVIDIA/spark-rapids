@@ -220,10 +220,12 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     private final Schema expectedSchema;
     private final PartitionSpec partitionSpec;
 
-    IcebergParquetExtraInfo(boolean isCorrectedRebaseMode,
-        boolean isCorrectedInt96RebaseMode, boolean hasInt96Timestamps,
-        Map<Integer, ?> idToConstant, Schema expectedSchema, PartitionSpec partitionSpec) {
-      super(isCorrectedRebaseMode, isCorrectedInt96RebaseMode, hasInt96Timestamps);
+    IcebergParquetExtraInfo(DateTimeRebaseMode dateRebaseMode,
+                            DateTimeRebaseMode timestampRebaseMode,
+                            boolean hasInt96Timestamps,
+                            Map<Integer, ?> idToConstant, Schema expectedSchema,
+                            PartitionSpec partitionSpec) {
+      super(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps);
       this.idToConstant = idToConstant;
       this.expectedSchema = expectedSchema;
       this.partitionSpec = partitionSpec;
@@ -309,8 +311,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
         ParquetFileInfoWithBlockMeta parquetBlockMeta = ParquetFileInfoWithBlockMeta.apply(
             new Path(new URI(fst.file().path().toString())), clippedBlocks,
             InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
-            true, // isCorrectedInt96RebaseMode
-            true, // isCorrectedRebaseMode
+            DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
+            DateTimeRebaseCorrected$.MODULE$, // timestampRebaseMode
             true //  hasInt96Timestamps
         );
         return new FilteredParquetFileInfo(parquetBlockMeta, updatedConstants, updatedSchema);
@@ -397,8 +399,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
                 ParquetSchemaWrapper.apply(filteredInfo.parquetBlockMeta.schema()),
                 filteredInfo.parquetBlockMeta.readSchema(),
                 new IcebergParquetExtraInfo(
-                    filteredInfo.parquetBlockMeta.isCorrectedRebaseMode(),
-                    filteredInfo.parquetBlockMeta.isCorrectedInt96RebaseMode(),
+                    filteredInfo.parquetBlockMeta.dateRebaseMode(),
+                    filteredInfo.parquetBlockMeta.timestampRebaseMode(),
                     filteredInfo.parquetBlockMeta.hasInt96Timestamps(),
                     filteredInfo.idToConstant(),
                     filteredInfo.expectedSchema(),

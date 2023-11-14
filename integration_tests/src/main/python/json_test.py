@@ -496,16 +496,22 @@ def test_from_json_struct(schema):
             .select(f.from_json('a', schema)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9597')
-def test_from_json_struct_boolean():
-    json_string_gen = StringGen(r'{ "a": [truefalsTRUEFALS]{0,5}, "b": [0-9]{0,2} }') \
-        .with_special_pattern('{ "a": true, "b": 1 }', weight=50) \
-        .with_special_pattern('{ "a": false, "b": 0 }', weight=50) \
-        .with_special_pattern('', weight=50) \
-        .with_special_pattern('null', weight=50)
+@pytest.mark.parametrize('pattern', [
+    r'{ "bool": (true|false|True|False|TRUE|FALSE) }',
+    pytest.param(r'{ "bool": "(true|false)" }', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
+    r'{ "bool": "(True|False|TRUE|FALSE)" }',
+    pytest.param(r'{ "bool": [0-9]{0,2}(\.[0-9]{1,2})? }', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/4779')),
+    r'{ "bool": "[0-9]{0,2}(\.[0-9]{1,2})?" }',
+    r'{ "bool": [0-9]{4}-[0-9]{2}-[0-9]{2} }',
+    r'{ "bool": "[0-9]{4}-[0-9]{2}-[0-9]{2}" }'
+])
+def test_from_json_struct_boolean(pattern):
+    json_string_gen = StringGen(pattern) \
+        .with_special_case('', weight=50) \
+        .with_special_case('null', weight=50)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.from_json('a', 'struct<a:boolean, b:boolean>')),
+            .select(f.col('a'), f.from_json('a', 'struct<bool:boolean>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 def test_from_json_struct_decimal():

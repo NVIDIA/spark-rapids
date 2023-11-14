@@ -16,13 +16,21 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
+{"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.spark341db
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.ProxyRapidsShuffleInternalManagerBase
+import com.nvidia.spark.rapids.GpuWindowExpression
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
+
+object PythonUDFShim {
+  def getUDFExpressions(exp: Seq[Expression]): Seq[GpuPythonUDAF] = {
+    exp.map {
+      case e: GpuWindowExpression => e.windowFunction.asInstanceOf[GpuAggregateExpression]
+        .aggregateFunction.asInstanceOf[GpuPythonUDAF]
+    }
+  }
+}
