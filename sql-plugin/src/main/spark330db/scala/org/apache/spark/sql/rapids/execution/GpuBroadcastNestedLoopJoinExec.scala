@@ -156,13 +156,22 @@ case class GpuBroadcastNestedLoopJoinExec(
     executorBroadcast
   }
 
-  def shuffleExchange: GpuShuffleExchangeExec = buildPlan match {
+  def shuffleExchange: GpuShuffleExchangeExec = getBroadcastPlan(buildPlan) match {
     case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[GpuShuffleExchangeExec] =>
       bqse.plan.asInstanceOf[GpuShuffleExchangeExec]
     case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuShuffleExchangeExec]
     case gpu: GpuShuffleExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
+  }
+
+  private[this] def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // In case has post broadcast project. It happens when join condition contains non-AST
+      // expression which results in a project right after broadcast.
+      case plan: GpuProjectExec => plan.child
+      case _ => plan
+    }
   }
 
   override def getBroadcastRelation(): Any = {
