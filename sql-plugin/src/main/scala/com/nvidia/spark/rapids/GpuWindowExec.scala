@@ -155,6 +155,19 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
 
+    val allBoundedBatched = fixedUpWindowOps.forall {
+      case GpuAlias(GpuWindowExpression(_, spec), _) =>
+        // Check that the spec is bounded.
+        GpuWindowExec.isBoundedRowsWindowAndBatchable(spec)
+      case GpuAlias(_: AttributeReference, _) | _: AttributeReference =>
+        true
+      case other =>
+        throw new IllegalArgumentException(
+          s"Unexpected expression $other in window exec ${other.getClass}")
+    }
+
+    println(s"allBoundedBatched == ${allBoundedBatched}")
+
     val input = if (isPreNeeded) {
       GpuProjectExec(pre.toList, childPlans.head.convertIfNeeded())()
     } else {
@@ -169,8 +182,14 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         input,
         getPartitionSpecs,
         getOrderSpecs)
+    } else if (allBoundedBatched) {
+      new GpuBatchedBoundedWindowExec(
+        fixedUpWindowOps,
+        partitionSpec.map(_.convertToGpu()),
+        orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
+        input)(getPartitionSpecs, getOrderSpecs)
     } else {
-      GpuWindowExec(
+      new GpuWindowExec(
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
@@ -233,10 +252,18 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 }
 
 case class BatchedOps(running: Seq[NamedExpression],
-    unboundedToUnbounded: Seq[NamedExpression],
-    passThrough: Seq[NamedExpression]) {
+                      unboundedToUnbounded: Seq[NamedExpression],
+                      bounded: Seq[NamedExpression],
+                      passThrough: Seq[NamedExpression]) {
+
   def getRunningExpressionsWithPassthrough: Seq[NamedExpression] =
     passThrough ++ running
+
+  def getDoublePassExpressionsWithRunningAsPassthrough: Seq[NamedExpression] =
+    passThrough ++ unboundedToUnbounded ++ running.map(_.toAttribute)
+
+  def getBoundedExpressionsWithTheRestAsPassthrough: Seq[NamedExpression] =
+    passThrough ++ bounded ++ (unboundedToUnbounded ++ running).map(_.toAttribute)
 
   private def getRunningWindowExec(
       gpuPartitionSpec: Seq[Expression],
@@ -262,6 +289,17 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec)
 
+  private def getBatchedBoundedWindowExec(gpuPartitionSpec: Seq[Expression],
+                                          gpuOrderSpec: Seq[SortOrder],
+                                          child: SparkPlan,
+                                          cpuPartitionSpec: Seq[Expression],
+                                          cpuOrderSpec: Seq[SortOrder]): GpuExec =
+    GpuBatchedBoundedWindowExec(getBoundedExpressionsWithTheRestAsPassthrough,
+                                gpuPartitionSpec,
+                                gpuOrderSpec,
+                                child)
+                               (cpuPartitionSpec, cpuOrderSpec)
+
   def getWindowExec(
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
@@ -270,26 +308,46 @@ case class BatchedOps(running: Seq[NamedExpression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec = {
     // The order of these matter so we can pass the output of the first through the second one
     if (hasRunning) {
-      val running = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+      val runningExec = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
         cpuPartitionSpec, cpuOrderSpec)
       if (hasDoublePass) {
-        getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, running,
+        val doublePassExec = getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, runningExec,
           cpuPartitionSpec, cpuOrderSpec)
+        if (hasBounded) {
+          getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, doublePassExec,
+            cpuPartitionSpec, cpuOrderSpec)
+        } else {
+          doublePassExec
+        }
       } else {
-        running
+        if (hasBounded) {
+          getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, runningExec,
+            cpuPartitionSpec, cpuOrderSpec)
+        }
+        else {
+          runningExec
+        }
       }
     } else {
-      getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
-        cpuPartitionSpec, cpuOrderSpec)
+      if (hasDoublePass) {
+        val doublePassExec = getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+          cpuPartitionSpec, cpuOrderSpec)
+        if (hasBounded) {
+          getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, doublePassExec,
+            cpuPartitionSpec, cpuOrderSpec)
+        } else {
+          doublePassExec
+        }
+      } else {
+        getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+          cpuPartitionSpec, cpuOrderSpec)
+      }
     }
   }
 
   def hasRunning: Boolean = running.nonEmpty
-
-  def getDoublePassExpressionsWithRunningAsPassthrough: Seq[NamedExpression] =
-    passThrough ++ unboundedToUnbounded ++ running.map(_.toAttribute)
-
   def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
+  def hasBounded: Boolean = bounded.nonEmpty
 }
 
 object GpuWindowExec {
@@ -484,6 +542,30 @@ object GpuWindowExec {
      case _ => false
   }
 
+  /**
+   * Checks whether the window spec is both ROWS-based and bounded.
+   * Window functions of this spec can possibly still be batched.
+   */
+  def isBoundedRowsWindowAndBatchable(spec: GpuWindowSpecDefinition): Boolean = spec match {
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                        RowFrame,
+                                        GpuLiteral(prec: Int, _),
+                                        GpuLiteral(foll: Int, _))) => prec <= 0 && foll >= 0
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                        RowFrame,
+                                        GpuSpecialFrameBoundary(CurrentRow),
+                                        GpuLiteral(foll: Int, _))) => foll >= 0
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                        RowFrame,
+                                        GpuLiteral(prec: Int,_),
+                                        GpuSpecialFrameBoundary(CurrentRow))) => prec <= 0
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                        RowFrame,
+                                        GpuSpecialFrameBoundary(CurrentRow),
+                                        GpuSpecialFrameBoundary(CurrentRow))) => true
+    case _ => false
+  }
+
   def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
     case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
     GpuSpecialFrameBoundary(UnboundedPreceding),
@@ -516,6 +598,7 @@ object GpuWindowExec {
   def splitBatchedOps(windowOps: Seq[NamedExpression]): BatchedOps = {
     val running = ArrayBuffer[NamedExpression]()
     val doublePass = ArrayBuffer[NamedExpression]()
+    val batchedBounded = ArrayBuffer[NamedExpression]()
     val passThrough = ArrayBuffer[NamedExpression]()
     windowOps.foreach {
       case expr@GpuAlias(GpuWindowExpression(func, spec), _) =>
@@ -523,6 +606,8 @@ object GpuWindowExec {
           running.append(expr)
         } else if (isBatchedUnboundedToUnboundedFunc(func, spec)) {
           doublePass.append(expr)
+        } else if (isBoundedRowsWindowAndBatchable(spec)) {
+          batchedBounded.append(expr)
         } else {
           throw new IllegalArgumentException(
             s"Found unexpected expression $expr in window exec ${expr.getClass}")
@@ -1264,10 +1349,10 @@ trait BasicWindowCalc {
   // `orderByPositions`  and `partByPositions` are the positions in `initialProjections` for
   // the order by columns and the part by columns respectively.
   private val (initialProjections,
-  passThrough,
-  aggregations,
-  orderByPositions,
-  partByPositions) = {
+               passThrough,
+               aggregations,
+               orderByPositions,
+               partByPositions) = {
     val initialProjections = ArrayBuffer[Expression]()
     val dedupedInitialProjections = mutable.HashMap[Expression, Int]()
 
