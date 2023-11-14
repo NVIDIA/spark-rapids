@@ -80,7 +80,6 @@
         <module>sql-plugin-api</module>
         <module>tests</module>
         <module>udf-compiler</module>
-        <module>delta-lake/common</module>
 
         <!--
             Workaround to enforce the build order
@@ -127,7 +126,6 @@
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <modules>
-                <module>deltal-lake/common</module>
                 <module>delta-lake/delta-stub</module>
                 <module>api_validation</module>
             </modules>
@@ -147,7 +145,6 @@
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
             </properties>
             <modules>
-                <module>deltal-lake/common</module>
                 <module>delta-lake/delta-stub</module>
                 <module>api_validation</module>
             </modules>
@@ -999,23 +996,23 @@ This will force full Scala code rebuild in downstream modules.
                                     <else>
                                         <echo>Generating new version info file</echo>
                                         <mkdir dir="${project.build.outputDirectory}"/>
-                                        <exec executable="bash"
-                                            output="${build.info.path}"
-                                            resultproperty="build-info.exitCode"
-                                            errorproperty="build-info.errorMsg"
-                                            failonerror="false">
-                                            <arg value="${spark.rapids.source.basedir}/build/build-info"/>
-                                            <arg value="${project.version}"/>
-                                            <arg value="${spark-rapids-jni.version}"/>
-                                        </exec>
-                                        <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
-                                            <condition>
-                                                <not>
-                                                    <equals arg1="${build-info.exitCode}" arg2="0"/>
-                                                </not>
-                                            </condition>
-                                        </fail>
-                                    </else>
+                                <exec executable="bash"
+                                      output="${build.info.path}"
+                                      resultproperty="build-info.exitCode"
+                                      errorproperty="build-info.errorMsg"
+                                      failonerror="false">
+                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
+                                    <arg value="${project.version}"/>
+                                    <arg value="${spark-rapids-jni.version}"/>
+                                </exec>
+                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
+                                    <condition>
+                                        <not>
+                                            <equals arg1="${build-info.exitCode}" arg2="0"/>
+                                        </not>
+                                    </condition>
+                                </fail>
+</else>
                                 </ac:if>
                             </target>
                         </configuration>
@@ -1078,9 +1075,9 @@ This will force full Scala code rebuild in downstream modules.
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.11.0</version>
                     <configuration>
-                        <skipMain>true</skipMain>
-                        <skip>true</skip>
-                    </configuration>
+                            <skipMain>true</skipMain>
+                            <skip>true</skip>
+                        </configuration>
                 </plugin>
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>
