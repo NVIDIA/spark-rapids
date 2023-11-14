@@ -470,6 +470,7 @@ def test_write_map_nullable(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path)
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9701')
 @pytest.mark.parametrize('ts_write_data_gen', [('INT96', TimestampGen()),
                                                ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))),
                                                ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
