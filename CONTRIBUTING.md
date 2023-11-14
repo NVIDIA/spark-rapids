@@ -282,7 +282,7 @@ Before proceeding with importing spark-rapids into IDEA or switching to a differ
 profile, execute the install phase with the corresponding `buildver`, e.g. for Spark 3.4.0:
 
 ```bash
- mvn clean install -Dbuildver=340 -Dskip -DskipTests
+ mvn clean install -Dbuildver=340 -Dmaven.scaladoc.skip -DskipTests
 ```
 
 ##### Importing the project
