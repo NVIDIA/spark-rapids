@@ -25,7 +25,7 @@ from functools import reduce
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330, is_databricks_runtime, is_spark_340_or_later
+from spark_session import is_databricks104_or_later, with_cpu_session, is_before_spark_330
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
@@ -1652,7 +1652,6 @@ def test_hash_groupby_approx_percentile_double_single(aqe_enabled):
 @ignore_order(local=True)
 @allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
     'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
-@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9490")
 def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
     conf = {
         'spark.rapids.sql.hashAgg.replaceMode': 'partial',
