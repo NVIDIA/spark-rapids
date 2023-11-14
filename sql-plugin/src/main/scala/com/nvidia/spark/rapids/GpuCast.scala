@@ -775,13 +775,11 @@ object GpuCast {
   }
 
   private def castTimestampToJson(input: ColumnView): ColumnVector = {
-    withResource(input.castTo(DType.TIMESTAMP_MILLISECONDS)) { millis =>
-      // we fall back to CPU if the JSON timezone is not UTC, so it is safe
-      // to hard-code `Z` here for now, but we should really add a timestamp
-      // format to CastOptions when we add support for custom formats in
-      // https://github.com/NVIDIA/spark-rapids/issues/9602
-      millis.asStrings("%Y-%m-%dT%H:%M:%S.%3fZ")
-    }
+    // we fall back to CPU if the JSON timezone is not UTC, so it is safe
+    // to hard-code `Z` here for now, but we should really add a timestamp
+    // format to CastOptions when we add support for custom formats in
+    // https://github.com/NVIDIA/spark-rapids/issues/9602
+    input.asStrings("%Y-%m-%dT%H:%M:%S.%3fZ")
   }
 
   /**
