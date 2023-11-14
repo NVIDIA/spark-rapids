@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_and_collect_with_error
 from conftest import is_utc, is_not_utc
 from data_gen import *
-from marks import allow_non_gpu, disable_timezone_test
+from marks import allow_non_gpu
 from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f

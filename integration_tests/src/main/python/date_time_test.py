@@ -17,7 +17,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from conftest import is_utc, is_not_utc
 from data_gen import *
 from datetime import date, datetime, timezone
-from marks import ignore_order, incompat, allow_non_gpu, disable_timezone_test
+from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350
 import pyspark.sql.functions as f
@@ -27,7 +27,7 @@ vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 
             (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_timesub(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
@@ -35,7 +35,7 @@ def test_timesub(data_gen):
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
             .selectExpr("a - (interval {} days {} seconds)".format(days, seconds)))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timesub_for_non_utc(data_gen):
@@ -46,7 +46,7 @@ def test_timesub_for_non_utc(data_gen):
         'TimeAdd')
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_timeadd(data_gen):
     days, seconds = data_gen
     assert_gpu_and_cpu_are_equal_collect(
@@ -55,7 +55,7 @@ def test_timeadd(data_gen):
         lambda spark: unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
     
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_timeadd_for_non_utc(data_gen):
@@ -66,7 +66,7 @@ def test_timeadd_for_non_utc(data_gen):
         'TimeAdd')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000
@@ -76,7 +76,7 @@ def test_timeadd_daytime_column():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("t + d", "t + INTERVAL '1 02:03:04' DAY TO SECOND"))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @allow_non_gpu('ProjectExec')
 def test_timeadd_daytime_column_for_non_utc():
@@ -96,7 +96,7 @@ def test_interval_seconds_overflow_exception():
         conf={},
         error_message="IllegalArgumentException")
 
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_timeadd_from_subquery():
 
     def fun(spark):
@@ -107,19 +107,7 @@ def test_timeadd_from_subquery():
 
     assert_gpu_and_cpu_are_equal_collect(fun)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
-@allow_non_gpu('ProjectExec')
-def test_timeadd_from_subquery_for_non_utc():
-
-    def fun(spark):
-        df = unary_op_df(spark, TimestampGen(start=datetime(5, 1, 1, tzinfo=timezone.utc), end=datetime(15, 1, 1, tzinfo=timezone.utc)), seed=1)
-        df.createOrReplaceTempView("testTime")
-        spark.sql("select a, ((select max(a) from testTime) + interval 1 day) as datePlus from testTime").createOrReplaceTempView("testTime2")
-        return spark.sql("select * from testTime2 where datePlus > current_timestamp")
-
-    assert_gpu_fallback_collect(fun, 'TimeAdd')
-
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec', 'FilterExec')
 def test_timeadd_from_subquery_for_non_utc():
     
@@ -131,7 +119,7 @@ def test_timeadd_from_subquery_for_non_utc():
 
     assert_gpu_fallback_collect(fun, 'TimeAdd')
 
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_timesub_from_subquery():
 
     def fun(spark):
@@ -142,7 +130,7 @@ def test_timesub_from_subquery():
 
     assert_gpu_and_cpu_are_equal_collect(fun)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec', 'FilterExec')
 def test_timesub_from_subquery_for_non_utc():
     
@@ -168,7 +156,7 @@ def test_dateaddinterval(data_gen):
             'a - (interval {} days {} seconds)'.format(days, seconds)),
         legacy_interval_enabled_conf)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for DateAddInterval")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for DateAddInterval")
 @allow_non_gpu('ProjectExec', 'RDDScanExec')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_dateaddinterval_for_non_utc(data_gen):
@@ -181,7 +169,7 @@ def test_dateaddinterval_for_non_utc(data_gen):
 
 # test add days(not specify hours, minutes, seconds, milliseconds, microseconds) in ANSI mode.
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_dateaddinterval_ansi(data_gen):
     days, _ = data_gen
     # only specify the `days`
@@ -190,7 +178,7 @@ def test_dateaddinterval_ansi(data_gen):
             .selectExpr('a + (interval {} days)'.format(days)),
         conf=copy_and_update(ansi_enabled_conf, legacy_interval_enabled_conf))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 def test_dateaddinterval_ansi_for_non_utc(data_gen):
@@ -220,36 +208,36 @@ def test_datediff(data_gen):
             'datediff(a, date(null))',
             'datediff(a, \'2016-03-02\')'))
 
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_hour():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 def test_hour_for_non_utc():
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('hour(a)'),
         'Hour')
 
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_minute():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType") 
+@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ") 
 @allow_non_gpu('ProjectExec')
 def test_minute_for_non_utc():
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('minute(a)'),
         'Minute')
 
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_second():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, timestamp_gen).selectExpr('second(a)'))
     
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 def test_second_for_non_utc():
     assert_gpu_fallback_collect(
@@ -311,7 +299,7 @@ to_unix_timestamp_days_gen=[ByteGen(), ShortGen(), IntegerGen(min_val=-106032829
 
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 @incompat
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_dateadd_with_date_overflow(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -322,7 +310,7 @@ def test_dateadd_with_date_overflow(data_gen):
            'unix_timestamp(date_add(a, cast(null as {})))'.format(string_type),
            'unix_timestamp(date_add(a, cast(24 as {})))'.format(string_type)))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 def test_dateadd_with_date_overflow_for_non_utc(data_gen):
@@ -339,7 +327,7 @@ def test_dateadd_with_date_overflow_for_non_utc(data_gen):
 to_unix_timestamp_days_gen=[ByteGen(), ShortGen(), IntegerGen(max_val=106032829, min_val=-103819094, special_cases=[106032829, -103819094,0,1,-1])]
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 @incompat
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_datesub_with_date_overflow(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -350,7 +338,7 @@ def test_datesub_with_date_overflow(data_gen):
            'unix_timestamp(date_sub(a, cast(null as {})))'.format(string_type),
            'unix_timestamp(date_sub(a, cast(24 as {})))'.format(string_type)))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', to_unix_timestamp_days_gen, ids=idfn)
 def test_datesub_with_date_overflow_for_non_utc(data_gen):
@@ -385,12 +373,12 @@ def test_dayofyear(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_unix_timestamp_for_non_utc(data_gen):
@@ -409,13 +397,13 @@ def test_unsupported_fallback_unix_timestamp(data_gen):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_to_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_to_unix_timestamp_for_non_utc(data_gen):
@@ -497,7 +485,7 @@ def test_string_to_timestamp_functions_ansi_invalid(invalid, fmt, parser_policy,
 
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
 # first get expected string via `date_format`
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_string_to_timestamp_functions_ansi_valid_for_utc(parser_policy):
     expr_format = "{operator}(date_format(a, '{fmt}'), '{fmt}')"
     formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM', 'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss',
@@ -513,7 +501,7 @@ def test_string_to_timestamp_functions_ansi_valid_for_utc(parser_policy):
 
     assert_gpu_and_cpu_are_equal_collect(fun, conf=copy_and_update(parser_policy_dic, ansi_enabled_conf))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('parser_policy', ["CORRECTED", "EXCEPTION"], ids=idfn)
 def test_string_to_timestamp_functions_ansi_valid_for_non_utc(parser_policy):
@@ -533,7 +521,7 @@ def test_string_to_timestamp_functions_ansi_valid_for_non_utc(parser_policy):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_unix_timestamp_improved_for_utc(data_gen, ansi_enabled):
     conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true",
             "spark.sql.legacy.timeParserPolicy": "CORRECTED"}
@@ -541,7 +529,7 @@ def test_unix_timestamp_improved_for_utc(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))),
         copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -555,13 +543,13 @@ def test_unix_timestamp_improved_for_non_utc(data_gen, ansi_enabled):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_unix_timestamp_for_utc(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -573,14 +561,14 @@ def test_unix_timestamp_for_non_utc(data_gen, ansi_enabled):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_to_unix_timestamp_improved_for_utc(data_gen, ansi_enabled):
     conf = {"spark.rapids.sql.improvedTimeOps.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
         copy_and_update({'spark.sql.ansi.enabled': ansi_enabled}, conf))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -603,13 +591,13 @@ def invalid_date_string_df(spark):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_string_to_unix_timestamp_for_utc(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).selectExpr("to_unix_timestamp(a, '{}')".format(date_form)),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
@@ -627,13 +615,13 @@ def test_string_to_unix_timestamp_ansi_exception():
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_string_unix_timestamp_for_utc(data_gen, date_form, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
@@ -651,13 +639,13 @@ def test_string_unix_timestamp_ansi_exception():
 
 @pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_gettimestamp_for_utc(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "yyyy-MM-dd")),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', [StringGen('200[0-9]-0[1-9]-[0-2][1-8]')], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
@@ -668,12 +656,12 @@ def test_gettimestamp_for_non_utc(data_gen, ansi_enabled):
         {'spark.sql.ansi.enabled': ansi_enabled})
 
 @pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_gettimestamp_format_MMyyyy_for_utc(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).select(f.to_date(f.col("a"), "MMyyyy")))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', [StringGen('0[1-9]200[0-9]')], ids=idfn)
 def test_gettimestamp_format_MMyyyy_for_non_utc(data_gen):
@@ -691,12 +679,12 @@ supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/
                           'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM']
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_date_format_for_utc(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -735,13 +723,13 @@ def test_date_format_maybe(data_gen, date_format):
 
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_date_format_maybe_incompat_for_utc(data_gen, date_format):
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
@@ -757,7 +745,7 @@ def test_date_format_maybe_incompat_for_non_utc(data_gen, date_format):
 # input_file_name(), otherwise filter happens before project.
 @allow_non_gpu('CollectLimitExec,FileSourceScanExec,DeserializeToObjectExec')
 @ignore_order()
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 def test_date_format_mmyyyy_cast_canonicalization_for_utc(spark_tmp_path):
     data_path = spark_tmp_path + '/CSV_DATA'
     gen = StringGen(pattern='[0][0-9][1][8-9][1-9][1-9]', nullable=False)
@@ -773,7 +761,7 @@ def test_date_format_mmyyyy_cast_canonicalization_for_utc(spark_tmp_path):
         return left.join(right, left.monthly_reporting_period == right.r_monthly_reporting_period, how='inner')
     assert_gpu_and_cpu_are_equal_collect(do_join_cast)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu('CollectLimitExec,FileSourceScanExec,DeserializeToObjectExec', 'ProjectExec')
 @ignore_order()
 def test_date_format_mmyyyy_cast_canonicalization_for_non_utc(spark_tmp_path):
@@ -913,7 +901,7 @@ def test_timezone_for_operators_with_non_utc(sql, extra_conf):
         return spark.sql(sql)
     assert_gpu_fallback_collect(gen_sql_df, "ProjectExec", all_conf)
 
-@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @pytest.mark.parametrize('sql, conf', time_zone_sql_conf_pairs)
 def test_timezone_for_operators_with_utc(sql, conf):
     conf = copy_and_update(timezone_conf, conf)
@@ -923,7 +911,7 @@ def test_timezone_for_operators_with_utc(sql, conf):
         return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(gen_sql_df, conf)
 
-@pytest.mark.xfail(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non-UTC tz for Cast from StringType to DateType")
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support non UTC TZ")
 @allow_non_gpu("ProjectExec")
 def test_timezone_for_operator_from_utc_timestamp_with_non_utc():
     # timezone is non-utc, should fallback to CPU

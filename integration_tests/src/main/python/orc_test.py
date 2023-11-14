@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
     assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_utc, is_not_utc
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -62,6 +63,7 @@ reader_opt_confs = reader_opt_confs_common + [
 reader_opt_confs_for_count = reader_opt_confs_common + [multithreaded_orc_file_reader_combine_unordered_conf]
 
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
@@ -74,6 +76,29 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
     assert_gpu_and_cpu_are_equal_collect(
             read_func(std_input_path + '/' + name),
             conf=all_confs)
+
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_basic_read_for_non_utc(std_input_path, name, read_func, v1_enabled_list, orc_impl, reader_confs):
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.orc.impl': orc_impl})
+    if v1_enabled_list == '' and 'read_orc_df' in str(read_func) and orc_impl != "hive":
+        assert_gpu_fallback_collect(
+                read_func(std_input_path + '/' + name),
+                'BatchScanExec',
+                conf=all_confs)
+    else:
+        assert_gpu_fallback_collect(
+                read_func(std_input_path + '/' + name),
+                'FileSourceScanExec',
+                conf=all_confs)
 
 # ORC does not support negative scale for decimal. So here is "decimal_gens_no_neg".
 # Otherwise it will get the below exception.
@@ -153,6 +178,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "orc"})
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
@@ -168,6 +194,31 @@ def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_e
             read_func(data_path),
             conf=all_confs)
 
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec', 'ProjectExec', 'BatchScanExec')
+@pytest.mark.order(2)
+@pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+def test_read_round_trip_for_non_utc(spark_tmp_path, orc_gens, read_func, reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if v1_enabled_list == '' and 'read_orc_df' in str(read_func):
+        assert_gpu_fallback_collect(
+                read_func(data_path),
+                'BatchScanExec',
+                conf=all_confs)
+    else:
+        assert_gpu_fallback_collect(
+                read_func(data_path),
+                'FileSourceScanExec',
+                conf=all_confs)
+
+
 orc_pred_push_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
         string_gen,
@@ -178,8 +229,10 @@ orc_pred_push_gens = [
         # timestamp_gen 
         orc_timestamp_gen]
 
+orc_pred_push_gens_no_ts, orc_pred_push_gens_ts = split_list(orc_pred_push_gens, ['Timestamp'])
+
 @pytest.mark.order(2)
-@pytest.mark.parametrize('orc_gen', orc_pred_push_gens, ids=idfn)
+@pytest.mark.parametrize('orc_gen', orc_pred_push_gens_no_ts, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
@@ -197,6 +250,58 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: rf(spark).select(f.col('a') >= s0, f.col('s1.sa') >= s0, f.col('s2.sa.ssa') >= s0),
             conf=all_confs)
+
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@pytest.mark.order(2)
+@pytest.mark.parametrize('orc_gen', orc_pred_push_gens_ts, ids=idfn)
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_pred_push_round_trip_2(spark_tmp_path, orc_gen, read_func, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # Append two struct columns to verify nested predicate pushdown.
+    gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen),
+        ('s1', StructGen([['sa', orc_gen]])),
+        ('s2', StructGen([['sa', StructGen([['ssa', orc_gen]])]]))]
+    s0 = with_cpu_session(lambda spark: gen_scalar(orc_gen, force_no_nulls=True))
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).orderBy('a').write.orc(data_path))
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    rf = read_func(data_path)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: rf(spark).select(f.col('a') >= s0, f.col('s1.sa') >= s0, f.col('s2.sa.ssa') >= s0),
+            conf=all_confs)
+
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec', 'ProjectExec', 'BatchScanExec')
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@pytest.mark.order(2)
+@pytest.mark.parametrize('orc_gen', orc_pred_push_gens_ts, ids=idfn)
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_pred_push_round_trip_2_for_non_utc(spark_tmp_path, orc_gen, read_func, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # Append two struct columns to verify nested predicate pushdown.
+    gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen),
+        ('s1', StructGen([['sa', orc_gen]])),
+        ('s2', StructGen([['sa', StructGen([['ssa', orc_gen]])]]))]
+    s0 = with_cpu_session(lambda spark: gen_scalar(orc_gen, force_no_nulls=True))
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).orderBy('a').write.orc(data_path))
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    rf = read_func(data_path)
+    if v1_enabled_list == '' and 'read_orc_df' in str(read_func):
+        assert_gpu_fallback_collect(
+            lambda spark: rf(spark).select(f.col('a') >= s0, f.col('s1.sa') >= s0, f.col('s2.sa.ssa') >= s0),
+            'BatchScanExec',
+            conf=all_confs)
+    else:
+        assert_gpu_fallback_collect(
+            lambda spark: rf(spark).select(f.col('a') >= s0, f.col('s1.sa') >= s0, f.col('s2.sa.ssa') >= s0),
+            'FileSourceScanExec',
+            conf=all_confs)
+
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
 # zstd is available in spark 3.2.0 and later.
@@ -237,6 +342,7 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
             lambda spark : spark.read.orc(data_path),
             conf=all_confs)
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -260,6 +366,40 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: spark.read.orc(data_path),
             conf=all_confs)
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec', 'BatchScanExec')
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_simple_partitioned_read_for_non_utc(spark_tmp_path, v1_enabled_list, reader_confs):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
+    # we should go with a more standard set of generators
+    orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    orc_timestamp_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1/key2=21'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/ORC_DATA/key=2/key2=22'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(third_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if v1_enabled_list == '':
+        assert_gpu_fallback_collect(
+            lambda spark: spark.read.orc(data_path),
+            'BatchScanExec',
+            conf=all_confs)
+    else:
+        assert_gpu_fallback_collect(
+            lambda spark: spark.read.orc(data_path),
+            'FileSourceScanExec',
+            conf=all_confs)
+
 
 # Setup external table by altering column names
 def setup_external_table_with_forced_positions(spark, table_name, data_path):
@@ -303,6 +443,7 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
             lambda spark : spark.read.orc(data_path).select("key"),
             conf=all_confs)
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -324,6 +465,39 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
             conf=all_confs)
+
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_merge_schema_read_for_non_utc(spark_tmp_path, v1_enabled_list, reader_confs):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
+    # we should go with a more standard set of generators
+    orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    orc_timestamp_gen]
+    first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, first_gen_list).write.orc(first_data_path))
+    second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(orc_gens)]
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, second_gen_list).write.orc(second_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if v1_enabled_list == '':
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
+            'BatchScanExec',
+            conf=all_confs)
+    else:
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
+            'FileSourceScanExec',
+            conf=all_confs)
+
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
@@ -578,8 +752,8 @@ def test_read_struct_without_stream(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path))
 
-
-@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+flattened_orc_gens_no_ts, flattened_orc_gens_ts = split_timestamp(flattened_orc_gens)
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens_no_ts, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('case_sensitive', ["false", "true"])
@@ -606,6 +780,73 @@ def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enable
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(rs).orc(data_path),
             conf=all_confs)
+
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens_ts, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('case_sensitive', ["false", "true"])
+def test_read_with_more_columns_2(spark_tmp_path, orc_gen, reader_confs, v1_enabled_list, case_sensitive):
+    struct_gen = StructGen([('nested_col', orc_gen)])
+    # Map is not supported yet.
+    gen_list = [("top_pri", orc_gen),
+                ("top_st", struct_gen),
+                ("top_ar", ArrayGen(struct_gen, max_length=10))]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.caseSensitive': case_sensitive})
+    # This is a hack to get the type in a slightly less verbose way
+    extra_struct_gen = StructGen([('nested_col', orc_gen), ("nested_non_existing", orc_gen)])
+    extra_gen_list = [("top_pri", orc_gen),
+                      ("top_non_existing_mid", orc_gen),
+                      ("TOP_AR", ArrayGen(extra_struct_gen, max_length=10)),
+                      ("top_ST", extra_struct_gen),
+                      ("top_non_existing_end", orc_gen)]
+    rs = StructGen(extra_gen_list, nullable=False).data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            conf=all_confs)
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec', 'BatchScanExec', 'ProjectExec')
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens_ts, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('case_sensitive', ["false", "true"])
+def test_read_with_more_columns_2_for_non_utc(spark_tmp_path, orc_gen, reader_confs, v1_enabled_list, case_sensitive):
+    struct_gen = StructGen([('nested_col', orc_gen)])
+    # Map is not supported yet.
+    gen_list = [("top_pri", orc_gen),
+                ("top_st", struct_gen),
+                ("top_ar", ArrayGen(struct_gen, max_length=10))]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.caseSensitive': case_sensitive})
+    # This is a hack to get the type in a slightly less verbose way
+    extra_struct_gen = StructGen([('nested_col', orc_gen), ("nested_non_existing", orc_gen)])
+    extra_gen_list = [("top_pri", orc_gen),
+                      ("top_non_existing_mid", orc_gen),
+                      ("TOP_AR", ArrayGen(extra_struct_gen, max_length=10)),
+                      ("top_ST", extra_struct_gen),
+                      ("top_non_existing_end", orc_gen)]
+    rs = StructGen(extra_gen_list, nullable=False).data_type
+    if v1_enabled_list == '':
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            'BatchScanExec',
+            conf=all_confs)
+    else:
+        assert_gpu_fallback_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            'FileSourceScanExec',
+            conf=all_confs)
+
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
 @allow_non_gpu(any = True)
@@ -768,9 +1009,10 @@ def test_orc_read_varchar_as_string(std_input_path):
         lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))
 
 
-@pytest.mark.parametrize('gens', orc_gens_list, ids=idfn)
+orc_gens_list_no_ts, orc_gens_list_ts = split_timestamp(orc_gens_list)
+@pytest.mark.parametrize('gens', orc_gens_list_no_ts, ids=idfn)
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
-def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_order):
+def test_read_round_trip_for_multithreaded_combining_1(spark_tmp_path, gens, keep_order):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     # 50 partitions to generate enough small files
@@ -783,11 +1025,44 @@ def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_
         lambda spark: spark.read.orc(data_path), conf=all_confs)
 
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@pytest.mark.parametrize('gens', orc_gens_list_ts, ids=idfn)
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
-def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, keep_order):
+def test_read_round_trip_for_multithreaded_combining_2(spark_tmp_path, gens, keep_order):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # 50 partitions to generate enough small files
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(data_path))
+    all_confs = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                 'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                 'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.orc(data_path), conf=all_confs)
+
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize('gens', orc_gens_list_ts, ids=idfn)
+@pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+def test_read_round_trip_for_multithreaded_combining_2_for_non_utc(spark_tmp_path, gens, keep_order):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    # 50 partitions to generate enough small files
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(data_path))
+    all_confs = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                 'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                 'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
+    assert_gpu_fallback_collect(
+        lambda spark: spark.read.orc(data_path),
+        'FileSourceScanExec',
+        conf=all_confs)
+
+@pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+def test_simple_partitioned_read_for_multithreaded_combining_1(spark_tmp_path, keep_order):
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-                orc_timestamp_gen]
+                string_gen, boolean_gen, DateGen(start=date(1590, 1, 1))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
     with_cpu_session(
@@ -805,6 +1080,50 @@ def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, kee
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.orc(data_path), conf=all_confs)
 
+@pytest.mark.xfail(is_not_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+def test_simple_partitioned_read_for_multithreaded_combining_2(spark_tmp_path, keep_order):
+    orc_gens = [orc_timestamp_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1/key2=21'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/ORC_DATA/key=2/key2=22'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(third_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                 'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                 'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.orc(data_path), conf=all_confs)
+
+@pytest.mark.skipif(is_utc(), reason="TODO sub-issue in https://github.com/NVIDIA/spark-rapids/issues/9653 to support ORC file with timestamp")
+@allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec')
+@pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+def test_simple_partitioned_read_for_multithreaded_combining_2_for_non_utc(spark_tmp_path, keep_order):
+    orc_gens = [orc_timestamp_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1/key2=21'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(second_data_path))
+    third_data_path = spark_tmp_path + '/ORC_DATA/key=2/key2=22'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).repartition(50).write.orc(third_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED',
+                 'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                 'spark.rapids.sql.reader.multithreaded.read.keepOrder': keep_order}
+    assert_gpu_fallback_collect(
+        lambda spark: spark.read.orc(data_path),
+        'FileSourceScanExec',
+        conf=all_confs)
 
 @pytest.mark.skipif(is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])

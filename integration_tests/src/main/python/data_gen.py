@@ -1175,13 +1175,15 @@ writer_confs_for_DB = {
 
 def split_list(input_list, split_item_strings):
     """
-    Split a list to 2 sub-list
+    Split a gen list to 2 sub-list:
+    the first does not contain `split_item_strings`, the second contains `split_item_strings`
     """
     include = []
     rest = []
     for item in input_list:
         find = False
         for split_item_str in split_item_strings:
+            # convert to string, then compare
             if (str(split_item_str) == str(item)):
                 include.append(item)
                 find = True
@@ -1191,3 +1193,17 @@ def split_list(input_list, split_item_strings):
         else:
             rest.append(item)
     return (rest, include)
+
+def split_timestamp(input_list):
+    """
+    Split a gen list to 2 sub-list:
+    the first does not contain timestamp, the second contains timestamp
+    """
+    ts_gens = []
+    other_gens = []
+    for item in input_list:
+        if 'Timestamp' in str(item):
+            ts_gens.append(item)
+        else:
+            other_gens.append(item)
+    return (other_gens, ts_gens)
