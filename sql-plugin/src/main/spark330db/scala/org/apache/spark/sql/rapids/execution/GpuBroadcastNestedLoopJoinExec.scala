@@ -156,13 +156,31 @@ case class GpuBroadcastNestedLoopJoinExec(
     executorBroadcast
   }
 
-  def shuffleExchange: GpuShuffleExchangeExec = buildPlan match {
-    case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[GpuShuffleExchangeExec] =>
-      bqse.plan.asInstanceOf[GpuShuffleExchangeExec]
-    case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
-      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuShuffleExchangeExec]
-    case gpu: GpuShuffleExchangeExec => gpu
-    case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
+  def shuffleExchange: GpuShuffleExchangeExec = {
+    def from(p: ShuffleQueryStageExec): GpuShuffleExchangeExec = p.plan match {
+      case g: GpuShuffleExchangeExec => g
+      case ReusedExchangeExec(_, g: GpuShuffleExchangeExec) => g
+      case _ => throw new IllegalStateException(s"cannot locate GPU shuffle in $p")
+    }
+
+    getBroadcastPlan(buildPlan) match {
+      case gpu: GpuShuffleExchangeExec => gpu
+      case sqse: ShuffleQueryStageExec => from(sqse)
+      case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
+      case GpuShuffleCoalesceExec(GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _), _) =>
+        from(sqse)
+      case GpuShuffleCoalesceExec(sqse: ShuffleQueryStageExec, _) => from(sqse)
+      case GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _) => from(sqse)
+    }
+  }
+
+  private[this] def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // In case has post broadcast project. It happens when join condition contains non-AST
+      // expression which results in a project right after broadcast.
+      case plan: GpuProjectExec => plan.child
+      case _ => plan
+    }
   }
 
   override def getBroadcastRelation(): Any = {
@@ -187,8 +205,8 @@ case class GpuBroadcastNestedLoopJoinExec(
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-      val builtBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(rdd, buildPlan.schema,
-          buildPlan.output, metricsMap, targetSize)
+      val builtBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(rdd, getBroadcastPlan
+        (buildPlan).schema, getBroadcastPlan(buildPlan).output, metricsMap, targetSize)
       buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
       builtBatch
     }
