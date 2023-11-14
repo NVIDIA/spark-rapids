@@ -1046,8 +1046,8 @@ class FromUTCTimestampExprMeta(
 
   private[this] var timezoneId: ZoneId = null
 
-  lazy val supportedZoneIds = Seq("UTC", "America/Los_Angeles", "Asia/Shanghai")
-    .map(ZoneId.of(_).normalized)
+  lazy val supportedZoneStrList = Seq("UTC", "America/Los_Angeles", "Asia/Shanghai")
+  lazy val supportedZoneIds = supportedZoneStrList.map(ZoneId.of(_).normalized)
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
@@ -1060,7 +1060,8 @@ class FromUTCTimestampExprMeta(
             ZoneId.SHORT_IDS).normalized
 
           if (supportedZoneIds.forall(id => id != timezoneId)) {
-            willNotWorkOnGpu("only timezones equivalent to UTC are supported")
+            willNotWorkOnGpu(
+              s"only timezones equivalent to ${supportedZoneStrList.mkString(", ")} are supported")
           }
         }
     }

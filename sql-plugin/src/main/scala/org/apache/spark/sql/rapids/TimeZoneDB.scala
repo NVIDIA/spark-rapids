@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
-
 object TimeZoneDB {
 
   def cacheDatabase(): Unit = {}
