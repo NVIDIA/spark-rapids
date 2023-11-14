@@ -134,7 +134,7 @@ object RapidsPluginUtils extends Logging {
   }
 
   def detectMultipleJars(conf: RapidsConf): Unit = {
-    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids4spark", conf)
+    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", conf)
     detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", conf)
     detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", conf)
   }
