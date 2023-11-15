@@ -620,7 +620,6 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
         .with_special_case('\\"a\\"') \
         .with_special_case('\'a\'') \
         .with_special_case('\\\'a\\\''),
-    pytest.param(StringGen(nullable=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9514')),
     pytest.param(StringGen('\u001a', nullable=True), marks=pytest.mark.xfail(
         reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
 ], ids=idfn)
