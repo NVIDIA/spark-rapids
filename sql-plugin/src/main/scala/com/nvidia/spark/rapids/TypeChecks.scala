@@ -307,7 +307,7 @@ final class TypeSig private(
     typeMeta.dataType.foreach { dt =>
       val expr = exprMeta.wrapped.asInstanceOf[Expression]
 
-      if (!isSupportedByPlugin(dt)) {
+      if (!isSupportedByPlugin(dt, !TypeChecks.isNonUtcTimeZoneEnable())) {
         willNotWork(s"$name expression ${expr.getClass.getSimpleName} $expr " +
             reasonNotSupported(dt).mkString("(", ", ", ")"))
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
@@ -824,6 +824,7 @@ abstract class TypeChecks[RET] {
 }
 
 object TypeChecks {
+
   /**
    * Check if the time zone passed is supported by plugin.
    */
@@ -1010,10 +1011,12 @@ class ExecChecks private(
     // expression.toString to capture ids in not-on-GPU tags
     def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
+    val checkUtcTz = !TypeChecks.isNonUtcTimeZoneEnable()
+
     tagUnsupportedTypes(meta, check, meta.outputAttributes.map(toStructField),
-      "unsupported data types in output: %s")
+      "unsupported data types in output: %s", checkUtcTz)
     tagUnsupportedTypes(meta, check, meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
-      "unsupported data types in input: %s")
+      "unsupported data types in input: %s", checkUtcTz)
 
     val namedChildExprs = meta.namedChildExprs
 
