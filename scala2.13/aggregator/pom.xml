@@ -165,7 +165,7 @@
                                         <echo>Aggregator jar changed, recreating final jar</echo>
                                         <delete dir="${oldClassesDir}"/>
                                         <move file="${newClassesDir}" tofile="${oldClassesDir}"/>
-                                        <move file="${realAggJar}" tofile="${aggJarForDownstream}"/>
+                                        <copy file="${realAggJar}" tofile="${aggJarForDownstream}"/>
                                     </else>
                                 </ac:if>
                             </target>
