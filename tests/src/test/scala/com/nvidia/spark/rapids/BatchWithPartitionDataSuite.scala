@@ -78,12 +78,16 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
       withResource(buildBatch(getSampleValueData)) { valueBatch =>
         withResource(buildBatch(partCols)) { partBatch =>
           withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
+            // we incRefCounts here because `addPartitionValuesToBatch` takes ownership of
+            // `valueBatch`, but we are keeping it alive since its columns are part of
+            // `expectedBatch`
             GpuColumnVector.incRefCounts(valueBatch)
             val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
               partRows, partValues, partSchema, maxGpuColumnSizeBytes)
             withResource(resultBatchIter) { _ =>
               RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
               // Assert that the final count of rows matches expected batch
+              // We also need to close each batch coming from `resultBatchIter`.
               val rowCounts = resultBatchIter.map(withResource(_){_.numRows()}).sum
               assert(rowCounts == expectedBatch.numRows())
             }
