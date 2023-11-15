@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.timezone
 
 import java.time.ZoneId
+import java.util.concurrent.Executor
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -25,7 +26,7 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
 object TimeZoneDB {
 
-  def cacheDatabase(): Unit = {}
+  def cacheDatabase(e: Executor): Unit = {}
 
   /**
    * Interpret a timestamp as a time in the given time zone,
@@ -121,7 +122,7 @@ object TimeZoneDB {
     assert(inputVector.getType == DType.TIMESTAMP_DAYS)
     val rowCount = inputVector.getRowCount.toInt
     withResource(inputVector.copyToHost()) { input =>
-      withResource(HostColumnVector.builder(DType.INT64, rowCount)) { builder =>
+      withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
         var currRow = 0
         while (currRow < rowCount) {
           val origin = input.getInt(currRow)
