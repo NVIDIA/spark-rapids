@@ -612,6 +612,8 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     long_gen,
     pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
+    date_gen,
+    timestamp_gen,
     StringGen('[A-Za-z0-9\r\n\'"\\\\]{0,10}', nullable=True) \
         .with_special_case('\u1f600') \
         .with_special_case('"a"') \
