@@ -218,6 +218,12 @@ for a single Spark version Shim alone.
 To this end in a pre-production build you can set the Boolean property
 `dist.jar.compress` to `false`, its default value is `true`.
 
+Furthermore, after the first build execution on the clean repository the spark-rapids-jni
+SNAPSHOT dependency typically does not change until the next nightly CI build, or the next install
+to the local Maven repo if you are working on a change to the native code. So you can save
+significant time spent on repeated unpacking these dependencies by adding `-Drapids.jni.unpack.skip`
+to the `dist` build command.
+
 The time saved is more significant if you are merely changing
 the `aggregator` module, or the `dist` module, or just incorporating changes from
 [spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-23.04/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
@@ -225,12 +231,12 @@ the `aggregator` module, or the `dist` module, or just incorporating changes fro
 For example, to quickly repackage `rapids-4-spark` after the
 initial `./build/buildall` you can iterate by invoking
 ```Bash
-mvn package -pl dist -PnoSnapshots -Ddist.jar.compress=false
+mvn package -pl dist -PnoSnapshots -Ddist.jar.compress=false -Drapids.jni.unpack.skip
 ```
 
 or similarly
 ```Bash
- ./build/buildall --rebuild-dist-only --option="-Ddist.jar.compress=false"
+ ./build/buildall --rebuild-dist-only --option="-Ddist.jar.compress=false -Drapids.jni.unpack.skip"
 ```
 
 ## Code contributions

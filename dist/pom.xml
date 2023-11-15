@@ -45,6 +45,7 @@
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${jni.classifier}.jar</dist.jar.name>
         <dist.jar.pom.url>jar:file:${dist.jar.name}!/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml</dist.jar.pom.url>
         <rapids.default.jar.phase>none</rapids.default.jar.phase>
+        <rapids.jni.unpack.skip>false</rapids.jni.unpack.skip>
     </properties>
     <profiles>
         <profile>
@@ -447,6 +448,7 @@ self.log("... OK")
                             <goal>unpack</goal>
                         </goals>
                         <configuration>
+                            <skip>${rapids.jni.unpack.skip}</skip>
                             <artifactItems>
                                 <!-- if add new artifacts, should set `overWrite` as true -->
                                 <artifactItem>
