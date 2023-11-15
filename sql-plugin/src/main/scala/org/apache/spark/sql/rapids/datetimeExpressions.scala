@@ -1046,22 +1046,16 @@ class FromUTCTimestampExprMeta(
 
   private[this] var timezoneId: ZoneId = null
 
-  lazy val supportedZoneStrList = Seq("UTC", "Asia/Shanghai")
-  lazy val supportedZoneIds = supportedZoneStrList.map(ZoneId.of(_).normalized)
-
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
       case None =>
         willNotWorkOnGpu("timezone input must be a literal string")
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
-          // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
-          timezoneId = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
-            ZoneId.SHORT_IDS).normalized
-
-          if (supportedZoneIds.forall(id => id != timezoneId)) {
-            willNotWorkOnGpu(
-              s"only timezones equivalent to ${supportedZoneStrList.mkString(", ")} are supported")
+          if (TimeZoneDB.isSupportedTimezone(timezoneShortID)) {
+            timezoneId = TimeZoneDB.getZoneId(timezoneShortID)
+          } else {
+            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
           }
         }
     }

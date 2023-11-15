@@ -25,6 +25,22 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
 object TimeZoneDB {
 
+  // Copied from Spark. Used to format time zone ID string with (+|-)h:mm and (+|-)hh:m
+  def getZoneId(timezoneId: String): ZoneId = {
+    val formattedZoneId = timezoneId
+      // To support the (+|-)h:mm format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d):", "$10$2:")
+      // To support the (+|-)hh:m format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d\\d):(\\d)$", "$1$2:0$3")
+    DateTimeUtils.getZoneId(formattedZoneId)
+  }
+
+  // Support fixed offset or no transition rule case
+  def isSupportedTimezone(timezoneId: String): Boolean = {
+    val rules = getZoneId(timezoneId).getRules
+    rules.isFixedOffset || rules.getTransitionRules.isEmpty
+  }
+
   def cacheDatabase(): Unit = {}
 
   /**
