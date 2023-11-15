@@ -178,6 +178,7 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9676")
 def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
 
@@ -185,6 +186,7 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9676")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
 
@@ -398,24 +400,25 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
+    gen = TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
+                       end=datetime(2000, 1, 1, tzinfo=timezone.utc)).with_special_case(
+        datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)
     data_path = spark_tmp_path + "/DELTA_DATA"
     all_confs = copy_and_update(delta_writes_enabled_conf, {
         "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.outputTimestampType": ts_write
     })
-    assert_gpu_fallback_write(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        delta_write_fallback_check,
         conf=all_confs)
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)

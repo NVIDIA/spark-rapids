@@ -16,7 +16,7 @@ The RAPIDS Accelerator For Apache Spark requires each worker node in the cluster
 The RAPIDS Accelerator For Apache Spark consists of two jars: a plugin jar along with the RAPIDS
 cuDF jar, that is either preinstalled in the Spark classpath on all nodes or submitted with each job
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
-guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
+guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html) for more details.
 
 ## Release v23.10.0
 ### Hardware Requirements:
