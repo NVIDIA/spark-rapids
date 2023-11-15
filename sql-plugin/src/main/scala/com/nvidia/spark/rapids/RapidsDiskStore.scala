@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 import org.apache.commons.io.IOUtils
 
-import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
 import org.apache.spark.sql.rapids.execution.SerializedHostTableUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -108,16 +108,19 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
           Array(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
         }
         var currentPos, writtenBytes = 0L
-        withResource(FileChannel.open(path.toPath, option: _*)) { fc =>
-          currentPos = fc.position()
-          withResource(Channels.newOutputStream(fc)) { os =>
-            withResource(diskBlockManager.getSerializerManager()
-              .wrapStream(incoming.id, os)) { cos =>
-              val outputChannel = Channels.newChannel(cos)
-              writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
+
+        GpuTaskMetrics.get.spillToDiskTime {
+          withResource(FileChannel.open(path.toPath, option: _*)) { fc =>
+            currentPos = fc.position()
+            withResource(Channels.newOutputStream(fc)) { os =>
+              withResource(diskBlockManager.getSerializerManager()
+                .wrapStream(incoming.id, os)) { cos =>
+                val outputChannel = Channels.newChannel(cos)
+                writtenBytes = fileWritable.writeToChannel(outputChannel, stream)
+              }
             }
+            (currentPos, writtenBytes, path.length() - currentPos)
           }
-          (currentPos, writtenBytes, path.length() - currentPos)
         }
       case other =>
         throw new IllegalStateException(
@@ -153,14 +156,16 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         val memBuffer = if (serializerManager.isRapidsSpill(id)) {
           // Only go through serializerManager's stream wrapper for spill case
           closeOnExcept(HostMemoryBuffer.allocate(uncompressedSize)) { decompressed =>
-            withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
-              c.position(fileOffset)
-              withResource(Channels.newInputStream(c)) { compressed =>
-                withResource(serializerManager.wrapStream(id, compressed)) { in =>
-                  withResource(new HostMemoryOutputStream(decompressed)) { out =>
-                    IOUtils.copy(in, out)
+            GpuTaskMetrics.get.readSpillFromDiskTime {
+              withResource(FileChannel.open(path.toPath, StandardOpenOption.READ)) { c =>
+                c.position(fileOffset)
+                withResource(Channels.newInputStream(c)) { compressed =>
+                  withResource(serializerManager.wrapStream(id, compressed)) { in =>
+                    withResource(new HostMemoryOutputStream(decompressed)) { out =>
+                      IOUtils.copy(in, out)
+                    }
+                    decompressed
                   }
-                  decompressed
                 }
               }
             }
