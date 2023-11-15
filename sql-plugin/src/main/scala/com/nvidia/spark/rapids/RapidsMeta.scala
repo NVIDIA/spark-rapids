@@ -1204,6 +1204,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
     printAst(appender, 0, all)
     appender.toString()
   }
+
+  def requireAstForGpu(): Boolean = {
+    false
+  }
 }
 
 abstract class ExprMeta[INPUT <: Expression](
