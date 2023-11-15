@@ -318,9 +318,9 @@ def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1
 @pytest.mark.parametrize('ts_rebase_read', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_roundtrip_datetime(spark_tmp_path, parquet_gens, ts_type,
-                                         ts_rebase_write, ts_rebase_read,
-                                         reader_confs, v1_enabled_list):
+def test_parquet_read_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, parquet_gens, ts_type,
+                                                            ts_rebase_write, ts_rebase_read,
+                                                            reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_confs = {'spark.sql.parquet.outputTimestampType': ts_type,

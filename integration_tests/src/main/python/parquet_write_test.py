@@ -462,7 +462,7 @@ def test_write_map_nullable(spark_tmp_path):
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', ['EXCEPTION'])
-def test_datetime_write_fails_datetime_legacy(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
+def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
                  'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write,
@@ -475,13 +475,12 @@ def test_datetime_write_fails_datetime_legacy(spark_tmp_path, data_gen, ts_write
         lambda spark: writeParquetCatchException(spark, data_gen, data_path),
         conf=all_confs)
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9701')
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
 @pytest.mark.parametrize('ts_rebase_read', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
-def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, data_gen, ts_write,
-                                               ts_rebase_write, ts_rebase_read):
+def test_parquet_write_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, data_gen, ts_write,
+                                                             ts_rebase_write, ts_rebase_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
                  'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write[0],
