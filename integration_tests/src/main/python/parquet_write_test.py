@@ -70,8 +70,11 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
                                                     MapGen(StringGen(pattern='key_[0-9]', nullable=False),
                                                            simple_string_to_string_map_gen)]
 
-parquet_datetime_gen_simple = [DateGen(end=date(3000, 1, 1)),
-                               TimestampGen(end=datetime(3000, 1, 1, tzinfo=timezone.utc))]
+parquet_datetime_gen_simple = [DateGen(start=date(1, 1, 1), end=date(2000, 1, 1))
+                               .with_special_case(date(1000, 1, 1), weight=10.0),
+                               TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
+                                            end=datetime(2000, 1, 1, tzinfo=timezone.utc))
+                               .with_special_case(datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)]
 parquet_datetime_in_struct_gen = [
     StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]
 parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in
@@ -772,27 +775,12 @@ def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, fun
     func(create_table, read_table, data_path, conf)
 
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
-def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path):
-
+@pytest.mark.parametrize('ts_rebase', ['LEGACY', 'CORRECTED'])
+def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase):
     def func_test(create_table, read_table, data_path, conf):
         assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path, conf=conf)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path + '/CPU'))
-
-    hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, 'CORRECTED', func_test)
-
-# Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
-@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec')
-def test_hive_timestamp_value_fallback(spark_tmp_table_factory, spark_tmp_path):
-
-    def func_test(create_table, read_table, data_path, conf):
-        assert_gpu_fallback_write(
-            create_table,
-            read_table,
-            data_path,
-            ['DataWritingCommandExec'],
-            conf)
-
-    hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, 'LEGACY', func_test)
+    hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, func_test)
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")

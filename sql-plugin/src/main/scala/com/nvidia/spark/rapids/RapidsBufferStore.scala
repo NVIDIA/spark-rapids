@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -477,44 +476,42 @@ abstract class RapidsBufferStore(val tier: StorageTier)
      *   hides the RapidsBuffer from clients and simplifies locking.
      */
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
-      GpuTaskMetrics.get.readSpillTime {
-        if (RapidsBufferCatalog.shouldUnspill) {
-          (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
-            catalog.acquireBuffer(id, DEVICE) match {
-              case Some(buffer) =>
-                withResource(buffer) { _ =>
-                  return buffer.getDeviceMemoryBuffer
-                }
-              case _ =>
-                try {
-                  logDebug(s"Unspilling $this $id to $DEVICE")
-                  val newBuffer = catalog.unspillBufferToDeviceStore(
-                    this,
-                    Cuda.DEFAULT_STREAM)
-                  withResource(newBuffer) { _ =>
-                    return newBuffer.getDeviceMemoryBuffer
-                  }
-                } catch {
-                  case _: DuplicateBufferException =>
-                    logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
-                }
-            }
-          }
-          throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
-        } else {
-          materializeMemoryBuffer match {
-            case h: HostMemoryBuffer =>
-              withResource(h) { _ =>
-                closeOnExcept(DeviceMemoryBuffer.allocate(h.getLength)) { deviceBuffer =>
-                  logDebug(s"copying ${h.getLength} from host $h to device $deviceBuffer " +
-                      s"of size ${deviceBuffer.getLength}")
-                  deviceBuffer.copyFromHostBuffer(h)
-                  deviceBuffer
-                }
+      if (RapidsBufferCatalog.shouldUnspill) {
+        (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
+          catalog.acquireBuffer(id, DEVICE) match {
+            case Some(buffer) =>
+              withResource(buffer) { _ =>
+                return buffer.getDeviceMemoryBuffer
               }
-            case d: DeviceMemoryBuffer => d
-            case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
+            case _ =>
+              try {
+                logDebug(s"Unspilling $this $id to $DEVICE")
+                val newBuffer = catalog.unspillBufferToDeviceStore(
+                  this,
+                  Cuda.DEFAULT_STREAM)
+                withResource(newBuffer) { _ =>
+                  return newBuffer.getDeviceMemoryBuffer
+                }
+              } catch {
+                case _: DuplicateBufferException =>
+                  logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
+              }
           }
+        }
+        throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
+      } else {
+        materializeMemoryBuffer match {
+          case h: HostMemoryBuffer =>
+            withResource(h) { _ =>
+              closeOnExcept(DeviceMemoryBuffer.allocate(h.getLength)) { deviceBuffer =>
+                logDebug(s"copying ${h.getLength} from host $h to device $deviceBuffer " +
+                    s"of size ${deviceBuffer.getLength}")
+                deviceBuffer.copyFromHostBuffer(h)
+                deviceBuffer
+              }
+            }
+          case d: DeviceMemoryBuffer => d
+          case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
         }
       }
     }

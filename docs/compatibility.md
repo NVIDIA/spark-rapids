@@ -106,6 +106,10 @@ it and they should be avoided.
 Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
 
+The GPU accelerated CSV parser does not replace invalid UTF-8 characters with the Unicode
+replacement character �.  Instead it just passes them through as described in this
+[issue](https://github.com/NVIDIA/spark-rapids/issues/9560).
+
 ### CSV Dates
 
 Only a limited set of formats are supported when parsing dates.
@@ -342,8 +346,6 @@ with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsTo
 
 Known issues are:
 
-- String escaping is not implemented, so strings containing quotes, newlines, and other special characters will 
-  not produce valid JSON
 - There is no support for timestamp types
 - There can be rounding differences when formatting floating-point numbers as strings. For example, Spark may
   produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.

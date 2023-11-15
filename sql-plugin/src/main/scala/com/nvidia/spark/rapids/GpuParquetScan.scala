@@ -270,8 +270,7 @@ object GpuParquetScan {
       if (dateRebaseMode == DateTimeRebaseException &&
         DateTimeRebaseUtils.isDateRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-      }
-      else if (timestampRebaseMode == DateTimeRebaseException &&
+      } else if (timestampRebaseMode == DateTimeRebaseException &&
         DateTimeRebaseUtils.isTimeRebaseNeededInRead(col)) {
         throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
       }
@@ -280,19 +279,21 @@ object GpuParquetScan {
 
   def rebaseDateTime(table: Table, dateRebaseMode: DateTimeRebaseMode,
       timestampRebaseMode: DateTimeRebaseMode): Table = {
-    val tableHasDate = (0 until table.getNumberOfColumns).exists { i =>
-      checkTypeRecursively(table.getColumn(i), { dtype => dtype == DType.TIMESTAMP_DAYS })
+    val dateRebaseNeeded = dateRebaseMode == DateTimeRebaseLegacy
+    val timeRebaseNeeded = timestampRebaseMode == DateTimeRebaseLegacy
+
+    lazy val tableHasDate = (0 until table.getNumberOfColumns).exists { i =>
+      checkTypeRecursively(table.getColumn(i), { dt => dt == DType.TIMESTAMP_DAYS })
     }
-    val tableHasTimestamp = (0 until table.getNumberOfColumns).exists { i =>
-      checkTypeRecursively(table.getColumn(i), { dtype => dtype.isTimestampType })
+    lazy val tableHasTimestamp = (0 until table.getNumberOfColumns).exists { i =>
+      checkTypeRecursively(table.getColumn(i), { dt => dt == DType.TIMESTAMP_MICROSECONDS })
     }
 
-    if ((tableHasDate && dateRebaseMode == DateTimeRebaseLegacy) ||
-      (tableHasTimestamp && timestampRebaseMode == DateTimeRebaseLegacy)) {
+    if ((dateRebaseNeeded && tableHasDate) || (timeRebaseNeeded && tableHasTimestamp)) {
       // Need to close the input table when returning a new table.
       withResource(table) { tmpTable =>
         val newColumns = (0 until tmpTable.getNumberOfColumns).map { i =>
-          deepTransformRebaseDateTime(tmpTable.getColumn(i))
+          deepTransformRebaseDateTime(tmpTable.getColumn(i), dateRebaseNeeded, timeRebaseNeeded)
         }
         withResource(newColumns) { newCols =>
           new Table(newCols: _*)
@@ -303,30 +304,34 @@ object GpuParquetScan {
     }
   }
 
-  private def checkTypeRecursively(column: ColumnView, f: DType => Boolean): Boolean = {
-    column.getType match {
-      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
-        withResource(column.getChildColumnView(i)) { child =>
+  private def checkTypeRecursively(input: ColumnView, f: DType => Boolean): Boolean = {
+    val dt = input.getType
+    if (dt.isTimestampType && dt != DType.TIMESTAMP_DAYS && dt != DType.TIMESTAMP_MICROSECONDS) {
+      // There should be something wrong here since timestamps other than DAYS should already
+      // been converted into MICROSECONDS when reading Parquet files.
+      throw new IllegalStateException(s"Unexpected date/time type: $dt " +
+        "(expected TIMESTAMP_DAYS or TIMESTAMP_MICROSECONDS)")
+    }
+    dt match {
+      case DType.LIST | DType.STRUCT => (0 until input.getNumChildren).exists(i =>
+        withResource(input.getChildColumnView(i)) { child =>
           checkTypeRecursively(child, f)
         })
       case t: DType => f(t)
     }
   }
 
-  private def deepTransformRebaseDateTime(cv: ColumnVector): ColumnVector = {
+  private def deepTransformRebaseDateTime(cv: ColumnVector, dateRebaseNeeded: Boolean,
+      timeRebaseNeeded: Boolean): ColumnVector = {
     ColumnCastUtil.deepTransform(cv) {
       case (cv, _) if cv.getType.isTimestampType =>
-        if (cv.getType == DType.TIMESTAMP_DAYS || cv.getType == DType.TIMESTAMP_MICROSECONDS) {
+        // cv type is guaranteed to be either TIMESTAMP_DAYS or TIMESTAMP_MICROSECONDS,
+        // since we already checked it in `checkTypeRecursively`.
+        if ((cv.getType == DType.TIMESTAMP_DAYS && dateRebaseNeeded) ||
+          cv.getType == DType.TIMESTAMP_MICROSECONDS && timeRebaseNeeded) {
           DateTimeRebase.rebaseJulianToGregorian(cv)
         } else {
-          // This is just a backup: it should not be reached out since timestamps is already
-          // converted into MICROSECONDS when reading Parquet files.
-          val oldType = cv.getType
-          withResource(cv.castTo(DType.TIMESTAMP_MICROSECONDS)) { cvAsMicros =>
-            withResource(DateTimeRebase.rebaseJulianToGregorian(cvAsMicros)) { rebasedTs =>
-              rebasedTs.castTo(oldType)
-            }
-          }
+          cv.copyToColumnVector()
         }
     }
   }

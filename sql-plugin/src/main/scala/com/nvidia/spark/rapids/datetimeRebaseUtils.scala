@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.TimeZone
+
 import ai.rapids.cudf.{ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.util.RebaseDateTime
+import org.apache.spark.sql.catalyst.util.{DateTimeUtils, RebaseDateTime}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -87,11 +89,16 @@ object DateTimeRebaseUtils {
 
     // Check the timezone of the file if the mode is LEGACY.
     if (mode == DateTimeRebaseLegacy) {
-      val fileTimeZone = lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)
-      if (fileTimeZone != null && fileTimeZone != "UTC") {
+      val fileTimeZoneId = Option(lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)).map { str =>
+        DateTimeUtils.getZoneId(str)
+      }.getOrElse {
+        // Use the default JVM time zone for backward compatibility
+        TimeZone.getDefault.toZoneId
+      }
+      if (fileTimeZoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
         throw new UnsupportedOperationException(
           "LEGACY datetime rebase mode is only supported for files written in UTC timezone. " +
-            s"Actual file timezone: $fileTimeZone")
+            s"Actual file timezone: $fileTimeZoneId")
       }
     }
 

@@ -313,8 +313,8 @@ def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1
 
 @pytest.mark.parametrize('parquet_gens', [parquet_nested_datetime_gen], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-@pytest.mark.parametrize('ts_rebase_write', ['CORRECTED', 'LEGACY'])
-@pytest.mark.parametrize('ts_rebase_read', ['CORRECTED', 'LEGACY'])
+@pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
+@pytest.mark.parametrize('ts_rebase_read', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_roundtrip_datetime(spark_tmp_path, parquet_gens, ts_type,
@@ -323,15 +323,16 @@ def test_parquet_read_roundtrip_datetime(spark_tmp_path, parquet_gens, ts_type,
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_confs = {'spark.sql.parquet.outputTimestampType': ts_type,
-                   'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write,
-                   'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write}
-
+                   'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write[0],
+                   'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write[1]}
     with_cpu_session(
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=write_confs)
+    # The rebase modes in read configs should be ignored and overridden by the same modes in write
+    # configs, which are retrieved from the written files.
     read_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                                                'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read,
-                                                'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read})
+                                                'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read[0],
+                                                'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read[1]})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
         conf=read_confs)
@@ -757,6 +758,7 @@ def test_parquet_read_nano_as_longs_not_configured(std_input_path):
 @pytest.mark.skipif(spark_version() >= '3.2.0' and spark_version() < '3.2.4', reason='New config added in 3.2.4')
 @pytest.mark.skipif(spark_version() >= '3.3.0' and spark_version() < '3.3.2', reason='New config added in 3.3.2')
 @pytest.mark.skipif(is_databricks_runtime() and spark_version() == '3.3.2', reason='Config not in DB 12.2')
+@pytest.mark.skipif(is_databricks_runtime() and spark_version() == '3.4.1', reason='Config not in DB 13.3')
 @allow_non_gpu('FileSourceScanExec, ColumnarToRowExec')
 def test_parquet_read_nano_as_longs_true(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
