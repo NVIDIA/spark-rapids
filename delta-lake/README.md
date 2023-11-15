@@ -19,6 +19,7 @@ and directory contains the corresponding support code.
 | Databricks 10.4    | Databricks 10.4 | `delta-spark321db` |
 | Databricks 11.3    | Databricks 11.3 | `delta-spark330db` |
 | Databricks 12.2    | Databricks 12.2 | `delta-spark332db` |
+| Databricks 13.3    | Databricks 13.3 | `delta-spark341db` |
 
 Delta Lake is not supported on all Spark versions, and for Spark versions where it is not
 supported the `delta-stub` project is used.

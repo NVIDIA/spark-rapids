@@ -612,10 +612,15 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     long_gen,
     pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
-    date_gen,
-    timestamp_gen,
-    StringGen('[A-Za-z0-9]{0,10}', nullable=True),
+    StringGen('[A-Za-z0-9\r\n\'"\\\\]{0,10}', nullable=True) \
+        .with_special_case('\u1f600') \
+        .with_special_case('"a"') \
+        .with_special_case('\\"a\\"') \
+        .with_special_case('\'a\'') \
+        .with_special_case('\\\'a\\\''),
     pytest.param(StringGen(nullable=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9514')),
+    pytest.param(StringGen('\u001a', nullable=True), marks=pytest.mark.xfail(
+        reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
 ], ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('pretty', [
