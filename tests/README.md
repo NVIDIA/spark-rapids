@@ -17,7 +17,8 @@ aggregates them along with internal submodules into an artifact supporting a sin
 The minimum required Maven phase to run unit tests is `package`. Alternatively, you may run
 `mvn install` and use `mvn test` for subsequent testing. However, to avoid dealing with stale jars
 in the local Maven repo cache, we recommend to invoke `mvn package -pl tests -am ...` from the
-`spark-rapids` root directory. Add `-f scala2.13` if you want to run against
+`spark-rapids` root directory. Add `-f scala2.13` if you want to run unit tests against
+Apache Spark dependencies based on Scala 2.13.
 
 To run targeted Scala tests use
 
