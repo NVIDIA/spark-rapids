@@ -122,12 +122,12 @@ object RapidsPluginUtils extends Logging {
 
   private def detectMultipleJar(propFileName: String, jarName: String, conf: RapidsConf): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val possibleRapidsJarURLs = classloader.getResources(propFileName).asScala.toList
+    val possibleRapidsJarURLs = classloader.getResources(propFileName).asScala.toSeq
 
     val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
       val revision = getRevisionFromURL(url)
       (revision, url)
-    }.groupBy(_._1).mapValues(_.map(_._2))
+    }.groupBy(_._1).mapValues(_.map(_._2)).toMap
     lazy val rapidsJarsVersMsg = revisionMap.map {
       case (revision, urls) => {
         s"revison: $revision\n" + urls.map {
