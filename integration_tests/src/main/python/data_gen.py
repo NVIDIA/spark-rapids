@@ -813,10 +813,6 @@ def _gen_scalars_common(data_gen, count, seed=0):
     else:
         src = data_gen
 
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
-
     rand = random.Random(seed)
     src.start(rand)
     return src
