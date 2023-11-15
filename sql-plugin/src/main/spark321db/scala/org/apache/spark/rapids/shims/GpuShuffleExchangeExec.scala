@@ -32,4 +32,14 @@ case class GpuShuffleExchangeExec(
     shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
   extends GpuDatabricksShuffleExchangeExecBase(gpuOutputPartitioning,
-    child, shuffleOrigin)(cpuOutputPartitioning)
+    child, shuffleOrigin)(cpuOutputPartitioning) {
+
+    override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
+        new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
+    }
+
+    // DB SPECIFIC - throw if called since we don't know how its used
+    override def withNewOutputPartitioning(outputPartitioning: Partitioning) = {
+        throw new UnsupportedOperationException
+    }
+}
