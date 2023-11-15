@@ -319,6 +319,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
             GpuParquetReader.addNullsForMissingFields(idToConstant, reorder.getMissingFields());
 
         ParquetFileInfoWithBlockMeta parquetBlockMeta = ParquetFileInfoWithBlockMeta.apply(
+            // The path conversion aligns with that in Rapids multi-files readers.
+            // So here should use the file path of a PartitionedFile.
             new Path(new URI(partFilePathString)), clippedBlocks,
             InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
             DateTimeRebaseCorrected$.MODULE$, // dateRebaseMode
