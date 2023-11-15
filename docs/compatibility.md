@@ -346,9 +346,6 @@ with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsTo
 
 Known issues are:
 
-- String escaping is not implemented, so strings containing quotes, newlines, and other special characters will 
-  not produce valid JSON
-- There is no support for timestamp types
 - There can be rounding differences when formatting floating-point numbers as strings. For example, Spark may
   produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
 - Not all JSON options are respected
