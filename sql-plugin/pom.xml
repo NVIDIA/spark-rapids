@@ -176,17 +176,21 @@
                         <property name="servicesDir"
                             value="${project.build.outputDirectory}/META-INF/services" />
                         <property name="serviceFile"
-                            value="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider" />
+                            location="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                        <property name="shimServiceClass"
+                            value="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider"/>
+                        <loadfile property="currentServiceClass" srcFile="${serviceFile}"/>
                         <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                            <available file="${serviceFile}" property="service.file.exists" />
+                            <not>
+                                <equals arg1="${currentServiceClass}" arg2="${shimServiceClass}"/>
+                            </not>
                             <then>
                                 <echo>Skipping shim service file generation, already exists</echo>
                             </then>
                             <else>
-                                <mkdir dir="${servicesDir}" />
-                                <echo
-                                    file="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"
-                                    message="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider${line.separator}" />
+                                <echo>Recreating shim service file</echo>
+                                <mkdir dir="${servicesDir}"/>
+                                <echo file="${serviceFile}" message="${shimServiceClass}${line.separator}"/>
                             </else>
                         </ac:if>
                     </target>
