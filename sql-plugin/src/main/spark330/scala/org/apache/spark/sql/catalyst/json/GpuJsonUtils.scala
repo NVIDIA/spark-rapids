@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 object GpuJsonUtils {
 
   def optionalDateFormatInRead(options: Map[String, String]): Option[String] =
-    dateFormatInRead(parseJSONReadOptions(options))
+    optionalDateFormatInRead(parseJSONReadOptions(options))
 
   def optionalDateFormatInRead(options: JSONOptions): Option[String] =
     options.dateFormatInRead
