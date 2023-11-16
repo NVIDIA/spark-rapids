@@ -71,10 +71,10 @@ class GpuBroadcastNestedLoopJoinMeta(
         if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
       val rightChild =
         if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
-      val postBoardcastCondition =
+      val postBuildCondition =
         if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
 
-      // TODO: a code refactor is needed to skip passing in postBoardcastCondition as a parameter to
+      // TODO: a code refactor is needed to skip passing in postBuildCondition as a parameter to
       // instantiate GpuBroadcastNestedLoopJoinExec. This is because currently output columnar batch
       // of broadcast side is handled inside GpuBroadcastNestedLoopJoinExec. Have to manually build
       // a project node to build side batch.
@@ -82,7 +82,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         leftChild, rightChild,
         join.joinType, gpuBuildSide,
         remains,
-        postBoardcastCondition,
+        postBuildCondition,
         conf.gpuTargetBatchSizeBytes)
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
         joinExec
@@ -135,7 +135,7 @@ case class GpuBroadcastNestedLoopJoinExec(
     joinType: JoinType,
     gpuBuildSide: GpuBuildSide,
     condition: Option[Expression],
-    postBroadcastCondition: List[NamedExpression],
+    postBuildCondition: List[NamedExpression],
     targetSizeBytes: Long) extends GpuBroadcastNestedLoopJoinExecBase(
-      left, right, joinType, gpuBuildSide, condition, postBroadcastCondition, targetSizeBytes
+      left, right, joinType, gpuBuildSide, condition, postBuildCondition, targetSizeBytes
     )

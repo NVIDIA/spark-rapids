@@ -134,10 +134,10 @@ case class GpuBroadcastNestedLoopJoinExec(
     joinType: JoinType,
     gpuBuildSide: GpuBuildSide,
     condition: Option[Expression],
-    postBroadcastCondition: List[NamedExpression],
+    postBuildCondition: List[NamedExpression],
     targetSizeBytes: Long,
     executorBroadcast: Boolean) extends GpuBroadcastNestedLoopJoinExecBase(
-      left, right, joinType, gpuBuildSide, condition, postBroadcastCondition, targetSizeBytes
+      left, right, joinType, gpuBuildSide, condition, postBuildCondition, targetSizeBytes
     ) {
   import GpuMetric._
 
