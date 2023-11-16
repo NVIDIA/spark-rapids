@@ -18,6 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import with_cpu_session, is_before_spark_330
 from pyspark.sql.types import *
+from marks import datagen_overrides
 import pyspark.sql.functions as f
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + struct_gens_sample_with_decimal128_no_list, ids=idfn)
@@ -329,6 +330,7 @@ def test_in(data_gen):
 
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries over that value.
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9687')
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_in_set(data_gen):
     # nulls are not supported for in on the GPU yet

@@ -355,6 +355,7 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9682")
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
                                       _grpkey_longs_with_nulls,
@@ -486,7 +487,7 @@ def test_window_batched_unbounded(b_gen, batch_size):
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
-def test_window_running_no_part(b_gen, batch_size):
+def test_rows_based_running_window_unpartitioned(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     query_parts = ['row_number() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
@@ -497,7 +498,9 @@ def test_window_running_no_part(b_gen, batch_size):
             'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
             'FIRST(b) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
             'FIRST(b, TRUE) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
-            'NTH_VALUE(b, 1) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls']
+            'NTH_VALUE(b, 1) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls',
+            'LAST(b) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_keep_nulls',
+            'LAST(b, TRUE) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_ignore_nulls',]
 
     if isinstance(b_gen.data_type, NumericType) and not isinstance(b_gen, FloatGen) and not isinstance(b_gen, DoubleGen):
         query_parts.append('sum(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_col')
@@ -545,7 +548,9 @@ def test_running_window_without_partitions_runs_batched(a_gen, batch_size):
         'MAX(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS max_col',
         'FIRST(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
         'FIRST(a, TRUE) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
-        'NTH_VALUE(a, 1) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls'
+        'NTH_VALUE(a, 1) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls',
+        'LAST(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_keep_nulls',
+        'LAST(a, TRUE) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_ignore_nulls',
     ]
 
     def must_test_sum_aggregation(gen):
@@ -685,6 +690,7 @@ def test_window_running_rank(data_gen):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
+
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
@@ -693,7 +699,7 @@ def test_window_running_rank(data_gen):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
         [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
-def test_window_running(b_gen, c_gen, batch_size):
+def test_rows_based_running_window_partitioned(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -705,7 +711,9 @@ def test_window_running(b_gen, c_gen, batch_size):
             'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col',
             'FIRST(c) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_keep_nulls',
             'FIRST(c, TRUE) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_ignore_nulls',
-            'NTH_VALUE(c, 1) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls']
+            'NTH_VALUE(c, 1) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS nth_1_keep_nulls',
+            'LAST(c) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_keep_nulls',
+            'LAST(c, TRUE) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_ignore_nulls']
 
     # Decimal precision can grow too large. Float and Double can get odd results for Inf/-Inf because of ordering
     if isinstance(c_gen.data_type, NumericType) and (not isinstance(c_gen, FloatGen)) and (not isinstance(c_gen, DoubleGen)) and (not isinstance(c_gen, DecimalGen)):
@@ -759,7 +767,9 @@ def test_range_running_window_runs_batched(part_gen, order_gen, batch_size):
         'MAX(oby) OVER          ' + window + ' AS max_col',
         'FIRST(oby) OVER        ' + window + ' AS first_keep_nulls',
         'FIRST(oby, TRUE) OVER  ' + window + ' AS first_ignore_nulls',
-        'NTH_VALUE(oby, 1) OVER ' + window + ' AS nth_1_keep_nulls'
+        'NTH_VALUE(oby, 1) OVER ' + window + ' AS nth_1_keep_nulls',
+        'LAST(oby) OVER         ' + window + ' AS last_keep_nulls',
+        'LAST(oby, TRUE) OVER   ' + window + ' AS last_ignore_nulls',
     ]
 
     def must_test_sum_aggregation(gen):

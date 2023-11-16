@@ -122,8 +122,16 @@ _limit = -1
 _inject_oom = None
 
 def should_inject_oom():
-    global _inject_oom
     return _inject_oom != None
+
+# For datagen: we expect a seed to be provided by the environment, or default to 0.
+# Note that tests can override their seed when calling into datagen by setting seed= in their tests.
+_test_datagen_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_DATAGEN_SEED", 0))
+print(f"Starting with datagen test seed: {_test_datagen_random_seed}. " 
+      "Set env variable SPARK_RAPIDS_TEST_DATAGEN_SEED to override.")
+
+def get_datagen_seed():
+    return _test_datagen_random_seed
 
 def get_limit():
     return _limit
@@ -142,7 +150,12 @@ def pytest_runtest_setup(item):
     global _sort_on_spark
     global _sort_locally
     global _inject_oom
+    global _test_datagen_random_seed
     _inject_oom = item.get_closest_marker('inject_oom')
+    datagen_overrides = item.get_closest_marker('datagen_overrides')
+    if datagen_overrides:
+        _test_datagen_random_seed = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
+
     order = item.get_closest_marker('ignore_order')
     if order:
         if order.kwargs.get('local', False):
@@ -269,6 +282,16 @@ def pytest_collection_modifyitems(config, items):
         # decide if OOMs should be injected, and when
         injection_mode = config.getoption('test_oom_injection_mode').lower()
         inject_choice = False
+        datagen_overrides = item.get_closest_marker('datagen_overrides')
+        if datagen_overrides:
+            test_datagen_random_seed_choice = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
+            if test_datagen_random_seed_choice != _test_datagen_random_seed:
+                extras.append('DATAGEN_SEED_OVERRIDE=%s' % str(test_datagen_random_seed_choice))
+            else:
+                extras.append('DATAGEN_SEED=%s' % str(test_datagen_random_seed_choice))
+        else:
+            extras.append('DATAGEN_SEED=%s' % str(_test_datagen_random_seed))
+
         if injection_mode == 'random':
             inject_choice = r.randrange(0, 2) == 1
         elif injection_mode == 'always':

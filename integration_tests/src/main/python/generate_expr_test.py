@@ -26,12 +26,12 @@ explode_gens = all_gen + [binary_gen]
 arrays_with_binary = [ArrayGen(BinaryGen(max_length=5))]
 maps_with_binary = [MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
 
-def four_op_df(spark, gen, length=2048, seed=0):
+def four_op_df(spark, gen, length=2048):
     return gen_df(spark, StructGen([
         ('a', gen),
         ('b', gen),
         ('c', gen),
-        ('d', gen)], nullable=False), length=length, seed=seed)
+        ('d', gen)], nullable=False), length=length)
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this

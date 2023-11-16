@@ -1661,8 +1661,9 @@ object RapidsConf {
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
         "The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-        "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
-        "also the maximum amount of memory that will be used per task. This should be set larger " +
+        "\"MULTITHREADED\" mode will allow to be serialized or deserialized concurrently " +
+        "per task. This is also the maximum amount of memory that will be used per task. " +
+        "This should be set larger " +
         "than Spark's default maxBytesInFlight (48MB). The larger this setting is, the " +
         "more compressed shuffle chunks are processed concurrently. In practice, " +
         "care needs to be taken to not go over the amount of off-heap memory that Netty has " +
