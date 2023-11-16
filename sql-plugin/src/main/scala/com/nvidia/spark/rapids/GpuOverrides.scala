@@ -3241,7 +3241,7 @@ object GpuOverrides extends Logging {
             willNotWorkOnGpu("Fail on error is not supported on GPU when parsing urls.")
           }
 
-          extractStringLit(childExprs(1).convertToCpu()).map(_.toUpperCase) match {
+          extractStringLit(a.children(1)).map(_.toUpperCase) match {
             case Some(GpuParseUrl.PROTOCOL) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")

@@ -75,9 +75,9 @@ case class GpuParseUrl(children: Seq[Expression])
       val Seq(url, partToExtract) = children
       withResourceIfAllowed(url.columnarEval(batch)) { urls =>
         withResourceIfAllowed(partToExtract.columnarEvalAny(batch)) { parts =>
-          (urls, parts) match {
-            case (urlCv: GpuColumnVector, partScalar: GpuScalar) =>
-              GpuColumnVector.from(doColumnar(urlCv, partScalar), dataType)
+          parts match {
+            case partScalar: GpuScalar =>
+              GpuColumnVector.from(doColumnar(urls, partScalar), dataType)
             case _ =>
               throw new 
                   UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
