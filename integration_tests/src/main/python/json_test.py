@@ -549,7 +549,11 @@ def test_from_json_struct_decimal():
     # https://github.com/NVIDIA/spark-rapids/issues/9667
     pytest.param("dd/MM/yyyy", marks=pytest.mark.allow_non_gpu('ProjectExec')),
 ])
-def test_from_json_struct_date(date_gen, date_format):
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    "CORRECTED"
+])
+def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
         .with_special_case('null')
@@ -558,7 +562,44 @@ def test_from_json_struct_date(date_gen, date_format):
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
+@pytest.mark.parametrize('date_format', [
+    "",
+    "yyyy-MM-dd",
+])
+def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
+    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
+        'ProjectExec',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
+@pytest.mark.parametrize('date_format', [
+    "dd/MM/yyyy",
+    "yyyy/MM/dd",
+])
+def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format):
+    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
+        'ProjectExec',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
               'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+
 
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:struct<name:string,age:int>>',

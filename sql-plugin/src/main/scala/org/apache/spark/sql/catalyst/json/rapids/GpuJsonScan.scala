@@ -121,6 +121,10 @@ object GpuJsonScan {
       }
     }
 
+    if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
+      meta.willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
+    }
+
     tagSupportOptions(parsedOptions, meta)
   }
 
