@@ -43,6 +43,12 @@ import pandas as pd
 import pyarrow
 from typing import Iterator, Tuple
 
+
+if is_databricks_runtime() and is_spark_340_or_later():
+    # Databricks 13.3 does not use separate reader/writer threads for Python UDFs
+    # which can lead to hangs. Skipping these tests until the Python UDF handling is updated.
+    pytestmark = pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
+
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
