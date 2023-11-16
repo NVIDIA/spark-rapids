@@ -1080,7 +1080,7 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, is_gpu_
     def do_join(spark):
         left = spark.read.parquet(data_path_parquet)
         right = spark.read.orc(data_path_orc)
-        return left.crossJoin(broadcast(left)).selectExpr("*", "input_file_block_length()")
+        return left.crossJoin(broadcast(right)).selectExpr("*", "input_file_block_length()")
 
     join_class = 'GpuBroadcastNestedLoopJoinExec' \
         if is_gpu_parquet and is_gpu_broadcast else 'BroadcastNestedLoopJoinExec'
