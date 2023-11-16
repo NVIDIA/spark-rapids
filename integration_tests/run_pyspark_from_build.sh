@@ -298,7 +298,7 @@ EOF
     fi
 
     # Set a seed to be used in the tests, for datagen
-    export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-`date +%s`}
+    export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-${DATAGEN_SEED:-`date +%s`}}
     echo "SPARK_RAPIDS_TEST_DATAGEN_SEED used: $SPARK_RAPIDS_TEST_DATAGEN_SEED"
 
     # Set a seed to be used to pick random tests to inject with OOM
