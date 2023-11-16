@@ -60,13 +60,13 @@ basic_nested_gens = single_level_array_gens + map_string_string_gen + [all_basic
 
 # data types supported by AST expressions in joins
 join_ast_gen = [
-    boolean_gen, byte_gen, short_gen, int_gen, long_gen, date_gen, timestamp_gen
+    boolean_gen, byte_gen, short_gen, int_gen, long_gen, date_gen, timestamp_gen, string_gen
 ]
 
 # data types not supported by AST expressions in joins
 join_no_ast_gen = [
     pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat]),
-    string_gen, null_gen, decimal_gen_64bit
+    null_gen, decimal_gen_64bit
 ]
 
 # Types to use when running joins on small batches. Small batch joins can take a long time

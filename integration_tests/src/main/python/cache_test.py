@@ -92,10 +92,10 @@ def test_cached_join_filter(data_gen, enable_vectorized_conf):
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
 def test_cache_expand_exec(data_gen, enable_vectorized_conf):
-    def op_df(spark, length=2048, seed=0):
+    def op_df(spark, length=2048):
         cached = gen_df(spark, StructGen([
             ('a', data_gen),
-            ('b', IntegerGen())], nullable=False), length=length, seed=seed).cache()
+            ('b', IntegerGen())], nullable=False), length=length).cache()
         cached.count() # populate the cache
         return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 

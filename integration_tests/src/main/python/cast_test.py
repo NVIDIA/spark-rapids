@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, \
     is_databricks113_or_later
-from marks import allow_non_gpu, approximate_float
+from marks import allow_non_gpu, approximate_float, datagen_overrides
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import date, datetime
@@ -146,6 +146,7 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9708')
 @pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
                                       StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
                                       StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
