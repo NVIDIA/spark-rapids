@@ -38,10 +38,11 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
+
 object GpuJsonToStructsShim {
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
-    options.getOrElse("dateFormat", "yyyy-MM-dd") match {
+    GpuJsonUtils.dateFormatInRead(options) match {
       case "yyyy-MM-dd" =>
         withResource(Scalar.fromString(" ")) { space =>
           withResource(input.strip(space)) { trimmed =>
