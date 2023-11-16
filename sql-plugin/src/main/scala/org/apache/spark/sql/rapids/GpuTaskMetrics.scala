@@ -80,21 +80,28 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
 
 class GpuTaskMetrics extends Serializable {
   private val semWaitTimeNs = new NanoSecondAccumulator
-  private val spillBlockTimeNs = new NanoSecondAccumulator
-  private val readSpillTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
   private val splitAndRetryCount = new LongAccumulator
   private val retryBlockTime = new NanoSecondAccumulator
   private val retryComputationTime = new NanoSecondAccumulator
 
+  // Spill
+  private val spillToHostTimeNs = new NanoSecondAccumulator
+  private val spillToDiskTimeNs = new NanoSecondAccumulator
+  private val readSpillFromHostTimeNs = new NanoSecondAccumulator
+  private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
+
   private val metrics = Map[String, AccumulatorV2[_, _]](
     "gpuSemaphoreWait" -> semWaitTimeNs,
-    "gpuSpillBlockTime" -> spillBlockTimeNs,
-    "gpuReadSpillTime" -> readSpillTimeNs,
     "gpuRetryCount" -> retryCount,
     "gpuSplitAndRetryCount" -> splitAndRetryCount,
     "gpuRetryBlockTime" -> retryBlockTime,
-    "gpuRetryComputationTime" -> retryComputationTime)
+    "gpuRetryComputationTime" -> retryComputationTime,
+    "gpuSpillToHostTime" -> spillToHostTimeNs,
+    "gpuSpillToDiskTime" -> spillToDiskTimeNs,
+    "gpuReadSpillFromHostTime" -> readSpillFromHostTimeNs,
+    "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs
+  )
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -132,9 +139,21 @@ class GpuTaskMetrics extends Serializable {
 
   def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, "Acquire GPU", NvtxColor.RED, f)
 
-  def spillTime[A](f: => A): A = timeIt(spillBlockTimeNs, "OnAllocFailure", NvtxColor.RED, f)
+  def spillToHostTime[A](f: => A): A = {
+    timeIt(spillToHostTimeNs, "spillToHostTime", NvtxColor.RED, f)
+  }
 
-  def readSpillTime[A](f: => A): A = timeIt(readSpillTimeNs, "Read Spill", NvtxColor.ORANGE, f)
+  def spillToDiskTime[A](f: => A): A = {
+    timeIt(spillToDiskTimeNs, "spillToDiskTime", NvtxColor.RED, f)
+  }
+
+  def readSpillFromHostTime[A](f: => A): A = {
+    timeIt(readSpillFromHostTimeNs, "readSpillFromHostTime", NvtxColor.ORANGE, f)
+  }
+
+  def readSpillFromDiskTime[A](f: => A): A = {
+    timeIt(readSpillFromDiskTimeNs, "readSpillFromDiskTime", NvtxColor.ORANGE, f)
+  }
 
   def updateRetry(taskAttemptId: Long): Unit = {
     val rc = RmmSpark.getAndResetNumRetryThrow(taskAttemptId)
