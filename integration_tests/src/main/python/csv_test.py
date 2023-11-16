@@ -402,7 +402,6 @@ csv_supported_ts_parts = ['', # Just the date
         "'T'HH:mm[:ss]",
         "'T'HH:mm"]
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9701')
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
