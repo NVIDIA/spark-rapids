@@ -3576,7 +3576,7 @@ object GpuOverrides extends Logging {
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
-        override def tagExprForGpu(): Unit =
+        override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
             case _: StructType => ()
@@ -3585,6 +3585,7 @@ object GpuOverrides extends Logging {
                 "or StructType schema")
           }
           GpuJsonScan.tagJsonToStructsSupport(a.options, a.dataType, this)
+        }
 
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input

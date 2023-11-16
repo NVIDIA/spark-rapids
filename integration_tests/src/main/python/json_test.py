@@ -546,7 +546,8 @@ def test_from_json_struct_decimal():
 @pytest.mark.parametrize('date_format', [
     "",
     "yyyy-MM-dd",
-    pytest.param("dd/MM/yyyy", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9667")),
+    # https://github.com/NVIDIA/spark-rapids/issues/9667
+    pytest.param("dd/MM/yyyy", marks=pytest.mark.allow_non_gpu('ProjectExec')),
 ])
 def test_from_json_struct_date(date_gen, date_format):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
