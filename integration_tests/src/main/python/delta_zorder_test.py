@@ -144,7 +144,8 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
             ('ex_skey', IntegerGen(nullable=False, min_val=0, max_val=1000, special_cases=[])),
             ('value', int_gen),
             ('filter', RepeatSeqGen(
-                IntegerGen(min_val=0, max_val=2000, special_cases=[]), length=2000 // 20))
+                IntegerGen(nullable=False, min_val=0, max_val=2000, special_cases=[]),
+                length=2000 // 20))
         ], 2000)
         df.write.format("delta") \
             .mode("overwrite") \
