@@ -25,7 +25,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
@@ -54,6 +54,28 @@ abstract class GpuBroadcastHashJoinMetaBase(
     JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, conditionMeta)
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ conditionMeta
+
+  private var taggedForAstCheck = false
+
+  // Avoid checking multiple times
+  private var isAstCond = false
+
+  /**
+   * Check whether condition can be ast-able. It includes two cases: 1) all join conditions are
+   * ast-able; 2) join conditions are ast-able after split and push down to child plans.
+   */
+  def canJoinCondAstAble(): Boolean = {
+    if (!taggedForAstCheck) {
+      val Seq(leftPlan, rightPlan) = childPlans
+      conditionMeta match {
+        case Some(e) => isAstCond = AstUtil.canExtractNonAstConditionIfNeed(
+          e, leftPlan.outputAttributes.map(_.exprId), rightPlan.outputAttributes.map(_.exprId))
+        case None => isAstCond = true
+      }
+      taggedForAstCheck = true
+    }
+    isAstCond
+  }
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
@@ -87,6 +109,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
+    postBuildCondition: List[NamedExpression],
     left: SparkPlan,
     right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
@@ -109,13 +132,22 @@ abstract class GpuBroadcastHashJoinExecBase(
     }
   }
 
-  def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
+  def broadcastExchange: GpuBroadcastExchangeExec = getBroadcastPlan(buildPlan) match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+  }
+
+  private def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // In case has post broadcast project. It happens when join condition contains non-AST
+      // expression which results in a project right after broadcast.
+      case plan: GpuProjectExec => plan.child
+      case _ => plan
+    }
   }
 
   override def doExecute(): RDD[InternalRow] =
@@ -152,9 +184,24 @@ abstract class GpuBroadcastHashJoinExecBase(
         }
       }
 
-      val buildBatch =
-        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
+      val buildBatch = projectEvalIfNeed(
+        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema))
       (buildBatch, bufferedStreamIter)
+    }
+  }
+
+  final def projectEvalIfNeed(batch: ColumnarBatch): ColumnarBatch = {
+    buildPlan match {
+      case p: GpuProjectExec =>
+        // Need to manually do project columnar execution other than calling child's
+        // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
+        // batch.
+        val proj = GpuBindReferences.bindGpuReferencesTiered(
+          postBuildCondition, p.child.output, true)
+        withResource(batch) {
+          cb => proj.project(cb)
+        }
+      case _ => batch
     }
   }
 

@@ -36,7 +36,7 @@ package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
@@ -48,29 +48,60 @@ class GpuBroadcastHashJoinMeta(
     rule: DataFromReplacementRule) extends GpuBroadcastHashJoinMetaBase(join, conf, parent, rule) {
 
   override def convertToGpu(): GpuExec = {
-    val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
-      (condition, None)
-    } else {
-      (None, condition)
-    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => left
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
-    val joinExec = GpuBroadcastHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      buildSide,
-      joinCondition,
-      left, right)
-    // For inner joins we can apply a post-join condition for any conditions that cannot be
-    // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+
+    // First to check whether we can extract some non-supported AST conditions. If not, will do a
+    // post-join filter right after hash join node.
+    if (canJoinCondAstAble()) {
+      val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left
+            .output, right.output, true)
+
+      // Reconstruct the child with wrapped project node if needed.
+      val leftChild =
+        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+      val rightChild =
+        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+      val postBuildCondition =
+        if (buildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
+
+      val joinExec = GpuBroadcastHashJoinExec(
+        leftKeys.map(_.convertToGpu()),
+        rightKeys.map(_.convertToGpu()),
+        join.joinType,
+        buildSide,
+        remain,
+        postBuildCondition,
+        leftChild, rightChild)
+      if (leftExpr.isEmpty && rightExpr.isEmpty) {
+        joinExec
+      } else {
+        // Remove the intermediate attributes from left and right side project nodes. Output
+        // attributes need to be updated based on types
+        GpuProjectExec(
+          GpuHashJoin.output(join.joinType, left.output, right.output).toList,
+          joinExec)(false)
+      }
+    } else {
+      val joinExec = GpuBroadcastHashJoinExec(
+        leftKeys.map(_.convertToGpu()),
+        rightKeys.map(_.convertToGpu()),
+        join.joinType,
+        buildSide,
+        None,
+        List.empty,
+        left, right)
+      // For inner joins we can apply a post-join condition for any conditions that cannot be
+      // evaluated directly in a mixed join that leverages a cudf AST expression
+      conditionMeta.map(_.convertToGpu()).map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+    }
   }
 }
 
@@ -80,6 +111,7 @@ case class GpuBroadcastHashJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
+    postBuildCondition: List[NamedExpression],
     left: SparkPlan,
     right: SparkPlan) extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right)
+      leftKeys, rightKeys, joinType, buildSide, condition, postBuildCondition, left, right)

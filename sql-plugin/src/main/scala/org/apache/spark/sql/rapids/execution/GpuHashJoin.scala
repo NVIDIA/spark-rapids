@@ -116,9 +116,11 @@ object GpuHashJoin {
     joinType match {
       case _: InnerLike =>
       case RightOuter | LeftOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
-        conditionMeta.foreach(meta.requireAstForGpuOn)
+        // First to check whether can be split if not ast-able. If false, then check requireAst to
+        // send not-work-on-GPU reason if not replace-able.
+        conditionMeta.foreach(cond => if (!canJoinCondAstAble(meta)) meta.requireAstForGpuOn(cond))
       case FullOuter =>
-        conditionMeta.foreach(meta.requireAstForGpuOn)
+        conditionMeta.foreach(cond => if (!canJoinCondAstAble(meta)) meta.requireAstForGpuOn(cond))
         // FullOuter join cannot support with struct keys as two issues below
         //  * https://github.com/NVIDIA/spark-rapids/issues/2126
         //  * https://github.com/rapidsai/cudf/issues/7947
@@ -135,6 +137,15 @@ object GpuHashJoin {
       case GpuBuildRight if !canBuildRight(joinType) =>
         meta.willNotWorkOnGpu(s"$joinType does not support right-side build")
       case _ =>
+    }
+  }
+
+  // Check whether the entire tree is ast-able or being able to split non-Ast-able conditions
+  // into child nodes. Now only support broad hash join.
+  private[this] def canJoinCondAstAble(meta: SparkPlanMeta[_]): Boolean = {
+    meta match {
+      case meta: GpuBroadcastHashJoinMeta => meta.canJoinCondAstAble
+      case _ => false
     }
   }
 
@@ -253,6 +264,25 @@ object GpuHashJoin {
     // TODO: support BooleanType, DateType and TimestampType
     keys.forall(_.dataType.isInstanceOf[IntegralType]) &&
       keys.map(_.dataType.defaultSize).sum <= 8
+  }
+
+  def output(joinType: JoinType, left: Seq[Attribute], right: Seq[Attribute]): Seq[Attribute] = {
+    joinType match {
+      case _: InnerLike =>
+        left ++ right
+      case LeftOuter =>
+        left ++ right.map(_.withNullability(true))
+      case RightOuter =>
+        left.map(_.withNullability(true)) ++ right
+      case j: ExistenceJoin =>
+        left :+ j.exists
+      case LeftExistence(_) =>
+        left
+      case FullOuter =>
+        left.map(_.withNullability(true)) ++ right.map(_.withNullability(true))
+      case x =>
+        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
+    }
   }
 }
 
@@ -885,22 +915,7 @@ trait GpuHashJoin extends GpuExec {
   }
 
   override def output: Seq[Attribute] = {
-    joinType match {
-      case _: InnerLike =>
-        left.output ++ right.output
-      case LeftOuter =>
-        left.output ++ right.output.map(_.withNullability(true))
-      case RightOuter =>
-        left.output.map(_.withNullability(true)) ++ right.output
-      case j: ExistenceJoin =>
-        left.output :+ j.exists
-      case LeftExistence(_) =>
-        left.output
-      case FullOuter =>
-        left.output.map(_.withNullability(true)) ++ right.output.map(_.withNullability(true))
-      case x =>
-        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
-    }
+    GpuHashJoin.output(joinType, left.output, right.output)
   }
 
   // If we have a single batch streamed in then we will produce a single batch of output
