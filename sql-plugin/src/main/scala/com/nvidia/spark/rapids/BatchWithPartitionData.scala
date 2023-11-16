@@ -340,6 +340,8 @@ object BatchWithPartitionDataUtils {
    * Splits the input ColumnarBatch into smaller batches, wraps these batches with partition
    * data, and returns them as a sequence of [[BatchWithPartitionData]].
    *
+   * This function does not take ownership of `batch`, and callers should make sure to close.
+   *
    * @note Partition values are merged with the columnar batches lazily by the resulting Iterator
    *       to save GPU memory.
    * @param batch                     Input ColumnarBatch.
@@ -502,9 +504,10 @@ object BatchWithPartitionDataUtils {
           throw new SplitAndRetryOOM("GPU OutOfMemory: cannot split input with one row")
         }
         // Split the batch into two halves
-        val cb = batchWithPartData.inputBatch.getColumnarBatch()
-        splitAndCombineBatchWithPartitionData(cb, splitPartitionData,
-          batchWithPartData.partitionSchema)
+        withResource(batchWithPartData.inputBatch.getColumnarBatch()) { cb =>
+          splitAndCombineBatchWithPartitionData(cb, splitPartitionData,
+            batchWithPartData.partitionSchema)
+        }
       }
     }
   }
