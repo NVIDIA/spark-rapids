@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.time.ZoneId
 
 import ai.rapids.cudf._
-import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.DateTimeRebase
@@ -121,28 +120,31 @@ object GpuParquetFileFormat {
       }
     }
 
-    SparkShimImpl.int96ParquetRebaseWrite(sqlConf) match {
-      case "EXCEPTION" =>
-      case "CORRECTED" =>
-      case "LEGACY" =>
+    DateTimeRebaseMode.fromName(SparkShimImpl.int96ParquetRebaseWrite(sqlConf)) match {
+      case DateTimeRebaseException | DateTimeRebaseCorrected => // Good
+      case DateTimeRebaseLegacy =>
         if (schemaHasTimestamps) {
           meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
         }
-      case other =>
-        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
-    SparkShimImpl.parquetRebaseWrite(sqlConf) match {
-      case "EXCEPTION" | "CORRECTED" => // Good
-      case "LEGACY" =>
+    DateTimeRebaseMode.fromName(SparkShimImpl.parquetRebaseWrite(sqlConf)) match {
+      case DateTimeRebaseException | DateTimeRebaseCorrected => // Good
+      case DateTimeRebaseLegacy =>
         if (!TypeChecks.areTimestampsSupported()) {
           meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
             s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
             s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
             " Set both of the timezones to UTC to enable LEGACY rebase support.")
         }
-      case other =>
-        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode")
+      // This should never be reached out, since invalid mode is handled in
+      // `DateTimeRebaseMode.fromName`.
+      case other => meta.willNotWorkOnGpu(
+        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
     if (meta.canThisBeReplaced) {
@@ -193,9 +195,11 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val conf = ContextUtil.getConfiguration(job)
 
     val outputTimestampType = sqlConf.parquetOutputTimestampType
-    val dateTimeRebaseMode = sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey)
+    val dateTimeRebaseMode = DateTimeRebaseMode.fromName(
+      sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
     val timestampRebaseMode = if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
-      sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey)
+      DateTimeRebaseMode.fromName(
+        sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey))
     } else {
       dateTimeRebaseMode
     }
@@ -302,21 +306,20 @@ class GpuParquetWriter(
     dataSchema: StructType,
     compressionType: CompressionType,
     outputTimestampType: String,
-    dateRebaseMode: String,
-    timestampRebaseMode: String,
+    dateRebaseMode: DateTimeRebaseMode,
+    timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
-      // if col is a day
-      if (dateRebaseMode.equals("EXCEPTION") && RebaseHelper.isDateRebaseNeededInWrite(col)) {
+      if (dateRebaseMode == DateTimeRebaseException &&
+        DateTimeRebaseUtils.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
-      // if col is a time
-      else if (timestampRebaseMode.equals("EXCEPTION") &&
-               RebaseHelper.isTimeRebaseNeededInWrite(col)) {
+      else if (timestampRebaseMode == DateTimeRebaseException &&
+               DateTimeRebaseUtils.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
@@ -336,14 +339,14 @@ class GpuParquetWriter(
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
       case (cv, _) if cv.getType.isTimestampType =>
         if(cv.getType == DType.TIMESTAMP_DAYS) {
-          if (dateRebaseMode.equals("LEGACY")) {
+          if (dateRebaseMode == DateTimeRebaseLegacy) {
             DateTimeRebase.rebaseGregorianToJulian(cv)
           } else {
             cv.copyToColumnVector()
           }
         } else { /* timestamp */
           val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-          if (timestampRebaseMode.equals("LEGACY")) {
+          if (timestampRebaseMode == DateTimeRebaseLegacy) {
             val rebasedTimestampAsMicros = if(cv.getType == DType.TIMESTAMP_MICROSECONDS) {
               DateTimeRebase.rebaseGregorianToJulian(cv)
             } else {

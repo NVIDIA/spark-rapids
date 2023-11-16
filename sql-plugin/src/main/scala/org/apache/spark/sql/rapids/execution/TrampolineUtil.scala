@@ -22,9 +22,12 @@ import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, Sp
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
+import org.apache.spark.internal.config
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
+import org.apache.spark.security.CryptoStreamUtils
+import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
@@ -183,7 +186,24 @@ object TrampolineUtil {
     CompressionCodec.createCodec(conf, codecName)
   }
 
+  def createCodec(conf: SparkConf): CompressionCodec = {
+    CompressionCodec.createCodec(conf)
+  }
+
   def getCodecShortName(codecName: String): String = CompressionCodec.getShortName(codecName)
+
+  def getSerializerManager(): SerializerManager = {
+    if (SparkEnv.get != null) SparkEnv.get.serializerManager else null
+  }
+
+  // For test only
+  def createSerializerManager(conf: SparkConf): SerializerManager = {
+    new SerializerManager(new JavaSerializer(conf), conf, Some(CryptoStreamUtils.createKey(conf)))
+  }
+
+  def isCompressSpill(conf: SparkConf): Boolean = {
+    conf.get(config.SHUFFLE_SPILL_COMPRESS)
+  }
 
   // If the master is a local mode (local or local-cluster), return the number
   // of cores per executor it is going to use, otherwise return 1.

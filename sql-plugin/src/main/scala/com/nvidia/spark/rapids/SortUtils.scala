@@ -242,9 +242,9 @@ class GpuSorter(
    * @return the sorted data.
    */
   final def mergeSortAndCloseWithRetry(
-      spillableBatches: mutable.ArrayStack[SpillableColumnarBatch],
+      spillableBatches: RapidsStack[SpillableColumnarBatch],
       sortTime: GpuMetric): SpillableColumnarBatch = {
-    closeOnExcept(spillableBatches) { _ =>
+    closeOnExcept(spillableBatches.toSeq) { _ =>
       assert(spillableBatches.nonEmpty)
     }
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
@@ -258,8 +258,8 @@ class GpuSorter(
         if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
           // so as a work around we concatenate all of the data together and then sort it.
           // It is slower, but it works
-          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches) { _ =>
-            val tablesToMerge = spillableBatches.safeMap { sb =>
+          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
+            val tablesToMerge = attempt.safeMap { sb =>
               withResource(sb.getColumnarBatch()) { cb =>
                 GpuColumnVector.from(cb)
               }
@@ -277,9 +277,9 @@ class GpuSorter(
             }
           }
         } else {
-          closeOnExcept(spillableBatches) { _ =>
-            val batchesToMerge = new mutable.ArrayStack[SpillableColumnarBatch]()
-            closeOnExcept(batchesToMerge) { _ =>
+          closeOnExcept(spillableBatches.toSeq) { _ =>
+            val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
+            closeOnExcept(batchesToMerge.toSeq) { _ =>
               while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
                 // pop a spillable batch if there is one, and add it to `batchesToMerge`.
                 if (spillableBatches.nonEmpty) {
@@ -287,7 +287,7 @@ class GpuSorter(
                 }
                 if (batchesToMerge.size > 1) {
                   val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-                    val tablesToMerge = batchesToMerge.safeMap { sb =>
+                    val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
                       withResource(sb.getColumnarBatch()) { cb =>
                         GpuColumnVector.from(cb)
                       }
@@ -299,7 +299,7 @@ class GpuSorter(
 
                   // we no longer care about the old batches, we closed them
                   closeOnExcept(merged) { _ =>
-                    batchesToMerge.safeClose()
+                    batchesToMerge.toSeq.safeClose()
                     batchesToMerge.clear()
                   }
 

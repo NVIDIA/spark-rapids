@@ -23,23 +23,27 @@
     <includeBaseDirectory>false</includeBaseDirectory>
     <files>
         <file>
-            <source>README.md</source>
+            <source>${spark.rapids.source.basedir}/integration_tests/README.md</source>
             <outputDirectory>integration_tests/</outputDirectory>
         </file>
         <file>
-            <source>runtests.py</source>
+            <source>${spark.rapids.source.basedir}/integration_tests/runtests.py</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
-            <source>run_pyspark_from_build.sh</source>
+            <source>${spark.rapids.source.basedir}/integration_tests/run_pyspark_from_build.sh</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
-            <source>pytest.ini</source>
+            <source>${spark.rapids.source.basedir}/integration_tests/pytest.ini</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
-            <source>conftest.py</source>
+            <source>${spark.rapids.source.basedir}/integration_tests/conftest.py</source>
+            <outputDirectory>integration_tests</outputDirectory>
+        </file>
+        <file>
+            <source>${spark.rapids.source.basedir}/integration_tests/requirements.txt</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
@@ -49,18 +53,18 @@
     </files>
     <fileSets>
         <fileSet>
-            <directory>./src/main/python</directory>
+            <directory>${spark.rapids.source.basedir}/integration_tests/src/main/python</directory>
             <outputDirectory>integration_tests/src/main/python</outputDirectory>
             <includes>
                 <include>*.py</include>
             </includes>
         </fileSet>
         <fileSet>
-            <directory>src/test/resources/</directory>
+            <directory>${spark.rapids.source.basedir}/integration_tests/src/test/resources/</directory>
             <outputDirectory>integration_tests/src/test/resources</outputDirectory>
         </fileSet>
         <fileSet>
-            <directory>${project.basedir}/../thirdparty/parquet-testing</directory>
+            <directory>${spark.rapids.source.basedir}/thirdparty/parquet-testing</directory>
             <outputDirectory>integration_tests/src/test/resources/parquet-testing</outputDirectory>
             <includes>
                 <include>**/*.parquet</include>

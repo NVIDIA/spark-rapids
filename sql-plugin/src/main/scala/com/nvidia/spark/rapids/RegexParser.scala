@@ -859,7 +859,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def negateCharacterClass(components: Seq[RegexCharacterClassComponent]): RegexAST = {
+  private def negateCharacterClass(
+      components: ListBuffer[RegexCharacterClassComponent]): RegexAST = {
     // There are differences between cuDF and Java handling of `\r`
     // in negated character classes. The expression `[^a]` will match
     // `\r` in Java but not in cuDF, so we replace `[^a]` with
@@ -894,13 +895,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     if (componentsWithoutLinefeed.length != components.length) {
       // no modification needed in this case
-      RegexCharacterClass(negated = true, ListBuffer(components: _*))
+      RegexCharacterClass(negated = true, ListBuffer(components.toSeq: _*))
     } else {
       RegexGroup(capture = false,
         RegexChoice(
           RegexCharacterClass(negated = false,
             characters = ListBuffer(RegexChar('\r'))),
-          RegexCharacterClass(negated = true, ListBuffer(components: _*))), None)
+          RegexCharacterClass(negated = true, ListBuffer(components.toSeq: _*))), None)
     }
   }
 
@@ -1279,7 +1280,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               "Nested character classes are not supported", r.position)
           case _ =>
         }
-        val components: Seq[RegexCharacterClassComponent] = characters
+        val components = ListBuffer(characters.toSeq
           .map {
             case r @ RegexChar(ch) if "^$.".contains(ch) => r
             case ch => rewrite(ch, replacement, None, flags) match {
@@ -1291,12 +1292,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
                   "characters that cannot be transpiled to supported character-class components",
                   ch.position)
             }
-          }
+          }: _*)
 
         if (negated) {
           negateCharacterClass(components)
         } else {
-          RegexCharacterClass(negated, ListBuffer(components: _*))
+          RegexCharacterClass(negated, components)
         }
 
       case sequence @ RegexSequence(parts) =>
@@ -1733,7 +1734,7 @@ sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
     this(parts)
     this.position = Some(position)
   }
-  override def children(): Seq[RegexAST] = parts
+  override def children(): Seq[RegexAST] = parts.toSeq
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 }
 
@@ -1889,7 +1890,7 @@ sealed case class RegexCharacterClass(
     var negated: Boolean,
     var characters: ListBuffer[RegexCharacterClassComponent])
   extends RegexAST {
-  def this (
+  def this(
       negated: Boolean,
       characters: ListBuffer[RegexCharacterClassComponent],
       position: Int) = {
@@ -1897,7 +1898,8 @@ sealed case class RegexCharacterClass(
     this.position = Some(position)
   }
 
-  override def children(): Seq[RegexAST] = characters
+  override def children(): Seq[RegexAST] = characters.toSeq
+
   def append(ch: Char): Unit = {
     characters += RegexChar(ch)
   }
@@ -1963,7 +1965,7 @@ sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
     this(parts, numCaptureGroups)
     this.position = Some(position)
   }
-  override def children(): Seq[RegexAST] = parts
+  override def children(): Seq[RegexAST] = parts.toSeq
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 
   def appendBackref(num: Int): Unit = {

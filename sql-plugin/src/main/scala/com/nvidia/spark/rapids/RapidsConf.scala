@@ -557,6 +557,16 @@ object RapidsConf {
       s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
     .createWithDefault(1 * 1024 * 1024 * 1024) // 1 GiB is the default
 
+  val MAX_GPU_COLUMN_SIZE_BYTES = conf("spark.rapids.sql.columnSizeBytes")
+    .doc("Limit the max number of bytes for a GPU column. It is same as the cudf " +
+      "row count limit of a column. It is used by the multi-file readers. " +
+      "See com.nvidia.spark.rapids.BatchWithPartitionDataUtils.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
+      s"Column size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
+    .createWithDefault(Integer.MAX_VALUE) // 2 GiB is the default
+
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
     .doc("Soft limit on the maximum number of rows the reader will read per batch. " +
       "The orc and parquet readers will read row groups until this limit is met or exceeded. " +
@@ -1633,12 +1643,12 @@ object RapidsConf {
     .createWithDefault(500 * 1024)
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
-      .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: lz4, copy, none")
-      .internal()
-      .startupOnly()
-      .stringConf
-      .createWithDefault("none")
+    .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
+      "Supported codecs: lz4, copy, none")
+    .internal()
+    .startupOnly()
+    .stringConf
+    .createWithDefault("none")
 
   val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
@@ -1828,12 +1838,6 @@ object RapidsConf {
       "with the RAPIDS Accelerator version, then set this to true.")
     .booleanConf
     .createWithDefault(false)
-
-  val CUDF_COLUMN_SIZE_LIMIT = conf("spark.rapids.cudfColumnSizeLimit")
-    .internal()
-    .doc("Maximum size for cuDF column vector set to 2^31 - 1")
-    .longConf
-    .createWithDefault((1L << 31) - 1)
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
@@ -2045,6 +2049,12 @@ object RapidsConf {
       .longConf
       .createOptional
 
+  val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
+    .doc("Only for tests: verify for IO encryption")
+    .internal()
+    .booleanConf
+    .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2229,7 +2239,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
-    _.startsWith("spark.rapids.")).asJava
+    _.startsWith("spark.rapids.")).toMap.asJava
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
@@ -2352,6 +2362,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
+
+  lazy val maxGpuColumnSizeBytes: Long = get(MAX_GPU_COLUMN_SIZE_BYTES)
 
   lazy val parquetDebugDumpPrefix: Option[String] = get(PARQUET_DEBUG_DUMP_PREFIX)
 
@@ -2621,8 +2633,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
-
-  lazy val cudfColumnSizeLimit: Long = get(CUDF_COLUMN_SIZE_LIMIT)
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 

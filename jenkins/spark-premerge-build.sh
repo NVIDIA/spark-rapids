@@ -27,11 +27,16 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
+CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
 MVN_BUILD_ARGS="-Drat.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."
+
+    # Download a Scala 2.12 build of spark
+    prepare_spark $SPARK_VER 2.12
+
     # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
@@ -61,6 +66,7 @@ mvn_verify() {
     # enable UTF-8 for regular expression tests
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
+        echo "Spark version (regex): $version"
         env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
           -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
@@ -145,6 +151,9 @@ ci_2() {
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
+
+    # Download a Scala 2.12 build of spark
+    prepare_spark $SPARK_VER 2.12
     ./integration_tests/run_pyspark_from_build.sh
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
@@ -160,19 +169,66 @@ ci_2() {
     done
 }
 
+ci_scala213() {
+    echo "Run premerge ci (Scala 2.13) testing..."
+    cd scala2.13
+    ln -sf ../jenkins jenkins
+
+    # Download a Scala 2.13 version of Spark
+    prepare_spark 3.3.0 2.13
+
+    # build Scala 2.13 versions
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
+    do
+        echo "Spark version (Scala 2.13): $version"
+        env -u SPARK_HOME \
+            $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
+        # Run filecache tests
+        env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
+            $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+            -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
+    done
+
+    $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
+    cd .. # Run integration tests in the project root dir to leverage test cases and resource files
+    export TEST_TAGS="not premerge_ci_1"
+    export TEST_TYPE="pre-commit"
+    export TEST_PARALLEL=5
+    # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
+    SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
+        ./integration_tests/run_pyspark_from_build.sh
+    # enable avro test separately
+    SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
+        INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
+    # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
+    SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
+        LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+}
+
+prepare_spark() {
+    spark_ver=${1:-'3.1.1'}
+    scala_ver=${2:-'2.12'}
+
+    ARTF_ROOT="$(pwd)/.download"
+    rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
+    # Download a full version of spark
+    . jenkins/hadoop-def.sh $spark_ver $scala_ver
+    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_ver/spark-$spark_ver-$BIN_HADOOP_VER.tgz
+
+    export SPARK_HOME="$ARTF_ROOT/spark-$spark_ver-$BIN_HADOOP_VER"
+    export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
+    tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && rm -f $SPARK_HOME.tgz
+    # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
+    TMP_PYTHON=/tmp/$(date +"%Y%m%d")
+    rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
+    export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$(echo -n $TMP_PYTHON/python/lib/py4j-*-src.zip)
+}
 
 nvidia-smi
 
 . jenkins/version-def.sh
 
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
-
-ARTF_ROOT="$WORKSPACE/.download"
-MVN_GET_CMD="$MVN_CMD org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
-    $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
-    -Ddest=$ARTF_ROOT"
-
-rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 
 # If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
 # Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
@@ -181,25 +237,13 @@ if [ -s "$M2_CACHE_TAR" ] ; then
     tar xf $M2_CACHE_TAR -C ~/
 fi
 
-# Download a full version of spark
-. jenkins/hadoop-def.sh $SPARK_VER
-wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
-
-export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
-export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
-tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
-    rm -f $SPARK_HOME.tgz
-# copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
-TMP_PYTHON=/tmp/$(date +"%Y%m%d")
-rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
-export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$TMP_PYTHON/python/lib/py4j-0.10.9-src.zip
-
 case $BUILD_TYPE in
 
     all)
         echo "Run all testings..."
         mvn_verify
         ci_2
+        ci_scala213
         ;;
 
     mvn_verify)
@@ -208,6 +252,10 @@ case $BUILD_TYPE in
 
     ci_2 )
         ci_2
+        ;;
+
+    ci_scala213 )
+        ci_scala213
         ;;
 
     *)

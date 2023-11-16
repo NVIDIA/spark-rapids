@@ -49,9 +49,19 @@ _decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
 _decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
-_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 = [
+_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0_no_38_10_no_36_5 = [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
-    _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_10
+    _decimal_gen_30_2
+]
+
+_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0_no_38_10_no_36_5 + \
+    [_decimal_gen_36_5, _decimal_gen_38_10]
+
+_arith_decimal_gens_high_precision_no_neg_scale = [_decimal_gen_36_5, _decimal_gen_38_0, _decimal_gen_38_10]
+
+_arith_decimal_gens_high_precision = _arith_decimal_gens_high_precision_no_neg_scale + [
+    _decimal_gen_36_neg5, _decimal_gen_38_neg10
 ]
 
 _arith_data_gens_diff_precision_scale_and_no_neg_scale = \
@@ -62,6 +72,11 @@ _arith_decimal_gens_no_neg_scale = _arith_data_gens_diff_precision_scale_and_no_
 _arith_decimal_gens = _arith_decimal_gens_no_neg_scale + [
     decimal_gen_32bit_neg_scale, _decimal_gen_36_neg5, _decimal_gen_38_neg10
 ]
+
+_arith_decimal_gens_low_precision = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0_no_38_10_no_36_5 + \
+    [decimal_gen_32bit_neg_scale, _decimal_gen_7_7]
+
 
 _arith_data_gens = numeric_gens + _arith_decimal_gens
 
@@ -450,13 +465,27 @@ def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('signum(a)'))
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + _arith_decimal_gens_low_precision, ids=idfn)
 def test_unary_minus(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'))
 
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + _arith_decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision (SPARK-45438)")
+def test_unary_minus_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'))
+
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] +
+    _arith_decimal_gens_low_precision, ids=idfn)
 def test_unary_minus_ansi_no_overflow(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
+            conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision (SPARK-45438)")
+def test_unary_minus_ansi_no_overflow_decimal128(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
             conf=ansi_enabled_conf)
@@ -486,16 +515,30 @@ def test_unary_positive(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'))
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + _arith_decimal_gens_low_precision, ids=idfn)
 def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
 
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision (SPARK-45438)")
+def test_abs_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
+
 # ANSI is ignored for abs prior to 3.2.0, but still okay to test it a little more.
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + _arith_decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] +
+    _arith_decimal_gens_low_precision, ids=idfn)
 def test_abs_ansi_no_overflow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'),
+            conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', _arith_decimal_gens_high_precision, ids=idfn)
+@pytest.mark.skipif(is_scala213(), reason="Apache Spark built with Scala 2.13 produces inconsistent results at high precision")
+def test_abs_ansi_no_overflow_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('a','abs(a)'),
             conf=ansi_enabled_conf)
 
 # Only run this test for Spark v3.2.0 and later to verify abs will
@@ -1341,3 +1384,15 @@ def test_day_time_interval_division_nan(data_type, value_pair):
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
         error_message='java.lang.ArithmeticException')
+
+
+@pytest.mark.parametrize('op_str', ['+', '- -', '*'], ids=['Add', 'Subtract', 'Multiply'])
+def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
+    def test_func(spark):
+        return spark.range(20).selectExpr("CAST(id as DECIMAL(38,0)) as dec_num")\
+            .selectExpr("99999999999999999999999999999999999991" + op_str + "dec_num as dec_over")
+    # Have to disable ansi, otherwise both CPU and GPU will throw exceptions, which is
+    # not we want for this test.
+    conf_no_ansi = {"spark.sql.ansi.enabled": "false"}
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
+

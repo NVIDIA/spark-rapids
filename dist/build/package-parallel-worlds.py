@@ -29,14 +29,15 @@ def shell_exec(shell_cmd):
 artifacts = attributes.get('artifact_csv').split(',')
 buildver_list = re.sub(r'\s+', '', project.getProperty('included_buildvers'),
                        flags=re.UNICODE).split(',')
-project_basedir = project.getProperty('spark.rapids.source.basedir')
+source_basedir = project.getProperty('spark.rapids.source.basedir')
+project_basedir = project.getProperty('spark.rapids.project.basedir')
 project_version = project.getProperty('project.version')
 scala_version = project.getProperty('scala.binary.version')
 project_build_dir = project.getProperty('project.build.directory')
 deps_dir = os.sep.join([project_build_dir, 'deps'])
 top_dist_jar_dir = os.sep.join([project_build_dir, 'parallel-world'])
 urm_url = project.getProperty('env.URM_URL')
-jenkins_settings = os.sep.join([project_basedir, 'jenkins', 'settings.xml'])
+jenkins_settings = os.sep.join([source_basedir, 'jenkins', 'settings.xml'])
 repo_local = project.getProperty('maven.repo.local')
 
 for bv in buildver_list:
@@ -71,7 +72,7 @@ for bv in buildver_list:
                 mvn_cmd.append('='.join(['-Dmaven.repo.local', repo_local]))
             shell_exec(mvn_cmd)
 
-        dist_dir = os.sep.join([project_basedir, 'dist'])
+        dist_dir = os.sep.join([source_basedir, 'dist'])
         with open(os.sep.join([dist_dir, 'unshimmed-common-from-spark311.txt']), 'r') as f:
             from_spark311 = f.read().splitlines()
         with open(os.sep.join([dist_dir, 'unshimmed-from-each-spark3xx.txt']), 'r') as f:

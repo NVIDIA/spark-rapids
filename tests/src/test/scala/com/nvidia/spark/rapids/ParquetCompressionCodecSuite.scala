@@ -46,7 +46,7 @@ class ParquetCompressionCodecSuite extends SparkQueryCompareTestSuite {
       block <- footer.getParquetMetadata.getBlocks.asScala
       column <- block.getColumns.asScala
     } yield column.getCodec.name()
-    codecs.distinct
+    codecs.distinct.toSeq
   }
 
   def testCompression(rowNum: Int): Unit = {
