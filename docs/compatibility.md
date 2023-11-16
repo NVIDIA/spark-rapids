@@ -469,6 +469,17 @@ Spark stores timestamps internally relative to the JVM time zone.  Converting an
 between time zones is not currently supported on the GPU. Therefore operations involving timestamps
 will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
+## URL parsing
+
+`parse_url` can produce different results on the GPU compared to the CPU. 
+
+Known issues for PROTOCOL parsing:
+- If urls containing utf-8 special characters, PROTOCOL results on GPU will be null.
+- If urls containing ipv6 host, GPU will return null for PROTOCOL.
+- GPU will still try to parse the PROTOCOL instead of returning null for some edge invalid cases,
+  such as urls containing multiple '#' in REF (http://##) or empty authority component followed by 
+  a empty path (http://).
+
 ## Windowing
 
 ### Window Functions
