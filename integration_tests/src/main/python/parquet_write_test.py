@@ -474,6 +474,7 @@ def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write,
         lambda spark: writeParquetCatchException(spark, data_gen, data_path),
         conf=all_confs)
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9701')
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
