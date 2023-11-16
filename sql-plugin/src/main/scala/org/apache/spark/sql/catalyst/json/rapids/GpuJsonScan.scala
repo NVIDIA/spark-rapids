@@ -115,10 +115,11 @@ object GpuJsonScan {
 
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
     if (hasDates) {
-      options.get("dateFormat") match {
-        case Some(dateFormat) if dateFormat != "yyyy-MM-dd" =>
+      GpuJsonUtils.dateFormatInRead(parsedOptions) match {
+        case "yyyy-MM-dd" =>
+          // this is fine
+        case dateFormat =>
           meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
-        case _ =>
       }
     }
 
