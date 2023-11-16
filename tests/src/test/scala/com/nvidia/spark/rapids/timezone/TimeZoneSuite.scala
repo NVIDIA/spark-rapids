@@ -18,19 +18,20 @@ package com.nvidia.spark.rapids.timezone
 
 import java.time._
 import java.util.concurrent.TimeUnit
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import org.scalatest.BeforeAndAfterAll
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.microsToInstant
 import org.apache.spark.sql.types._
-import org.scalatest.BeforeAndAfterAll
-
-import java.util.concurrent.Executors
 
 class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   private val useGPU = true
@@ -313,17 +314,9 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   }
 
   override def beforeAll(): Unit = {
-    if (useGPU) {
-      GpuTimeZoneDB.cacheDatabase(Executors.newCachedThreadPool())
-    } else {
-      TimeZoneDB.cacheDatabase(Executors.newCachedThreadPool())
-    }
     zones = selectTimeZones
-  }
-
-  override def afterAll(): Unit = {
     if (useGPU) {
-      GpuTimeZoneDB.unload()
+      withGpuSparkSession(_ => { })
     }
   }
 

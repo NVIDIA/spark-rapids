@@ -19,16 +19,14 @@ package com.nvidia.spark.rapids
 import java.lang.reflect.InvocationTargetException
 import java.time.ZoneId
 import java.util.Properties
-
 import scala.collection.JavaConverters._
 import scala.sys.process._
 import scala.util.Try
-
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
-
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
 import org.apache.spark.internal.Logging
@@ -381,6 +379,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
               s"Driver timezone is $driverTimezone and executor timezone is " +
               s"$executorTimezone. Set executor timezone to $driverTimezone.")
         }
+        GpuTimeZoneDB.cacheDatabase()
       }
 
       GpuCoreDumpHandler.executorInit(conf, pluginContext)
@@ -503,6 +502,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def shutdown(): Unit = {
+    GpuTimeZoneDB.shutdown()
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()

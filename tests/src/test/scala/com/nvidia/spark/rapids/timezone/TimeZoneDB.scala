@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.timezone
 
 import java.time.ZoneId
-import java.util.concurrent.Executor
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -26,7 +25,7 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
 object TimeZoneDB {
 
-  def cacheDatabase(e: Executor): Unit = {}
+  def cacheDatabase(): Unit = {}
 
   /**
    * Interpret a timestamp as a time in the given time zone,
