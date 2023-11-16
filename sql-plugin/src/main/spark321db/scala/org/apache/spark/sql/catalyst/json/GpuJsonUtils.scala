@@ -23,8 +23,18 @@ import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.internal.SQLConf
 
 object GpuJsonUtils {
+
+  def optionalDateFormatInRead(options: Map[String, String]): Option[String] = {
+    dateFormatInRead(parseJSONReadOptions(options))
+  }
+  def optionalDateFormatInRead(options: JSONOptions): Option[String] =
+    options.dateFormatInRead
+
   def dateFormatInRead(options: JSONOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
+
+  def dateFormatInRead(options: Map[String, String]): String =
+    dateFormatInRead(parseJSONReadOptions(options))
 
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormatInRead.getOrElse(
     if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
@@ -34,4 +44,12 @@ object GpuJsonUtils {
     })
 
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
+
+  def parseJSONReadOptions(options: Map[String, String]) = {
+    new JSONOptionsInRead(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+  }
+
 }

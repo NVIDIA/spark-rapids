@@ -39,6 +39,8 @@ import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuCast
 
+import org.apache.spark.sql.catalyst.json.GpuJsonUtils
+
 object GpuJsonToStructsShim {
 
   def castJsonStringToDate(input: ColumnVector, options: Map[String, String]): ColumnVector = {
