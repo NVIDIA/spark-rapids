@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
@@ -53,29 +53,66 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
     verifyBuildSideWasReplaced(buildSide)
 
-    val condition = conditionMeta.map(_.convertToGpu())
-    val isAstCondition = conditionMeta.forall(_.canThisBeAst)
-    join.joinType match {
-      case _: InnerLike =>
-      case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
-        throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case RightOuter if gpuBuildSide == GpuBuildRight =>
-        throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
-        // Cannot post-filter these types of joins
-        assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
-      case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
-    }
+    // If ast-able, try to split if needed. Otherwise, do post-filter
+    val isAstCondition = canJoinCondAstAble()
 
-    val joinExec = GpuBroadcastNestedLoopJoinExec(
-      left, right,
-      join.joinType, gpuBuildSide,
-      if (isAstCondition) condition else None,
-      conf.gpuTargetBatchSizeBytes,
-      join.isExecutorBroadcast)
     if (isAstCondition) {
-      joinExec
+      // Try to extract non-ast-able conditions from join conditions
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
+        left.output, right.output, true)
+
+      // Reconstruct the child with wrapped project node if needed.
+      val leftChild =
+        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+      val rightChild =
+        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+      val postBuildCondition =
+        if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
+
+      // TODO: a code refactor is needed to skip passing in postBuildCondition as a parameter to
+      // instantiate GpuBroadcastNestedLoopJoinExec. This is because currently output columnar batch
+      // of broadcast side is handled inside GpuBroadcastNestedLoopJoinExec. Have to manually build
+      // a project node to build side batch.
+      val joinExec = GpuBroadcastNestedLoopJoinExec(
+        leftChild, rightChild,
+        join.joinType, gpuBuildSide,
+        remains,
+        postBuildCondition,
+        conf.gpuTargetBatchSizeBytes,
+        join.isExecutorBroadcast)
+      if (leftExpr.isEmpty && rightExpr.isEmpty) {
+        joinExec
+      } else {
+        // Remove the intermediate attributes from left and right side project nodes. Output
+        // attributes need to be updated based on types
+        GpuProjectExec(
+          GpuBroadcastNestedLoopJoinExecBase.output(
+            join.joinType, left.output, right.output).toList,
+          joinExec)(false)
+      }
     } else {
+      val condition = conditionMeta.map(_.convertToGpu())
+
+      join.joinType match {
+        case _: InnerLike =>
+        case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
+          throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
+        case RightOuter if gpuBuildSide == GpuBuildRight =>
+          throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
+        case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
+          // Cannot post-filter these types of joins
+          assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
+        case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
+      }
+
+      val joinExec = GpuBroadcastNestedLoopJoinExec(
+        left, right,
+        join.joinType, gpuBuildSide,
+        None,
+        List.empty,
+        conf.gpuTargetBatchSizeBytes,
+        join.isExecutorBroadcast)
+
       // condition cannot be implemented via AST so fallback to a post-filter if necessary
       condition.map {
         // TODO: Restore batch coalescing logic here.
@@ -97,9 +134,10 @@ case class GpuBroadcastNestedLoopJoinExec(
     joinType: JoinType,
     gpuBuildSide: GpuBuildSide,
     condition: Option[Expression],
+    postBuildCondition: List[NamedExpression],
     targetSizeBytes: Long,
     executorBroadcast: Boolean) extends GpuBroadcastNestedLoopJoinExecBase(
-      left, right, joinType, gpuBuildSide, condition, targetSizeBytes
+      left, right, joinType, gpuBuildSide, condition, postBuildCondition, targetSizeBytes
     ) {
   import GpuMetric._
 
@@ -118,13 +156,31 @@ case class GpuBroadcastNestedLoopJoinExec(
     executorBroadcast
   }
 
-  def shuffleExchange: GpuShuffleExchangeExec = buildPlan match {
-    case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[GpuShuffleExchangeExec] =>
-      bqse.plan.asInstanceOf[GpuShuffleExchangeExec]
-    case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
-      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuShuffleExchangeExec]
-    case gpu: GpuShuffleExchangeExec => gpu
-    case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
+  def shuffleExchange: GpuShuffleExchangeExec = {
+    def from(p: ShuffleQueryStageExec): GpuShuffleExchangeExec = p.plan match {
+      case g: GpuShuffleExchangeExec => g
+      case ReusedExchangeExec(_, g: GpuShuffleExchangeExec) => g
+      case _ => throw new IllegalStateException(s"cannot locate GPU shuffle in $p")
+    }
+
+    getBroadcastPlan(buildPlan) match {
+      case gpu: GpuShuffleExchangeExec => gpu
+      case sqse: ShuffleQueryStageExec => from(sqse)
+      case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
+      case GpuShuffleCoalesceExec(GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _), _) =>
+        from(sqse)
+      case GpuShuffleCoalesceExec(sqse: ShuffleQueryStageExec, _) => from(sqse)
+      case GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _) => from(sqse)
+    }
+  }
+
+  private[this] def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // In case has post broadcast project. It happens when join condition contains non-AST
+      // expression which results in a project right after broadcast.
+      case plan: GpuProjectExec => plan.child
+      case _ => plan
+    }
   }
 
   override def getBroadcastRelation(): Any = {
@@ -149,8 +205,8 @@ case class GpuBroadcastNestedLoopJoinExec(
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-      val builtBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(rdd, buildPlan.schema,
-          buildPlan.output, metricsMap, targetSize)
+      val builtBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(rdd, getBroadcastPlan
+        (buildPlan).schema, getBroadcastPlan(buildPlan).output, metricsMap, targetSize)
       buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
       builtBatch
     }
@@ -166,7 +222,7 @@ case class GpuBroadcastNestedLoopJoinExec(
     }
   }
 
-  override def makeBuiltBatch(
+  override def makeBuiltBatchInternal(
       relation: Any,
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): ColumnarBatch = {
