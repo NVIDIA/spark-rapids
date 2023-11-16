@@ -104,7 +104,11 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Databricks will sometimes generate tons of tiny files on the CPU when using floating point
+    # partition keys. The GPU does not, and this triggers a delta log mismatch. Data contents
+    # of the table are correct, and this seems like Databricks bug on the CPU.
+    if not (is_databricks_runtime() and gens.data_type in (FloatType(), DoubleType())):
+        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -122,7 +126,11 @@ def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Databricks will sometimes generate tons of tiny files on the CPU when using floating point
+    # partition keys. The GPU does not, and this triggers a delta log mismatch. Data contents
+    # of the table are correct, and this seems like Databricks bug on the CPU.
+    if not (is_databricks_runtime() and gens.data_type in (FloatType(), DoubleType())):
+        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 def do_update_round_trip_managed(spark_tmp_path, mode):
     gen_list = [("x", int_gen), ("y", binary_gen), ("z", string_gen)]
