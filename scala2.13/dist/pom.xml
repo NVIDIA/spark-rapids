@@ -325,6 +325,19 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <id>copy-jni-and-ucx-classes</id>
+                        <!-- after optional unpack -->
+                        <phase>process-resources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <copy todir="${project.build.directory}/parallel-world">
+                                    <fileset dir="${project.build.directory}/jni-deps"/>
+                                </copy>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <phase>verify</phase>
                         <goals>
                             <goal>run</goal>
@@ -456,14 +469,14 @@ self.log("... OK")
                                     <artifactId>spark-rapids-jni</artifactId>
                                     <classifier>${jni.classifier}</classifier>
                                     <excludes>META-INF/**</excludes>
-                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                    <outputDirectory>${project.build.directory}/jni-deps</outputDirectory>
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>org.openucx</groupId>
                                     <artifactId>jucx</artifactId>
                                     <excludes>META-INF/**</excludes>
-                                    <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
+                                    <outputDirectory>${project.build.directory}/jni-deps</outputDirectory>
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                             </artifactItems>
