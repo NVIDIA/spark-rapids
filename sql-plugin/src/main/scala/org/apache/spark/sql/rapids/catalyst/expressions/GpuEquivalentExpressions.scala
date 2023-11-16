@@ -241,6 +241,22 @@ class GpuEquivalentExpressions {
 
 object GpuEquivalentExpressions {
   /**
+   * Recursively replaces semantic equal expression with its proxy expression in `substitutionMap`.
+   */
+  def replaceWithSemanticCommonRef(
+      expr: Expression,
+      substitutionMap: mutable.HashMap[GpuExpressionEquals, Expression]): Expression = {
+    expr match {
+      case e: AttributeReference => e
+      case _ =>
+        substitutionMap.get(GpuExpressionEquals(expr)) match {
+          case Some(attr) => attr
+          case None => expr.mapChildren(replaceWithSemanticCommonRef(_, substitutionMap))
+        }
+    }
+  }
+
+  /**
    * Recursively replaces expression with its proxy expression in `substitutionMap`.
    */
   private def replaceWithCommonRef(
