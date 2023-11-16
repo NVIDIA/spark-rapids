@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
+import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -121,7 +121,7 @@ object GpuJsonScan {
       }
     }
 
-    if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
+    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
       meta.willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
     }
 
