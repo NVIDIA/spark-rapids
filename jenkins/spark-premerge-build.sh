@@ -29,7 +29,7 @@ fi
 
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
-MVN_BUILD_ARGS="-Drat.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
+MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."

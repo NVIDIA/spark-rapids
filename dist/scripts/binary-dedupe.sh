@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -157,7 +157,7 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # Determine the list of unshimmed class files
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
 echo "$((++STEP))/ creating sorted list of unshimmed classes > $UNSHIMMED_LIST_TXT"
-find . -name '*.class' -not -path './parallel-world/spark3*' | \
+find ./parallel-world -name '*.class' -not -path './parallel-world/spark3*' | \
   cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
 
 function verify_same_sha_for_unshimmed() {
