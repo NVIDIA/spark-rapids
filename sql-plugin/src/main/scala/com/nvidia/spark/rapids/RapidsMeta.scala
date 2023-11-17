@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
+
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -375,6 +377,19 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       }
     } else {
       "!"
+    }
+  }
+
+  def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
+    // Both of the Spark session time zone and JVM's default time zone should be UTC.
+    if (!TypeChecks.isTimestampsSupported(sessionZoneId)) {
+      willNotWorkOnGpu("Only UTC zone id is supported. " +
+        s"Actual session local zone id: $sessionZoneId")
+    }
+
+    val defaultZoneId = ZoneId.systemDefault()
+    if (!TypeChecks.isTimestampsSupported(defaultZoneId)) {
+      willNotWorkOnGpu(s"Only UTC zone id is supported. Actual default zone id: $defaultZoneId")
     }
   }
 
@@ -1067,8 +1082,23 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
-  // Default false as conservative approach to allow timezone related expression converted to GPU
-  lazy val isTimezoneSupported: Boolean = false
+  // Whether timezone is supported for those expressions needs to be check.
+  // TODO: use TimezoneDB Utils to tell whether timezone is supported
+  val isTimezoneSupported: Boolean = false
+
+  //+------------------------+-------------------+-----------------------------------------+
+  //|         Value          | needTimezoneCheck |           isTimezoneSupported           |
+  //+------------------------+-------------------+-----------------------------------------+
+  //| TimezoneAwareExpression| True              | False by default, True when implemented |
+  //| UTCTimestamp           | True              | False by default, True when implemented |
+  //| Others                 | False             | N/A (will not be checked)               |
+  //+------------------------+-------------------+-----------------------------------------+
+  lazy val needTimezoneCheck: Boolean = {
+    wrapped match {
+      case _: TimeZoneAwareExpression | _: UTCTimestamp => true
+      case _ => false
+    }
+  }
 
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
@@ -1076,7 +1106,26 @@ abstract class BaseExprMeta[INPUT <: Expression](
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
+    if (needTimezoneCheck && !isTimezoneSupported) checkTimestampType(dataType, this)
     tagExprForGpu()
+  }
+
+  /**
+   * Check whether contains timestamp type and whether timezone is supported
+   */
+  def checkTimestampType(dataType: DataType, meta: RapidsMeta[_, _, _]): Unit = {
+    dataType match {
+      case TimestampType if !TypeChecks.isUTCTimezone() =>
+        meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(dataType))
+      case ArrayType(elementType, _) =>
+        checkTimestampType(elementType, meta)
+      case MapType(keyType, valueType, _) =>
+        checkTimestampType(keyType, meta)
+        checkTimestampType(valueType, meta)
+      case StructType(fields) =>
+        fields.foreach(field => checkTimestampType(field.dataType, meta))
+      case _ => // do nothing
+    }
   }
 
   /**

@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
+import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims, TypeSigUtil}
@@ -789,13 +790,20 @@ abstract class TypeChecks[RET] {
 
 object TypeChecks {
 
+  // TODO: move this to Timezone DB
+  def isTimestampsSupported(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
+  }
+
   def isUTCTimezone(): Boolean = {
     val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
     zoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 
-  def isTimezoneSensitiveType(dataType: DataType): Boolean = {
-    dataType == TimestampType
+  def timezoneNotSupportedString(dataType: DataType): String = {
+    s"$dataType is not supported with timezone settings: (JVM:" +
+      s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+      s" Set both of the timezones to UTC to enable $dataType support"
   }
 }
 

@@ -169,6 +169,7 @@ object GpuCSVScan {
     }
 
     if (types.contains(TimestampType)) {
+      meta.checkTimeZoneId(parsedOptions.zoneId)
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
