@@ -18,8 +18,11 @@ package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
 import java.time.DateTimeException
+
 import scala.util.Random
+
 import com.nvidia.spark.rapids.shims.{CastingConfigShim, SparkShimImpl}
+
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
