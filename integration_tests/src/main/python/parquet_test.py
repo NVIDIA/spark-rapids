@@ -311,7 +311,6 @@ def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1
             lambda spark: rf(spark).select(f.col('a') >= s0),
             conf=all_confs)
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9701')
 @pytest.mark.parametrize('parquet_gens', [parquet_nested_datetime_gen], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
