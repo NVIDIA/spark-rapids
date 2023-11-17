@@ -30,11 +30,6 @@ import os
 from functools import lru_cache
 import hashlib
 
-# set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
-# refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
-os.environ['TZ'] = 'UTC'
-time.tzset()
-
 class DataGen:
     """Base class for data generation"""
 
@@ -584,12 +579,18 @@ class TimestampGen(DataGen):
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
+        # Spark supports time through: "9999-12-31 23:59:59.999999"
+        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
+        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
+        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
-            # Spark supports time through
-            # "9999-12-31 23:59:59.999999"
-            end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
+            end = max_end
         elif isinstance(end, timedelta):
-            end = start + end
+            max_timedelta = max_end - start
+            if ( end >= max_timedelta):
+                end = max_end
+            else:
+                end = start + end
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for end {}'.format(end))
 

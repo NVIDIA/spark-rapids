@@ -78,7 +78,7 @@ def is_dataproc_runtime():
     return runtime_env() == "dataproc"
 
 def get_test_tz():
-    return os.environ.get('PYSP_TEST_spark_sql_session_timeZone', 'UTC')
+    return os.environ.get('TZ', 'UTC')
 
 def is_utc():
     return get_test_tz() == "UTC"
