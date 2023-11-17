@@ -20,7 +20,9 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsConf.TEST_USE_TIMEZONE_CPU_BACKEND
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
 object TimeZoneDB {
@@ -38,7 +40,9 @@ object TimeZoneDB {
   // Support fixed offset or no transition rule case
   def isSupportedTimezone(timezoneId: String): Boolean = {
     val rules = getZoneId(timezoneId).getRules
-    rules.isFixedOffset || rules.getTransitionRules.isEmpty
+    // CPU backend is just for test purpose
+    SparkEnv.get.conf.getBoolean(TEST_USE_TIMEZONE_CPU_BACKEND.key, false) ||
+      (rules.isFixedOffset || rules.getTransitionRules.isEmpty)
   }
 
   def cacheDatabase(): Unit = {}
