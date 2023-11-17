@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.sql.{Date, Timestamp}
-import java.time.{ZoneId, ZonedDateTime}
+import java.time.{ZonedDateTime, ZoneId}
 import java.util.TimeZone
 
 import scala.collection.mutable.ListBuffer
