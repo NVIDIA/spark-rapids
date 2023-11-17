@@ -15,10 +15,7 @@
 import math
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,\
-    assert_gpu_and_cpu_are_equal_sql,\
-    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
-    assert_cpu_and_gpu_are_equal_collect_with_capture, run_with_cpu, run_with_cpu_and_gpu
+from asserts import *
 from conftest import is_databricks_runtime
 from data_gen import *
 from functools import reduce
