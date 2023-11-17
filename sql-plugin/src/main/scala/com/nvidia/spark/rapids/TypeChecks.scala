@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
-import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims, TypeSigUtil}
@@ -307,7 +306,7 @@ final class TypeSig private(
     typeMeta.dataType.foreach { dt =>
       val expr = exprMeta.wrapped.asInstanceOf[Expression]
 
-      if (!isSupportedByPlugin(dt, !TypeChecks.isNonUtcTimeZoneEnable())) {
+      if (!isSupportedByPlugin(dt)) {
         willNotWork(s"$name expression ${expr.getClass.getSimpleName} $expr " +
             reasonNotSupported(dt).mkString("(", ", ", ")"))
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
@@ -364,7 +363,7 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          TypeChecks.areTimestampsSupported()
+        check.contains(TypeEnum.TIMESTAMP)
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -402,15 +401,6 @@ final class TypeSig private(
     }
   }
 
-  private[this] def timezoneNotSupportedMessage(dataType: DataType,
-      te: TypeEnum.Value, check: TypeEnum.ValueSet, isChild: Boolean): Seq[String] = {
-    if (check.contains(te) && !TypeChecks.areTimestampsSupported()) {
-      Seq(withChild(isChild, TypeChecks.timezoneNotSupportedString(dataType)))
-    } else {
-      basicNotSupportedMessage(dataType, te, check, isChild)
-    }
-  }
-
   private[this] def reasonNotSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
@@ -433,7 +423,7 @@ final class TypeSig private(
       case DateType =>
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
-        timezoneNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
+        basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
       case StringType =>
         basicNotSupportedMessage(dataType, TypeEnum.STRING, check, isChild)
       case dt: DecimalType =>
@@ -780,30 +770,6 @@ abstract class TypeChecks[RET] {
     }.mkString(", ")
   }
 
-  /**
-   * Original log does not print enough info when timezone is not UTC,
-   * here check again to add UTC info.
-   */
-  private def tagTimezoneInfoIfHasTimestampType(
-      unsupportedTypes: Map[DataType, Set[String]],
-      meta: RapidsMeta[_, _, _]): Unit = {
-    def checkTimestampType(dataType: DataType): Unit = dataType match {
-      case TimestampType if !TypeChecks.areTimestampsSupported() =>
-        meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(dataType))
-      case ArrayType(elementType, _) =>
-        checkTimestampType(elementType)
-      case MapType(keyType, valueType, _) =>
-        checkTimestampType(keyType)
-        checkTimestampType(valueType)
-      case StructType(fields) =>
-        fields.foreach(field => checkTimestampType(field.dataType))
-      case _ => // do nothing
-    }
-    unsupportedTypes.foreach { case (dataType, _) =>
-      checkTimestampType(dataType)
-    }
-  }
-
   protected def tagUnsupportedTypes(
     meta: RapidsMeta[_, _, _],
     sig: TypeSig,
@@ -815,8 +781,6 @@ abstract class TypeChecks[RET] {
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet).toMap
 
-    tagTimezoneInfoIfHasTimestampType(unsupportedTypes, meta)
-
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
@@ -825,31 +789,13 @@ abstract class TypeChecks[RET] {
 
 object TypeChecks {
 
-  /**
-   * Check if the time zone passed is supported by plugin.
-   */
-  def areTimestampsSupported(timezoneId: ZoneId): Boolean = {
-    timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
-  }
-
-  def areTimestampsSupported(zoneIdString: String): Boolean = {
-    val zoneId = DateTimeUtils.getZoneId(zoneIdString)
-    areTimestampsSupported(zoneId)
-  }
-
-  def areTimestampsSupported(): Boolean = {
-    areTimestampsSupported(ZoneId.systemDefault()) &&
-      areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
+  def isUTCTimezone(): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
+    zoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 
   def isTimezoneSensitiveType(dataType: DataType): Boolean = {
     dataType == TimestampType
-  }
-
-  def timezoneNotSupportedString(dataType: DataType): String = {
-    s"$dataType is not supported with timezone settings: (JVM:" +
-      s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-      s" Set both of the timezones to UTC to enable $dataType support"
   }
 }
 
@@ -1011,12 +957,10 @@ class ExecChecks private(
     // expression.toString to capture ids in not-on-GPU tags
     def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
-    val checkUtcTz = !TypeChecks.isNonUtcTimeZoneEnable()
-
     tagUnsupportedTypes(meta, check, meta.outputAttributes.map(toStructField),
-      "unsupported data types in output: %s", checkUtcTz)
+      "unsupported data types in output: %s")
     tagUnsupportedTypes(meta, check, meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
-      "unsupported data types in input: %s", checkUtcTz)
+      "unsupported data types in input: %s")
 
     val namedChildExprs = meta.namedChildExprs
 

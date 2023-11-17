@@ -16,13 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.ZoneId
-
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -377,19 +375,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       }
     } else {
       "!"
-    }
-  }
-
-  def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
-    // Both of the Spark session time zone and JVM's default time zone should be UTC.
-    if (!TypeChecks.areTimestampsSupported(sessionZoneId)) {
-      willNotWorkOnGpu("Only UTC zone id is supported. " +
-        s"Actual session local zone id: $sessionZoneId")
-    }
-
-    val defaultZoneId = ZoneId.systemDefault()
-    if (!TypeChecks.areTimestampsSupported(defaultZoneId)) {
-      willNotWorkOnGpu(s"Only UTC zone id is supported. Actual default zone id: $defaultZoneId")
     }
   }
 
@@ -1082,22 +1067,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
-  /**
-   * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
-   * is done.
-   * By default a TimeZoneAwareExpression always requires the timezone tagging, but
-   * there are some exceptions, e.g. 'Cast', who requires timezone tagging only when it
-   * has timezone sensitive type as input or output.
-   *
-   * Override this to match special cases.
-   */
-  protected def needTimezoneTagging: Boolean = {
-    // A TimeZoneAwareExpression with no timezone sensitive types as input/output will
-    // escape from the timezone tagging in the prior type checks. So ask for tagging here.
-    // e.g. 'UnixTimestamp' with 'DateType' as the input, timezone will be taken into
-    // account when converting a Date to a Long.
-    !(dataType +: childExprs.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
-  }
+  // Default false as conservative approach to allow timezone related expression converted to GPU
+  lazy val isTimezoneSupported: Boolean = false
 
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
@@ -1106,11 +1077,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
-    wrapped match {
-      case tzAware: TimeZoneAwareExpression if needTimezoneTagging =>
-        checkTimeZoneId(tzAware.zoneId)
-      case _ => // do nothing
-    }
   }
 
   /**
@@ -1203,10 +1169,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     val appender = new StringBuilder()
     printAst(appender, 0, all)
     appender.toString()
-  }
-
-  def requireAstForGpu(): Boolean = {
-    false
   }
 }
 
