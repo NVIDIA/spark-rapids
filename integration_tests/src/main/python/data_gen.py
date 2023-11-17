@@ -578,9 +578,9 @@ class TimestampGen(DataGen):
             # Spark supports times starting at
             # "0001-01-01 00:00:00.000000"
             # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days,
+            # in a different format which causes roundoff, so we have to add a few days, even a month,
             # just to be sure
-            start = datetime(1, 1, 3, tzinfo=tzinfo)
+            start = datetime(1, 2, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
