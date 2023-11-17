@@ -734,6 +734,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       case LongType => ast.Literal.ofLong(value.asInstanceOf[java.lang.Long])
       case FloatType => ast.Literal.ofFloat(value.asInstanceOf[java.lang.Float])
       case DoubleType => ast.Literal.ofDouble(value.asInstanceOf[java.lang.Double])
+      case StringType => ast.Literal.ofString(value.asInstanceOf[UTF8String].toString)
       case TimestampType =>
         ast.Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
           value.asInstanceOf[java.lang.Long])

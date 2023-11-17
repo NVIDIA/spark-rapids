@@ -68,7 +68,7 @@ case class GpuAtomicReplaceTableAsSelectExec(
   val properties = CatalogV2Util.convertTableProperties(tableSpec)
 
   override def supportsColumnar: Boolean = false
-
+  
   override protected def run(): Seq[InternalRow] = {
     val schema = CharVarcharUtils.getRawSchema(query.schema, conf).asNullable
     if (catalog.tableExists(ident)) {

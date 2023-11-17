@@ -33,10 +33,10 @@ delta_meta_allow = [
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
-delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 
-delta_optimized_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,DeltaOptimizedWriterExec" if is_databricks122_or_later() else "ExecutedCommandExec"
+delta_optimized_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,DeltaOptimizedWriterExec,WriteFilesExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 
 def _fixup_operation_metrics(opm):
     """Update the specified operationMetrics node to facilitate log comparisons"""

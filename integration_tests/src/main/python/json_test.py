@@ -692,8 +692,14 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9350')),
     pytest.param(date_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9515')),
     pytest.param(timestamp_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9515')),
-    StringGen('[A-Za-z0-9]{0,10}', nullable=True),
-    pytest.param(StringGen(nullable=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9514')),
+    StringGen('[A-Za-z0-9\r\n\'"\\\\]{0,10}', nullable=True) \
+        .with_special_case('\u1f600') \
+        .with_special_case('"a"') \
+        .with_special_case('\\"a\\"') \
+        .with_special_case('\'a\'') \
+        .with_special_case('\\\'a\\\''),
+    pytest.param(StringGen('\u001a', nullable=True), marks=pytest.mark.xfail(
+        reason='https://github.com/NVIDIA/spark-rapids/issues/9705'))
 ], ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('pretty', [

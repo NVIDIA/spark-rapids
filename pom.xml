@@ -819,6 +819,7 @@
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
+        <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
     </properties>
 
     <dependencyManagement>
@@ -967,29 +968,63 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <id>setup-dirs</id>
+                        <phase>initialize</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <mkdir dir="${project.build.directory}/tmp"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>generate-build-info</id>
                         <phase>generate-resources</phase>
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash"
-                                      output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties"
-                                      resultproperty="build-info.exitCode"
-                                      errorproperty="build-info.errorMsg"
-                                      failonerror="false">
-                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
-                                    <arg value="${project.version}"/>
-                                    <arg value="${spark-rapids-jni.version}"/>
+                                <exec executable="git" outputproperty="git.head.revision">
+                                    <arg value="rev-parse"/>
+                                    <arg value="HEAD"/>
                                 </exec>
-                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
-                                    <condition>
-                                        <not>
-                                            <equals arg1="${build-info.exitCode}" arg2="0"/>
-                                        </not>
-                                    </condition>
-                                </fail>
+                                <property file="${build.info.path}" prefix="saved.build-info"/>
+                                <echo>
+Comparing git revisions:
+    previous=${saved.build-info.revision}
+     current=${git.head.revision}
+                                </echo>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <equals arg1="${git.head.revision}" arg2="${saved.build-info.revision}"/>
+                                    <then>
+                                        <echo>
+Git revisions unchanged: skipping version info file generation.
+Delete ${build.info.path} or mvn clean if regeneration desired.
+This will force full Scala code rebuild in downstream modules.
+                                        </echo>
+                                    </then>
+                                    <else>
+                                        <echo>Generating new version info file</echo>
+                                        <mkdir dir="${project.build.outputDirectory}"/>
+                                        <exec executable="bash"
+                                            output="${build.info.path}"
+                                            resultproperty="build-info.exitCode"
+                                            errorproperty="build-info.errorMsg"
+                                            failonerror="false">
+                                            <arg value="${spark.rapids.source.basedir}/build/build-info"/>
+                                            <arg value="${project.version}"/>
+                                            <arg value="${spark-rapids-jni.version}"/>
+                                        </exec>
+                                        <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
+                                            <condition>
+                                                <not>
+                                                    <equals arg1="${build-info.exitCode}" arg2="0"/>
+                                                </not>
+                                            </condition>
+                                        </fail>
+                                    </else>
+                                </ac:if>
                             </target>
                         </configuration>
 
@@ -1049,6 +1084,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
                     <executions>
                         <execution>
                             <id>default-compile</id>
@@ -1118,8 +1154,8 @@
                             <arg>-Xfatal-warnings</arg>
                             <!-- #endif scala-2.12 -->
                             <arg>-Wconf:cat=lint-adapted-args:e</arg>
-                            <arg>-Xsource:2.13</arg>
                             <!-- #if scala-2.13 --><!--
+                            <arg>-Xsource:2.13</arg>
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>

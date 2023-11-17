@@ -24,7 +24,6 @@ import ai.rapids.cudf.{Cuda, Rmm, RmmEventHandler}
 import com.sun.management.HotSpotDiagnosticMXBean
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -115,52 +114,49 @@ class DeviceMemoryEventHandler(
       s"onAllocFailure invoked with invalid retryCount $retryCount")
 
     try {
-      GpuTaskMetrics.get.spillTime {
-        val storeSize = store.currentSize
-        val storeSpillableSize = store.currentSpillableSize
+      val storeSize = store.currentSize
+      val storeSpillableSize = store.currentSpillableSize
 
-        val attemptMsg = if (retryCount > 0) {
-          s"Attempt ${retryCount}. "
-        } else {
-          "First attempt. "
-        }
+      val attemptMsg = if (retryCount > 0) {
+        s"Attempt ${retryCount}. "
+      } else {
+        "First attempt. "
+      }
 
-        val retryState = oomRetryState.get()
-        retryState.resetIfNeeded(retryCount, storeSpillableSize)
+      val retryState = oomRetryState.get()
+      retryState.resetIfNeeded(retryCount, storeSpillableSize)
 
-        logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
-          s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg" +
-          s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes. ")
-        if (storeSpillableSize == 0) {
-          if (retryState.shouldTrySynchronizing(retryCount)) {
-            Cuda.deviceSynchronize()
-            logWarning(s"[RETRY ${retryState.getRetriesSoFar}] " +
-              s"Retrying allocation of $allocSize after a synchronize. " +
-              s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
-            true
-          } else {
-            logWarning(s"Device store exhausted, unable to allocate $allocSize bytes. " +
-              s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
-            synchronized {
-              if (dumpStackTracesOnFailureToHandleOOM) {
-                dumpStackTracesOnFailureToHandleOOM = false
-                GpuSemaphore.dumpActiveStackTracesToLog()
-              }
-            }
-            oomDumpDir.foreach(heapDump)
-            false
-          }
-        } else {
-          val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-          logDebug(s"Targeting device store size of $targetSize bytes")
-          val maybeAmountSpilled =
-            catalog.synchronousSpill(store, targetSize, Cuda.DEFAULT_STREAM)
-          maybeAmountSpilled.foreach { amountSpilled =>
-            logInfo(s"Spilled $amountSpilled bytes from the device store")
-            TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
-          }
+      logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
+        s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg" +
+        s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes. ")
+      if (storeSpillableSize == 0) {
+        if (retryState.shouldTrySynchronizing(retryCount)) {
+          Cuda.deviceSynchronize()
+          logWarning(s"[RETRY ${retryState.getRetriesSoFar}] " +
+            s"Retrying allocation of $allocSize after a synchronize. " +
+            s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
           true
+        } else {
+          logWarning(s"Device store exhausted, unable to allocate $allocSize bytes. " +
+            s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
+          synchronized {
+            if (dumpStackTracesOnFailureToHandleOOM) {
+              dumpStackTracesOnFailureToHandleOOM = false
+              GpuSemaphore.dumpActiveStackTracesToLog()
+            }
+          }
+          oomDumpDir.foreach(heapDump)
+          false
         }
+      } else {
+        val targetSize = Math.max(storeSpillableSize - allocSize, 0)
+        logDebug(s"Targeting device store size of $targetSize bytes")
+        val maybeAmountSpilled = catalog.synchronousSpill(store, targetSize, Cuda.DEFAULT_STREAM)
+        maybeAmountSpilled.foreach { amountSpilled =>
+          logInfo(s"Spilled $amountSpilled bytes from the device store")
+          TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+        }
+        true
       }
     } catch {
       case t: Throwable =>
