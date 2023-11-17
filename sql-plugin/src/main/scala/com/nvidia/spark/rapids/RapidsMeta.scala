@@ -17,12 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.time.ZoneId
-
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UTCTimestamp, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -1086,6 +1085,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
   // TODO: use TimezoneDB Utils to tell whether timezone is supported
   val isTimezoneSupported: Boolean = false
 
+  // Both [[isTimezoneSupported]] and [[needTimezoneCheck]] are needed to check whether timezone
+  // check needed. For cast expression, only some cases are needed pending on its data type and
+  // its child's data type.
   //+------------------------+-------------------+-----------------------------------------+
   //|         Value          | needTimezoneCheck |           isTimezoneSupported           |
   //+------------------------+-------------------+-----------------------------------------+
@@ -1095,7 +1097,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //+------------------------+-------------------+-----------------------------------------+
   lazy val needTimezoneCheck: Boolean = {
     wrapped match {
-      case _: TimeZoneAwareExpression | _: UTCTimestamp => true
+      case _: TimeZoneAwareExpression =>
+        if (wrapped.isInstanceOf[Cast]) wrapped.asInstanceOf[Cast].needsTimeZone else true
+      case _: UTCTimestamp => true
       case _ => false
     }
   }
