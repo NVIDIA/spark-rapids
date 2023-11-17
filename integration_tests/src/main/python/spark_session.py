@@ -55,16 +55,6 @@ _default_conf = {
     'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
 }
 
-def is_tz_utc(spark=_spark):
-    """
-    true if the tz is UTC else false
-    """
-    # Now we have to do some kind of ugly internal java stuff
-    jvm = spark.sparkContext._jvm
-    utc = jvm.java.time.ZoneId.of('UTC').normalized()
-    sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
-    return utc == sys_tz
-
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
     if (should_inject_oom()):

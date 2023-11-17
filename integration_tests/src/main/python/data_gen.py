@@ -21,7 +21,7 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc, is_before_spark_340, with_cpu_session
+from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
 from conftest import skip_unless_precommit_tests,get_datagen_seed
@@ -29,11 +29,6 @@ import time
 import os
 from functools import lru_cache
 import hashlib
-
-# set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
-# refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
-os.environ['TZ'] = 'UTC'
-time.tzset()
 
 class DataGen:
     """Base class for data generation"""
@@ -584,12 +579,18 @@ class TimestampGen(DataGen):
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
+        # Spark supports time through: "9999-12-31 23:59:59.999999"
+        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
+        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
+        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
-            # Spark supports time through
-            # "9999-12-31 23:59:59.999999"
-            end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
+            end = max_end
         elif isinstance(end, timedelta):
-            end = start + end
+            max_timedelta = max_end - start
+            if ( end >= max_timedelta):
+                end = max_end
+            else:
+                end = start + end
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for end {}'.format(end))
 
@@ -749,10 +750,6 @@ class BinaryGen(DataGen):
             return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
 
-def skip_if_not_utc():
-    if (not is_tz_utc()):
-        skip_unless_precommit_tests('The java system time zone is not set to UTC')
-
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
@@ -775,10 +772,6 @@ def gen_df(spark, data_gen, length=2048, seed=None, num_slices=None):
         src = data_gen
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
-
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
 
     data = gen_df_help(src, length, seed_value)
 
@@ -831,10 +824,6 @@ def _gen_scalars_common(data_gen, count, seed=None):
         seed_value = get_datagen_seed()
     else:
         seed_value = seed
-
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
 
     rand = random.Random(seed_value)
     src.start(rand)
