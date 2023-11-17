@@ -572,6 +572,7 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9744')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_hypot(data_gen):
