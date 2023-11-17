@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import *
+from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
@@ -89,6 +90,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_write_round_trip(spark_tmp_path, parquet_gens):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -134,6 +136,7 @@ def test_write_round_trip_corner(spark_tmp_path, par_gen):
     ArrayGen(TimestampGen(), max_length=10),
     MapGen(TimestampGen(nullable=False), TimestampGen())]], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -147,6 +150,7 @@ def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -170,6 +174,7 @@ parquet_part_write_gens = [
 @ignore_order
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_part_write_round_trip(spark_tmp_path, parquet_gen):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
@@ -184,6 +189,7 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen):
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks122_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 @pytest.mark.allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_int96_write_conf(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {
@@ -214,6 +220,7 @@ def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
         ['DataWritingCommandExec', 'WriteFilesExec'],
         confs)
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
         def start(self, rand):
@@ -243,6 +250,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_write_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -260,6 +268,7 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -282,6 +291,7 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
                          ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
                          ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
     ts_write, gen = ts_write_data_gen
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -460,6 +470,7 @@ def test_write_map_nullable(spark_tmp_path):
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', ['EXCEPTION'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
@@ -477,6 +488,7 @@ def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write,
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
 @pytest.mark.parametrize('ts_rebase_read', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_parquet_write_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, data_gen, ts_write,
                                                              ts_rebase_write, ts_rebase_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -520,6 +532,7 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
     with_gpu_session(test_it, conf)
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
     def create_empty_df(spark, path):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -759,6 +772,7 @@ def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, fun
 
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
 @pytest.mark.parametrize('ts_rebase', ['LEGACY', 'CORRECTED'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase):
     def func_test(create_table, read_table, data_path, conf):
         assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path, conf=conf)

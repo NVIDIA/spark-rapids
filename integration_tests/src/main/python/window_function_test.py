@@ -15,6 +15,7 @@ import math
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_sql_fallback_collect
+from conftest import is_not_utc
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -450,6 +451,7 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size):
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_batched_unbounded_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -467,6 +469,7 @@ def test_window_batched_unbounded_no_part(b_gen, batch_size):
 
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_batched_unbounded(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -487,6 +490,7 @@ def test_window_batched_unbounded(b_gen, batch_size):
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_rows_based_running_window_unpartitioned(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -522,6 +526,7 @@ def test_rows_based_running_window_unpartitioned(b_gen, batch_size):
 
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Testing multiple batch sizes.
 @pytest.mark.parametrize('a_gen', integral_gens + [string_gen, date_gen, timestamp_gen], ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_running_window_without_partitions_runs_batched(a_gen, batch_size):
     """
     This tests the running window optimization as applied to RANGE-based window specifications,
@@ -645,6 +650,7 @@ def test_running_window_float_sum_without_partitions_runs_batched(batch_size):
 @pytest.mark.parametrize('data_gen',
                          all_basic_gens + [decimal_gen_32bit, orderable_decimal_gen_128bit],
                          ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -672,6 +678,7 @@ def test_window_running_rank_no_part(data_gen):
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_running_rank(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -699,6 +706,7 @@ def test_window_running_rank(data_gen):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
         [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_rows_based_running_window_partitioned(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
@@ -738,6 +746,7 @@ def test_rows_based_running_window_partitioned(b_gen, c_gen, batch_size):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # Test different batch sizes.
 @pytest.mark.parametrize('part_gen', [int_gen, long_gen], ids=idfn)  # Partitioning is not really the focus of the test.
 @pytest.mark.parametrize('order_gen', [x for x in all_basic_gens_no_null if x not in boolean_gens] + [decimal_gen_32bit], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_range_running_window_runs_batched(part_gen, order_gen, batch_size):
     """
     This tests the running window optimization as applied to RANGE-based window specifications,
@@ -881,6 +890,7 @@ def test_range_running_window_float_decimal_sum_runs_batched(batch_size):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
     data_gen = [
@@ -938,6 +948,7 @@ lead_lag_struct_with_arrays_gen = [struct_with_arrays,
 @approximate_float
 @pytest.mark.parametrize('struct_gen', lead_lag_struct_with_arrays_gen, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
     data_gen = [
         ('a', RepeatSeqGen(a_b_gen, length=20)),
@@ -971,6 +982,7 @@ lead_lag_array_data_gens =\
 @pytest.mark.parametrize('c_gen', [UniqueLongGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_gen, length=20)),
@@ -1000,6 +1012,7 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
 @approximate_float
 @pytest.mark.parametrize('c_gen', [string_gen], ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_b_gen, length=20)),
@@ -1105,6 +1118,7 @@ def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps,
                                       pytest.param(_grpkey_longs_with_nullable_timestamps)],
                                       ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_aggs_for_ranges_timestamps(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
@@ -1252,6 +1266,7 @@ _gen_data_for_collect_list = [
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_aggs_for_rows_collect_list():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, _gen_data_for_collect_list),
@@ -1298,6 +1313,7 @@ def test_window_aggs_for_rows_collect_list():
 @ignore_order(local=True)
 # This test is more directed at Databricks and their running window optimization instead of ours
 # this is why we do not validate that we inserted in a GpuRunningWindowExec, yet.
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_running_window_function_exec_for_all_aggs():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, _gen_data_for_collect_list),
@@ -1406,6 +1422,7 @@ _gen_data_for_collect_set_nested = [
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_aggs_for_rows_collect_set():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, _gen_data_for_collect_set),
@@ -1467,6 +1484,7 @@ def test_window_aggs_for_rows_collect_set():
 # and https://github.com/rapidsai/cudf/issues/11222
 @ignore_order(local=True)
 @allow_non_gpu("ProjectExec", "SortArray")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_aggs_for_rows_collect_set_nested_array():
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
@@ -1579,6 +1597,7 @@ def test_nested_part_struct(part_gen):
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('ride_along', all_basic_gens + decimal_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_ride_along(ride_along):
     assert_gpu_and_cpu_are_equal_sql(
             lambda spark : gen_df(spark, [('a', UniqueLongGen()), ('b', ride_along)]),
@@ -1654,6 +1673,7 @@ exprs_for_nth_first_last_ignore_nulls = \
     'last(a) IGNORE NULLS OVER (PARTITION BY b ORDER BY c) '
 
 @pytest.mark.parametrize('data_gen', all_basic_gens_no_null + decimal_gens + _nested_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_window_first_last_nth(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         # Coalesce is to make sure that first and last, which are non-deterministic become deterministic
@@ -1674,6 +1694,7 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
 
 
 @ignore_order(local=True)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_to_date_with_window_functions():
     """
     This test ensures that date expressions participating alongside window aggregations

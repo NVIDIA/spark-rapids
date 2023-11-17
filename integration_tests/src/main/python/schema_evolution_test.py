@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_not_utc
 from data_gen import *
 from datetime import datetime, timezone
 from marks import ignore_order
@@ -58,6 +59,7 @@ def get_ddl(col_gen_pairs):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize("format", _formats)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_column_add_after_partition(spark_tmp_table_factory, format):
     # Databricks 10.4 appears to be missing https://issues.apache.org/jira/browse/SPARK-39417
     # so avoid generating nulls for numeric partitions

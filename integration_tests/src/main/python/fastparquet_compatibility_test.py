@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_not_utc
 from data_gen import *
 from fastparquet_utils import get_fastparquet_result_canonicalizer
 from spark_session import spark_version, with_cpu_session, with_gpu_session
@@ -378,6 +379,7 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
         marks=pytest.mark.xfail(reason="fastparquet fails to read nullable Struct columns written from Apache Spark. "
                                        "It fails the rewrite to parquet, thereby failing the test.")),
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_tmp_path):
     """
     This test is a workaround to test data-types that have problems being converted

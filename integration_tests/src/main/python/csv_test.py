@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import get_non_gpu_allowed
+from conftest import get_non_gpu_allowed, is_not_utc
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -248,6 +248,7 @@ def read_csv_sql(data_path, schema, spark_tmp_table_factory, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_basic_csv_read(std_input_path, name, schema, options, read_func, v1_enabled_list, ansi_enabled, spark_tmp_table_factory):
     updated_conf=copy_and_update(_enable_all_types_conf, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -288,6 +289,7 @@ csv_supported_gens = [
 @approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
@@ -404,6 +406,7 @@ csv_supported_ts_parts = ['', # Just the date
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -474,6 +477,7 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
             conf=updated_conf)
 
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/CSV_DATA'

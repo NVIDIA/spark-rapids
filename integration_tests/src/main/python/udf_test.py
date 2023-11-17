@@ -14,7 +14,7 @@
 
 import pytest
 
-from conftest import is_at_least_precommit_run
+from conftest import is_at_least_precommit_run, is_not_utc
 from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
@@ -84,6 +84,7 @@ def test_iterator_math_udf(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_pandas_scalar_udf_nested_type(data_gen):
     def nested_size(nested):
         return pd.Series([nested.size]).repeat(len(nested))
@@ -110,6 +111,7 @@ def test_single_aggregate_udf(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('double')
     def group_size_udf(to_process: pd.Series) -> float:
@@ -140,6 +142,7 @@ def test_group_aggregate_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_group_aggregate_udf_more_types(data_gen):
     @f.pandas_udf('long')
     def group_size_udf(to_process: pd.Series) -> int:
@@ -255,6 +258,7 @@ def test_group_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_group_apply_udf_more_types(data_gen):
     def group_size_udf(key, pdf):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
@@ -282,6 +286,7 @@ def test_map_apply_udf(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_pandas_map_udf_nested_type(data_gen):
     # Supported UDF output types by plugin: (commonCudfTypes + ARRAY).nested() + STRUCT
     # STRUCT represents the whole dataframe in Map Pandas UDF, so no struct column in UDF output.

@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from conftest import is_not_utc
 from data_gen import *
 from marks import approximate_float, datagen_overrides
 from spark_session import with_cpu_session, is_before_spark_330
@@ -70,6 +71,7 @@ def assert_binary_ast(data_descr, func, conf={}):
     assert_gpu_ast(is_supported, lambda spark: func(binary_op_df(spark, data_gen)), conf=conf)
 
 @pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen, date_gen], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
@@ -79,6 +81,7 @@ def test_literal(spark_tmp_path, data_gen):
                    func=lambda spark: spark.read.parquet(data_path).select(scalar))
 
 @pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen, date_gen], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_null_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
@@ -232,6 +235,7 @@ def test_expm1(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('expm1(a)'))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_eq(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
@@ -241,6 +245,7 @@ def test_eq(data_descr):
             f.col('a') == f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_ne(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
@@ -250,6 +255,7 @@ def test_ne(data_descr):
             f.col('a') != f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_lt(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
@@ -260,6 +266,7 @@ def test_lt(data_descr):
 
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9711')
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_lte(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
@@ -269,6 +276,7 @@ def test_lte(data_descr):
             f.col('a') <= f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_gt(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
@@ -278,6 +286,7 @@ def test_gt(data_descr):
             f.col('a') > f.col('b')))
 
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_gte(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
     assert_binary_ast(data_descr,
