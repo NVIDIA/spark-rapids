@@ -94,7 +94,7 @@ class GpuGroupUDFArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
-          GpuArrowPythonRunner.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+          GpuPythonRunnerUtils.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)
               } else {

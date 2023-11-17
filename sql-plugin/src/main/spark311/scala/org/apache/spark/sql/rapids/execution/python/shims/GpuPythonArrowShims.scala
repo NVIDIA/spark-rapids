@@ -196,20 +196,8 @@ class GpuArrowPythonRunner(
       }
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
-        workerImpl.writeInputToStream(dataOut)
+        workerImpl.writeIteratorToStream(dataOut)
       }
     }
   }
-}
-
-object GpuArrowPythonRunner {
-  def flattenNames(d: DataType, nullable: Boolean = true): Seq[(String, Boolean)] =
-    d match {
-      case s: StructType =>
-        s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
-      case m: MapType =>
-        flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
-      case a: ArrayType => flattenNames(a.elementType, nullable)
-      case _ => Nil
-    }
 }
