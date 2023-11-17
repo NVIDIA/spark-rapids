@@ -224,7 +224,7 @@ else
     fi
 
     # time zone will be tested; use export TZ=time_zone_name before run this script
-    TZ=${TZ:-UTC}
+    export TZ=Iran
 
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
