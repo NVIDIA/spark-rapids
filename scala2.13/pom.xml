@@ -994,7 +994,7 @@
                                 <property file="${build.info.path}" prefix="saved.build-info"/>
                                 <echo>
 Comparing git revisions:
-    previous=${saved.build-info.revision} from ${build.info.path}
+    previous=${saved.build-info.revision}
      current=${git.head.revision}
                                 </echo>
                                 <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
