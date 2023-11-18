@@ -28,7 +28,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
@@ -50,6 +50,28 @@ abstract class GpuBroadcastNestedLoopJoinMetaBase(
 
   val gpuBuildSide: GpuBuildSide = GpuJoinUtils.getGpuBuildSide(join.buildSide)
 
+  private var taggedForAstCheck = false
+
+  // Avoid checking multiple times
+  private var isAstCond = false
+
+  /**
+   * Check whether condition can be ast-able. It includes two cases: 1) all join conditions are
+   * ast-able; 2) join conditions are ast-able after split and push down to child plans.
+   */
+  protected def canJoinCondAstAble(): Boolean = {
+    if (!taggedForAstCheck) {
+      val Seq(leftPlan, rightPlan) = childPlans
+      conditionMeta match {
+        case Some(e) => isAstCond = AstUtil.canExtractNonAstConditionIfNeed(
+          e, leftPlan.outputAttributes.map(_.exprId), rightPlan.outputAttributes.map(_.exprId))
+        case None => isAstCond = true
+      }
+      taggedForAstCheck = true
+    }
+    isAstCond
+  }
+
   override def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
     JoinTypeChecks.nonEquiJoinMeta(conditionMeta)
 
@@ -60,7 +82,9 @@ abstract class GpuBroadcastNestedLoopJoinMetaBase(
     join.joinType match {
       case _: InnerLike =>
       case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
-        conditionMeta.foreach(requireAstForGpuOn)
+        // First to check whether can be split if not ast-able. If false, then check requireAst to
+        // send not-work-on-GPU reason if not replace-able.
+        conditionMeta.foreach(cond => if (!canJoinCondAstAble()) requireAstForGpuOn(cond))
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }
     join.joinType match {
@@ -334,7 +358,8 @@ object GpuBroadcastNestedLoopJoinExecBase {
           val streamBatch = streamSpillable.getBatch
           val existsCol: ColumnVector = if (builtBatch.numRows == 0) {
             withResource(Scalar.fromBool(false)) { falseScalar =>
-              GpuColumnVector.from(cudf.ColumnVector.fromScalar(falseScalar, streamBatch.numRows),
+              GpuColumnVector.from(
+                cudf.ColumnVector.fromScalar(falseScalar, streamBatch.numRows),
                 BooleanType)
             }
           } else {
@@ -349,6 +374,21 @@ object GpuBroadcastNestedLoopJoinExecBase {
           }
         }
       }
+    }
+  }
+
+  def output(joinType: JoinType, left: Seq[Attribute], right: Seq[Attribute]): Seq[Attribute] = {
+    joinType match {
+      case _: InnerLike => left ++ right
+      case LeftOuter => left ++ right.map(_.withNullability(true))
+      case RightOuter => left.map(_.withNullability(true)) ++ right
+      case FullOuter =>
+        left.map(_.withNullability(true)) ++ right.map(_.withNullability(true))
+      case j: ExistenceJoin => left :+ j.exists
+      case LeftExistence(_) => left
+      case x =>
+        throw new IllegalArgumentException(
+          s"BroadcastNestedLoopJoin should not take $x as the JoinType")
     }
   }
 
@@ -383,12 +423,16 @@ object GpuBroadcastNestedLoopJoinExecBase {
   }
 }
 
+// postBuildCondition is the post-broadcast project condition. It's used to re-construct a tiered
+// project to handle pre-built batch. It will be removed after code refactor to decouple
+// broadcast and nested loop join.
 abstract class GpuBroadcastNestedLoopJoinExecBase(
     left: SparkPlan,
     right: SparkPlan,
     joinType: JoinType,
     gpuBuildSide: GpuBuildSide,
     condition: Option[Expression],
+    postBuildCondition: List[NamedExpression],
     targetSizeBytes: Long) extends ShimBinaryExecNode with GpuExec {
 
   import GpuMetric._
@@ -411,13 +455,22 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     case GpuBuildLeft => (right, left)
   }
 
-  def broadcastExchange: GpuBroadcastExchangeExecBase = buildPlan match {
+  def broadcastExchange: GpuBroadcastExchangeExecBase = getBroadcastPlan(buildPlan) match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExecBase]
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExecBase]
     case gpu: GpuBroadcastExchangeExecBase => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
+  }
+
+  private[this] def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      // In case has post broadcast project. It happens when join condition contains non-AST
+      // expression which results in a project right after broadcast.
+      case plan: GpuProjectExec => plan.child
+      case _ => plan
+    }
   }
 
   override def requiredChildDistribution: Seq[Distribution] = gpuBuildSide match {
@@ -428,23 +481,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   override def output: Seq[Attribute] = {
-    joinType match {
-      case _: InnerLike =>
-        left.output ++ right.output
-      case LeftOuter =>
-        left.output ++ right.output.map(_.withNullability(true))
-      case RightOuter =>
-        left.output.map(_.withNullability(true)) ++ right.output
-      case FullOuter =>
-        left.output.map(_.withNullability(true)) ++ right.output.map(_.withNullability(true))
-      case j: ExistenceJoin =>
-        left.output :+ j.exists
-      case LeftExistence(_) =>
-        left.output
-      case x =>
-        throw new IllegalArgumentException(
-          s"BroadcastNestedLoopJoin should not take $x as the JoinType")
-    }
+    GpuBroadcastNestedLoopJoinExecBase.output(joinType, left.output, right.output)
   }
 
   protected def makeBroadcastBuiltBatch(
@@ -468,13 +505,31 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
-  protected def makeBuiltBatch(
+  protected def makeBuiltBatchInternal(
       relation: Any,
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): ColumnarBatch = {
     // NOTE: pattern matching doesn't work here because of type-invariance
     val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
     makeBroadcastBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+  }
+
+  final def makeBuiltBatch(
+      relation: Any,
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): ColumnarBatch = {
+    buildPlan match {
+      case p: GpuProjectExec =>
+        // Need to manually do project columnar execution other than calling child's
+        // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
+        // batch.
+        val proj = GpuBindReferences.bindGpuReferencesTiered(
+          postBuildCondition, p.child.output, true)
+        withResource(makeBuiltBatchInternal(relation, buildTime, buildDataSize)) {
+          cb => proj.project(cb)
+        }
+      case _ => makeBuiltBatchInternal(relation, buildTime, buildDataSize)
+    }
   }
 
   protected def computeBuildRowCount(

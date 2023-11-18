@@ -14,7 +14,7 @@
 
 import pytest
 from _pytest.mark.structures import ParameterSet
-from pyspark.sql.functions import broadcast, col
+from pyspark.sql.functions import array_contains, broadcast, col
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_emr_runtime
@@ -60,13 +60,13 @@ basic_nested_gens = single_level_array_gens + map_string_string_gen + [all_basic
 
 # data types supported by AST expressions in joins
 join_ast_gen = [
-    boolean_gen, byte_gen, short_gen, int_gen, long_gen, date_gen, timestamp_gen
+    boolean_gen, byte_gen, short_gen, int_gen, long_gen, date_gen, timestamp_gen, string_gen
 ]
 
 # data types not supported by AST expressions in joins
 join_no_ast_gen = [
     pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat]),
-    string_gen, null_gen, decimal_gen_64bit
+    null_gen, decimal_gen_64bit
 ]
 
 # Types to use when running joins on small batches. Small batch joins can take a long time
@@ -397,6 +397,22 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
         return left.join(broadcast(right), left.a > f.log(right.r_a), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Cross', 'Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_nested_loop_join_with_condition(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        # AST does not support cast or logarithm yet which is supposed to be extracted into child
+        # nodes. And this test doesn't cover other join types due to:
+        #    (1) build right are not supported for Right
+        #    (2) FullOuter: currently is not supported
+        # Those fallback reasons are not due to AST. Additionally, this test case changes test_broadcast_nested_loop_join_with_condition_fallback:
+        #    (1) adapt double to integer since AST current doesn't support it.
+        #    (2) switch to right side build to pass checks of 'Left', 'LeftSemi', 'LeftAnti' join types
+        return left.join(broadcast(right), f.round(left.a).cast('integer') > f.round(f.log(right.r_a).cast('integer')), join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={"spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
+
 @allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'Cast', 'GreaterThan', 'Log')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
@@ -404,9 +420,23 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
 def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # AST does not support cast or logarithm yet
+        # AST does not support double type which is not split-able into child nodes.
         return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
     assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec')
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+                                      float_gen, double_gen,
+                                      string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_nested_loop_join_with_array_contains(data_gen, join_type):
+    arr_gen = ArrayGen(data_gen)
+    literal = with_cpu_session(lambda spark: gen_scalar(data_gen))
+    def do_join(spark):
+        left, right = create_df(spark, arr_gen, 50, 25)
+        # Array_contains will be pushed down into project child nodes
+        return broadcast(left).join(right, array_contains(left.a, literal.cast(data_gen.data_type)) < array_contains(right.r_a, literal.cast(data_gen.data_type)))
+    assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)

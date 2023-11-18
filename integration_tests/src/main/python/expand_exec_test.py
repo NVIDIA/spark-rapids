@@ -23,9 +23,9 @@ from marks import ignore_order
 # see https://issues.apache.org/jira/browse/SPARK-40089.
 @ignore_order(local=True)
 def test_expand_exec(data_gen):
-    def op_df(spark, length=2048, seed=0):
+    def op_df(spark, length=2048):
         return gen_df(spark, StructGen([
             ('a', data_gen),
-            ('b', IntegerGen())], nullable=False), length=length, seed=seed).rollup(f.col("a"), f.col("b")).agg(f.col("b"))
+            ('b', IntegerGen())], nullable=False), length=length).rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
     assert_gpu_and_cpu_are_equal_collect(op_df)

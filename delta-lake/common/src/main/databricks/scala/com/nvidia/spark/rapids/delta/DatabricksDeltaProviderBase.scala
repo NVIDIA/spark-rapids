@@ -25,7 +25,7 @@ import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge, WriteIntoDelta}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaCatalog, GpuDeltaLog, GpuWriteIntoDelta}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuDeltaSupportsWrite, GpuDeltaV1Write, GpuWriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
@@ -38,15 +38,15 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, LogicalRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
-import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.{CreatableRelationProvider, InsertableRelation}
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 /**
  * Common implementation of the DeltaProvider interface for all Databricks versions.
  */
-object DatabricksDeltaProvider extends DeltaProviderImplBase {
+trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
     Seq(
@@ -94,7 +94,7 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
   }
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2]
+    write == classOf[DeltaTableV2] || classOf[GpuDeltaSupportsWrite].isAssignableFrom(write)
   }
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -116,6 +116,15 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
     catalogClass == classOf[DeltaCatalog] || catalogClass == classOf[UnityCatalogV2Proxy]
   }
 
+  private def getWriteOptions(options: Any): Map[String, String] = {
+    // For Databricks 13.3 AtomicCreateTableAsSelectExec writeOptions is a Map[String, String]
+    // while in all the other versions it's a CaseInsensitiveMap
+    options match {
+      case c: CaseInsensitiveStringMap => c.asCaseSensitiveMap().asScala.toMap
+      case _ => options.asInstanceOf[Map[String, String]]
+    }
+  }
+
   override def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): Unit = {
@@ -131,22 +140,7 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
-  }
-
-  override def convertToGpu(
-      cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-    GpuAtomicCreateTableAsSelectExec(
-      cpuExec.output,
-      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.ifNotExists)
+      getWriteOptions(cpuExec.writeOptions), cpuExec.session)
   }
 
   override def tagForGpu(
@@ -164,23 +158,7 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu(s"table provider '$provider' is not a Delta Lake provider")
     }
     RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.query.schema, None,
-      cpuExec.writeOptions.asCaseSensitiveMap().asScala.toMap, cpuExec.session)
-  }
-
-  override def convertToGpu(
-      cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
-    GpuAtomicReplaceTableAsSelectExec(
-      cpuExec.output,
-      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.plan,
-      meta.childPlans.head.convertIfNeeded(),
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.orCreate,
-      cpuExec.invalidateCache)
+      getWriteOptions(cpuExec.writeOptions), cpuExec.session)
   }
 
   private case class DeltaWriteV1Config(
@@ -241,29 +219,37 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
-    val deltaTable = cpuExec.table.asInstanceOf[DeltaTableV2]
-    val tablePath = if (deltaTable.catalogTable.isDefined) {
-      new Path(deltaTable.catalogTable.get.location)
-    } else {
-      DeltaDataSource.parsePathIdentifier(cpuExec.session, deltaTable.path.toString,
-        deltaTable.options)._1
-    }
-    val deltaLog = DeltaLog.forTable(cpuExec.session, tablePath, deltaTable.options)
-    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
-      deltaTable.options, cpuExec.session)
-    extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
-      meta.setCustomTaggingData(writeConfig)
+    cpuExec.write match {
+      case _: GpuDeltaV1Write => // write is already using GPU, nothing more to do
+      case write =>
+        val deltaTable = cpuExec.table.asInstanceOf[DeltaTableV2]
+        val tablePath = if (deltaTable.catalogTable.isDefined) {
+          new Path(deltaTable.catalogTable.get.location)
+        } else {
+          DeltaDataSource.parsePathIdentifier(cpuExec.session, deltaTable.path.toString,
+            deltaTable.options)._1
+        }
+        val deltaLog = DeltaLog.forTable(cpuExec.session, tablePath, deltaTable.options)
+        RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
+          deltaTable.options, cpuExec.session)
+        extractWriteV1Config(meta, deltaLog, write).foreach { writeConfig =>
+          meta.setCustomTaggingData(writeConfig)
+        }
     }
   }
 
   override def convertToGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): GpuExec = {
-    val writeConfig = meta.getCustomTaggingData match {
-      case Some(c: DeltaWriteV1Config) => c
-      case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+    val gpuWrite = cpuExec.write match {
+      case write: GpuDeltaV1Write => write
+      case _ =>
+        val writeConfig = meta.getCustomTaggingData match {
+          case Some(c: DeltaWriteV1Config) => c
+          case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+        }
+        toGpuWrite(writeConfig, meta.conf)
     }
-    val gpuWrite = toGpuWrite(writeConfig, meta.conf)
     GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
@@ -302,7 +288,7 @@ object DatabricksDeltaProvider extends DeltaProviderImplBase {
 
   private def toGpuWrite(
       writeConfig: DeltaWriteV1Config,
-      rapidsConf: RapidsConf): V1Write = new V1Write {
+      rapidsConf: RapidsConf): V1Write = new GpuDeltaV1Write {
     override def toInsertableRelation(): InsertableRelation = {
       new InsertableRelation {
         override def insert(data: DataFrame, overwrite: Boolean): Unit = {
@@ -360,13 +346,4 @@ class DeltaCreatableRelationProviderMeta(
   }
 
   override def convertToGpu(): GpuCreatableRelationProvider = new GpuDeltaDataSource(conf)
-}
-
-/**
- * Implements the Delta Probe interface for probing the Delta Lake provider on Databricks.
- * @note This is instantiated via reflection from ShimLoader.
- */
-class DeltaProbeImpl extends DeltaProbe {
-  // Delta Lake is built-in for Databricks instances, so no probing is necessary.
-  override def getDeltaProvider: DeltaProvider = DatabricksDeltaProvider
 }

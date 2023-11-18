@@ -1054,6 +1054,7 @@ def test_regexp_memory_ok():
         }
     )
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9731')
 def test_re_replace_all():
     """
     regression test for https://github.com/NVIDIA/spark-rapids/issues/8323
