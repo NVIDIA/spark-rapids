@@ -820,6 +820,7 @@
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
+        <nonfail.errors.quiet>true</nonfail.errors.quiet>
     </properties>
 
     <dependencyManagement>
@@ -984,7 +985,9 @@
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
-                                <exec executable="git" outputproperty="git.head.revision">
+                                <exec executable="git"
+                                      outputproperty="git.head.revision"
+                                      discardError="${nonfail.errors.quiet}">
                                     <arg value="rev-parse"/>
                                     <arg value="HEAD"/>
                                 </exec>
@@ -1471,7 +1474,9 @@ This will force full Scala code rebuild in downstream modules.
                                 </pathconvert>
                                 <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
                                 <!-- workaround ant delete does not work with dirset -->
-                                <exec dir="${project.basedir}" executable="rm">
+                                <exec dir="${project.basedir}"
+                                      executable="rm"
+                                      discardError="${nonfail.errors.quiet}">
                                     <arg value="-rf"/>
                                     <arg line="${target.dirs.str}"/>
                                 </exec>

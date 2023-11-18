@@ -159,7 +159,9 @@
                                 <mkdir dir="${oldClassesDir}"/>
 
                                 <exec executable="diff"
-                                      resultproperty="diff.result">
+                                      resultproperty="diff.result"
+                                      discardOutput="${nonfail.errors.quiet}"
+                                      discardError="${nonfail.errors.quiet}">
                                     <arg value="-q"/>
                                     <arg value="-r"/>
                                     <arg value="${oldClassesDir}"/>
