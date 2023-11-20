@@ -363,8 +363,7 @@ final class TypeSig private(
       case FloatType => check.contains(TypeEnum.FLOAT)
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
-      case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-        check.contains(TypeEnum.TIMESTAMP)
+      case TimestampType => check.contains(TypeEnum.TIMESTAMP)
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
