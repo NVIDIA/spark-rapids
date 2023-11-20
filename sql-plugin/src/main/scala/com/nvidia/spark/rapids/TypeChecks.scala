@@ -800,10 +800,10 @@ object TypeChecks {
     zoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 
-  def timezoneNotSupportedString(dataType: DataType): String = {
-    s"$dataType is not supported with timezone settings: (JVM:" +
+  def timezoneNotSupportedString(exprName: String): String = {
+    s"$exprName is not supported with timezone settings: (JVM:" +
       s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-      s" Set both of the timezones to UTC to enable $dataType support"
+      s" Set both of the timezones to UTC to enable $exprName support"
   }
 }
 
