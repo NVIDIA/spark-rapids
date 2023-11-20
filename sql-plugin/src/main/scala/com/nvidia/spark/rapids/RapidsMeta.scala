@@ -1111,25 +1111,17 @@ abstract class BaseExprMeta[INPUT <: Expression](
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
-    if (needTimezoneCheck && !isTimezoneSupported) checkTimestampType(dataType, this)
+    if (needTimezoneCheck && !isTimezoneSupported) checkTimestampType(this)
     tagExprForGpu()
   }
 
   /**
    * Check whether contains timestamp type and whether timezone is supported
    */
-  def checkTimestampType(dataType: DataType, meta: RapidsMeta[_, _, _]): Unit = {
-    dataType match {
-      case TimestampType if !TypeChecks.isUTCTimezone() =>
-        meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(dataType))
-      case ArrayType(elementType, _) =>
-        checkTimestampType(elementType, meta)
-      case MapType(keyType, valueType, _) =>
-        checkTimestampType(keyType, meta)
-        checkTimestampType(valueType, meta)
-      case StructType(fields) =>
-        fields.foreach(field => checkTimestampType(field.dataType, meta))
-      case _ => // do nothing
+  def checkTimestampType(meta: RapidsMeta[_, _, _]): Unit = {
+    // FIXME: use new API from TimezoneDB utils to check whether it's supported
+    if (!TypeChecks.isUTCTimezone()) {
+      meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(meta.wrapped.getClass.toString))
     }
   }
 
