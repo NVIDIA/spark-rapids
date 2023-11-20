@@ -40,13 +40,13 @@ class GpuStructsToJsonMeta(
     if (expr.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
       willNotWorkOnGpu("to_json option pretty=true is not supported")
     }
-    val readOptions = GpuJsonUtils.parseJSONReadOptions(expr.options)
+    val options = GpuJsonUtils.parseJSONOptions(expr.options)
     val hasDates = TrampolineUtil.dataTypeExistsRecursively(expr.child.dataType,
       _.isInstanceOf[DateType])
     if (hasDates) {
-      GpuJsonUtils.optionalDateFormatInRead(readOptions) match {
-        case None | Some("yyyy-MM-dd") =>
-        case Some(dateFormat) =>
+      GpuJsonUtils.dateFormatInWrite(options) match {
+        case "yyyy-MM-dd" =>
+        case dateFormat =>
           // we can likely support other formats but we would need to add tests
           // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
           willNotWorkOnGpu(s"Unsupported dateFormat '$dateFormat' in to_json")
@@ -55,17 +55,17 @@ class GpuStructsToJsonMeta(
     val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(expr.child.dataType,
       _.isInstanceOf[TimestampType])
     if (hasTimestamps) {
-      GpuJsonUtils.optionalDateFormatInRead(readOptions) match {
-        case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
+      GpuJsonUtils.timestampFormatInWrite(options) match {
+        case "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]" =>
         case timestampFormat =>
           // we can likely support other formats but we would need to add tests
           // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
           willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
       }
-      if (!supportedTimezones.contains(readOptions.zoneId)) {
+      if (!supportedTimezones.contains(options.zoneId)) {
         // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
         // so we need to fall back if expr different timeZone is specified
-        willNotWorkOnGpu(s"Unsupported timeZone '${readOptions.zoneId}' in to_json")
+        willNotWorkOnGpu(s"Unsupported timeZone '${options.zoneId}' in to_json")
       }
     }
   }
