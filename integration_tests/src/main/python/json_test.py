@@ -821,8 +821,8 @@ def test_structs_to_json_fallback_legacy(spark_tmp_path, data_gen):
 @pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
 @pytest.mark.parametrize('timezone', ['UTC'])
 @pytest.mark.parametrize('date_format', [
-    'yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX',
-    'dd/MM/yyyy\'T\'HH:mm:ss[.SSS][XXX]',
+    'yyyy-dd-MM',
+    'dd/MM/yyyy',
 ])
 def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezone, date_format):
     struct_gen = StructGen([
