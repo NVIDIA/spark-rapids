@@ -820,7 +820,7 @@
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
-        <nonfail.errors.quiet>true</nonfail.errors.quiet>
+        <nonfail.errors.quiet>false</nonfail.errors.quiet>
     </properties>
 
     <dependencyManagement>
@@ -985,13 +985,22 @@
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
                                 <exec executable="git"
                                       outputproperty="git.head.revision"
                                       discardError="${nonfail.errors.quiet}">
                                     <arg value="rev-parse"/>
                                     <arg value="HEAD"/>
                                 </exec>
-                                <property file="${build.info.path}" prefix="saved.build-info"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${build.info.path}" type="file"/>
+                                    <then>
+                                        <property file="${build.info.path}" prefix="saved.build-info"/>
+                                    </then>
+                                    <else>
+                                        <property name="saved.build-info.revision" value="N/A"/>
+                                    </else>
+                                </ac:if>
                                 <echo>
 Comparing git revisions:
     previous=${saved.build-info.revision}

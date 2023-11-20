@@ -179,10 +179,18 @@
                             value="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                         <property name="shimServiceClass"
                             value="com.nvidia.spark.rapids.shims.${spark.version.classifier}.SparkShimServiceProvider"/>
-                        <loadfile property="currentServiceClass"
-                                  srcFile="${serviceFile}"
-                                  failonerror="false"
-                                  quiet="${nonfail.errors.quiet}"/>
+                        <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                            <available file="${serviceFile}" type="file"/>
+                            <then>
+                                <loadfile property="currentServiceClass"
+                                    srcFile="${serviceFile}"
+                                    failonerror="false"
+                                    quiet="${nonfail.errors.quiet}"/>
+                            </then>
+                            <else>
+                                <property name="currentServiceClass" value="N/A"/>
+                            </else>
+                        </ac:if>
                         <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                             <equals arg1="${currentServiceClass}" arg2="${shimServiceClass}${line.separator}"/>
                             <then>
