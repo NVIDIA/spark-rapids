@@ -1077,7 +1077,12 @@ case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression, zone
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (rhs.getBase.isValid) {
-      TimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
+      if (TimeZoneDB.isUTCTimezone(zoneId)) {
+        // For UTC timezone, just a no-op bypassing GPU computation.
+        lhs.getBase.incRefCount()
+      } else {
+        TimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
+      }
     } else {
       // All-null output column.
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
