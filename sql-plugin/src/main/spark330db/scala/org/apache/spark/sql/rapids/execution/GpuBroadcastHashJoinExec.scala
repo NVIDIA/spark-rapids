@@ -115,7 +115,7 @@ case class GpuBroadcastHashJoinExec(
     right: SparkPlan, 
     executorBroadcast: Boolean)
       extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
+      leftKeys, rightKeys, joinType, buildSide, condition, postBuildCondition, left, right) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
