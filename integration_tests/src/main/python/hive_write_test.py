@@ -153,9 +153,11 @@ def test_optimized_hive_bucketed_fallback(gens, storage, planned_write, spark_tm
         "ExecutedCommandExec",
         {"spark.sql.optimizer.plannedWrite.enabled": planned_write})
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_hive_copy_ints_to_long(spark_tmp_table_factory):
     do_hive_copy(spark_tmp_table_factory, int_gen, "INT", "BIGINT")
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_hive_copy_longs_to_float(spark_tmp_table_factory):
     do_hive_copy(spark_tmp_table_factory, long_gen, "BIGINT", "FLOAT")
 

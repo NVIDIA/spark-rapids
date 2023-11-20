@@ -123,6 +123,7 @@ par_write_odd_empty_strings_gens_sample = [all_nulls_string_gen,
         all_empty_map_gen]
 
 @pytest.mark.parametrize('par_gen', par_write_odd_empty_strings_gens_sample, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_write_round_trip_corner(spark_tmp_path, par_gen):
     gen_list = [('_c0', par_gen)]
     data_path = spark_tmp_path + '/PAR_DATA'
@@ -239,6 +240,7 @@ if not is_before_spark_320():
     parquet_write_compress_options.append('zstd')
 
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.compression.codec': compress}
@@ -313,6 +315,7 @@ def writeParquetNoOverwriteCatchException(spark, df, data_path, table_name):
         df.coalesce(1).write.format("parquet").option("path", data_path).saveAsTable(table_name)
     assert e_info.match(r".*already exists.*")
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory):
     gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -451,6 +454,7 @@ def test_parquet_write_bloom_filter_sql_cpu_fallback(spark_tmp_path, spark_tmp_t
 # This test is testing how the parquet_writer will behave if column has a validity mask without having any nulls.
 # There is no straight forward to do it besides creating a vector with nulls and then dropping nulls
 # cudf will create a vector with a null_mask even though we have just filtered them
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_write_map_nullable(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
 
@@ -509,6 +513,7 @@ test_non_empty_ctas_non_gpu_execs = ["DataWritingCommandExec", "InsertIntoHiveTa
 
 @pytest.mark.allow_non_gpu(*test_non_empty_ctas_non_gpu_execs)
 @pytest.mark.parametrize('allow_non_empty', [True, False])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
     data_path = spark_tmp_path + "/CTAS"
     conf = {
@@ -556,6 +561,7 @@ def get_nested_parquet_meta_data_for_field_id():
 
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_parquet_write_field_id(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     schema, data = get_nested_parquet_meta_data_for_field_id()
@@ -573,6 +579,7 @@ def test_parquet_write_field_id(spark_tmp_path):
         conf=enable_parquet_field_id_read)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_parquet_write_field_id_disabled(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     schema, data = get_nested_parquet_meta_data_for_field_id()
@@ -602,6 +609,7 @@ def test_write_daytime_interval(spark_tmp_path):
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_concurrent_writer(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -722,6 +730,7 @@ def test_partitioned_sql_parquet_write(mode, spark_tmp_table_factory):
 
 
 @ignore_order(local=True)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_path):
 
     def create_input_table(spark):
@@ -807,6 +816,7 @@ def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled,
 # Issue to test a known bug https://github.com/NVIDIA/spark-rapids/issues/8694 to avoid regression
 @ignore_order
 @allow_non_gpu("SortExec", "ShuffleExchangeExec")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_write_list_struct_single_element(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     data_gen = ArrayGen(StructGen([('element', long_gen)], nullable=False), max_length=10, nullable=False)
@@ -818,6 +828,7 @@ def test_write_list_struct_single_element(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(cpu_path), conf)
 
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_parquet_write_column_name_with_dots(spark_tmp_path):
     data_path = spark_tmp_path + "/PARQUET_DATA"
     gens = [
