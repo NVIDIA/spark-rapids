@@ -3605,46 +3605,8 @@ object GpuOverrides extends Logging {
             TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
-      (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
-            willNotWorkOnGpu("to_json option pretty=true is not supported")
-          }
-          val hasDates = TrampolineUtil.dataTypeExistsRecursively(a.child.dataType,
-            _.isInstanceOf[DateType])
-          if (hasDates) {
-            // check if the default format is being used
-            val defaultFormat = "yyyy-MM-dd"
-            val dateFormat = a.options.getOrElse("dateFormat", defaultFormat)
-            if (dateFormat != defaultFormat) {
-              // we can likely support other formats but we would need to add tests
-              // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
-              willNotWorkOnGpu(s"Unsupported dateFormat '$dateFormat' in to_json")
-            }
-          }
-          val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(a.child.dataType,
-            _.isInstanceOf[TimestampType])
-          if (hasTimestamps) {
-            // check if the default format is being used
-            val defaultFormat = "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
-            val timestampFormat = a.options.getOrElse("timestampFormat", defaultFormat)
-            if (timestampFormat != defaultFormat) {
-              // we can likely support other formats but we would need to add tests
-              // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
-              willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
-            }
-            val timeZone = a.options.getOrElse("timeZone", SQLConf.get.sessionLocalTimeZone)
-            if (timeZone != "UTC" && timeZone != "Etc/UTC") {
-              // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
-              // so we need to fall back if a different timeZone is specified
-              willNotWorkOnGpu(s"Unsupported timeZone '$timeZone' in to_json")
-            }
-          }
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuStructsToJson(a.options, child, a.timeZoneId)
-      }).disabledByDefault("to_json support is experimental. See compatibility " +
+      (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
+        .disabledByDefault("to_json support is experimental. See compatibility " +
           "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +

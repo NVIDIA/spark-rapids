@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain expr copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -16,12 +16,63 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuUnaryExpression}
+import java.time.ZoneId
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.{CastOptions, DataFromReplacementRule, GpuCast, GpuColumnVector, GpuExpression, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+
+import org.apache.spark.sql.catalyst.expressions.{Expression, StructsToJson}
+import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DataType, StringType, StructType}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, DateType, StringType, StructType, TimestampType}
+
+class GpuStructsToJsonMeta(
+    expr: StructsToJson,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule
+  ) extends UnaryExprMeta[StructsToJson](expr, conf, parent, rule) {
+
+  lazy val supportedTimezones = Seq("UTC", "Etc/UTC").map(ZoneId.of)
+
+  override def tagExprForGpu(): Unit = {
+    if (expr.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
+      willNotWorkOnGpu("to_json option pretty=true is not supported")
+    }
+    val readOptions = GpuJsonUtils.parseJSONReadOptions(expr.options)
+    val hasDates = TrampolineUtil.dataTypeExistsRecursively(expr.child.dataType,
+      _.isInstanceOf[DateType])
+    if (hasDates) {
+      GpuJsonUtils.optionalDateFormatInRead(readOptions) match {
+        case None | Some("yyyy-MM-dd") =>
+        case Some(dateFormat) =>
+          // we can likely support other formats but we would need to add tests
+          // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
+          willNotWorkOnGpu(s"Unsupported dateFormat '$dateFormat' in to_json")
+      }
+    }
+    val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(expr.child.dataType,
+      _.isInstanceOf[TimestampType])
+    if (hasTimestamps) {
+      GpuJsonUtils.optionalDateFormatInRead(readOptions) match {
+        case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
+        case timestampFormat =>
+          // we can likely support other formats but we would need to add tests
+          // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
+          willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
+      }
+      if (!supportedTimezones.contains(readOptions.zoneId)) {
+        // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
+        // so we need to fall back if expr different timeZone is specified
+        willNotWorkOnGpu(s"Unsupported timeZone '${readOptions.zoneId}' in to_json")
+      }
+    }
+  }
+
+  override def convertToGpu(child: Expression): GpuExpression =
+    GpuStructsToJson(expr.options, child, expr.timeZoneId)
+}
 
 case class GpuStructsToJson(
   options: Map[String, String],

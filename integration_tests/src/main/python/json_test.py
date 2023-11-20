@@ -706,7 +706,11 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
     False
 ])
-@pytest.mark.parametrize('timezone', ['UTC', 'Etc/UTC'])
+@pytest.mark.parametrize('timezone', [
+    'UTC',
+    'Etc/UTC',
+    pytest.param('UTC+07:00', marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
 def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty, timezone):
     struct_gen = StructGen([
         ('a', data_gen),
