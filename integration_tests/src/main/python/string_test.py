@@ -823,7 +823,7 @@ def test_format_number_supported(data_gen):
     )
 
 float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
-format_number_float_gens = [DoubleGen(min_exp=-300, max_exp=15)]
+format_number_float_gens = [DoubleGen()]
 
 @pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
 def test_format_number_float_limited(data_gen):
