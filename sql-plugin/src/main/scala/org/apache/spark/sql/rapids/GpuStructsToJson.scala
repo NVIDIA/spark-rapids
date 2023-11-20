@@ -20,6 +20,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{CastOptions, DataFromReplacementRule, GpuCast, GpuColumnVector, GpuExpression, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, StructsToJson}
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
@@ -67,6 +68,10 @@ class GpuStructsToJsonMeta(
         // so we need to fall back if expr different timeZone is specified
         willNotWorkOnGpu(s"Unsupported timeZone '${options.zoneId}' in to_json")
       }
+    }
+
+    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
+      willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
     }
   }
 

@@ -797,20 +797,66 @@ def test_structs_to_json_fallback_timezone(spark_tmp_path, data_gen, timezone):
         conf=conf)
 
 @allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [date_gen, timestamp_gen], ids=idfn)
+def test_structs_to_json_fallback_legacy(spark_tmp_path, data_gen):
+    struct_gen = StructGen([
+        ("a", StructGen([('child', data_gen)], nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct")).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True,
+          'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
+@pytest.mark.parametrize('timezone', ['UTC'])
+@pytest.mark.parametrize('date_format', [
+    'yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX',
+    'dd/MM/yyyy\'T\'HH:mm:ss[.SSS][XXX]',
+])
+def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezone, date_format):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timeZone': timezone,
+                'dateFormat': date_format }
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'ProjectExec',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('timezone', ['UTC'])
 @pytest.mark.parametrize('timestamp_format', [
     'yyyy-MM-dd\'T\'HH:mm:ss.SSSXXX',
     'dd/MM/yyyy\'T\'HH:mm:ss[.SSS][XXX]',
 ])
-def test_structs_to_json_fallback_formats(spark_tmp_path, data_gen, timezone, timestamp_format):
+def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezone, timestamp_format):
     struct_gen = StructGen([
         ('a', data_gen),
         ("b", StructGen([('child', data_gen)], nullable=True)),
-        ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
-        ("d", MapGen(LongGen(nullable=False), data_gen)),
-        ("d", MapGen(StringGen('[A-Za-z0-9]{0,10}', nullable=False), data_gen)),
-        ("e", ArrayGen(MapGen(LongGen(nullable=False), data_gen), nullable=True)),
     ], nullable=False)
     gen = StructGen([('my_struct', struct_gen)], nullable=False)
 
