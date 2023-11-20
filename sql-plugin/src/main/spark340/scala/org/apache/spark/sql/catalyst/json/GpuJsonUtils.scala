@@ -33,11 +33,7 @@ object GpuJsonUtils {
     options.dateFormatInRead
 
   def optionalDateFormatInRead(options: Map[String, String]): Option[String] = {
-    val parsedOptions = new JSONOptionsInRead(
-      options,
-      SQLConf.get.sessionLocalTimeZone,
-      SQLConf.get.columnNameOfCorruptRecord)
-    optionalDateFormatInRead(parsedOptions)
+    optionalDateFormatInRead(parseJSONReadOptions(options))
   }
 
   /**
@@ -66,4 +62,11 @@ object GpuJsonUtils {
 
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean =
     options.enableDateTimeParsingFallback.getOrElse(false)
+
+  def parseJSONReadOptions(options: Map[String, String]) = {
+    new JSONOptionsInRead(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+  }
 }
