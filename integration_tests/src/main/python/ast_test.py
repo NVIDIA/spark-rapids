@@ -42,7 +42,8 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    (string_gen, True)
+    pytest.param((string_gen, True),
+                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9771"))
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
