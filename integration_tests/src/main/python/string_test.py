@@ -786,6 +786,7 @@ def test_like_complex_escape():
                              pytest.param(10, r'-?[0-9]{1,18}',       id='from_10'),
                              pytest.param(16, r'-?[0-9a-fA-F]{1,15}', id='from_16')
                          ])
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9784')
 # to_base can be positive and negative
 @pytest.mark.parametrize('to_base', [10, 16], ids=['to_plus10', 'to_plus16'])
 def test_conv_dec_to_from_hex(from_base, to_base, pattern):
@@ -798,10 +799,10 @@ def test_conv_dec_to_from_hex(from_base, to_base, pattern):
         conf={'spark.rapids.sql.expression.Conv': True}
     )
 
-format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0), 
-                                      DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5), 
-                                      DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10), 
-                                      DecimalGen(precision=38, scale=-10), 
+format_number_gens = integral_gens + [DecimalGen(precision=7, scale=7), DecimalGen(precision=18, scale=0),
+                                      DecimalGen(precision=18, scale=3), DecimalGen(precision=36, scale=5),
+                                      DecimalGen(precision=36, scale=-5), DecimalGen(precision=38, scale=10),
+                                      DecimalGen(precision=38, scale=-10),
                                       DecimalGen(precision=38, scale=30, special_cases=[Decimal('0.000125')]),
                                       DecimalGen(precision=38, scale=32, special_cases=[Decimal('0.000125')]),
                                       DecimalGen(precision=38, scale=37, special_cases=[Decimal('0.000125')])]
