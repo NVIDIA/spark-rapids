@@ -56,5 +56,13 @@ object GpuJsonToStructsShim {
         throw new IllegalStateException(s"Unsupported dateFormat $other")
     }
   }
-
+  def castJsonStringToTimestamp(input: ColumnVector,
+      options: Map[String, String]): ColumnVector = {
+    withResource(Scalar.fromString(" ")) { space =>
+      withResource(input.strip(space)) { trimmed =>
+        // from_json doesn't respect ansi mode
+        GpuCast.castStringToTimestamp(trimmed, ansiMode = false)
+      }
+    }
+  }
 }
