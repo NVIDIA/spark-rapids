@@ -23,6 +23,7 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType,
 import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
+import com.nvidia.spark.rapids.RapidsConf.TEST_USE_TIMEZONE_CPU_BACKEND
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
@@ -1045,6 +1046,7 @@ class FromUTCTimestampExprMeta(
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   private[this] var timezoneId: ZoneId = null
+  private[this] val isOnCPU: Boolean = conf.get(TEST_USE_TIMEZONE_CPU_BACKEND).getOrElse(false)
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
@@ -1052,20 +1054,28 @@ class FromUTCTimestampExprMeta(
         willNotWorkOnGpu("timezone input must be a literal string")
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
-          if (TimeZoneDB.isSupportedTimezone(timezoneShortID)) {
-            timezoneId = TimeZoneDB.getZoneId(timezoneShortID)
-          } else {
-            willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
+          timezoneId = TimeZoneDB.getZoneId(timezoneShortID)
+          // Always pass for UTC timezone since it's no-op.
+          if (!TimeZoneDB.isUTCTimezone(timezoneId)) {
+            // Check CPU path, mostly for test purpose
+            if (!TimeZoneDB.isSupportedTimezone(timezoneShortID)) {
+              willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
+            }
+            // TODO: remove this once GPU backend was supported.
+            if (!isOnCPU) {
+              willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
+            }
           }
         }
     }
   }
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone, timezoneId)
+    GpuFromUTCTimestamp(timestamp, timezone, timezoneId, isOnCPU)
 }
 
-case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression, zoneId: ZoneId)
+case class GpuFromUTCTimestamp(
+    timestamp: Expression, timezone: Expression, zoneId: ZoneId, isOnCPU: Boolean)
   extends GpuBinaryExpressionArgsAnyScalar
       with ImplicitCastInputTypes
       with NullIntolerant {
@@ -1081,7 +1091,13 @@ case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression, zone
         // For UTC timezone, just a no-op bypassing GPU computation.
         lhs.getBase.incRefCount()
       } else {
-        TimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
+        if (isOnCPU){
+          TimeZoneDB.fromUtcTimestampToTimestamp(lhs.getBase, zoneId)
+        } else {
+          // TODO: remove this until GPU backend supported.
+          throw new UnsupportedOperationException(
+            s"Not supported timezone type ${zoneId.normalized()}")
+        }
       }
     } else {
       // All-null output column.
