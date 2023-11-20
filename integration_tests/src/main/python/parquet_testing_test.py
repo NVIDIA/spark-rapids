@@ -16,7 +16,7 @@
 # https://github.com/apache/parquet-testing
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
-from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run
+from conftest import get_std_input_path, is_not_utc, is_parquet_testing_tests_forced, is_precommit_run
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
@@ -122,6 +122,7 @@ def gen_testing_params_for_valid_files():
 
 @pytest.mark.parametrize("path", gen_testing_params_for_valid_files())
 @pytest.mark.parametrize("confs", [_native_reader_confs, _java_reader_confs])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_parquet_testing_valid_files(path, confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(path), conf=confs)
 
