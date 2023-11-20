@@ -76,7 +76,8 @@ class GpuBroadcastHashJoinMeta(
         buildSide,
         remain,
         postBuildCondition,
-        leftChild, rightChild)
+        leftChild, rightChild,
+        join.isExecutorBroadcast)
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
         joinExec
       } else {
@@ -94,7 +95,8 @@ class GpuBroadcastHashJoinMeta(
         buildSide,
         None,
         List.empty,
-        left, right)
+        left, right,
+        join.isExecutorBroadcast)
       // For inner joins we can apply a post-join condition for any conditions that cannot be
       // evaluated directly in a mixed join that leverages a cudf AST expression
       conditionMeta.map(_.convertToGpu()).map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
