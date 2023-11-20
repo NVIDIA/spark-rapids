@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -181,6 +181,10 @@ object GpuJsonScan {
       readSchema.head.name == parsedOptions.columnNameOfCorruptRecord) {
       // fallback to cpu to throw exception
       meta.willNotWorkOnGpu("GpuJsonScan does not support Corrupt Record")
+    }
+
+    if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support default values in schema")
     }
 
     FileFormatChecks.tag(meta, readSchema, JsonFormatType, ReadFileOp)
