@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, NvtxColor, Table => CudfTable}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression, SortOrder}
@@ -32,6 +31,8 @@ class GpuBatchedBoundedWindowIterator(
   override val boundPartitionSpec: Seq[GpuExpression],
   override val boundOrderSpec: Seq[SortOrder],
   val outputTypes: Array[DataType],
+  maxPreceding: Int,
+  maxFollowing: Int,
   numOutputBatches: GpuMetric,
   numOutputRows: GpuMetric,
   opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
@@ -39,10 +40,14 @@ class GpuBatchedBoundedWindowIterator(
   override def isRunningBatched: Boolean = false  // Not "Running Window" optimized.
                                                   // This is strictly for batching.
 
-  override def hasNext: Boolean = onDeck.isDefined || input.hasNext
+  override def hasNext: Boolean = numUnprocessedInCache > 0 || input.hasNext
 
-  var onDeck: Option[SpillableColumnarBatch] = None
+  var cached: Option[Array[CudfColumnVector]] = None  // For processing with the next batch.
+  // TODO: Rename numUnprocessedInCache to numIncomplete.
+  private var numUnprocessedInCache: Int = 0  // numRows at the bottom not processed completely.
+  private var numPrecedingRowsAdded: Int = 0  // numRows at the top, added for preceding context.
 
+  /*
   override def next(): ColumnarBatch = {
     val cbSpillable = onDeck match {
       case Some(x) =>
@@ -55,6 +60,7 @@ class GpuBatchedBoundedWindowIterator(
       withResource(cbSpillable.getColumnarBatch()) { cb =>
         withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
           val ret = withResource(computeBasicWindow(cb)) { cols =>
+            println(s"CALEB: cols size: ${cols.length}, num-rows == ${cols(0).getRowCount}")
             convertToBatch(outputTypes, cols)
           }
           numOutputBatches += 1
@@ -64,11 +70,161 @@ class GpuBatchedBoundedWindowIterator(
       }
     }
   }
+  */
 
-  def getNext(): SpillableColumnarBatch = {
-    SpillableColumnarBatch(input.next(), SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+  var inputTypes: Option[Array[DataType]] = None
+
+  // TODO: Move into getNextInputBatch.
+  private def concatenateColumns(cached: Array[CudfColumnVector],
+                                 freshBatchTable: CudfTable)
+    : Array[CudfColumnVector] = {
+
+    if (cached.length != freshBatchTable.getNumberOfColumns) {
+      throw new IllegalArgumentException("Expected the same number of columns " +
+        "in input batch and cached batch.")
+    }
+    cached.zipWithIndex.map { case (cachedCol, idx) =>
+      CudfColumnVector.concatenate(cachedCol, freshBatchTable.getColumn(idx))
+    }
   }
 
+  // TODO: Consider returning ColumnarBatch instead.
+  private def getNextInputBatch: SpillableColumnarBatch = {
+
+    def optionallySetInputTypes(inputCB: ColumnarBatch): Unit = {
+      if (inputTypes.isEmpty) {
+        inputTypes = Some(GpuColumnVector.extractTypes(inputCB))
+      }
+    }
+
+    // Reads fresh batch from iterator, initializes input data-types if necessary.
+    def getFreshInputBatch: ColumnarBatch = {
+      val fresh_batch = input.next()
+      optionallySetInputTypes(fresh_batch)
+      fresh_batch
+    }
+
+    // Clears cached column vectors, after consumption.
+    def clearCached(): Unit = {
+      cached.foreach(_.foreach(_.close))
+      cached = None
+    }
+
+    // Either cached has unprocessed rows, or input.hasNext().
+    if (input.hasNext) {
+      if (cached.isDefined) {
+        // Cached input AND new input rows exist.  Return concat-ed rows.
+        withResource(getFreshInputBatch) { freshBatchCB =>
+          withResource(GpuColumnVector.from(freshBatchCB)) { freshBatchTable =>
+            val concat = concatenateColumns(cached.get, freshBatchTable)
+            clearCached()
+            SpillableColumnarBatch(convertToBatch(inputTypes.get, concat),
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          }
+        }
+      } else {
+          // No cached input available. Return fresh input rows, only.
+          SpillableColumnarBatch(getFreshInputBatch,
+                                 SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+      }
+    }
+    else {
+      // No fresh input available. Return cached input.
+      val cachedCB = convertToBatch(inputTypes.get, cached.get)
+      clearCached()
+      SpillableColumnarBatch(cachedCB,
+                             SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    }
+  }
+
+  /**
+   * Helper to trim specified number of rows off the top and bottom,
+   * of all specified columns.
+   */
+  private def trim(columns: Array[CudfColumnVector],
+                    offTheTop: Int,
+                    offTheBottom: Int): Array[CudfColumnVector] = {
+
+    def checkValidSizes(col: CudfColumnVector): Unit =
+      if (offTheTop >= col.getRowCount ||
+        offTheBottom >= col.getRowCount ||
+        (offTheTop + offTheBottom) > col.getRowCount) {
+        throw new IllegalArgumentException(s"Cannot trim column of size ${col.getRowCount} by " +
+          s"$offTheTop rows at the top, and $offTheBottom rows at the bottom.")
+      }
+
+    columns.map{ col =>
+      checkValidSizes(col)
+      col.subVector(offTheTop, col.getRowCount.toInt - offTheBottom)
+    }
+  }
+
+  private def resetInputCache(newCache: Option[Array[CudfColumnVector]],
+                              newUnprocessed: Int, // TODO: Not required here. Already set prior.
+                              newPrecedingAdded: Int): Unit= {
+    cached.foreach(_.foreach(_.close))
+    cached = newCache
+    numUnprocessedInCache = newUnprocessed
+    numPrecedingRowsAdded = newPrecedingAdded
+  }
+
+  override def next(): ColumnarBatch = {
+    var outputBatch: ColumnarBatch = null
+    while (outputBatch == null  &&  hasNext) { // TODO: && input.hasNext? Simply hasNext?
+      withResource(getNextInputBatch) { inputCbSpillable =>
+        withResource(inputCbSpillable.getColumnarBatch()) { inputCB =>
+          withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
+            withResource(computeBasicWindow(inputCB)) { outputCols =>
+              val inputRowCount = inputCB.numRows()
+
+              // TODO: Move this to the end of getNextInputBatch, when resetting.
+              // Cleared after getNextInputBatch
+              // cached.foreach(_.foreach(_.close))
+              // cached = None
+
+              val noMoreInput = !input.hasNext
+
+              numUnprocessedInCache = if (noMoreInput) {
+                // If there are no more input rows expected,
+                // this is the last output batch.
+                0
+              } else {
+                // More input rows expected. The last `maxFollowing` rows can't be finalized.
+                // Cannot exceed `inputRowCount`.
+                maxFollowing min inputRowCount
+              }
+
+              // Trim output. Remove numPrecedingRowsAdded from the top,
+              // and numUnprocessedInCache from the bottom.
+              // TODO: Optimize. If no rows can be output, skip calling the kernel.
+
+              if (numPrecedingRowsAdded + numUnprocessedInCache >= inputRowCount) {
+                println("Not enough rows! Cannot output a batch.")
+              }
+              else {
+                val trimmedOutputCols = trim(outputCols,
+                                             numPrecedingRowsAdded, numUnprocessedInCache)
+                outputBatch = convertToBatch(outputTypes, trimmedOutputCols)
+              }
+
+              // Min 0, Max inputRowCount
+              // numPrecedingRowsAdded = (numUnprocessedInCache + maxFollowing) max inputRowCount
+              numPrecedingRowsAdded = (numUnprocessedInCache + maxPreceding) min inputRowCount
+              val inputCols = Range(0, inputCB.numCols()).map {
+                inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
+              }.toArray
+
+              val newCached = trim(inputCols, inputRowCount - numPrecedingRowsAdded, 0)
+              resetInputCache(Some(newCached), numUnprocessedInCache, numPrecedingRowsAdded)
+            }
+          }
+        }
+      }
+    }
+    numOutputBatches += 1
+    numOutputRows += outputBatch.numRows()
+    outputBatch
+  }
 }
 
 /// Window Exec used exclusively for batching bounded window functions.
@@ -78,13 +234,16 @@ class GpuBatchedBoundedWindowExec(
     override val gpuOrderSpec: Seq[SortOrder],
     override val child: SparkPlan)(
     override val cpuPartitionSpec: Seq[Expression],
-    override val cpuOrderSpec: Seq[SortOrder]
+    override val cpuOrderSpec: Seq[SortOrder],
+    maxPreceding: Integer,
+    maxFollowing: Integer
 ) extends GpuWindowExec(windowOps,
                         gpuPartitionSpec,
                         gpuOrderSpec,
                         child)(cpuPartitionSpec, cpuOrderSpec) {
 
-  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
+  override def otherCopyArgs: Seq[AnyRef] =
+    cpuPartitionSpec :: cpuOrderSpec :: maxPreceding :: maxFollowing :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
@@ -105,7 +264,8 @@ class GpuBatchedBoundedWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuBatchedBoundedWindowIterator(iter, boundWindowOps, boundPartitionSpec,
-        boundOrderSpec, output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
+        boundOrderSpec, output.map(_.dataType).toArray, maxPreceding, maxFollowing,
+        numOutputBatches, numOutputRows, opTime)
     }
   }
 }
