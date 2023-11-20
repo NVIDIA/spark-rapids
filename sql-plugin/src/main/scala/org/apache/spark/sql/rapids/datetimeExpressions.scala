@@ -1058,11 +1058,12 @@ class FromUTCTimestampExprMeta(
           // Always pass for UTC timezone since it's no-op.
           if (!TimeZoneDB.isUTCTimezone(timezoneId)) {
             // Check CPU path, mostly for test purpose
-            if (!TimeZoneDB.isSupportedTimezone(timezoneShortID)) {
-              willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
-            }
-            // TODO: remove this once GPU backend was supported.
-            if (!isOnCPU) {
+            if (isOnCPU) {
+              if(!TimeZoneDB.isSupportedTimezone(timezoneShortID)) {
+                willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
+              }
+            } else {
+              // TODO: remove this once GPU backend was supported.
               willNotWorkOnGpu(s"Not supported timezone type $timezoneShortID.")
             }
           }
