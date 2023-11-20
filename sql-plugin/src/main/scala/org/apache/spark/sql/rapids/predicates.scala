@@ -367,8 +367,8 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
          lhs.getBase.getType == DType.FLOAT64) && lhs.isNan) {
       withResource(Scalar.fromBool(true)) { trueScalar =>
         if (rhs.hasNull) {
-          withResource(rhs.getBase.isNotNull) { rhsIsNotNull =>
-            trueScalar.and(rhsIsNotNull)
+          withResource(ColumnVector.fromScalar(trueScalar, rhs.getRowCount.toInt)) { trueVec =>
+            trueVec.mergeAndSetValidity(BinaryOp.BITWISE_AND, rhs.getBase)
           }
         } else {
           ColumnVector.fromScalar(trueScalar, rhs.getRowCount.toInt)
@@ -464,8 +464,8 @@ case class GpuLessThanOrEqual(left: Expression, right: Expression) extends CudfB
          rhs.getBase.getType == DType.FLOAT64) && rhs.isNan) {
       withResource(Scalar.fromBool(true)) { trueScalar =>
         if (lhs.hasNull) {
-          withResource(lhs.getBase.isNotNull) { lhsIsNotNull =>
-            trueScalar.and(lhsIsNotNull)
+          withResource(ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt)) { trueVec =>
+            trueVec.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhs.getBase)
           }
         } else {
           ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt)

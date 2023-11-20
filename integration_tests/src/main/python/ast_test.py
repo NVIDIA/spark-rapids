@@ -259,7 +259,6 @@ def test_lt(data_descr):
             s2 < f.col('b'),
             f.col('a') < f.col('b')))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9711')
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_lte(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
