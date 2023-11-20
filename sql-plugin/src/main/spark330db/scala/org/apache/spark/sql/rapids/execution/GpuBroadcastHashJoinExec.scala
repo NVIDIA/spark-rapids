@@ -108,6 +108,7 @@ case class GpuBroadcastHashJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
+    postBuildCondition: List[NamedExpression],
     left: SparkPlan,
     right: SparkPlan, 
     executorBroadcast: Boolean)

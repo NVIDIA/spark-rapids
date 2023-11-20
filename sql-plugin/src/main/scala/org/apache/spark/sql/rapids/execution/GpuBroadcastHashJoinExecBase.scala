@@ -141,7 +141,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }
 
-  private def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
+  protected def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
     plan match {
       // In case has post broadcast project. It happens when join condition contains non-AST
       // expression which results in a project right after broadcast.
