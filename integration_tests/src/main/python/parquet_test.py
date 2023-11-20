@@ -16,7 +16,7 @@ import os
 import pytest
 
 from asserts import *
-from conftest import is_not_utc
+from conftest import is_databricks_runtime, is_not_utc
 from data_gen import *
 from parquet_write_test import parquet_nested_datetime_gen, parquet_ts_write_options
 from marks import *
@@ -957,7 +957,7 @@ conf_for_parquet_aggregate_pushdown = {
 }
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Aggregate push down on Parquet is a new feature of Spark 330')
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
+@pytest.mark.xfail(condition = is_not_utc() and is_databricks_runtime(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_parquet_scan_without_aggregation_pushdown_not_fallback(spark_tmp_path):
     """
     No aggregation will be pushed down in this test, so we should not fallback to CPU
@@ -1233,7 +1233,7 @@ def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):
             lambda spark: spark.read.parquet(data_path))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
+@pytest.mark.xfail(condition = is_not_utc() and is_databricks_runtime(), reason = 'DB rebase mode is legacy: https://github.com/NVIDIA/spark-rapids/issues/9792')
 def test_parquet_read_daytime_interval_gpu_file(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('_c1', DayTimeIntervalGen())]
