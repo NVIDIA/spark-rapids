@@ -36,6 +36,9 @@ object GpuJsonUtils {
   def dateFormatInRead(options: Map[String, String]): String =
     dateFormatInRead(parseJSONReadOptions(options))
 
+  def optionalTimestampFormatInRead(options: JSONOptions): Option[String] =
+    Some(options.timestampFormatInRead)
+
   def optionalTimestampFormatInRead(options: Map[String, String]): Option[String] =
     optionalTimestampFormatInRead(parseJSONReadOptions(options))
 
