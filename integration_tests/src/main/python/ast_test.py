@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import approximate_float, datagen_overrides
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330, is_jvm_charset_utf8
 import pyspark.sql.functions as f
 
 # Each descriptor contains a list of data generators and a corresponding boolean
@@ -43,7 +43,7 @@ ast_comparable_descrs = [
     (timestamp_gen, True),
     (date_gen, True),
     pytest.param((string_gen, True),
-                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9771"))
+                 marks=pytest.mark.skipif(not is_jvm_charset_utf8(), reason="AST string requires UTF-8"))
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
