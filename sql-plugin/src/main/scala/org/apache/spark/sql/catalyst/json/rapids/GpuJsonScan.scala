@@ -121,6 +121,16 @@ object GpuJsonScan {
       }
     }
 
+    val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])
+    if (hasTimestamps) {
+      GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions) match {
+        case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
+          // this is fine
+        case timestampFormat =>
+          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported timestampFormat $timestampFormat")
+      }
+    }
+
     if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
       meta.willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
     }

@@ -20,7 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuCast.doCast
+import com.nvidia.spark.rapids.GpuCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
 import com.nvidia.spark.rapids.shims.GpuJsonToStructsShim
@@ -215,7 +215,13 @@ case class GpuJsonToStructs(
                     GpuJsonToStructsShim.castJsonStringToDate(col, options)
                   case (_, DataTypes.DateType) =>
                     castToNullDate(input.getBase)
-                  case _ => doCast(col, sparkType, dtype)
+                  case (DataTypes.StringType, DataTypes.TimestampType) =>
+                    GpuJsonToStructsShim.castJsonStringToTimestamp(col, options)
+                  case (DataTypes.LongType, DataTypes.TimestampType) =>
+                    GpuCast.castLongToTimestamp(col, DataTypes.TimestampType)
+                  case (_, DataTypes.TimestampType) =>
+                    castToNullTimestamp(input.getBase)
+                  case _ => GpuCast.doCast(col, sparkType, dtype)
                 }
 
               }
@@ -263,6 +269,12 @@ case class GpuJsonToStructs(
 
   private def castToNullDate(input: ColumnVector): ColumnVector = {
     withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+      ColumnVector.fromScalar(nullScalar, input.getRowCount.toInt)
+    }
+  }
+
+  private def castToNullTimestamp(input: ColumnVector): ColumnVector = {
+    withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
       ColumnVector.fromScalar(nullScalar, input.getRowCount.toInt)
     }
   }

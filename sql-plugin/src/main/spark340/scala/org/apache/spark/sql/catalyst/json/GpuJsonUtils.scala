@@ -47,6 +47,12 @@ object GpuJsonUtils {
   def dateFormatInRead(options: JSONOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
 
+  def optionalTimestampFormatInRead(options: JSONOptions): Option[String] =
+    options.timestampFormatInRead
+
+  def optionalTimestampFormatInRead(options: Map[String, String]): Option[String] =
+    optionalTimestampFormatInRead(parseJSONReadOptions(options))
+
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormatInRead.getOrElse(
     if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy()) {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss.SSSXXX"
