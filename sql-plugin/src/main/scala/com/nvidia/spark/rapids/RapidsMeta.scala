@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableComma
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMetaBase, GpuBroadcastNestedLoopJoinMetaBase}
 import org.apache.spark.sql.types.DataType
@@ -382,13 +383,13 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
     // Both of the Spark session time zone and JVM's default time zone should be UTC.
-    if (!TypeChecks.isTimestampsSupported(sessionZoneId)) {
+    if (!TimeZoneDB.isSupportedTimezone(sessionZoneId)) {
       willNotWorkOnGpu("Only UTC zone id is supported. " +
         s"Actual session local zone id: $sessionZoneId")
     }
 
     val defaultZoneId = ZoneId.systemDefault()
-    if (!TypeChecks.isTimestampsSupported(defaultZoneId)) {
+    if (!TimeZoneDB.isSupportedTimezone(defaultZoneId)) {
       willNotWorkOnGpu(s"Only UTC zone id is supported. Actual default zone id: $defaultZoneId")
     }
   }
@@ -1122,8 +1123,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * @param meta to check whether it's UTC
    */
   def checkTimestampType(meta: RapidsMeta[_, _, _]): Unit = {
-    if (!TypeChecks.isUTCTimezone()) {
-      meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(meta.wrapped.getClass.toString))
+    if (!TimeZoneDB.isUTCTimezone()) {
+      meta.willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedString(meta.wrapped.getClass.toString))
     }
   }
 

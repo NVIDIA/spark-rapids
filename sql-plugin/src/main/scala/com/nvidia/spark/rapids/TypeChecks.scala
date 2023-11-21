@@ -17,14 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
-import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims, TypeSigUtil}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 /** Trait of TypeSigUtil for different spark versions */
@@ -784,26 +781,6 @@ abstract class TypeChecks[RET] {
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
-  }
-}
-
-object TypeChecks {
-
-  // TODO: move this to Timezone DB
-  def isTimestampsSupported(timezoneId: ZoneId): Boolean = {
-    timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
-  }
-
-  def isUTCTimezone(): Boolean = {
-    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
-    zoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
-  }
-
-  // TODO: change the string about supported timezones
-  def timezoneNotSupportedString(exprName: String): String = {
-    s"$exprName is not supported with timezone settings: (JVM:" +
-      s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-      s" Set both of the timezones to UTC to enable $exprName support"
   }
 }
 

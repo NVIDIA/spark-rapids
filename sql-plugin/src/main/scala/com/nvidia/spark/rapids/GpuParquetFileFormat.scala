@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -129,7 +130,7 @@ object GpuParquetFileFormat {
         SparkShimImpl.parquetRebaseWrite(sqlConf))
 
       if ((int96RebaseMode == DateTimeRebaseLegacy || dateTimeRebaseMode == DateTimeRebaseLegacy)
-        && !TypeChecks.isUTCTimezone()) {
+        && !TimeZoneDB.isUTCTimezone()) {
         meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
           s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
           s"session: ${SQLConf.get.sessionLocalTimeZone}). " +

@@ -23,10 +23,16 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuOverrides
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.internal.SQLConf
 
 object TimeZoneDB {
   def isUTCTimezone(timezoneId: ZoneId): Boolean = {
     timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
+  }
+
+  def isUTCTimezone(): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
+    isUTCTimezone(zoneId.normalized())
   }
 
   // Copied from Spark. Used to format time zone ID string with (+|-)h:mm and (+|-)hh:m
@@ -43,6 +49,17 @@ object TimeZoneDB {
   def isSupportedTimezone(timezoneId: String): Boolean = {
     val rules = getZoneId(timezoneId).getRules
     rules.isFixedOffset || rules.getTransitionRules.isEmpty
+  }
+
+  def isSupportedTimezone(timezoneId: ZoneId): Boolean = {
+    val rules = timezoneId.getRules
+    rules.isFixedOffset || rules.getTransitionRules.isEmpty
+  }
+
+  def timezoneNotSupportedString(exprName: String): String = {
+    s"$exprName is not supported with timezone settings: (JVM:" +
+      s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+      s" Set both of the timezones to UTC to enable $exprName support"
   }
 
   def cacheDatabase(): Unit = {}
