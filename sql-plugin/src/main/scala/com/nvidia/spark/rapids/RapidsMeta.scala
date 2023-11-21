@@ -1082,13 +1082,15 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
-  // Whether timezone is supported for those expressions needs to be check.
-  // TODO: use TimezoneDB Utils to tell whether timezone is supported
+  // This is a toggle flag whether to fallback to previous UTC-only check. When one expression
+  // is supported, it needs to override this flag to bypass UTC check. However, timezone check is
+  // still needed within `tagExprForGpu` method if desired timezone is supported by Gpu kernel.
   val isTimezoneSupported: Boolean = false
 
   // Both [[isTimezoneSupported]] and [[needTimezoneCheck]] are needed to check whether timezone
   // check needed. For cast expression, only some cases are needed pending on its data type and
   // its child's data type.
+  //
   //+------------------------+-------------------+-----------------------------------------+
   //|         Value          | needTimezoneCheck |           isTimezoneSupported           |
   //+------------------------+-------------------+-----------------------------------------+
@@ -1115,8 +1117,11 @@ abstract class BaseExprMeta[INPUT <: Expression](
     tagExprForGpu()
   }
 
+  /**
+   * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
+   * @param meta to check whether it's UTC
+   */
   def checkTimestampType(meta: RapidsMeta[_, _, _]): Unit = {
-    // FIXME: use new API from TimezoneDB utils to check whether it's supported
     if (!TypeChecks.isUTCTimezone()) {
       meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(meta.wrapped.getClass.toString))
     }
