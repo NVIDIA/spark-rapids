@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsConf.TEST_USE_TIMEZONE_CPU_BACKEND
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
@@ -370,6 +371,11 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
+    val zoneIdStr = SQLConf.get.sessionLocalTimeZone
+    if(!GpuTimeZoneDB.isSupportedTimeZone(zoneIdStr)) {
+      return willNotWorkOnGpu(s"Not supported timezone ID ${zoneIdStr}")
+    }
+
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       extractStringLit(expr.right) match {
@@ -842,7 +848,21 @@ abstract class GpuToTimestamp
           failOnError)
       }
     } else { // Timestamp or DateType
-      lhs.getBase.asTimestampMicroseconds()
+      timeZoneId match {
+        case Some(idStr) => {
+          val zoneId = GpuTimeZoneDB.getZoneId(idStr)
+          if (TimeZoneDB.isUTCTimezone(zoneId)) {
+            lhs.getBase.asTimestampMicroseconds()
+          } else {
+            assert(GpuTimeZoneDB.isSupportedTimeZone(zoneId))
+            withResource(lhs) { gcv =>
+              GpuTimeZoneDB.fromTimestampToUtcTimestamp(gcv.getBase, zoneId)
+                .asTimestampMicroseconds()
+            }
+          }
+        }
+        case None => lhs.getBase.asTimestampMicroseconds()
+      }
     }
     // Return Timestamp value if dataType it is expecting is of TimestampType
     if (dataType.equals(TimestampType)) {

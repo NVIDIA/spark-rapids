@@ -262,6 +262,13 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
         "to_unix_timestamp(a, b)"),
         "ToUnixTimestamp")
 
+# TODO: has another test for this called test_unix_timestamp
+@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+def test_unix_timestamp_non_UTC(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: gen_df(
+        spark, [("a", data_gen)], length=10).selectExpr(
+        "unix_timestamp(a, 'yyyy-MM-dd HH:mm:ss')"))
+
 
 @pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
