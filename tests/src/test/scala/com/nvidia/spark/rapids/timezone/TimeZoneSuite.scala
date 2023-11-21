@@ -317,7 +317,13 @@ class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     zones = selectTimeZones
     if (useGPU) {
-      withGpuSparkSession(_ => { })
+      GpuTimeZoneDB.cacheDatabase()
+    }
+  }
+
+  override def afterAll(): Unit = {
+    if (useGPU) {
+      GpuTimeZoneDB.shutdown()
     }
   }
 
