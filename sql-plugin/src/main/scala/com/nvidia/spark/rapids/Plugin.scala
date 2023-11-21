@@ -379,9 +379,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
               s"Driver timezone is $driverTimezone and executor timezone is " +
               s"$executorTimezone. Set executor timezone to $driverTimezone.")
         }
-        if (conf.nonUTCTimeZoneEnabled) {
-          GpuTimeZoneDB.cacheDatabase()
-        }
       }
 
       GpuCoreDumpHandler.executorInit(conf, pluginContext)
@@ -504,9 +501,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def shutdown(): Unit = {
-    if (conf.nonUTCTimeZoneEnabled) {
-      GpuTimeZoneDB.shutdown()
-    }
+    GpuTimeZoneDB.shutdown()
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
