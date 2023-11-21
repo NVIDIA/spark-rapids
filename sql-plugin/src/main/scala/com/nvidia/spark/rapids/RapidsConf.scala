@@ -2056,6 +2056,12 @@ object RapidsConf {
     .booleanConf
     .createOptional
 
+  val TEST_USE_TIMEZONE_CPU_BACKEND = conf("spark.rapids.test.CPU.timezone")
+    .doc("Only for tests: verify for timezone related functions")
+    .internal()
+    .booleanConf
+    .createOptional
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
