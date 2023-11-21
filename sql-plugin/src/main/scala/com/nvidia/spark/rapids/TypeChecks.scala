@@ -799,6 +799,7 @@ object TypeChecks {
     zoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 
+  // TODO: change the string about supported timezones
   def timezoneNotSupportedString(exprName: String): String = {
     s"$exprName is not supported with timezone settings: (JVM:" +
       s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +

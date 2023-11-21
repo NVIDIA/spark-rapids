@@ -1115,9 +1115,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     tagExprForGpu()
   }
 
-  /**
-   * Check whether contains timestamp type and whether timezone is supported
-   */
   def checkTimestampType(meta: RapidsMeta[_, _, _]): Unit = {
     // FIXME: use new API from TimezoneDB utils to check whether it's supported
     if (!TypeChecks.isUTCTimezone()) {
