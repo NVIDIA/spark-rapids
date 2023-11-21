@@ -1379,7 +1379,7 @@ object GpuCast {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOrNull(
+  def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -1463,7 +1463,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()
