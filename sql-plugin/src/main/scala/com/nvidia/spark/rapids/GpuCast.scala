@@ -1347,7 +1347,7 @@ object GpuCast {
    * `yyyy-[m]m-[d]d *`
    * `yyyy-[m]m-[d]dT*`
    */
-  private def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
+  def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
 
     // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
     val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",

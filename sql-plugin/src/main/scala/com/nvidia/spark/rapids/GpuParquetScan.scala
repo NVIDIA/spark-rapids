@@ -38,7 +38,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, SplitAndRetryOOM}
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims, ReaderUtils, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -189,6 +189,11 @@ object GpuParquetScan {
     if (schemaHasTimestamps && sparkSession.sessionState.conf.isParquetINT96TimestampConversion) {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
+
+    if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
+      meta.willNotWorkOnGpu("GpuParquetScan does not support default values in schema")
+    }
+
   }
 
   /**

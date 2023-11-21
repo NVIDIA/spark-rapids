@@ -25,7 +25,7 @@ import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
 import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge, WriteIntoDelta}
-import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuWriteIntoDelta}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuDeltaSupportsWrite, GpuDeltaV1Write, GpuWriteIntoDelta}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
@@ -94,7 +94,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
   }
 
   override def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {
-    write == classOf[DeltaTableV2]
+    write == classOf[DeltaTableV2] || classOf[GpuDeltaSupportsWrite].isAssignableFrom(write)
   }
 
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
@@ -219,29 +219,37 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
       meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
-    val deltaTable = cpuExec.table.asInstanceOf[DeltaTableV2]
-    val tablePath = if (deltaTable.catalogTable.isDefined) {
-      new Path(deltaTable.catalogTable.get.location)
-    } else {
-      DeltaDataSource.parsePathIdentifier(cpuExec.session, deltaTable.path.toString,
-        deltaTable.options)._1
-    }
-    val deltaLog = DeltaLog.forTable(cpuExec.session, tablePath, deltaTable.options)
-    RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
-      deltaTable.options, cpuExec.session)
-    extractWriteV1Config(meta, deltaLog, cpuExec.write).foreach { writeConfig =>
-      meta.setCustomTaggingData(writeConfig)
+    cpuExec.write match {
+      case _: GpuDeltaV1Write => // write is already using GPU, nothing more to do
+      case write =>
+        val deltaTable = cpuExec.table.asInstanceOf[DeltaTableV2]
+        val tablePath = if (deltaTable.catalogTable.isDefined) {
+          new Path(deltaTable.catalogTable.get.location)
+        } else {
+          DeltaDataSource.parsePathIdentifier(cpuExec.session, deltaTable.path.toString,
+            deltaTable.options)._1
+        }
+        val deltaLog = DeltaLog.forTable(cpuExec.session, tablePath, deltaTable.options)
+        RapidsDeltaUtils.tagForDeltaWrite(meta, cpuExec.plan.schema, Some(deltaLog),
+          deltaTable.options, cpuExec.session)
+        extractWriteV1Config(meta, deltaLog, write).foreach { writeConfig =>
+          meta.setCustomTaggingData(writeConfig)
+        }
     }
   }
 
   override def convertToGpu(
       cpuExec: AppendDataExecV1,
       meta: AppendDataExecV1Meta): GpuExec = {
-    val writeConfig = meta.getCustomTaggingData match {
-      case Some(c: DeltaWriteV1Config) => c
-      case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+    val gpuWrite = cpuExec.write match {
+      case write: GpuDeltaV1Write => write
+      case _ =>
+        val writeConfig = meta.getCustomTaggingData match {
+          case Some(c: DeltaWriteV1Config) => c
+          case _ => throw new IllegalStateException("Missing Delta write config from tagging pass")
+        }
+        toGpuWrite(writeConfig, meta.conf)
     }
-    val gpuWrite = toGpuWrite(writeConfig, meta.conf)
     GpuAppendDataExecV1(cpuExec.table, cpuExec.plan, cpuExec.refreshCache, gpuWrite)
   }
 
@@ -280,7 +288,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
 
   private def toGpuWrite(
       writeConfig: DeltaWriteV1Config,
-      rapidsConf: RapidsConf): V1Write = new V1Write {
+      rapidsConf: RapidsConf): V1Write = new GpuDeltaV1Write {
     override def toInsertableRelation(): InsertableRelation = {
       new InsertableRelation {
         override def insert(data: DataFrame, overwrite: Boolean): Unit = {

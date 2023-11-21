@@ -204,6 +204,10 @@ def supports_delta_lake_deletion_vectors():
     else:
         return is_spark_340_or_later()
 
+def is_support_default_values_in_schema():
+    # Spark 340 + and Databricks 330 + support
+    return is_spark_340_or_later() or is_databricks113_or_later()
+
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")
     # Allow these formats:

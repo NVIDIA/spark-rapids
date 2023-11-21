@@ -162,6 +162,7 @@ def test_lte(data_gen):
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') <= s1,
                 s2 <= f.col('b'),
+                f.col('b') <= s2,
                 f.lit(None).cast(data_type) <= f.col('a'),
                 f.col('b') <= f.lit(None).cast(data_type),
                 f.col('a') <= f.col('b')))
@@ -196,6 +197,7 @@ def test_gt(data_gen):
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') > s1,
                 s2 > f.col('b'),
+                f.col('b') > s2,
                 f.lit(None).cast(data_type) > f.col('a'),
                 f.col('b') > f.lit(None).cast(data_type),
                 f.col('a') > f.col('b')))
@@ -230,6 +232,7 @@ def test_gte(data_gen):
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') >= s1,
                 s2 >= f.col('b'),
+                f.col('b') >= s2,
                 f.lit(None).cast(data_type) >= f.col('a'),
                 f.col('b') >= f.lit(None).cast(data_type),
                 f.col('a') >= f.col('b')))

@@ -1084,3 +1084,74 @@ def test_bloom_filter_join_with_merge_all_null_filters(spark_tmp_path):
         right = spark.read.parquet(data_path2)
         return right.filter("cast(id2 as bigint) % 3 = 4").join(left, left.id == right.id, "inner")
     assert_gpu_and_cpu_are_equal_collect(do_join, bloom_filter_confs)
+
+
+@ignore_order(local=True)
+@allow_non_gpu("ProjectExec", "FilterExec", "BroadcastHashJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec")
+@pytest.mark.parametrize("disable_build", [True, False])
+def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, disable_build):
+    data_path_parquet = spark_tmp_path + "/parquet"
+    data_path_orc = spark_tmp_path + "/orc"
+    # The smaller one (orc) will be the build side (a broadcast)
+    with_cpu_session(lambda spark: spark.range(100).write.orc(data_path_orc))
+    with_cpu_session(lambda spark: spark.range(10000).withColumn("id2", col("id") + 10)
+                     .write.parquet(data_path_parquet))
+    def do_join(spark):
+        left = spark.read.parquet(data_path_parquet)
+        right = spark.read.orc(data_path_orc)
+        return left.join(broadcast(right), "id", "inner")\
+            .selectExpr("*", "input_file_block_length()")
+
+    if disable_build:
+        # To reproduce the error
+        # '''
+        # java.lang.IllegalStateException: the broadcast must be on the GPU too
+        #  	 at com.nvidia.spark.rapids.shims.GpuBroadcastJoinMeta.verifyBuildSideWasReplaced...
+        # '''
+        scan_name = 'OrcScan'
+    else:
+        # An additional case that the exec contains the input file expression is not disabled
+        # by InputFileBlockRule mistakenly. When the stream side scan runs on CPU, but the
+        # build side scan runs on GPU, the InputFileBlockRule will not put the exec on
+        # CPU, leading to wrong output.
+        scan_name = 'ParquetScan'
+    assert_gpu_and_cpu_are_equal_collect(
+        do_join,
+        conf={"spark.sql.autoBroadcastJoinThreshold": "10M",
+              "spark.sql.sources.useV1SourceList": "",
+              "spark.rapids.sql.input." + scan_name: False})
+
+
+@ignore_order(local=True)
+@allow_non_gpu("ProjectExec", "BroadcastNestedLoopJoinExec", "ColumnarToRowExec", "BroadcastExchangeExec")
+@pytest.mark.parametrize("disable_build", [True, False])
+def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable_build):
+    data_path_parquet = spark_tmp_path + "/parquet"
+    data_path_orc = spark_tmp_path + "/orc"
+    # The smaller one (orc) will be the build side (a broadcast)
+    with_cpu_session(lambda spark: spark.range(50).write.orc(data_path_orc))
+    with_cpu_session(lambda spark: spark.range(500).withColumn("id2", col("id") + 10)
+                     .write.parquet(data_path_parquet))
+    def do_join(spark):
+        left = spark.read.parquet(data_path_parquet)
+        right = spark.read.orc(data_path_orc)
+        return left.crossJoin(broadcast(right)).selectExpr("*", "input_file_block_length()")
+
+    if disable_build:
+        # To reproduce the error
+        # '''
+        # java.lang.IllegalStateException: the broadcast must be on the GPU too
+        #  	 at com.nvidia.spark.rapids.shims.GpuBroadcastJoinMeta.verifyBuildSideWasReplaced...
+        # '''
+        scan_name = 'OrcScan'
+    else:
+        # An additional case that the exec contains the input file expression is not disabled
+        # by InputFileBlockRule mistakenly. When the stream side scan runs on CPU, but the
+        # build side scan runs on GPU, the InputFileBlockRule will not put the exec on
+        # CPU, leading to wrong output.
+        scan_name = 'ParquetScan'
+    assert_gpu_and_cpu_are_equal_collect(
+        do_join,
+        conf={"spark.sql.autoBroadcastJoinThreshold": "-1",
+              "spark.sql.sources.useV1SourceList": "",
+              "spark.rapids.sql.input." + scan_name: False})

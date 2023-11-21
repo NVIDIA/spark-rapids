@@ -43,7 +43,8 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    (string_gen, True)
+    pytest.param((string_gen, True),
+                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9771"))
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
@@ -264,7 +265,6 @@ def test_lt(data_descr):
             s2 < f.col('b'),
             f.col('a') < f.col('b')))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9711')
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_lte(data_descr):

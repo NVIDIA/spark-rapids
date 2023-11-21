@@ -24,7 +24,7 @@ import scala.collection.JavaConverters._
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -193,6 +193,10 @@ object GpuCSVScan {
     if (!meta.conf.isCsvDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
       meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading decimals. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
+    }
+
+    if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
+      meta.willNotWorkOnGpu("GpuCSVScan does not support default values in schema")
     }
 
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)

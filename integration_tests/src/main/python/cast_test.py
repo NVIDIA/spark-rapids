@@ -61,6 +61,7 @@ def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
 
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9781")
 def test_cast_string_date_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
@@ -260,7 +261,7 @@ def test_cast_long_to_decimal_overflow():
             f.col('a').cast(DecimalType(18, -1))))
 
 # casting these types to string should be passed
-basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
+basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen]
 basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens
 
 # We currently do not generate the exact string as Spark for some decimal values of zero
@@ -302,7 +303,7 @@ def _assert_cast_to_string_equal (data_gen, conf):
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_array_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
-        data_gen, 
+        data_gen,
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
@@ -322,7 +323,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen, legacy):
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_map_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
-        data_gen, 
+        data_gen,
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy})
 
 
@@ -342,7 +343,7 @@ def test_cast_map_with_unmatched_element_to_string(data_gen, legacy):
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_struct_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
-        data_gen, 
+        data_gen,
         {"spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )
 
@@ -359,7 +360,7 @@ def test_one_nested_null_field_legacy_cast(cast_conf):
         return df.select(df._1.cast(StringType()))
 
     assert_gpu_and_cpu_are_equal_collect(
-        was_broken_for_nested_null, 
+        was_broken_for_nested_null,
         {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
     )
 
@@ -376,7 +377,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
         return df.select(df.a.cast(StringType())).filter(df.b > 1)
 
     assert_gpu_and_cpu_are_equal_collect(
-        broken_df, 
+        broken_df,
         {"spark.sql.legacy.castComplexTypesToString.enabled": 'true' if cast_conf == 'LEGACY' else 'false'}
     )
 
@@ -385,7 +386,7 @@ def test_two_col_struct_legacy_cast(cast_conf):
 @pytest.mark.xfail(reason='casting this type to string is not an exact match')
 def test_cast_struct_with_unmatched_element_to_string(data_gen, legacy):
     _assert_cast_to_string_equal(
-        data_gen, 
+        data_gen,
         {"spark.rapids.sql.castFloatToString.enabled"       : "true",
          "spark.sql.legacy.castComplexTypesToString.enabled": legacy}
     )

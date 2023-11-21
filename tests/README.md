@@ -80,7 +80,7 @@ To run all AnsiCastOpSuite and CastOpSuite tests dealing with decimals using
 Apache Spark 3.3.0 on Scala 2.13 artifacts, issue:
 
 ```bash
-mvn package -pl tests -am -Dbuildver=330 -Dsuffixes='.*CastOpSuite' -Dtests=decimal
+mvn package -f scala2.13 -pl tests -am -Dbuildver=330 -Dsuffixes='.*CastOpSuite' -Dtests=decimal
 ```
 
 ## Integration Tests
