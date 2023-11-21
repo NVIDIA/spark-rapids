@@ -438,7 +438,6 @@ object GpuDeviceManager extends Logging {
         ret
       }
       val nonPinnedLimit = finalMemoryLimit - totalOverhead - pinnedLimit
-      // TODO make this debug???
       logWarning(s"Off Heap Host Memory configured to be " +
           s"${pinnedLimit / 1024 / 1024.0} MiB pinned, " +
           s"${nonPinnedLimit / 1024 / 1024.0} MiB non-pinned, and " +

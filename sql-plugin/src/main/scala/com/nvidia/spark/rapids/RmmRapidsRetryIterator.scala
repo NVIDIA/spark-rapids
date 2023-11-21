@@ -186,33 +186,37 @@ object RmmRapidsRetryIterator extends Logging {
   }
 
   /**
-   * Returns a tuple of (shouldRetry, shouldSplit) depending the exception
+   * Returns a tuple of (shouldRetry, shouldSplit, isFromGpuOom) depending the exception
    * passed
    */
-  private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean) = {
+  private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean, Boolean) = {
     ex match {
-      case _: GpuRetryOOM | _: CpuRetryOOM => (true, false)
-      case _: GpuSplitAndRetryOOM | _: CpuSplitAndRetryOOM => (true, true)
-      case _ => (false, false)
+      case _: GpuRetryOOM => (true, false, true)
+      case _: CpuRetryOOM => (true, false, false)
+      case _: GpuSplitAndRetryOOM => (true, true, true)
+      case _: CpuSplitAndRetryOOM => (true, true, false)
+      case _ => (false, false, false)
     }
   }
 
   /**
-   * Returns a tuple of (causedByRetry, causedBySplit) depending the exception
+   * Returns a tuple of (causedByRetry, causedBySplit, ifFromGpuoom) depending the exception
    * passed
    */
-  private def causedByRetryOrSplit(ex: Throwable): (Boolean, Boolean) = {
+  private def causedByRetryOrSplit(ex: Throwable): (Boolean, Boolean, Boolean) = {
     var current = ex
     var causedByRetry = false
     var causedBySplit = false
+    var isFromGpuOom = false
     // check if there is a hidden retry or split OOM
     while (current != null && !causedByRetry) {
       current = current.getCause()
-      val (isRetry, isSplit) = isRetryOrSplitAndRetry(current)
+      val (isRetry, isSplit, isGpuOom) = isRetryOrSplitAndRetry(current)
       causedByRetry = isRetry
       causedBySplit = causedBySplit || isSplit
+      isFromGpuOom = isGpuOom
     }
-    (causedByRetry, causedBySplit)
+    (causedByRetry, causedBySplit, isFromGpuOom)
   }
 
   private def isColumnSizeOverflow(ex: Throwable): Boolean =
@@ -242,7 +246,7 @@ object RmmRapidsRetryIterator extends Logging {
     } catch {
       case ex: Throwable =>
         // Only restore on retry exceptions
-        val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
+        val (topLevelIsRetry, _, _) = isRetryOrSplitAndRetry(ex)
         if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.restore()
         }
@@ -269,7 +273,7 @@ object RmmRapidsRetryIterator extends Logging {
     } catch {
       case ex: Throwable =>
         // Only restore on retry exceptions
-        val (topLevelIsRetry, _) = isRetryOrSplitAndRetry(ex)
+        val (topLevelIsRetry, _, _) = isRetryOrSplitAndRetry(ex)
         if (topLevelIsRetry || causedByRetryOrSplit(ex)._1 || isOrCausedByColumnSizeOverflow(ex)) {
           r.foreach(_.restore())
         }
@@ -343,14 +347,16 @@ object RmmRapidsRetryIterator extends Logging {
 
     /**
      * Split is a function that is invoked by `RmmRapidsRetryIterator` when `GpuSplitAndRetryOOM`
-     * of `CpuSplitAndRetryOOM`
+     * or `CpuSplitAndRetryOOM`
      * is thrown. This function is implemented by `Spliterator` classes to attempt to handle
      * this exception by reducing the size of attempts (the thing that `.next` is
      * using as an input), usually by splitting a batch in half by number of rows, or
      * splitting a collection of batches into smaller collections to be attempted separately,
      * likely reducing GPU memory that needs to be manifested while calling `.next`.
+     * @param isFromGpuOom true if the split happened because of a GPU OOM. Otherwise it was a
+     *                     CPU off heap OOM.
      */
-    def split(): Unit
+    def split(isFromGpuOom: Boolean): Unit
 
     override def next(): K
 
@@ -368,8 +374,12 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = !wasCalledSuccessfully
 
-    override def split(): Unit = {
-      throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+    override def split(isFromGpuOom: Boolean): Unit = {
+      if (isFromGpuOom) {
+        throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+      } else {
+        throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+      }
     }
 
     override def next(): K = {
@@ -432,12 +442,16 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
 
-    override def split(): Unit = {
+    override def split(isFromGpuOom: Boolean): Unit = {
       // If `split` OOMs, we are already the last thread standing
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+        if (isFromGpuOom) {
+          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+        } else {
+          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+        }
       }
       // splitPolicy must take ownership of the argument
       val splitted = splitPolicy(attemptStack.pop())
@@ -547,18 +561,24 @@ object RmmRapidsRetryIterator extends Logging {
       var firstAttempt: Boolean = true
       var result: Option[K] = None
       var doSplit = false
+      var isFromGpuOom = true
       while (result.isEmpty && attemptIter.hasNext) {
         if (!firstAttempt) {
           // call thread block API
           try {
             RmmSpark.blockThreadUntilReady()
           } catch {
-            case _: GpuSplitAndRetryOOM | _: CpuSplitAndRetryOOM => doSplit = true
+            case _: GpuSplitAndRetryOOM =>
+              doSplit = true
+              isFromGpuOom = true
+            case _: CpuSplitAndRetryOOM =>
+              doSplit = true
+              isFromGpuOom = false
           }
         }
         firstAttempt = false
         if (doSplit) {
-          attemptIter.split()
+          attemptIter.split(isFromGpuOom)
         }
         doSplit = false
         try {
@@ -575,15 +595,17 @@ object RmmRapidsRetryIterator extends Logging {
         } catch {
           case ex: Throwable =>
             // handle a retry as the top-level exception
-            val (topLevelIsRetry, topLevelIsSplit) = isRetryOrSplitAndRetry(ex)
+            val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
             doSplit = topLevelIsSplit
+            isFromGpuOom = isGpuOom
 
             // handle any retries that are wrapped in a different top-level exception
             var causedByRetry = false
             if (!topLevelIsRetry) {
-              val (cbRetry, cbSplit) = causedByRetryOrSplit(ex)
+              val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
               causedByRetry = cbRetry
               doSplit = doSplit || cbSplit
+              isFromGpuOom = isGpuOom
             }
 
             clearInjectedOOMIfNeeded()
