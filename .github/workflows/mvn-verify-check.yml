@@ -30,6 +30,17 @@ env:
     -Dmaven.scaladoc.skip
 
 jobs:
+  cache-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
   get-shim-versions-from-dist:
     runs-on: ubuntu-latest
     outputs:
@@ -117,14 +128,6 @@ jobs:
           env | grep JAVA
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
 
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
-
       - name: package tests check
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
@@ -172,14 +175,6 @@ jobs:
         run: |
           env | grep JAVA
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
 
       - name: package tests check
         run: |
@@ -235,14 +230,6 @@ jobs:
           env | grep JAVA
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
 
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
-
       - name: Build JDK
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
@@ -288,14 +275,6 @@ jobs:
         run: |
           env | grep JAVA
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
 
       - name: Install with Maven ${{ matrix.maven-version }}
         run: |
