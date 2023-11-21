@@ -404,6 +404,7 @@ def test_cast_string_to_negative_scale_decimal():
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
 @pytest.mark.parametrize('invalid_value', [float("inf"), float("-inf"), float("nan")])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_float_to_timestamp_ansi_for_nan_inf(type, invalid_value):
     def fun(spark):
         data = [invalid_value]
@@ -415,6 +416,7 @@ def test_cast_float_to_timestamp_ansi_for_nan_inf(type, invalid_value):
 @pytest.mark.skipif(is_before_spark_330(), reason="ansi cast throws exception only in 3.3.0+")
 @pytest.mark.parametrize('type', [DoubleType(), FloatType()], ids=idfn)
 @pytest.mark.parametrize('invalid_value', [float(LONG_MAX) + 100, float(LONG_MIN) - 100])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
     def fun(spark):
         data = [invalid_value]
@@ -423,6 +425,7 @@ def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
     assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "ArithmeticException")
 
 @pytest.mark.skipif(is_before_spark_330(), reason='330+ throws exception in ANSI mode')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_float_to_timestamp_side_effect():
     def getDf(spark):
         data = [(True, float(LONG_MAX) + 100), (False, float(1))]
@@ -491,6 +494,7 @@ def test_cast_double_to_timestamp(ansi_enabled):
     (INT_MIN - 1, IntegerType()),
 ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
     (invalid, to_type) = invalid_and_type
     assert_gpu_and_cpu_error(
@@ -501,6 +505,7 @@ def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
         error_message="overflow")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_timestamp_to_numeric_ansi_no_overflow():
     data = [datetime.fromtimestamp(i) for i in range(BYTE_MIN, BYTE_MAX + 1)]
     assert_gpu_and_cpu_are_equal_collect(

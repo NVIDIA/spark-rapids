@@ -82,6 +82,7 @@ def test_non_zero_offset_with_limit(limit, offset, batch_size):
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
 @allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
 @approximate_float
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_order_by_offset_with_limit(limit, offset, data_gen, batch_size):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:

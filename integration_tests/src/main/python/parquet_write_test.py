@@ -208,6 +208,7 @@ def test_int96_write_conf(spark_tmp_path, data_gen):
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 # Note: From Spark 340, WriteFilesExec is introduced.
 @pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {
