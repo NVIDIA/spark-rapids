@@ -62,7 +62,7 @@ class WithRetrySuite
   }
 
   override def afterEach(): Unit = {
-    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
+    RmmSpark.removeAllCurrentThreadAssociation()
     RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
     if (rmmWasInitialized) {

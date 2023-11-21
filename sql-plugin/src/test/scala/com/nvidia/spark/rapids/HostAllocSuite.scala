@@ -189,7 +189,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
             }
           }
         } finally {
-          RmmSpark.removeCurrentThreadAssociation()
+          RmmSpark.removeCurrentDedicatedThreadAssociation(taskId)
         }
       } catch {
         case t: Throwable =>

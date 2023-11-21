@@ -90,7 +90,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         }
       }
     } finally {
-      RmmSpark.removeThreadAssociation(0)
+      RmmSpark.removeCurrentDedicatedThreadAssociation(0)
     }
   }
 
@@ -121,7 +121,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         }
       }
     } finally {
-      RmmSpark.removeThreadAssociation(0)
+      RmmSpark.removeCurrentDedicatedThreadAssociation(0)
     }
   }
 
@@ -166,7 +166,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         }
       }
     } finally {
-      RmmSpark.removeThreadAssociation(0)
+      RmmSpark.removeCurrentDedicatedThreadAssociation(0)
     }
   }
 

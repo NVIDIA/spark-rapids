@@ -73,7 +73,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful metadata fetch") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val contigBuffSize = 100000
@@ -112,7 +112,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful degenerate metadata fetch") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val numBatches = 3
@@ -141,7 +141,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   private def doTestErrorOrCancelledMetadataFetch(status: TransactionStatus.Value): Unit = {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
 
     when(mockTransaction.getStatus).thenReturn(status)
@@ -177,7 +177,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("exception in metadata fetch escalates to handler"){
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
@@ -200,7 +200,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful buffer fetch") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 
@@ -276,7 +276,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful buffer fetch - but handler rejected it") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     when(mockHandler.batchReceived(any())).thenReturn(false) // reject incoming batches
@@ -324,7 +324,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful buffer fetch multi-buffer") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 
@@ -380,7 +380,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful buffer fetch multi-buffer, larger than a single bounce buffer") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 
@@ -437,7 +437,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   private def doTestErrorOrCancelledBufferFetch(status: TransactionStatus.Value): Unit = {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     when(mockTransaction.getStatus).thenReturn(status)
     when(mockTransaction.getErrorMessage).thenReturn(Some(s"Status is: ${status}"))
@@ -519,7 +519,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
                    ptrBuffs: Seq[(PendingTransferRequest, HostMemoryBuffer, TableMeta)]): Unit = {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockHandler.getTaskIds).thenReturn(Array[Long](1))
     withResource(ptrBuffs.map(_._2)) { sources =>
       withResource(new BufferReceiveState(123, buff, ptrBuffs.map(_._1), () => {})) { br =>
@@ -670,7 +670,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("on endpoint failure the iterator is notified if it is registered") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val metaResp = ShuffleMetadata.buildMetaResponse(Seq.empty)
     when(mockTransaction.releaseMessage()).thenReturn(
@@ -687,7 +687,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("on endpoint failure the iterator is not notified if it is done (unregistered)") {
     // This test inherits from RmmSparkRetrySuiteBase, but it sets up Rmm wrong for the current
     // thread, so we have to fix it for all of the tests
-    RmmSpark.removeCurrentThreadAssociation()
+    RmmSpark.removeAllCurrentThreadAssociation()
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val metaResp = ShuffleMetadata.buildMetaResponse(Seq.empty)
     when(mockTransaction.releaseMessage()).thenReturn(

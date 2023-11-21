@@ -54,7 +54,7 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     super.afterEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
-    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
+    RmmSpark.removeAllCurrentThreadAssociation()
     RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
     GpuSemaphore.shutdown()

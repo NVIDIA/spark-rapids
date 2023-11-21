@@ -174,7 +174,7 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
         .setDaemon(true)
         .build(),
         null,
-        () => RmmSpark.removeCurrentThreadAssociation()))
+        () => RmmSpark.removeAllCurrentThreadAssociation()))
 
   private class InitializeShuffleManager(ctx: PluginContext,
       shuffleManager: RapidsShuffleInternalManagerBase) extends Runnable {
