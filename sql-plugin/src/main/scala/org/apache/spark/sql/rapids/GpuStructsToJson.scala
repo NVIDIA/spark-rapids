@@ -16,10 +16,9 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.ZoneId
-
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{CastOptions, DataFromReplacementRule, GpuCast, GpuColumnVector, GpuExpression, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import com.nvidia.spark.rapids.GpuOverrides
 import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, StructsToJson}
@@ -34,8 +33,6 @@ class GpuStructsToJsonMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule
   ) extends UnaryExprMeta[StructsToJson](expr, conf, parent, rule) {
-
-  lazy val supportedTimezones = Seq("UTC", "Etc/UTC").map(ZoneId.of)
 
   override def tagExprForGpu(): Unit = {
     if (expr.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
@@ -63,7 +60,7 @@ class GpuStructsToJsonMeta(
           // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
           willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
       }
-      if (!supportedTimezones.contains(options.zoneId)) {
+      if (!GpuOverrides.SUPPORTED_TIMEZONE_IDS.contains(options.zoneId)) {
         // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
         // so we need to fall back if expr different timeZone is specified
         willNotWorkOnGpu(s"Unsupported timeZone '${options.zoneId}' in to_json")
