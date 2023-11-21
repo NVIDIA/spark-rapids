@@ -110,6 +110,22 @@ abstract class GpuBroadcastNestedLoopJoinMetaBase(
         "the BroadcastNestedLoopJoin this feeds is not on the GPU")
     }
   }
+
+  // Called in runAfterTagRules for a special post tagging for this broadcast join.
+  def checkTagForBuildSide(): Unit = {
+    val Seq(leftChild, rightChild) = childPlans
+    val buildSideMeta = gpuBuildSide match {
+      case GpuBuildLeft => leftChild
+      case GpuBuildRight => rightChild
+    }
+    // Check both of the conditions to avoid duplicate reason string.
+    if (!canThisBeReplaced && canBuildSideBeReplaced(buildSideMeta)) {
+      buildSideMeta.willNotWorkOnGpu("the BroadcastNestedLoopJoin this feeds is not on the GPU")
+    }
+    if (canThisBeReplaced && !canBuildSideBeReplaced(buildSideMeta)) {
+      willNotWorkOnGpu("the broadcast for this join must be on the GPU too")
+    }
+  }
 }
 
 /**

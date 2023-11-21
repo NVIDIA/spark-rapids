@@ -93,7 +93,6 @@ def test_delta_write_round_trip_unmanaged(spark_tmp_path):
 @ignore_order
 @pytest.mark.parametrize("gens", parquet_part_write_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9738')
 def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens)]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -115,7 +114,6 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
 @ignore_order
 @pytest.mark.parametrize("gens", parquet_part_write_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9738')
 def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens), ("c", SetValuesGen(StringType(), ["x", "y", "z"]))]
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -188,7 +186,6 @@ def _atomic_write_table_as_select(gens, spark_tmp_table_factory, spark_tmp_path,
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9676")
 def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_path):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=False)
 
@@ -196,7 +193,6 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(condition=is_spark_340_or_later() and is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/9676")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path, overwrite=True)
 
