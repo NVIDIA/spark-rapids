@@ -23,7 +23,6 @@ import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType,
 import com.nvidia.spark.rapids.{BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuBinaryExpressionArgsAnyScalar, GpuCast, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
-import com.nvidia.spark.rapids.RapidsConf.TEST_USE_TIMEZONE_CPU_BACKEND
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
@@ -1046,7 +1045,7 @@ class FromUTCTimestampExprMeta(
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   private[this] var timezoneId: ZoneId = null
-  private[this] val isOnCPU: Boolean = conf.get(TEST_USE_TIMEZONE_CPU_BACKEND).getOrElse(false)
+  private[this] val isOnCPU: Boolean = conf.nonUTCTimeZoneEnabled
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
