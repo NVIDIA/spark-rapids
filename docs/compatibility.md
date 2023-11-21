@@ -333,10 +333,12 @@ Dates are partially supported but there are some known issues:
 Timestamps are partially supported but there are some known issues:
 
 - Only the default `timestampFormat` of `yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]` is supported. The query will fall back to CPU if any other format
-  is specified ([#TBD](https://github.com/NVIDIA/spark-rapids/issues/TBD))
+  is specified ([#9273](https://github.com/NVIDIA/spark-rapids/issues/9723))
 - Strings containing integers with more than four digits will be
   parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4
   will parse these numbers as number of days since the epoch, and in Spark 3.4 and later, an exception will be thrown.
+- Strings containing special date constant values such as `now` and `today` will parse as null ([#9724](https://github.com/NVIDIA/spark-rapids/issues/9724)),
+  which differs from the behavior in Spark 3.1.x
 
 When reading numeric values, the GPU implementation always supports leading zeros regardless of the setting
 for the JSON option `allowNumericLeadingZeros` ([#9588](https://github.com/NVIDIA/spark-rapids/issues/9588)).
