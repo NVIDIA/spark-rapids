@@ -28,6 +28,8 @@ def create_dim_table(table_name, table_format, length=500):
             ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
             ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=3, special_cases=[])),
             ('value', int_gen),
+            # specify nullable=False for `filter` to avoid generating invalid SQL with
+            # expression `filter = None` (https://github.com/NVIDIA/spark-rapids/issues/9817)
             ('filter', RepeatSeqGen(
                 IntegerGen(min_val=0, max_val=length, special_cases=[], nullable=False), length=length // 20))
         ], length)
