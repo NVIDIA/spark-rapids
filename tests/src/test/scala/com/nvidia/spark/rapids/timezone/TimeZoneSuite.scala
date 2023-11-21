@@ -31,6 +31,7 @@ import org.scalatest.BeforeAndAfterAll
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.microsToInstant
+import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.types._
 
 class TimeZoneSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {

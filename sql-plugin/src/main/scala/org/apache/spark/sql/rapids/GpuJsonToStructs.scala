@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.MapUtils
+import com.nvidia.spark.rapids.shims.GpuJsonToStructsShim
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -210,6 +211,10 @@ case class GpuJsonToStructs(
                 (sparkType, dtype) match {
                   case (DataTypes.StringType, DataTypes.BooleanType) =>
                     castJsonStringToBool(col)
+                  case (DataTypes.StringType, DataTypes.DateType) =>
+                    GpuJsonToStructsShim.castJsonStringToDate(col, options)
+                  case (_, DataTypes.DateType) =>
+                    castToNullDate(input.getBase)
                   case _ => doCast(col, sparkType, dtype)
                 }
 
@@ -235,7 +240,7 @@ case class GpuJsonToStructs(
 
   private def castJsonStringToBool(input: ColumnVector): ColumnVector = {
     val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
-        input.equalTo(trueStr)
+      input.equalTo(trueStr)
     }
     withResource(isTrue) { _ =>
       val isFalse = withResource(Scalar.fromString("false")) { falseStr =>
@@ -253,6 +258,12 @@ case class GpuJsonToStructs(
           isTrue.ifElse(trueLit, falseOrNull)
         }
       }
+    }
+  }
+
+  private def castToNullDate(input: ColumnVector): ColumnVector = {
+    withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+      ColumnVector.fromScalar(nullScalar, input.getRowCount.toInt)
     }
   }
 
