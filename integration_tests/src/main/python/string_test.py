@@ -823,16 +823,20 @@ def test_format_number_supported(data_gen):
     )
 
 float_format_number_conf = {'spark.rapids.sql.formatNumberFloat.enabled': 'true'}
-format_number_float_gens = [DoubleGen()]
+format_number_float_gens = [(DoubleGen(), 0.05), (FloatGen(), 0.5)]
+# The actual error rate is 2% for double and 42% for float
+# set threshold to 5% and 50% to avoid bad luck
 
-@pytest.mark.parametrize('data_gen', format_number_float_gens, ids=idfn)
-def test_format_number_float_limited(data_gen):
+@pytest.mark.parametrize('data_gen,max_err', format_number_float_gens, ids=idfn)
+def test_format_number_float_limited(data_gen, max_err):
     gen = data_gen
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'format_number(a, 5)'),
-        conf = float_format_number_conf
-    )
+    cpu = with_cpu_session(lambda spark: unary_op_df(spark, gen, length=20480).selectExpr('*',
+            'format_number(a, 5)').collect(), conf = float_format_number_conf)
+    gpu = with_gpu_session(lambda spark: unary_op_df(spark, gen, length=20480).selectExpr('*',
+            'format_number(a, 5)').collect(), conf = float_format_number_conf)
+    mismatched = sum(x[0] != x[1] for x in zip(cpu, gpu))
+    all_values = len(cpu)
+    assert mismatched / all_values <= max_err
 
 # format_number for float/double is disabled by default due to compatibility issue
 # GPU will generate result with less precision than CPU
