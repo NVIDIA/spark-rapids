@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.lang.reflect.InvocationTargetException
 import java.time.ZoneId
 import java.util.Properties
+
 import scala.collection.JavaConverters._
 import scala.sys.process._
 import scala.util.Try
