@@ -54,7 +54,18 @@ jobs:
           cache: 'maven'
       - run: |
           set -x
-          mvn initialize -am
+          max_retry=3; delay=30; i=1
+          while true; do
+            mvn -Dmaven.wagon.http.retryHandler.count=3 \
+              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
+              -Daether.connector.http.connectionMaxTtl=30 initialize -am && break || {
+            if [[ $i -le $max_retry ]]; then
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+            else
+              echo "mvn command failed. Exit 1"; exit 1
+            fi
+          }
+          done
 
   get-shim-versions-from-dist:
     runs-on: ubuntu-latest
