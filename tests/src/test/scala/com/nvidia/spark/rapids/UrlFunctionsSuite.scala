@@ -60,10 +60,10 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://.",
       "http://..",
       "http://../",
-    //   "http://?",
-    //   "http://??",
-    //   "http://??/",
-    //   "http://#",
+      // "http://?",
+      "http://??",
+      "http://??/",
+      // "http://#",
       "http://##",
       "http://##/",
       "http://foo.bar?q=Spaces should be encoded",
@@ -106,7 +106,7 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://user:pass@host",
       "http://user:pass@host/",
       "http://user:pass@host/?#",
-    //   "http://user:pass@host/file;param?query;p2"
+      "http://user:pass@host/file;param?query;p2"
     ).toDF("urls")
   }
 
@@ -122,7 +122,7 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
     Seq[String](
       "http://[1:2:3:4:5:6:7:8]",
       "http://[1::]",
-    //   "http://[1:2:3:4:5:6:7::]",
+      "http://[1:2:3:4:5:6:7::]",
       "http://[1::8]",
       "http://[1:2:3:4:5:6::8]",
       "http://[1:2:3:4:5:6::8]",
@@ -141,11 +141,11 @@ class UrlFunctionsSuite extends SparkQueryCompareTestSuite {
       "http://[1::3:4:5:6:7:8]",
       "http://[1::3:4:5:6:7:8]",
       "http://[1::8]",
-    //   "http://[::2:3:4:5:6:7:8]",
+      "http://[::2:3:4:5:6:7:8]",
       "http://[::8]",
       "http://[::]",
-    //   "http://[fe80::7:8%eth0]",
-    //   "http://[fe80::7:8%1]",
+      "http://[fe80::7:8%eth0]",
+      "http://[fe80::7:8%1]",
       "http://[::255.255.255.255]",
       "http://[::ffff:255.255.255.255]",
       "http://[::ffff:0:255.255.255.255]",
