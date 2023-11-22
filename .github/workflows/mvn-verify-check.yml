@@ -32,16 +32,29 @@ env:
 jobs:
   cache-dependencies:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [ '8', '11', '17' ]
+    # steps:
+    #   - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+    #   - name: Cache local Maven repository
+    #     uses: actions/cache@v3
+    #     with:
+    #       path: ~/.m2/repository
+    #       key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
+    #       restore-keys: |
+    #         ${{ runner.os }}-maven-
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
-
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
+      - uses: actions/setup-java@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
+          distribution: 'oracle'
+          java-version: ${{ matrix.java }}
+          cache: 'maven'
+      - run: |
+          set -x
+          mvn initialize -am
 
   get-shim-versions-from-dist:
     runs-on: ubuntu-latest
