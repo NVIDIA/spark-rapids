@@ -256,9 +256,7 @@ case class BatchedOps(running: Seq[NamedExpression],
     val precedingAndFollowing = boundedWindowSpecs.map(
       GpuWindowExec.getBoundedWindowPrecedingAndFollowing
     )
-//    (precedingAndFollowing.map{ case (prec, _) => prec }.max,
-//      precedingAndFollowing.map{ case (_, foll) => foll }.max)
-    (precedingAndFollowing.map{ _._1 }.max,
+    (precedingAndFollowing.map{ p => Math.abs(p._1) }.max, // Only Negative values supported.
      precedingAndFollowing.map{ _._2 }.max)
   }
 

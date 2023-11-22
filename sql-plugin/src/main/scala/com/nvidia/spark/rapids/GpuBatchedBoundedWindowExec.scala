@@ -47,31 +47,6 @@ class GpuBatchedBoundedWindowIterator(
   private var numUnprocessedInCache: Int = 0  // numRows at the bottom not processed completely.
   private var numPrecedingRowsAdded: Int = 0  // numRows at the top, added for preceding context.
 
-  /*
-  override def next(): ColumnarBatch = {
-    val cbSpillable = onDeck match {
-      case Some(x) =>
-        onDeck = None
-        x
-      case _ =>
-        getNext()
-    }
-    withRetryNoSplit(cbSpillable) { _ =>
-      withResource(cbSpillable.getColumnarBatch()) { cb =>
-        withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
-          val ret = withResource(computeBasicWindow(cb)) { cols =>
-            println(s"CALEB: cols size: ${cols.length}, num-rows == ${cols(0).getRowCount}")
-            convertToBatch(outputTypes, cols)
-          }
-          numOutputBatches += 1
-          numOutputRows += ret.numRows()
-          ret
-        }
-      }
-    }
-  }
-  */
-
   var inputTypes: Option[Array[DataType]] = None
 
   // TODO: Move into getNextInputBatch.
@@ -176,11 +151,6 @@ class GpuBatchedBoundedWindowIterator(
           withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
             withResource(computeBasicWindow(inputCB)) { outputCols =>
               val inputRowCount = inputCB.numRows()
-
-              // TODO: Move this to the end of getNextInputBatch, when resetting.
-              // Cleared after getNextInputBatch
-              // cached.foreach(_.foreach(_.close))
-              // cached = None
 
               val noMoreInput = !input.hasNext
 
