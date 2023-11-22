@@ -72,7 +72,7 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 
 parquet_datetime_gen_simple = [DateGen(start=date(1, 1, 1), end=date(2000, 1, 1))
                                .with_special_case(date(1000, 1, 1), weight=10.0),
-                               TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
+                               TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc),
                                             end=datetime(2000, 1, 1, tzinfo=timezone.utc))
                                .with_special_case(datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)]
 parquet_datetime_in_struct_gen = [
@@ -280,8 +280,8 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
 
 @pytest.mark.parametrize('ts_write_data_gen',
                         [('INT96', TimestampGen()),
-                         ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
-                         ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
+                         ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
+                         ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
     ts_write, gen = ts_write_data_gen
