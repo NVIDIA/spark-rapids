@@ -1091,7 +1091,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //    Level 3: Check related expression has been implemented with timezone. There is a
   //        toggle flag [[isTimezoneSupported]] for this. If false, fallback to UTC-only check as
   //        before. If yes, move to next level check. When we add timezone support for a related
-  //        function. [[isTimezoneSupported]] should be override as true. This check happens within
+  //        function. [[isTimezoneSupported]] should be override as true.
   //    Level 4: Check whether the desired timezone is supported by Gpu kernel.
   def checkExprForTimezone(): Unit = {
     // Level 1 check
