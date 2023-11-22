@@ -156,15 +156,23 @@
                                 <mkdir dir="${newClassesDir}"/>
                                 <delete dir="${newClassesDir}"/>
                                 <unzip src="${realAggJar}" dest="${newClassesDir}"/>
-                                <mkdir dir="${oldClassesDir}"/>
-
-                                <exec executable="diff"
-                                      resultproperty="diff.result">
-                                    <arg value="-q"/>
-                                    <arg value="-r"/>
-                                    <arg value="${oldClassesDir}"/>
-                                    <arg value="${newClassesDir}"/>
-                                </exec>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${oldClassesDir}" type="dir"/>
+                                    <then>
+                                        <exec executable="diff"
+                                            resultproperty="diff.result"
+                                            discardOutput="${nonfail.errors.quiet}"
+                                            discardError="${nonfail.errors.quiet}">
+                                            <arg value="-q"/>
+                                            <arg value="-r"/>
+                                            <arg value="${oldClassesDir}"/>
+                                            <arg value="${newClassesDir}"/>
+                                        </exec>
+                                    </then>
+                                    <else>
+                                        <echo>Clean build? Skipping diff because ${oldClassesDir} does not exist</echo>
+                                    </else>
+                                </ac:if>
 
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <equals arg1="0" arg2="${diff.result}"/>
