@@ -62,12 +62,21 @@ class GpuBroadcastHashJoinMeta(
             .output, right.output, true)
 
       // Reconstruct the child with wrapped project node if needed.
-      val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
-      val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
-      val postBuildCondition =
-        if (buildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
+      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
+        GpuProjectExec(leftExpr ++ left.output, left)(true)
+      } else {
+        left
+      }
+      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
+        GpuProjectExec(rightExpr ++ right.output, right)(true)
+      } else {
+        right
+      }
+      val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
+        (leftExpr.map(_.toAttribute) ++ left.output, leftExpr ++ left.output)
+      } else {
+        (rightExpr.map(_.toAttribute) ++ right.output, rightExpr ++ right.output)
+      }
 
       val joinExec = GpuBroadcastHashJoinExec(
         leftKeys.map(_.convertToGpu()),
@@ -76,6 +85,7 @@ class GpuBroadcastHashJoinMeta(
         buildSide,
         remain,
         postBuildCondition,
+        postBuildAttr,
         leftChild, rightChild,
         join.isExecutorBroadcast)
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
@@ -95,6 +105,7 @@ class GpuBroadcastHashJoinMeta(
         buildSide,
         None,
         List.empty,
+        List.empty,
         left, right,
         join.isExecutorBroadcast)
       // For inner joins we can apply a post-join condition for any conditions that cannot be
@@ -111,11 +122,12 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     postBuildCondition: List[NamedExpression],
+    postBuildAttr: List[Attribute],
     left: SparkPlan,
-    right: SparkPlan, 
+    right: SparkPlan,
     executorBroadcast: Boolean)
-      extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, postBuildCondition, left, right) {
+      extends GpuBroadcastHashJoinExecBase(leftKeys, rightKeys, joinType, buildSide,
+        condition, postBuildCondition, postBuildAttr, left, right) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(

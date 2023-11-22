@@ -65,12 +65,21 @@ class GpuBroadcastHashJoinMeta(
             .output, right.output, true)
 
       // Reconstruct the child with wrapped project node if needed.
-      val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
-      val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
-      val postBuildCondition =
-        if (buildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
+      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
+        GpuProjectExec(leftExpr ++ left.output, left)(true)
+      } else {
+        left
+      }
+      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
+        GpuProjectExec(rightExpr ++ right.output, right)(true)
+      } else {
+        right
+      }
+      val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
+        (left.output, leftExpr ++ left.output)
+      } else {
+        (right.output, rightExpr ++ right.output)
+      }
 
       val joinExec = GpuBroadcastHashJoinExec(
         leftKeys.map(_.convertToGpu()),
@@ -79,6 +88,7 @@ class GpuBroadcastHashJoinMeta(
         buildSide,
         remain,
         postBuildCondition,
+        postBuildAttr,
         leftChild, rightChild)
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
         joinExec
@@ -97,6 +107,7 @@ class GpuBroadcastHashJoinMeta(
         buildSide,
         None,
         List.empty,
+        List.empty,
         left, right)
       // For inner joins we can apply a post-join condition for any conditions that cannot be
       // evaluated directly in a mixed join that leverages a cudf AST expression
@@ -112,6 +123,7 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     postBuildCondition: List[NamedExpression],
+    postBuildAttr: List[Attribute],
     left: SparkPlan,
-    right: SparkPlan) extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, postBuildCondition, left, right)
+    right: SparkPlan) extends GpuBroadcastHashJoinExecBase(leftKeys, rightKeys, joinType, buildSide,
+      condition, postBuildCondition, postBuildAttr, left, right)

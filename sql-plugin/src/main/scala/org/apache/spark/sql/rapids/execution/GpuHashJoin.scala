@@ -140,7 +140,7 @@ object GpuHashJoin {
     }
   }
 
-  // Check whether the entire tree is ast-able or being able to split non-Ast-able conditions
+  // Check whether the entire tree is ast-able or being able to split non-ast-able conditions
   // into child nodes. Now only support broad hash join.
   private[this] def canJoinCondAstAble(meta: SparkPlanMeta[_]): Boolean = {
     meta match {
@@ -902,6 +902,10 @@ trait GpuHashJoin extends GpuExec {
     case GpuBuildRight => (right, left)
   }
 
+  // This can be override when a post-build project happens.
+  protected lazy val buildAttrList: List[Attribute] = buildPlan.output.toList
+  protected lazy val streamedAttrList: List[Attribute] = streamedPlan.output.toList
+
   protected lazy val (buildKeys, streamedKeys) = {
     require(leftKeys.length == rightKeys.length &&
         leftKeys.map(_.dataType)
@@ -978,14 +982,24 @@ trait GpuHashJoin extends GpuExec {
   }
 
   protected lazy val (numFirstConditionTableColumns, boundCondition) = {
-    val (joinLeft, joinRight) = joinType match {
-      case RightOuter => (right, left)
-      case _ => (left, right)
+    val joinLeft = joinType match {
+      case RightOuter =>
+        if(buildSide == GpuBuildRight) {
+          buildAttrList
+        } else {
+          streamedAttrList
+        }
+      case _ =>
+        if (buildSide == GpuBuildRight) {
+          streamedAttrList
+        } else {
+          buildAttrList
+        }
     }
     val boundCondition = condition.map { c =>
-      GpuBindReferences.bindGpuReference(c, joinLeft.output ++ joinRight.output)
+      GpuBindReferences.bindGpuReference(c, streamedAttrList ++ buildAttrList)
     }
-    (joinLeft.output.size, boundCondition)
+    (joinLeft.size, boundCondition)
   }
 
   def doJoin(

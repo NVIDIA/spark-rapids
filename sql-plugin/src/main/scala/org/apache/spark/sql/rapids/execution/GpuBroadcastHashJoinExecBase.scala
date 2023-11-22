@@ -25,7 +25,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
@@ -110,6 +110,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     postBuildCondition: List[NamedExpression],
+    postBuildAttr: List[Attribute],
     left: SparkPlan,
     right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
@@ -122,6 +123,22 @@ abstract class GpuBroadcastHashJoinExecBase(
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
+  override lazy val buildAttrList: List[Attribute] = if (postBuildCondition.isEmpty) {
+    buildPlan.output.toList
+  } else {
+    postBuildCondition.map(expr => expr.toAttribute)
+  }
+
+  // Needed when original join condition contains non-ast-able condition. Some conditions are
+  // extracted and evaluated as project node on top of built batch.
+  private lazy val postBuildProj: Option[GpuTieredProject] = if (!postBuildCondition.isEmpty) {
+    Some(GpuBindReferences.bindGpuReferencesTiered(
+      postBuildCondition,
+      postBuildAttr, true))
+  } else {
+    None
+  }
+
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
     buildSide match {
@@ -132,22 +149,13 @@ abstract class GpuBroadcastHashJoinExecBase(
     }
   }
 
-  def broadcastExchange: GpuBroadcastExchangeExec = getBroadcastPlan(buildPlan) match {
+  def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
-  }
-
-  protected def getBroadcastPlan(plan: SparkPlan): SparkPlan = {
-    plan match {
-      // In case has post broadcast project. It happens when join condition contains non-AST
-      // expression which results in a project right after broadcast.
-      case plan: GpuProjectExec => plan.child
-      case _ => plan
-    }
   }
 
   override def doExecute(): RDD[InternalRow] =
@@ -191,17 +199,12 @@ abstract class GpuBroadcastHashJoinExecBase(
   }
 
   final def projectEvalIfNeed(batch: ColumnarBatch): ColumnarBatch = {
-    buildPlan match {
-      case p: GpuProjectExec =>
-        // Need to manually do project columnar execution other than calling child's
-        // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
-        // batch.
-        val proj = GpuBindReferences.bindGpuReferencesTiered(
-          postBuildCondition, p.child.output, true)
+    postBuildProj match {
+      case Some(proj) =>
         withResource(batch) {
           cb => proj.project(cb)
         }
-      case _ => batch
+      case None => batch
     }
   }
 
