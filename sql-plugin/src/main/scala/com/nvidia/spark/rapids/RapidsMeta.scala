@@ -1083,11 +1083,45 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
-  // This is a toggle flag whether to fallback to previous UTC-only check. When one expression
-  // is supported, it needs to override this flag to bypass UTC check. However, timezone check is
-  // still needed within `tagExprForGpu` method if desired timezone is supported by Gpu kernel.
-  val isTimezoneSupported: Boolean = false
+  // There are 4 levels of timezone check in GPU plan tag phase:
+  //    Level 1: Check whether an expression is related to timezone. This is achieved by
+  //        [[needTimezoneCheck]] below.
+  //    Level 2: Check on golden configuration 'spark.rapids.sql.nonUtc.enabled'. If
+  //        yes, we pass to next level timezone check. If not, we only pass UTC case as before.
+  //    Level 3: Check related expression has been implemented with timezone. There is a
+  //        toggle flag [[isTimezoneSupported]] for this. If false, fallback to UTC-only check as
+  //        before. If yes, move to next level check. When we add timezone support for a related
+  //        function. [[isTimezoneSupported]] should be override as true. This check happens within
+  //    Level 4: Check whether the desired timezone is supported by Gpu kernel.
+  def checkExprForTimezone(): Unit = {
+    // Level 1 check
+    if (!needTimezoneCheck) return
 
+    // TODO: Level 2 check
+
+    // Level 3 check
+    if (!isTimezoneSupported) return checkUTCTimezone(this)
+
+    // Level 4 check
+    if (TimeZoneDB.isSupportedTimezone(getZoneId())) {
+      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
+    }
+  }
+
+  protected def getZoneId(): ZoneId = {
+    this.wrapped match {
+      case tzExpr: TimeZoneAwareExpression => tzExpr.zoneId
+      case ts: UTCTimestamp => {
+        assert(false, s"Have to override getZoneId() of BaseExprMeta in ${this.getClass.toString}")
+        throw new IllegalArgumentException(s"Failed to get zone id from ${ts.getClass.toString}")
+      }
+      case _ => throw new IllegalArgumentException(
+        s"Zone check should never been happened to ${this.getClass.toString} " +
+          "which is not timezone related")
+    }
+  }
+
+  // Level 1 timezone checking flag
   // Both [[isTimezoneSupported]] and [[needTimezoneCheck]] are needed to check whether timezone
   // check needed. For cast expression, only some cases are needed pending on its data type and
   // its child's data type.
@@ -1102,9 +1136,27 @@ abstract class BaseExprMeta[INPUT <: Expression](
   lazy val needTimezoneCheck: Boolean = {
     wrapped match {
       case _: TimeZoneAwareExpression =>
+        // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
+        // It will be treated as literal in Rapids.
         if (wrapped.isInstanceOf[Cast]) wrapped.asInstanceOf[Cast].needsTimeZone else true
       case _: UTCTimestamp => true
       case _ => false
+    }
+  }
+
+  // Level 3 timezone checking flag, need to override to true when supports timezone in functions
+  // Useless if it's not timezone related expression defined in [[needTimezoneCheck]]
+  val isTimezoneSupported: Boolean = false
+
+  /**
+   * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
+   *
+   * @param meta to check whether it's UTC
+   */
+  def checkUTCTimezone(meta: RapidsMeta[_, _, _]): Unit = {
+    if (!TimeZoneDB.isUTCTimezone()) {
+      meta.willNotWorkOnGpu(
+        TimeZoneDB.nonUTCTimezoneNotSupportedStr(meta.wrapped.getClass.toString))
     }
   }
 
@@ -1114,18 +1166,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
-    if (needTimezoneCheck && !isTimezoneSupported) checkTimestampType(this)
+    checkExprForTimezone()
     tagExprForGpu()
-  }
-
-  /**
-   * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
-   * @param meta to check whether it's UTC
-   */
-  def checkTimestampType(meta: RapidsMeta[_, _, _]): Unit = {
-    if (!TimeZoneDB.isUTCTimezone()) {
-      meta.willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedString(meta.wrapped.getClass.toString))
-    }
   }
 
   /**

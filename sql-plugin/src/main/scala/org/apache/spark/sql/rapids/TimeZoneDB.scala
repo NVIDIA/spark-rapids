@@ -56,10 +56,15 @@ object TimeZoneDB {
     rules.isFixedOffset || rules.getTransitionRules.isEmpty
   }
 
-  def timezoneNotSupportedString(exprName: String): String = {
+  def nonUTCTimezoneNotSupportedStr(exprName: String): String = {
     s"$exprName is not supported with timezone settings: (JVM:" +
       s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
       s" Set both of the timezones to UTC to enable $exprName support"
+  }
+
+  def timezoneNotSupportedStr(timezoneIdStr: String): String = {
+    s"Timezone $timezoneIdStr is not supported yet. Only Non DST (daylight saving time) timezone" +
+      s" is supported."
   }
 
   def cacheDatabase(): Unit = {}
