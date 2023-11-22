@@ -42,8 +42,7 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    pytest.param((string_gen, True),
-                 marks=pytest.mark.skipif(not is_jvm_charset_utf8(), reason="AST string requires UTF-8"))
+    (string_gen, True)
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
