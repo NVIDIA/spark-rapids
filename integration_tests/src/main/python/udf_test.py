@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -173,9 +173,30 @@ pre_cur_win = Window\
 
 low_upper_win = Window.partitionBy('a').orderBy('b').rowsBetween(-3, 3)
 
-udf_windows = [no_part_win, unbounded_win, cur_follow_win, pre_cur_win, low_upper_win]
+running_win_param = pytest.param(pre_cur_win, marks=pytest.mark.xfail(
+    condition=is_databricks_runtime() and is_spark_341(),
+    reason='DB13.3 wrongly uses RunningWindowFunctionExec to evaluate a PythonUDAF'))
+udf_windows = [no_part_win, unbounded_win, cur_follow_win, running_win_param, low_upper_win]
 window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Preceding',
               'Lower_Upper']
+
+
+# This test runs only on CPU to verify that DB13.3 wrongly uses RunningWindowFunctionExec
+# to evaluate a PythonUDAF. Not sure if it would be fixed in the future releases.
+@ignore_order
+@pytest.mark.skipif(not (is_databricks_runtime() and is_spark_341()), reason="only for DB13.3")
+@pytest.mark.parametrize('data_gen', [int_gen], ids=idfn)
+@pytest.mark.parametrize('window', [running_win_param], ids=['Unbounded_Preceding'])
+def test_window_aggregate_udf_on_cpu(data_gen, window):
+
+    @f.pandas_udf('long')
+    def pandas_sum(to_process: pd.Series) -> int:
+        return to_process.sort_values().sum()
+
+    with_cpu_session(
+        lambda spark: binary_op_df(spark, data_gen).select(
+            pandas_sum(f.col('b')).over(window)).collect(),
+        conf=arrow_udf_conf)
 
 
 @ignore_order
@@ -327,8 +348,8 @@ def create_df(spark, data_gen, left_length, right_length):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ShortGen(nullable=False)], ids=idfn)
 def test_cogroup_apply_udf(data_gen):
-    def asof_join(l, r):
-        return pd.merge_asof(l, r, on='a', by='b')
+    def asof_join(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+        return pd.merge_ordered(left, right)
 
     def do_it(spark):
         left, right = create_df(spark, data_gen, 500, 500)

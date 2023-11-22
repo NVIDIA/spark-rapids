@@ -100,8 +100,7 @@ abstract class GpuArrowPythonRunnerBase(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    pythonOutSchema: StructType = null,
-    onDataWriteFinished: () => Unit = null)
+    pythonOutSchema: StructType = null)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
 
@@ -187,7 +186,6 @@ abstract class GpuArrowPythonRunnerBase(
       } {
         writer.close()
         dataOut.flush()
-        if (onDataWriteFinished != null) onDataWriteFinished()
       }
       wrote
     }
@@ -209,7 +207,6 @@ abstract class GpuArrowPythonRunnerBase(
       } {
         root.close()
         allocator.close()
-        if (onDataWriteFinished != null) onDataWriteFinished()
       }
     }
   }

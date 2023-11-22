@@ -62,15 +62,15 @@ trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
 
   /**
    * Default to `Int.MaxValue` to try to read as many as possible.
-   * Change it by calling `setMinReadTargetBatchSize` before a reading.
+   * Change it by calling `setMinReadTargetNumRows` before a reading.
    */
-  private var minReadTargetBatchSize: Int = Int.MaxValue
+  private var minReadTargetNumRows: Int = Int.MaxValue
 
   /**
    * Update the expected batch size for next reading.
    */
-  private[python] final def setMinReadTargetBatchSize(size: Int): Unit = {
-    minReadTargetBatchSize = size
+  private[python] final def setMinReadTargetNumRows(numRows: Int): Unit = {
+    minReadTargetNumRows = numRows
   }
 
   /** Convert the table received from the Python side to a batch. */
@@ -128,7 +128,7 @@ trait GpuPythonArrowOutput { _: GpuPythonRunnerBase[_] =>
             // The GpuSemaphore is acquired in a callback
             val table =
               withResource(new NvtxRange("read python batch", NvtxColor.DARK_GREEN)) { _ =>
-                arrowReader.getNextIfAvailable(minReadTargetBatchSize)
+                arrowReader.getNextIfAvailable(minReadTargetNumRows)
               }
             if (table == null) {
               batchLoaded = false
@@ -177,10 +177,9 @@ class GpuArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    pythonOutSchema: StructType = null,
-    onDataWriteFinished: () => Unit = null)
+    pythonOutSchema: StructType = null)
   extends GpuArrowPythonRunnerBase(funcs, evalType, argOffsets, pythonInSchema, timeZoneId,
-    conf, batchSize, pythonOutSchema, onDataWriteFinished) {
+    conf, batchSize, pythonOutSchema) {
 
   protected override def newWriterThread(
       env: SparkEnv,

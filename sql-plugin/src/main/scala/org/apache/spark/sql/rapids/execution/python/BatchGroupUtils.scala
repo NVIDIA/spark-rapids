@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.execution.python
 import scala.collection.mutable
 
 import ai.rapids.cudf
+import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -392,32 +393,30 @@ private[python] object BatchGroupedIterator {
  * @param numOutputBatches a metric for output batches
  */
 class CombiningIterator(
-    inputBatchQueue: BatchQueue,
+    inputBatchQueue: IteratorBatchQueue,
     pythonOutputIter: Iterator[ColumnarBatch],
     pythonArrowReader: GpuPythonArrowOutput,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] {
 
-  // For `hasNext` we are waiting on the queue to have something inserted into it
-  // instead of waiting for a result to be ready from Python. The reason for this
-  // is to let us know the target number of rows in the batch that we want when reading.
-  // It is a bit hacked up but it works. In the future when we support spilling we should
-  // store the number of rows separate from the batch. That way we can get the target batch
-  // size out without needing to grab the GpuSemaphore which we cannot do if we might block
-  // on a read operation.
-  override def hasNext: Boolean = inputBatchQueue.hasNext || pythonOutputIter.hasNext
+  private var pending: Option[SpillableColumnarBatch] = None
+  Option(TaskContext.get()).foreach(onTaskCompletion(_)(pending.foreach(_.close())))
+
+  override def hasNext: Boolean = pythonOutputIter.hasNext
 
   override def next(): ColumnarBatch = {
-    val numRows = inputBatchQueue.peekBatchSize
+    val numRows = inputBatchQueue.peekBatchNumRows()
     // Updates the expected batch size for next read
-    pythonArrowReader.setMinReadTargetBatchSize(numRows)
+    pythonArrowReader.setMinReadTargetNumRows(numRows)
     // Reads next batch from Python and combines it with the input batch by the left side.
     withResource(pythonOutputIter.next()) { cbFromPython =>
-      assert(cbFromPython.numRows() == numRows)
-      withResource(inputBatchQueue.remove()) { origBatch =>
+      // Here may get a batch has a larger rows number than the current input batch.
+      assert(cbFromPython.numRows() >= numRows,
+        s"Expects >=$numRows rows but got ${cbFromPython.numRows()} from the Python worker")
+      withResource(concatInputBatch(cbFromPython.numRows())) { concated =>
         numOutputBatches += 1
         numOutputRows += numRows
-        combine(origBatch, cbFromPython)
+        combine(concated, cbFromPython)
       }
     }
   }
@@ -425,7 +424,56 @@ class CombiningIterator(
   private def combine(lBatch: ColumnarBatch, rBatch: ColumnarBatch): ColumnarBatch = {
     val lColumns = GpuColumnVector.extractColumns(lBatch).map(_.incRefCount())
     val rColumns = GpuColumnVector.extractColumns(rBatch).map(_.incRefCount())
-    new ColumnarBatch(lColumns ++ rColumns, lBatch.numRows())
+    new ColumnarBatch((lColumns ++ rColumns).toArray, lBatch.numRows())
+  }
+
+  private def concatInputBatch(targetNumRows: Int): ColumnarBatch = {
+    withResource(mutable.ArrayBuffer[ColumnarBatch]()) { buf =>
+      var curNumRows = pending.map(_.numRows()).getOrElse(0)
+      pending.foreach { scb =>
+        buf.append(withResource(scb)(_.getColumnarBatch()))
+      }
+      pending = None
+      while (curNumRows < targetNumRows) {
+        val cb = inputBatchQueue.remove()
+        buf.append(cb)
+        curNumRows = curNumRows + cb.numRows()
+      }
+      assert(buf.nonEmpty, "The input queue is empty")
+
+      if (curNumRows > targetNumRows) {
+        // Need to split the last batch
+        withResource(buf.remove(buf.size - 1)) { lastCb =>
+          val splitIdx = lastCb.numRows() - (curNumRows - targetNumRows)
+          val batchTypes = GpuColumnVector.extractTypes(lastCb)
+          val Array(first, second) = withResource(GpuColumnVector.from(lastCb)) { table =>
+            table.contiguousSplit(splitIdx)
+          }
+          closeOnExcept(second) { _ =>
+            withResource(first) { _ =>
+              buf.append(GpuColumnVectorFromBuffer.from(first, batchTypes))
+            }
+            pending = Some(SpillableColumnarBatch(second, batchTypes,
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+          }
+        }
+      }
+
+      if (buf.size == 1) {
+        // Simplest case, the current input batch has the same rows number with
+        // the result batch from Python
+        buf.remove(0)
+      } else {
+        // concatenate the batches
+        val batchTypes = GpuColumnVector.extractTypes(buf.head)
+        val concated = withResource(buf.safeMap(GpuColumnVector.from)) { tables =>
+          Table.concatenate(tables: _*)
+        }
+        withResource(concated) { _ =>
+          GpuColumnVector.from(concated, batchTypes)
+        }
+      }
+    } // end of withResource(mutable.ArrayBuffer)
   }
 
 }

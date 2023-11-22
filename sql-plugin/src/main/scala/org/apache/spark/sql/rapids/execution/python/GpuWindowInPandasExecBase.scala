@@ -499,32 +499,23 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
-      val queue: BatchQueue = new BatchQueue()
-      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs.toSeq, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches)
-      val pyInputIterator = groupedIterator.map { batch =>
-        // We have to do the project before we add the batch because the batch might be closed
-        // when it is added
-        val projectedBatch = GpuProjectExec.project(batch, boundDataRefs)
-        // Compute the window bounds and insert to the head of each row for one batch
-        val inputBatch = withResource(projectedBatch) { projectedCb =>
-          insertWindowBounds(projectedCb)
-        }
-        queue.add(batch)
-        inputBatch
-      }
+      val pyInputProducer = new BatchProducer(
+        new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches),
+        outputConverter = cb => {
+          // Compute the window bounds and insert to the head of each row for one batch
+          withResource(GpuProjectExec.project(cb, boundDataRefs))(insertWindowBounds)
+        })
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
       }
 
-      if (pyInputIterator.hasNext) {
+      if (pyInputProducer.hasNext) {
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
@@ -534,12 +525,11 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          pythonOutputSchema,
-          () => queue.finish())
+          pythonOutputSchema)
 
-        val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
-          numOutputBatches).map(projectResult(_))
+        val outputIterator = pyRunner.compute(pyInputProducer, context.partitionId(), context)
+        new CombiningIterator(pyInputProducer, outputIterator, pyRunner, numOutputRows,
+          numOutputBatches).map(projectResult)
       } else {
         // Empty partition, return the input iterator directly
         inputIter
