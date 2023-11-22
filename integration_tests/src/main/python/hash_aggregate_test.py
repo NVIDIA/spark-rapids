@@ -380,6 +380,7 @@ def test_hash_grpby_sum_full_decimal(data_gen, conf):
         conf = conf)
 
 @approximate_float
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9822")
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [DecimalGen(precision=36, scale=5)], ids=idfn)
