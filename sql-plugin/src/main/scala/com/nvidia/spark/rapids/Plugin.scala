@@ -71,10 +71,6 @@ object RapidsPluginUtils extends Logging {
   private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
   private val SPARK_MASTER = "spark.master"
 
-  private val pluginPropsNames = Seq("rapids-4-spark-sql_2.12", "rapids-4-spark-sql_2.13")
-  private val jniPropsNames = Seq("spark-rapids-jni")
-  private val cudfPropsNames = Seq("cudf")
-
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
@@ -116,36 +112,35 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  private def detectMultipleJar(propName: String, jarName: String, propsName: Seq[String], 
-      conf: RapidsConf): Unit = {
+  private def detectMultipleJar(propName: String, jarName: String, conf: RapidsConf): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq
-    val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.flatMap { url =>
+    val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filterNot {
+      url => url.toString.contains("test")
+    }
+    val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
       val versionInfo = scala.io.Source.fromURL(url).getLines().toSeq
       lazy val revision = versionInfo
         .filter(_.startsWith("revision="))
         .map(_.split("=").last)
         .headOption
-        .getOrElse("UNKNOWN")    
-      val ver = versionInfo.mkString("") 
-      if (propsName.exists(ver.contains(_))) {
-        Some((revision, url))
-      } else {
-        None
-      }
+        .getOrElse("UNKNOWN")
+      (revision, url)
     }.groupBy(_._1).mapValues(_.map(_._2)).toMap
     lazy val rapidsJarsVersMsg = revisionMap.map {
       case (revision, urls) => {
-        s"revison: $revision\n" + urls.map {
-          url => "jar URL: " + url.toString.split("!").head + "\n" + 
-              scala.io.Source.fromInputStream(url.openStream()).mkString("") 
-        }.mkString
+        s"revison: $revision" + urls.map {
+          url => "\n\tjar URL: " + url.toString.split("!").head + "\n\t" + 
+              scala.io.Source.fromURL(url).getLines().toSeq.mkString("\n\t")
+        }.mkString + "\n"
       }
     }.mkString
-    lazy val msg = s"Multiple $jarName jars found in the classpath:\n $rapidsJarsVersMsg " +
-      s"\nPlease make sure there is only one $jarName jar in the classpath. " +
-      s"If it is impossible to fix the classpath you can suppress the error by setting " +
-      s"${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS."
+    // scalastyle:off line.size.limit
+    lazy val msg = s"""Multiple $jarName jars found in the classpath:
+        |$rapidsJarsVersMsg
+        |Please make sure there is only one $jarName jar in the classpath.
+        |If it is impossible to fix the classpath you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS.
+        """.stripMargin
+    // scalastyle:on line.size.limit
 
     conf.allowMultipleJars match {
       case "ALWAYS" =>
@@ -162,9 +157,9 @@ object RapidsPluginUtils extends Logging {
   }
 
   def detectMultipleJars(conf: RapidsConf): Unit = {
-    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", pluginPropsNames, conf)
-    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", jniPropsNames, conf)
-    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", cudfPropsNames, conf)
+    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", conf)
+    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", conf)
+    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", conf)
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need
