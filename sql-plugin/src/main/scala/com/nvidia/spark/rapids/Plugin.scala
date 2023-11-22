@@ -71,6 +71,10 @@ object RapidsPluginUtils extends Logging {
   private val EXECUTOR_GPU_AMOUNT_KEY = "spark.executor.resource.gpu.amount"
   private val SPARK_MASTER = "spark.master"
 
+  private val pluginPropsNames = Seq("rapids-4-spark-sql_2.12", "rapids-4-spark-sql_2.13")
+  private val jniPropsNames = Seq("spark-rapids-jni")
+  private val cudfPropsNames = Seq("cudf")
+
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
@@ -112,21 +116,23 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  private def getRevisionFromURL(jarURL: URL): String = {
-    scala.io.Source.fromURL(jarURL).getLines().toSeq
-      .filter(_.startsWith("revision="))
-      .map(_.split("=").last)
-      .headOption
-      .getOrElse("UNKNOWN")    
-  }
-
-  private def detectMultipleJar(propFileName: String, jarName: String, conf: RapidsConf): Unit = {
+  private def detectMultipleJar(propName: String, jarName: String, propsName: Seq[String], 
+      conf: RapidsConf): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val possibleRapidsJarURLs = classloader.getResources(propFileName).asScala.toSeq
-
-    val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
-      val revision = getRevisionFromURL(url)
-      (revision, url)
+    val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq
+    val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.flatMap { url =>
+      val versionInfo = scala.io.Source.fromURL(url).getLines().toSeq
+      lazy val revision = versionInfo
+        .filter(_.startsWith("revision="))
+        .map(_.split("=").last)
+        .headOption
+        .getOrElse("UNKNOWN")    
+      val ver = versionInfo.mkString("") 
+      if (propsName.exists(ver.contains(_))) {
+        Some((revision, url))
+      } else {
+        None
+      }
     }.groupBy(_._1).mapValues(_.map(_._2)).toMap
     lazy val rapidsJarsVersMsg = revisionMap.map {
       case (revision, urls) => {
@@ -136,23 +142,29 @@ object RapidsPluginUtils extends Logging {
         }.mkString
       }
     }.mkString
-    lazy val msg = s"Multiple $jarName jars with different revision found in the classpath:\n" +
-        s"$rapidsJarsVersMsg \nPlease make sure there is only one $jarName jar in the classpath." +
-        s" If it is impossible to fix the classpath you can suppress the error by setting " + 
-        s"${RapidsConf.ALLOW_MULTIPLE_JARS.key} to true."
-    if (conf.allowMultipleJars) {
-      if (revisionMap.size > 1) {
+    lazy val msg = s"Multiple $jarName jars found in the classpath:\n $rapidsJarsVersMsg " +
+      s"\nPlease make sure there is only one $jarName jar in the classpath. " +
+      s"If it is impossible to fix the classpath you can suppress the error by setting " +
+      s"${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS."
+
+    conf.allowMultipleJars match {
+      case "ALWAYS" =>
         logWarning(msg)
-      }
-    } else {
-      require(revisionMap.size == 1, msg)
+      case "SAME_REVISION" =>
+        require(revisionMap.size == 1, msg)
+      case "NEVER" =>
+        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
+      case _ => 
+        throw new IllegalArgumentException(s"Invalid value for " +
+          s"${RapidsConf.ALLOW_MULTIPLE_JARS.key}: ${conf.allowMultipleJars}. " +
+          s"Valid values are ALWAYS, SAME_REVISION, NEVER.")
     }
   }
 
   def detectMultipleJars(conf: RapidsConf): Unit = {
-    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", conf)
-    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", conf)
-    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", conf)
+    detectMultipleJar(PLUGIN_PROPS_FILENAME, "rapids-4-spark", pluginPropsNames, conf)
+    detectMultipleJar(JNI_PROPS_FILENAME, "spark-rapids-jni", jniPropsNames, conf)
+    detectMultipleJar(CUDF_PROPS_FILENAME, "cudf", cudfPropsNames, conf)
   }
 
   // This assumes Apache Spark logic, if CSPs are setting defaults differently, we may need

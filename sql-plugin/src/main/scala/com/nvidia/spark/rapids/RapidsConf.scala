@@ -1843,9 +1843,11 @@ object RapidsConf {
     .internal()
     .startupOnly()
     .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
-      "Spark will take the first one it finds, so the version may not be expected. ")
-    .booleanConf
-    .createWithDefault(false)
+      "Spark will take the first one it finds, so the version may not be expected. Possisble " +
+      "values are ALWAYS: allow all jars, SAME_REVISION: only allow jars with the same " +
+      "revision, NEVER: do not allow multiple jars at all.")
+    .stringConf
+    .createWithDefault("SAME_REVISION")
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
@@ -2642,7 +2644,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
-  lazy val allowMultipleJars: Boolean = get(ALLOW_MULTIPLE_JARS)
+  lazy val allowMultipleJars: String = get(ALLOW_MULTIPLE_JARS)
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
