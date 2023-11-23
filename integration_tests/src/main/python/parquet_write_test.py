@@ -832,3 +832,24 @@ def test_parquet_write_column_name_with_dots(spark_tmp_path):
         lambda spark, path:  gen_df(spark, gens).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path)
+
+@ignore_order
+def test_parquet_append_with_downcast(spark_tmp_table_factory, spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    cpu_table = spark_tmp_table_factory.get()
+    gpu_table = spark_tmp_table_factory.get()
+    def setup_tables(spark):
+        df = unary_op_df(spark, int_gen, length=10)
+        df.write.format("parquet").option("path", data_path + "/CPU").saveAsTable(cpu_table)
+        df.write.format("parquet").option("path", data_path + "/GPU").saveAsTable(gpu_table)
+    with_cpu_session(setup_tables)
+    def do_append(spark, path):
+        table = cpu_table
+        if path.endswith("/GPU"):
+            table = gpu_table
+        unary_op_df(spark, LongGen(min_val=0, max_val=128, special_cases=[]), length=10)\
+            .write.mode("append").saveAsTable(table)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_append,
+        lambda spark, path: spark.read.parquet(path),
+        data_path)

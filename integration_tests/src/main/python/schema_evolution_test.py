@@ -15,7 +15,7 @@
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_not_utc
 from data_gen import *
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from marks import ignore_order
 import pytest
 from spark_session import is_databricks_runtime, is_databricks113_or_later
@@ -29,6 +29,9 @@ _confs = {
     "spark.sql.legacy.parquet.int96RebaseModeInWrite": "CORRECTED",
 }
 
+# Using a custom date generator due to https://github.com/NVIDIA/spark-rapids/issues/9807
+_custom_date_gen = DateGen(start=date(1590, 1, 1))
+
 # List of additional column data generators to use when adding columns
 _additional_gens = [
     boolean_gen,
@@ -39,12 +42,12 @@ _additional_gens = [
     float_gen,
     double_gen,
     string_gen,
-    date_gen,
+    _custom_date_gen,
     TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc)),
     # RAPIDS Accelerator does not support MapFromArrays yet
     # https://github.com/NVIDIA/spark-rapids/issues/8696
     # simple_string_to_string_map_gen),
-    ArrayGen(date_gen),
+    ArrayGen(_custom_date_gen),
     struct_gen_decimal128,
     StructGen([("c0", ArrayGen(long_gen)), ("c1", boolean_gen)]),
 ]

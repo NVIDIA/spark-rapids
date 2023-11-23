@@ -331,9 +331,18 @@
                         <goals><goal>run</goal></goals>
                         <configuration>
                             <target>
-                                <copy todir="${project.build.directory}/parallel-world">
-                                    <fileset dir="${project.build.directory}/jni-deps"/>
-                                </copy>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${project.build.directory}/jni-deps" type="dir"/>
+                                    <then>
+                                        <copy todir="${project.build.directory}/parallel-world">
+                                            <fileset dir="${project.build.directory}/jni-deps"/>
+                                        </copy>
+                                    </then>
+                                    <else>
+                                        <fail>Re-execute build with the default `-Drapids.jni.unpack.skip=false`</fail>
+                                    </else>
+                                </ac:if>
                             </target>
                         </configuration>
                     </execution>

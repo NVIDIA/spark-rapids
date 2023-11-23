@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run, is_not_utc
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_350_or_later
+from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_340_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -42,6 +42,12 @@ import pyspark.sql.functions as f
 import pandas as pd
 import pyarrow
 from typing import Iterator, Tuple
+
+
+if is_databricks_runtime() and is_spark_340_or_later():
+    # Databricks 13.3 does not use separate reader/writer threads for Python UDFs
+    # which can lead to hangs. Skipping these tests until the Python UDF handling is updated.
+    pytestmark = pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9493")
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
