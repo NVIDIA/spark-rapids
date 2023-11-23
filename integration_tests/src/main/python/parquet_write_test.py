@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import is_databricks_runtime, is_not_utc
+from conftest import is_not_utc
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
