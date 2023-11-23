@@ -59,7 +59,8 @@ mvn_verify() {
               -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
         # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
-            $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+            # $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+            echo "Skipped build only branch."
         fi
     done
 
@@ -166,13 +167,13 @@ ci_2() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
-    # # put some mvn tests here to balance durations of parallel stages
-    # echo "Run mvn package..."
-    # for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
-    # do
-    #     env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
-    #       -Dpytest.TEST_TAGS=''
-    # done
+    # put some mvn tests here to balance durations of parallel stages
+    echo "Run mvn package..."
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
+    do
+        env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
+          -Dpytest.TEST_TAGS=''
+    done
 }
 
 ci_scala213() {
