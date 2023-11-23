@@ -902,7 +902,15 @@ trait GpuHashJoin extends GpuExec {
     case GpuBuildRight => (right, left)
   }
 
-  // This can be override when a post-build project happens.
+  // This can be overridden when a post-build project happens. When some non-ast-supported cases
+  // exist in join condition, it will be extracted from join condition and wrapped as pre-project
+  // nodes.
+  protected lazy val leftOutput = left.output;
+  protected lazy val rightOutput = right.output;
+
+  // This can be overridden when a post-build project happens. When some non-ast-supported cases
+  // exist in join condition, it will be extracted from join condition and wrapped as pre-project
+  // nodes.
   protected lazy val buildAttrList: List[Attribute] = buildPlan.output.toList
   protected lazy val streamedAttrList: List[Attribute] = streamedPlan.output.toList
 
@@ -919,7 +927,7 @@ trait GpuHashJoin extends GpuExec {
   }
 
   override def output: Seq[Attribute] = {
-    GpuHashJoin.output(joinType, left.output, right.output)
+    GpuHashJoin.output(joinType, leftOutput, rightOutput)
   }
 
   // If we have a single batch streamed in then we will produce a single batch of output
@@ -972,8 +980,8 @@ trait GpuHashJoin extends GpuExec {
       GpuHashJoin.anyNullableStructChild(buildKeys)
 
   protected lazy val (boundBuildKeys, boundStreamKeys) = {
-    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
-    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
+    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, leftOutput)
+    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, rightOutput)
 
     buildSide match {
       case GpuBuildLeft => (lkeys, rkeys)

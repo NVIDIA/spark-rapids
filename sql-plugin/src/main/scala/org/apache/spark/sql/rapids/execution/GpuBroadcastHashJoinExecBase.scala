@@ -129,6 +129,20 @@ abstract class GpuBroadcastHashJoinExecBase(
     postBuildCondition.map(expr => expr.toAttribute)
   }
 
+  override lazy val leftOutput: Seq[Attribute] =
+    if (!postBuildCondition.isEmpty && buildSide == GpuBuildLeft) {
+      postBuildCondition.map(expr => expr.toAttribute)
+    } else {
+      left.output
+    }
+
+  override lazy val rightOutput: Seq[Attribute] =
+    if (!postBuildCondition.isEmpty && buildSide == GpuBuildRight) {
+      postBuildCondition.map(expr => expr.toAttribute)
+    } else {
+      right.output
+    }
+
   // Needed when original join condition contains non-ast-able condition. Some conditions are
   // extracted and evaluated as project node on top of built batch.
   private lazy val postBuildProj: Option[GpuTieredProject] = if (!postBuildCondition.isEmpty) {

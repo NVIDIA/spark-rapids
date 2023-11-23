@@ -62,21 +62,28 @@ class GpuBroadcastHashJoinMeta(
             .output, right.output, true)
 
       // Reconstruct the child with wrapped project node if needed.
-      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
-        GpuProjectExec(leftExpr ++ left.output, left)(true)
-      } else {
-        left
-      }
-      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
-        GpuProjectExec(rightExpr ++ right.output, right)(true)
-      } else {
-        right
-      }
+//      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
+//        GpuProjectExec(leftExpr ++ left.output, left)(true)
+//      } else {
+//        left
+//      }
+//      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
+//        GpuProjectExec(rightExpr ++ right.output, right)(true)
+//      } else {
+//        right
+//      }
+
+      val leftChild =
+        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+      val rightChild =
+        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+
       val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
         (leftExpr.map(_.toAttribute) ++ left.output, leftExpr ++ left.output)
       } else {
         (rightExpr.map(_.toAttribute) ++ right.output, rightExpr ++ right.output)
       }
+
 
       val joinExec = GpuBroadcastHashJoinExec(
         leftKeys.map(_.convertToGpu()),
@@ -163,8 +170,7 @@ case class GpuBroadcastHashJoinExec(
       case ReusedExchangeExec(_, g: GpuShuffleExchangeExec) => g
       case _ => throw new IllegalStateException(s"cannot locate GPU shuffle in $p")
     }
-    // Use getBroadcastPlan to get child of project. This happens when non-AST condition split case
-    getBroadcastPlan(buildPlan) match {
+    buildPlan match {
       case gpu: GpuShuffleExchangeExec => gpu
       case sqse: ShuffleQueryStageExec => from(sqse)
       case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
