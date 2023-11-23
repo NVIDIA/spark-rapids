@@ -510,6 +510,31 @@
             </modules>
         </profile>
         <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=341db -->
+            <id>release341db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <spark.version.classifier>spark341db</spark.version.classifier>
+                <spark.version>${spark341db.version}</spark.version>
+                <spark.test.version>${spark341db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>shim-deps/databricks</module>
+                <module>delta-lake/delta-spark341db</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release350</id>
             <activation>
                 <property>
@@ -691,6 +716,7 @@
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
+        <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
@@ -745,7 +771,8 @@
         <databricks.buildvers>
             321db,
             330db,
-            332db
+            332db,
+            341db
         </databricks.buildvers>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
