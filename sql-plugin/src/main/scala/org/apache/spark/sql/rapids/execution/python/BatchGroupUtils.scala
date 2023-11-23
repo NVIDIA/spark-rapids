@@ -459,12 +459,11 @@ class CombiningIterator(
         buf.remove(0)
       } else {
         // concatenate the batches
-        val batchTypes = GpuColumnVector.extractTypes(buf.head)
-        val concated = withResource(buf.safeMap(GpuColumnVector.from)) { tables =>
+        val concated = withResource(buf.toSeq.safeMap(GpuColumnVector.from)) { tables =>
           Table.concatenate(tables: _*)
         }
         withResource(concated) { _ =>
-          GpuColumnVector.from(concated, batchTypes)
+          GpuColumnVector.from(concated, GpuColumnVector.extractTypes(buf.head))
         }
       }
     } // end of withResource(mutable.ArrayBuffer)
