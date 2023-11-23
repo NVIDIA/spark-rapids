@@ -3242,7 +3242,7 @@ object GpuOverrides extends Logging {
           }
 
           extractStringLit(a.children(1)).map(_.toUpperCase) match {
-            case Some(GpuParseUrl.PROTOCOL) =>
+            case Some(GpuParseUrl.PROTOCOL) | Some(GpuParseUrl.HOST) =>
             case Some(other) =>
               willNotWorkOnGpu(s"Part to extract $other is not supported on GPU")
             case None =>

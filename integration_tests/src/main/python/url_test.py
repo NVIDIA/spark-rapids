@@ -154,6 +154,14 @@ def test_parse_url_protocol(data_gen):
                 "parse_url(a, 'PROTOCOL')"
                 ))
     
+@pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
+def test_parse_url_host(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                "a",
+                "parse_url(a, 'HOST')"
+                ))
+    
 unsupported_part = ['HOST', 'PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')

@@ -54,7 +54,9 @@ case class GpuParseUrl(children: Seq[Expression])
     part match {
       case PROTOCOL =>
         ParseURI.parseURIProtocol(url.getBase)
-      case HOST | PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
+      case HOST =>
+        ParseURI.parseURIHost(url.getBase)
+      case PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
         throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part")
       case _ =>
         throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
