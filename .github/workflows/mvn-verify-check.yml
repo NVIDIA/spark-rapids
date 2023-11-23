@@ -58,7 +58,7 @@ jobs:
           while true; do
             mvn -Dmaven.wagon.http.retryHandler.count=3 \
               -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 initialize -am && break || {
+              -Daether.connector.http.connectionMaxTtl=30 initialize -pl sql-plugin-api -am && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
