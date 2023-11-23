@@ -1839,6 +1839,10 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  object AllowMultipleJars extends Enumeration {
+    val ALWAYS, SAME_REVISION, NEVER = Value
+  }
+
   val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
     .internal()
     .startupOnly()
@@ -1848,8 +1852,8 @@ object RapidsConf {
       "revision, NEVER: do not allow multiple jars at all.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
-    .checkValues(Set("ALWAYS", "SAME_REVISION", "NEVER"))
-    .createWithDefault("SAME_REVISION")
+    .checkValues(AllowMultipleJars.values.map(_.toString))
+    .createWithDefault(AllowMultipleJars.SAME_REVISION.toString)
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
@@ -2646,7 +2650,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
-  lazy val allowMultipleJars: String = get(ALLOW_MULTIPLE_JARS)
+  lazy val allowMultipleJars: AllowMultipleJars.Value = {
+    get(ALLOW_MULTIPLE_JARS) match {
+      case "ALWAYS" => AllowMultipleJars.ALWAYS
+      case "NEVER" => AllowMultipleJars.NEVER
+      case "SAME_REVISION" => AllowMultipleJars.SAME_REVISION
+      case other =>
+        throw new IllegalArgumentException(s"Internal Error $other is not supported for " +
+            s"${ALLOW_MULTIPLE_JARS.key}")
+    }
+  }
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 

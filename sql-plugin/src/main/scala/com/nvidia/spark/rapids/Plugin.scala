@@ -26,6 +26,7 @@ import scala.sys.process._
 import scala.util.Try
 
 import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
@@ -143,11 +144,11 @@ object RapidsPluginUtils extends Logging {
     // scalastyle:on line.size.limit
 
     conf.allowMultipleJars match {
-      case "ALWAYS" =>
+      case AllowMultipleJars.ALWAYS =>
         logWarning(msg)
-      case "SAME_REVISION" =>
+      case AllowMultipleJars.SAME_REVISION =>
         require(revisionMap.size == 1, msg)
-      case "NEVER" =>
+      case AllowMultipleJars.NEVER =>
         require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
     }
   }
