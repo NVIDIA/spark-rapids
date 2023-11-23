@@ -29,6 +29,7 @@ import org.apache.arrow.vector.ipc.ArrowStreamWriter
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
+import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.api.python.ShimBasePythonRunner
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
@@ -118,7 +119,7 @@ abstract class GpuArrowPythonRunnerBase(
       env: SparkEnv,
       inputIterator: Iterator[ColumnarBatch],
       partitionIndex: Int,
-      context: TaskContext) {
+      context: TaskContext) extends Logging {
 
     private[this] var tableWriter: TableWriter = _
     private[this] lazy val isInputNonEmpty = inputIterator.nonEmpty
@@ -167,7 +168,7 @@ abstract class GpuArrowPythonRunnerBase(
     def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
       if (isInputNonEmpty) {
         initTableWriter(dataOut)
-        Utils.tryWithSafeFinally {
+        try {
           if (inputIterator.hasNext) {
             logDebug("GpuPythonRunner[single-threaded] write a batch to the stream.")
             writeBatchToStreamAndClose(inputIterator.next())
@@ -178,7 +179,11 @@ abstract class GpuArrowPythonRunnerBase(
             close()
             false
           }
-        }{}
+        } catch {
+          case t: Throwable =>
+            close()
+            throw t
+        }
       } else {
         logDebug("GpuPythonRunner[single-threaded] writes nothing to stream because" +
           " the input is empty.")

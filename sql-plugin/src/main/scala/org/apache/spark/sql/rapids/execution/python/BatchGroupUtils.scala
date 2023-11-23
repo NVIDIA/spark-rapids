@@ -416,15 +416,9 @@ class CombiningIterator(
       withResource(concatInputBatch(cbFromPython.numRows())) { concated =>
         numOutputBatches += 1
         numOutputRows += numRows
-        combine(concated, cbFromPython)
+        GpuColumnVector.combineColumns(concated, cbFromPython)
       }
     }
-  }
-
-  private def combine(lBatch: ColumnarBatch, rBatch: ColumnarBatch): ColumnarBatch = {
-    val lColumns = GpuColumnVector.extractColumns(lBatch).map(_.incRefCount())
-    val rColumns = GpuColumnVector.extractColumns(rBatch).map(_.incRefCount())
-    new ColumnarBatch((lColumns ++ rColumns).toArray, lBatch.numRows())
   }
 
   private def concatInputBatch(targetNumRows: Int): ColumnarBatch = {

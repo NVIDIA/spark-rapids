@@ -182,7 +182,12 @@ window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Pre
 
 
 # This test runs only on CPU to verify that DB13.3 wrongly uses RunningWindowFunctionExec
-# to evaluate a PythonUDAF. Not sure if it would be fixed in the future releases.
+# to evaluate a PythonUDAF and always fails due to the following error.
+# """
+#  scala.MatchError: pandas_sum(b#1351)#1354L (of class org.apache.spark.sql.catalyst.expressions.PythonUDAF)
+#      at com.databricks.sql.execution.window.RunningWindowFunctionExec.$anonfun$aggregates$2(RunningWindowFunctionExec.scala:117)
+# """
+# (Not sure if it would be fixed in the future releases.)
 @ignore_order
 @pytest.mark.skipif(not (is_databricks_runtime() and is_spark_341()), reason="only for DB13.3")
 @pytest.mark.parametrize('data_gen', [int_gen], ids=idfn)
