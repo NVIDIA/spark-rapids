@@ -1847,6 +1847,8 @@ object RapidsConf {
       "values are ALWAYS: allow all jars, SAME_REVISION: only allow jars with the same " +
       "revision, NEVER: do not allow multiple jars at all.")
     .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(Set("ALWAYS", "SAME_REVISION", "NEVER"))
     .createWithDefault("SAME_REVISION")
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")

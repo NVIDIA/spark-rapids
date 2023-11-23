@@ -149,10 +149,6 @@ object RapidsPluginUtils extends Logging {
         require(revisionMap.size == 1, msg)
       case "NEVER" =>
         require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
-      case _ => 
-        throw new IllegalArgumentException(s"Invalid value for " +
-          s"${RapidsConf.ALLOW_MULTIPLE_JARS.key}: ${conf.allowMultipleJars}. " +
-          s"Valid values are ALWAYS, SAME_REVISION, NEVER.")
     }
   }
 
