@@ -560,6 +560,7 @@ def test_from_json_struct_decimal():
     pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     "CORRECTED"
 ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
@@ -642,6 +643,7 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     "CORRECTED"
 ])
 @pytest.mark.parametrize('ansi_enabled', [ True, False ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
         .with_special_case('{ "a": null }') \

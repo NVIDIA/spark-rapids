@@ -296,6 +296,7 @@ def test_from_utc_timestamp_unsupported_timezone_fallback(data_gen, time_zone):
 
 @pytest.mark.parametrize('time_zone', ["UTC", "Asia/Shanghai", "EST", "MST", "VST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_utc_timestamp_supported_timezones(data_gen, time_zone):
     # Remove spark.rapids.test.CPU.timezone configuration when GPU kernel is ready to really test on GPU
     assert_gpu_and_cpu_are_equal_collect(
@@ -381,6 +382,7 @@ def test_unix_timestamp_improved(data_gen, ansi_enabled):
 
 @pytest.mark.parametrize('ansi_enabled', [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_unix_timestamp(data_gen, ansi_enabled):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col("a"))),
