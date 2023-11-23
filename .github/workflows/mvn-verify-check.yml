@@ -68,6 +68,7 @@ jobs:
           done
 
   get-shim-versions-from-dist:
+    needs: cache-dependencies
     runs-on: ubuntu-latest
     outputs:
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
