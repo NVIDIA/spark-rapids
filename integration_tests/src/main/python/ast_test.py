@@ -32,7 +32,6 @@ ast_integral_descrs = [
 ast_arithmetic_descrs = ast_integral_descrs + [(float_gen, True), (double_gen, True)]
 
 # cudf AST cannot support comparing floating point until it is expressive enough to handle NaNs
-# cudf AST does not support strings yet
 ast_comparable_descrs = [
     (boolean_gen, True),
     (byte_gen, True),
@@ -43,7 +42,7 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    (string_gen, False)
+    (string_gen, True)
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]
@@ -259,7 +258,6 @@ def test_lt(data_descr):
             s2 < f.col('b'),
             f.col('a') < f.col('b')))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9711')
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_lte(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))

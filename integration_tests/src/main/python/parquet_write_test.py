@@ -72,14 +72,15 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 
 parquet_datetime_gen_simple = [DateGen(start=date(1, 1, 1), end=date(2000, 1, 1))
                                .with_special_case(date(1000, 1, 1), weight=10.0),
-                               TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc),
+                               TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc),
                                             end=datetime(2000, 1, 1, tzinfo=timezone.utc))
                                .with_special_case(datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)]
-parquet_datetime_in_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)]),
-    StructGen([['child0', StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]])]
-parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_datetime_gen_simple + parquet_datetime_in_struct_gen] + [
-    ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_datetime_gen_simple + parquet_datetime_in_struct_gen]
-parquet_nested_datetime_gen = parquet_datetime_gen_simple + parquet_datetime_in_struct_gen + parquet_datetime_in_array_gen
+parquet_datetime_in_struct_gen = [
+    StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_datetime_gen_simple)])]
+parquet_datetime_in_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in
+                                 parquet_datetime_gen_simple + parquet_datetime_in_struct_gen]
+parquet_nested_datetime_gen = parquet_datetime_gen_simple + parquet_datetime_in_struct_gen + \
+                              parquet_datetime_in_array_gen
 
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
@@ -279,8 +280,8 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
 
 @pytest.mark.parametrize('ts_write_data_gen',
                         [('INT96', TimestampGen()),
-                         ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
-                         ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
+                         ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc))),
+                         ('TIMESTAMP_MILLIS', TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc), end=datetime(1899, 12, 31, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
     ts_write, gen = ts_write_data_gen
@@ -457,18 +458,36 @@ def test_write_map_nullable(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path)
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9701')
 @pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
-@pytest.mark.parametrize('ts_rebase_write', ['CORRECTED', 'LEGACY'])
-@pytest.mark.parametrize('ts_rebase_read', ['CORRECTED', 'LEGACY'])
-def test_datetime_roundtrip_with_legacy_rebase(spark_tmp_path, data_gen, ts_write, ts_rebase_write, ts_rebase_read):
+@pytest.mark.parametrize('ts_rebase_write', ['EXCEPTION'])
+def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
                  'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write,
-                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write,
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read,
-                 'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read}
+                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write}
+    def writeParquetCatchException(spark, data_gen, data_path):
+        with pytest.raises(Exception) as e_info:
+            unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path)
+        assert e_info.match(r".*SparkUpgradeException.*")
+    with_gpu_session(
+        lambda spark: writeParquetCatchException(spark, data_gen, data_path),
+        conf=all_confs)
+
+@pytest.mark.parametrize('data_gen', parquet_nested_datetime_gen, ids=idfn)
+@pytest.mark.parametrize('ts_write', parquet_ts_write_options)
+@pytest.mark.parametrize('ts_rebase_write', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
+@pytest.mark.parametrize('ts_rebase_read', [('CORRECTED', 'LEGACY'), ('LEGACY', 'CORRECTED')])
+def test_parquet_write_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, data_gen, ts_write,
+                                                             ts_rebase_write, ts_rebase_read):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write[0],
+                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write[1],
+                 # The rebase modes in read configs should be ignored and overridden by the same
+                 # modes in write configs, which are retrieved from the written files.
+                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read[0],
+                 'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read[1]}
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
@@ -797,5 +816,26 @@ def test_parquet_write_column_name_with_dots(spark_tmp_path):
         ("k", boolean_gen)]
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path:  gen_df(spark, gens).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path)
+
+@ignore_order
+def test_parquet_append_with_downcast(spark_tmp_table_factory, spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    cpu_table = spark_tmp_table_factory.get()
+    gpu_table = spark_tmp_table_factory.get()
+    def setup_tables(spark):
+        df = unary_op_df(spark, int_gen, length=10)
+        df.write.format("parquet").option("path", data_path + "/CPU").saveAsTable(cpu_table)
+        df.write.format("parquet").option("path", data_path + "/GPU").saveAsTable(gpu_table)
+    with_cpu_session(setup_tables)
+    def do_append(spark, path):
+        table = cpu_table
+        if path.endswith("/GPU"):
+            table = gpu_table
+        unary_op_df(spark, LongGen(min_val=0, max_val=128, special_cases=[]), length=10)\
+            .write.mode("append").saveAsTable(table)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_append,
         lambda spark, path: spark.read.parquet(path),
         data_path)

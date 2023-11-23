@@ -55,16 +55,6 @@ _default_conf = {
     'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
 }
 
-def is_tz_utc(spark=_spark):
-    """
-    true if the tz is UTC else false
-    """
-    # Now we have to do some kind of ugly internal java stuff
-    jvm = spark.sparkContext._jvm
-    utc = jvm.java.time.ZoneId.of('UTC').normalized()
-    sys_tz = jvm.java.time.ZoneId.systemDefault().normalized()
-    return utc == sys_tz
-
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
     if (should_inject_oom()):
@@ -213,6 +203,10 @@ def supports_delta_lake_deletion_vectors():
         return is_databricks122_or_later()
     else:
         return is_spark_340_or_later()
+
+def is_support_default_values_in_schema():
+    # Spark 340 + and Databricks 330 + support
+    return is_spark_340_or_later() or is_databricks113_or_later()
 
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")

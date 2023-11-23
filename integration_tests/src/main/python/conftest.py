@@ -77,6 +77,15 @@ def is_emr_runtime():
 def is_dataproc_runtime():
     return runtime_env() == "dataproc"
 
+def get_test_tz():
+    return os.environ.get('TZ', 'UTC')
+
+def is_utc():
+    return get_test_tz() == "UTC"
+
+def is_not_utc():
+    return not is_utc()
+
 _is_nightly_run = False
 _is_precommit_run = False
 

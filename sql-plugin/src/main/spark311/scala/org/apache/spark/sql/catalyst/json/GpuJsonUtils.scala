@@ -27,8 +27,33 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.json
 
+import org.apache.spark.sql.internal.SQLConf
+
 object GpuJsonUtils {
+
+  def optionalDateFormatInRead(options: JSONOptions): Option[String] =
+    Some(options.dateFormat)
+
+  def optionalDateFormatInRead(options: Map[String, String]): Option[String] =
+    optionalDateFormatInRead(parseJSONReadOptions(options))
+
   def dateFormatInRead(options: JSONOptions): String = options.dateFormat
+
+  def dateFormatInRead(options: Map[String, String]): String =
+    dateFormatInRead(parseJSONReadOptions(options))
+
+  def optionalTimestampFormatInRead(options: JSONOptions): Option[String] =
+    Some(options.timestampFormat)
+  def optionalTimestampFormatInRead(options: Map[String, String]): Option[String] =
+    optionalTimestampFormatInRead(parseJSONReadOptions(options))
+
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
+
+  def parseJSONReadOptions(options: Map[String, String]) = {
+    new JSONOptionsInRead(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+  }
 }

@@ -13,24 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
 /*** spark-rapids-shim-json-lines
+{"spark": "330db"}
+{"spark": "332db"}
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
 {"spark": "350"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.hive.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.hive.HiveInspectors
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.catalyst.util.ResolveDefaultColumns
+import org.apache.spark.sql.types.StructType
 
-trait HiveInspectorsShim extends HiveInspectors {
+object ColumnDefaultValuesShims {
 
-  def wrapRow(
-      row: Seq[Any],
-      wrappers: Array[(Any) => Any],
-      cache: Array[AnyRef],
-      dataTypes: Array[DataType]): Array[AnyRef] = {
-    // dataTypes removed from API since Spark 3.5.0
-    wrap(row, wrappers, cache)
+  /** Whether there is any default value in the schema */
+  def hasExistenceDefaultValues(schema: StructType): Boolean = {
+    ResolveDefaultColumns.getExistenceDefaultValues(schema).exists(_ != null)
   }
 }

@@ -223,11 +223,14 @@ else
         export PYSP_TEST_spark_jars="${ALL_JARS//:/,}"
     fi
 
+    # time zone will be tested; use export TZ=time_zone_name before run this script
+    TZ=${TZ:-UTC}
+
     # Set the Delta log cache size to prevent the driver from caching every Delta log indefinitely
-    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
-    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
+    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=10 $COVERAGE_SUBMIT_FLAGS"
+    export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ"
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
-    export PYSP_TEST_spark_sql_session_timeZone='UTC'
+    export PYSP_TEST_spark_sql_session_timeZone=$TZ
     export PYSP_TEST_spark_sql_shuffle_partitions='4'
     # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
@@ -298,7 +301,7 @@ EOF
     fi
 
     # Set a seed to be used in the tests, for datagen
-    export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-`date +%s`}
+    export SPARK_RAPIDS_TEST_DATAGEN_SEED=${SPARK_RAPIDS_TEST_DATAGEN_SEED:-${DATAGEN_SEED:-`date +%s`}}
     echo "SPARK_RAPIDS_TEST_DATAGEN_SEED used: $SPARK_RAPIDS_TEST_DATAGEN_SEED"
 
     # Set a seed to be used to pick random tests to inject with OOM

@@ -1347,7 +1347,7 @@ object GpuCast {
    * `yyyy-[m]m-[d]d *`
    * `yyyy-[m]m-[d]dT*`
    */
-  private def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
+  def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
 
     // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
     val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
@@ -1379,7 +1379,7 @@ object GpuCast {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOrNull(
+  def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -1463,7 +1463,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()

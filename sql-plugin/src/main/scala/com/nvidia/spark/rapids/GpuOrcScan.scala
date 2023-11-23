@@ -37,7 +37,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -148,6 +148,10 @@ object GpuOrcScan {
     if (!meta.conf.isOrcReadEnabled) {
       meta.willNotWorkOnGpu("ORC input has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_ORC_READ} to true")
+    }
+
+    if (ColumnDefaultValuesShims.hasExistenceDefaultValues(schema)) {
+      meta.willNotWorkOnGpu("GpuOrcScan does not support default values in schema")
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)

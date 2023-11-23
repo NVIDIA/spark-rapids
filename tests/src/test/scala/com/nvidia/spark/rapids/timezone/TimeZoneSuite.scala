@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.types._
 
 class TimeZoneSuite extends SparkQueryCompareTestSuite {
