@@ -157,14 +157,14 @@ ci_2() {
 
 
     # Temporarily test non-UTC TZ
-    # Only test the impacted 42 files
+    # Only test the impacted 43 files
     # Split multiple parts to test to avoid OOM: refer to: https://github.com/NVIDIA/spark-rapids/issues/9829
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'aqe_test.py or arithmetic_ops_test.py or array_test.py or ast_test.py or cache_test.py or cast_test.py or cmp_test.py'
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'collection_ops_test.py or conditionals_test.py or csv_test.py or datasourcev2_read_test.py or date_time_test.py or expand_exec_test.py or explain_test.py'
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'fastparquet_compatibility_test.py or generate_expr_test.py or hash_aggregate_test.py or hashing_test.py or hive_delimited_text_test.py or hive_write_test.py or join_test.py'
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'json_test.py or limit_test.py or map_test.py or mortgage_test.py or orc_cast_test.py or orc_test.py or orc_write_test.py'
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'parquet_test.py or parquet_write_test.py or qa_nightly_select_test.py or repart_test.py or row-based_udf_test.py or row_conversion_test.py or sample_test.py'
-    TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'schema_evolution_test.py or sort_test.py or struct_test.py or subquery_test.py or time_window_test.py or udf_test.py or window_function_test.py'
+    TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'schema_evolution_test.py or sort_test.py or struct_test.py or subquery_test.py or time_window_test.py or udf_test.py or window_function_test.py or parquet_testing_test.py'
 
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
