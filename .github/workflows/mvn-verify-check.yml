@@ -204,11 +204,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
         with:
-          distribution: adopt
-          java-version: 8
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
       - name: check runtime before tests
         run: |
@@ -258,11 +258,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
         with:
-          distribution: adopt
-          java-version: ${{ matrix.java-version }}
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
       - name: check runtime before tests
         run: |
@@ -301,11 +301,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
         with:
-          distribution: adopt
-          java-version: 11
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
