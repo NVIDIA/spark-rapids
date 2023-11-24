@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
-from marks import approximate_float
+from marks import approximate_float, datagen_overrides
 from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 
@@ -32,7 +32,6 @@ ast_integral_descrs = [
 ast_arithmetic_descrs = ast_integral_descrs + [(float_gen, True), (double_gen, True)]
 
 # cudf AST cannot support comparing floating point until it is expressive enough to handle NaNs
-# cudf AST does not support strings yet
 ast_comparable_descrs = [
     (boolean_gen, True),
     (byte_gen, True),
@@ -43,7 +42,7 @@ ast_comparable_descrs = [
     (double_gen, False),
     (timestamp_gen, True),
     (date_gen, True),
-    (string_gen, False)
+    (string_gen, True)
 ]
 
 ast_boolean_descr = [(boolean_gen, True)]

@@ -103,7 +103,11 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Databricks will sometimes generate tons of tiny files on the CPU when using floating point
+    # partition keys. The GPU does not, and this triggers a delta log mismatch. Data contents
+    # of the table are correct, and this seems like Databricks bug on the CPU.
+    if not (is_databricks_runtime() and gens.data_type in (FloatType(), DoubleType())):
+        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -120,7 +124,11 @@ def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
         data_path,
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # Databricks will sometimes generate tons of tiny files on the CPU when using floating point
+    # partition keys. The GPU does not, and this triggers a delta log mismatch. Data contents
+    # of the table are correct, and this seems like Databricks bug on the CPU.
+    if not (is_databricks_runtime() and gens.data_type in (FloatType(), DoubleType())):
+        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 def do_update_round_trip_managed(spark_tmp_path, mode):
     gen_list = [("x", int_gen), ("y", binary_gen), ("z", string_gen)]
@@ -398,24 +406,25 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
         conf=confs)
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
-@allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+def test_delta_write_legacy_timestamp(spark_tmp_path, ts_write):
+    gen = TimestampGen(start=datetime(1, 2, 1, tzinfo=timezone.utc),
+                       end=datetime(2000, 1, 1, tzinfo=timezone.utc)).with_special_case(
+        datetime(1000, 1, 1, tzinfo=timezone.utc), weight=10.0)
     data_path = spark_tmp_path + "/DELTA_DATA"
     all_confs = copy_and_update(delta_writes_enabled_conf, {
         "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "LEGACY",
         "spark.sql.legacy.parquet.outputTimestampType": ts_write
     })
-    assert_gpu_fallback_write(
+    assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
-        delta_write_fallback_check,
         conf=all_confs)
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)

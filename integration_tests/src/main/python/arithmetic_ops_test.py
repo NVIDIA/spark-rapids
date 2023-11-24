@@ -17,7 +17,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from marks import ignore_order, incompat, approximate_float, allow_non_gpu
+from marks import ignore_order, incompat, approximate_float, allow_non_gpu, datagen_overrides
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import *
@@ -572,6 +572,7 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9744')
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_hypot(data_gen):
@@ -585,6 +586,7 @@ def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
 
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9722')
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
 def test_floor_scale_zero(data_gen):
@@ -677,6 +679,7 @@ _arith_data_gens_for_round = numeric_gens + _arith_decimal_gens_no_neg_scale_38_
 
 @incompat
 @approximate_float
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9350")
 @pytest.mark.parametrize('data_gen', _arith_data_gens_for_round, ids=idfn)
 def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(

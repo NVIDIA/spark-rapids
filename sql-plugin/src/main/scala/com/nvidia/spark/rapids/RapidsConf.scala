@@ -1661,8 +1661,9 @@ object RapidsConf {
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
         "The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-        "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
-        "also the maximum amount of memory that will be used per task. This should be set larger " +
+        "\"MULTITHREADED\" mode will allow to be serialized or deserialized concurrently " +
+        "per task. This is also the maximum amount of memory that will be used per task. " +
+        "This should be set larger " +
         "than Spark's default maxBytesInFlight (48MB). The larger this setting is, the " +
         "more compressed shuffle chunks are processed concurrently. In practice, " +
         "care needs to be taken to not go over the amount of off-heap memory that Netty has " +
@@ -2067,6 +2068,12 @@ object RapidsConf {
 
   val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
     .doc("Only for tests: verify for IO encryption")
+    .internal()
+    .booleanConf
+    .createOptional
+
+  val TEST_USE_TIMEZONE_CPU_BACKEND = conf("spark.rapids.test.CPU.timezone")
+    .doc("Only for tests: verify for timezone related functions")
     .internal()
     .booleanConf
     .createOptional

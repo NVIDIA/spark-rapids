@@ -85,8 +85,6 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_confs", [
-    ("PARQUET", {"spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "LEGACY",
-                 "spark.sql.legacy.parquet.int96RebaseModeInWrite": "LEGACY"}),
     ("PARQUET", {"parquet.encryption.footer.key": "k1",
                  "parquet.encryption.column.keys": "k2:a"}),
     ("PARQUET", {"spark.sql.parquet.compression.codec": "gzip"}),

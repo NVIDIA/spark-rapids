@@ -571,3 +571,25 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT *, input_file_name() FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_parquet_read_from_url_encoded_path(spark_tmp_table_factory, reader_type):
+    table = spark_tmp_table_factory.get()
+    tmp_view = spark_tmp_table_factory.get()
+    partition_gen = StringGen(pattern="(.|\n){1,10}", nullable=False)\
+        .with_special_case('%29%3EtkiudF4%3C', 1000)\
+        .with_special_case('%2F%23_v9kRtI%27', 1000)\
+        .with_special_case('aK%2BAgI%21l8%3E', 1000)\
+        .with_special_case('p%2Cmtx%3FCXMd', 1000)
+    def setup_iceberg_table(spark):
+        df = two_col_df(spark, long_gen, partition_gen).sortWithinPartitions('b')
+        df.createOrReplaceTempView(tmp_view)
+        spark.sql("CREATE TABLE {} USING ICEBERG PARTITIONED BY (b) AS SELECT * FROM {}"
+                  .format(table, tmp_view))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("SELECT * FROM {}".format(table)),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})

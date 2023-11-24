@@ -25,10 +25,33 @@ package org.apache.spark.sql.catalyst.json
 import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
 
 import org.apache.spark.sql.catalyst.util.DateFormatter
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuJsonUtils {
+
+  def optionalDateFormatInRead(options: JSONOptions): Option[String] =
+    options.dateFormatInRead
+
+  def optionalDateFormatInRead(options: Map[String, String]): Option[String] = {
+    optionalDateFormatInRead(parseJSONReadOptions(options))
+  }
+
+  /**
+   * Return the dateFormat that Spark will use in JSONOptions, or return a default. Note that this
+   * does not match Spark's behavior in all cases, because dateFormat is intentionally optional.
+   *
+   * For example, in `org.apache.spark.sql.catalyst.util.DateFormatter#getFormatter`, a legacy
+   * formatter will be used if no dateFormat is specified, and it does not correspond to
+   * `DateFormatter.defaultPattern`.
+   */
   def dateFormatInRead(options: JSONOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
+
+  def optionalTimestampFormatInRead(options: JSONOptions): Option[String] =
+    options.timestampFormatInRead
+
+  def optionalTimestampFormatInRead(options: Map[String, String]): Option[String] =
+    optionalTimestampFormatInRead(parseJSONReadOptions(options))
 
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormatInRead.getOrElse(
     if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy()) {
@@ -39,4 +62,11 @@ object GpuJsonUtils {
 
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean =
     options.enableDateTimeParsingFallback.getOrElse(false)
+
+  def parseJSONReadOptions(options: Map[String, String]) = {
+    new JSONOptionsInRead(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+  }
 }

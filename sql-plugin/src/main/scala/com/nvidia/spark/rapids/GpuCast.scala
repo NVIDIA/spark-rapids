@@ -899,7 +899,10 @@ object GpuCast {
 
     val numRows = input.getRowCount.toInt
 
-    /** Create a new column with quotes around the supplied string column */
+    /**
+     * Create a new column with quotes around the supplied string column. Caller
+     * is responsible for closing `column`.
+     */
     def addQuotes(column: ColumnVector, rowCount: Int): ColumnVector = {
       withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
         withResource(Scalar.fromString("\"")) { quote =>
@@ -922,7 +925,7 @@ object GpuCast {
         // keys must have quotes around them in JSON mode
         val strKey: ColumnVector = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
           withResource(castToString(keyColumn, from.keyType, options)) { key =>
-            addQuotes(key.incRefCount(), keyColumn.getRowCount.toInt)
+            addQuotes(key, keyColumn.getRowCount.toInt)
           }
         }
         // string values must have quotes around them in JSON mode, and null values need
@@ -931,7 +934,7 @@ object GpuCast {
           withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
             val valueStr = if (valueColumn.getType == DType.STRING) {
               withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
-                addQuotes(valueStr.incRefCount(), valueColumn.getRowCount.toInt)
+                addQuotes(valueStr, valueColumn.getRowCount.toInt)
               }
             } else {
               castToString(valueColumn, from.valueType, options)
@@ -1136,7 +1139,7 @@ object GpuCast {
                   attrValue =>
                 if (needsQuoting) {
                   attrValues += quote.incRefCount()
-                  attrValues += escapeJsonString(attrValue.incRefCount())
+                  attrValues += escapeJsonString(attrValue)
                   attrValues += quote.incRefCount()
                   withResource(Scalar.fromString("")) { emptyString =>
                     ColumnVector.stringConcatenate(emptyString, emptyString, attrValues.toArray)
@@ -1199,10 +1202,17 @@ object GpuCast {
     }
   }
 
+  /**
+   * Escape quotes and newlines in a string column. Caller is responsible for closing `cv`.
+   */
   private def escapeJsonString(cv: ColumnVector): ColumnVector = {
-    // this is a placeholder for implementing string escaping
-    // https://github.com/NVIDIA/spark-rapids/issues/9514
-    cv
+    val chars = Seq("\r", "\n", "\\", "\"")
+    val escaped = chars.map(StringEscapeUtils.escapeJava)
+    withResource(ColumnVector.fromStrings(chars: _*)) { search =>
+      withResource(ColumnVector.fromStrings(escaped: _*)) { replace =>
+        cv.stringReplace(search, replace)
+      }
+    }
   }
 
   private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
@@ -1337,7 +1347,7 @@ object GpuCast {
    * `yyyy-[m]m-[d]d *`
    * `yyyy-[m]m-[d]dT*`
    */
-  private def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
+  def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
 
     // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
     val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
@@ -1369,7 +1379,7 @@ object GpuCast {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOrNull(
+  def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -1453,7 +1463,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()

@@ -28,11 +28,25 @@ import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
+import org.apache.spark.sql.types.StringType
 
 trait Spark341PlusDBShims extends Spark332PlusDBShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[ToPrettyString]("An internal expressions which is used to " +
+        "generate pretty string for all kinds of values",
+        new ToPrettyStringChecks(),
+        (toPrettyString, conf, p, r) => {
+          new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
+
+            override val toType: StringType.type = StringType
+
+            override def convertToGpu(child: Expression): GpuExpression = {
+              GpuToPrettyString(child)
+            }
+          }
+        }),
       // Empty2Null is pulled out of FileFormatWriter by default since Spark 3.4.0,
       // so it is visible in the overriding stage.
       GpuOverrides.expr[Empty2Null](
