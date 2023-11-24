@@ -147,7 +147,9 @@ object RapidsPluginUtils extends Logging {
 
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
-        logWarning(msg)
+        if (revisionMap.size != 1) {
+          logWarning(msg)
+        }
       case AllowMultipleJars.SAME_REVISION =>
         require(revisionMap.size == 1, msg)
       case AllowMultipleJars.NEVER =>
