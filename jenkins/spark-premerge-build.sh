@@ -159,7 +159,6 @@ ci_2() {
     # Temporarily test non-UTC TZ
     # Only test the impacted 42 files
     # Split multiple parts to test to avoid OOM: refer to: https://github.com/NVIDIA/spark-rapids/issues/9829
-    export TEST_PARALLEL=1
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'aqe_test.py or arithmetic_ops_test.py or array_test.py or ast_test.py or cache_test.py or cast_test.py or cmp_test.py'
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'collection_ops_test.py or conditionals_test.py or csv_test.py or datasourcev2_read_test.py or date_time_test.py or expand_exec_test.py or explain_test.py'
     TZ=Asia/Shanghai ./integration_tests/run_pyspark_from_build.sh -k 'fastparquet_compatibility_test.py or generate_expr_test.py or hash_aggregate_test.py or hashing_test.py or hive_delimited_text_test.py or hive_write_test.py or join_test.py'
