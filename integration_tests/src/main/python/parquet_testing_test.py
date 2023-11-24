@@ -16,7 +16,7 @@
 # https://github.com/apache/parquet-testing
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
-from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run
+from conftest import get_std_input_path, is_parquet_testing_tests_forced, is_precommit_run, is_not_utc
 from data_gen import copy_and_update
 from pathlib import Path
 import pytest
