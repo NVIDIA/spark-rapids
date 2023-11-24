@@ -150,17 +150,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
-
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v3
         with:
           distribution: adopt
           java-version: 8
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
       - name: check runtime before tests
         run: |
@@ -203,6 +203,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 8
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
@@ -258,6 +264,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: ${{ matrix.java-version }}
+
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
@@ -300,6 +312,12 @@ jobs:
         maven-version: [3.6.3, 3.8.8, 3.9.3]
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 11
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
