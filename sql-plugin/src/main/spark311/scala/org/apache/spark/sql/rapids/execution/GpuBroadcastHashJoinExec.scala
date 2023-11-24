@@ -49,7 +49,6 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => left
@@ -71,9 +70,9 @@ class GpuBroadcastHashJoinMeta(
         if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
 
       val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
-        (leftExpr.map(_.toAttribute) ++ left.output, leftExpr ++ left.output)
+        (left.output.toList, leftExpr ++ left.output)
       } else {
-        (rightExpr.map(_.toAttribute) ++ right.output, rightExpr ++ right.output)
+        (right.output.toList, rightExpr ++ right.output)
       }
 
       val joinExec = GpuBroadcastHashJoinExec(

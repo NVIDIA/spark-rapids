@@ -433,13 +433,27 @@ db_113_cpu_bhj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later()
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen()], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-def test_broadcast_hash_join_on_condition_ast_not_fully_supported_without_join_fallback(data_gen, join_type):
+def test_broadcast_hash_join_on_non_ast_condition_without_fallback(data_gen, join_type):
     # This is to test BHJ with a condition not fully supported by AST. With extra project nodes wrapped, join can still run on GPU other than fallback.
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         # AST does not support cast or logarithm yet
         return left.join(right.hint("broadcast"), ((left.b == right.r_b) & (f.round(left.a).cast('integer') > f.round(f.log(right.r_a).cast('integer')))), join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = {"spark.rapids.sql.castFloatToIntegralTypes.enabled": True})
+
+
+@allow_non_gpu('BroadcastHashJoinExec', 'BroadcastExchangeExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen()], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_hash_join_on_non_ast_condition_fallback(data_gen, join_type):
+    # This is to test BHJ with a condition not fully supported by AST. Since AST doesn't support double, this query fallback to CPU.
+    # Inner join is not included since it can be supported by GPU via a post filter.
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        # AST does not support cast or logarithm yet
+        return left.join(right.hint("broadcast"), ((left.b == right.r_b) & (left.a.cast('double') > right.r_a.cast('double'))), join_type)
+    assert_gpu_fallback_collect(do_join, 'BroadcastHashJoinExec')
 
 
 @ignore_order(local=True)

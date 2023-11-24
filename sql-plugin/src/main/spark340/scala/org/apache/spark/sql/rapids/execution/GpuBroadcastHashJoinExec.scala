@@ -63,9 +63,9 @@ class GpuBroadcastHashJoinMeta(
       }
 
       val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
-        (leftExpr.map(_.toAttribute) ++ left.output, leftExpr ++ left.output)
+        (left.output.toList, leftExpr ++ left.output)
       } else {
-        (rightExpr.map(_.toAttribute) ++ right.output, rightExpr ++ right.output)
+        (right.output.toList, rightExpr ++ right.output)
       }
 
       val joinExec = GpuBroadcastHashJoinExec(

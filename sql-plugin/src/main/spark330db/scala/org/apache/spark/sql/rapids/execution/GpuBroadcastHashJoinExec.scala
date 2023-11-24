@@ -46,7 +46,6 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => left
@@ -62,28 +61,22 @@ class GpuBroadcastHashJoinMeta(
             .output, right.output, true)
 
       // Reconstruct the child with wrapped project node if needed.
-//      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
-//        GpuProjectExec(leftExpr ++ left.output, left)(true)
-//      } else {
-//        left
-//      }
-//      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
-//        GpuProjectExec(rightExpr ++ right.output, right)(true)
-//      } else {
-//        right
-//      }
-
-      val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
-      val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
-
-      val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
-        (leftExpr.map(_.toAttribute) ++ left.output, leftExpr ++ left.output)
+      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
+        GpuProjectExec(leftExpr ++ left.output, left)(true)
       } else {
-        (rightExpr.map(_.toAttribute) ++ right.output, rightExpr ++ right.output)
+        left
+      }
+      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
+        GpuProjectExec(rightExpr ++ right.output, right)(true)
+      } else {
+        right
       }
 
+      val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
+        (left.output.toList, leftExpr ++ left.output)
+      } else {
+        (right.output.toList, rightExpr ++ right.output)
+      }
 
       val joinExec = GpuBroadcastHashJoinExec(
         leftKeys.map(_.convertToGpu()),
