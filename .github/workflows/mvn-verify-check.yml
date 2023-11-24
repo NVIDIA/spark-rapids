@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        java: [ '8', '11', '17' ]
+        java: [ '8']
     # steps:
     #   - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -66,6 +66,12 @@ jobs:
             fi
           }
           done
+      
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
   get-shim-versions-from-dist:
     needs: cache-dependencies
@@ -143,6 +149,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v3
