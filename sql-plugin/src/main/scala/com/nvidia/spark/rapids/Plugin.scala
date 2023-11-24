@@ -118,11 +118,13 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filterNot {
       url => url.toString.contains("test")
     }
+    val revisionRegex = "revision=(.*)".r
     val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
       val versionInfo = scala.io.Source.fromURL(url).getLines().toSeq
-      lazy val revision = versionInfo
-        .filter(_.startsWith("revision="))
-        .map(_.split("=").last)
+      val revision = versionInfo
+        .collect { 
+          case revisionRegex(revision) => revision 
+        }
         .headOption
         .getOrElse("UNKNOWN")
       (revision, url)
