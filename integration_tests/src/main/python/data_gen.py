@@ -676,7 +676,27 @@ class MapGen(DataGen):
         def make_dict():
             length = rand.randint(self._min_length, self._max_length)
             return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
-        self._start(rand, make_dict)
+        def make_dict_float():
+            # Make sure at most one key is nan
+            length = rand.randint(self._min_length, self._max_length)
+            count = 0
+            has_nan = False
+            result = {}
+            while count < length:
+                key = self._key_gen.gen()
+                if math.isnan(key):
+                    if has_nan:
+                        continue
+                    else:
+                        has_nan = True
+                result[key] = self._value_gen.gen()
+                count += 1
+            return result
+
+        if self._key_gen.data_type == FloatType() or self._key_gen.data_type == DoubleType():
+            self._start(rand, make_dict_float)
+        else:
+            self._start(rand, make_dict)
 
     def contains_ts(self):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()

@@ -69,7 +69,6 @@ def test_if_else_map(data_gen):
                 'IF(TRUE, b, c)',
                 'IF(a, b, c)'))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9685')
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
 def test_case_when(data_gen):
@@ -132,7 +131,6 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9684')
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + map_gens_sample, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
