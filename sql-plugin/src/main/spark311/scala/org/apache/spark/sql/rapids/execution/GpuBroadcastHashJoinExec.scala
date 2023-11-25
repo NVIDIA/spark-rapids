@@ -64,10 +64,16 @@ class GpuBroadcastHashJoinMeta(
             .output, right.output, true)
 
       // Reconstruct the child with wrapped project node if needed.
-      val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
-      val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
+        GpuProjectExec(leftExpr ++ left.output, left)(true)
+      } else {
+        left
+      }
+      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
+        GpuProjectExec(rightExpr ++ right.output, right)(true)
+      } else {
+        right
+      }
 
       val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
         (left.output.toList, leftExpr ++ left.output)
