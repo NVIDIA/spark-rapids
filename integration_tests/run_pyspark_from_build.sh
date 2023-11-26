@@ -349,6 +349,8 @@ EOF
         echo "SUCCESS spark-shell smoke test"
     elif ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
+        # will set -Xmx=2g
+        export PYSP_TEST_spark_driver_memory=2g
         exec python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1

@@ -154,12 +154,9 @@ ci_2() {
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
-    ./integration_tests/run_pyspark_from_build.sh
 
-    # Test a portion of cases for non-UTC time zone because of limited GPU resources.
-    # Here testing: parquet scan, orc scan, csv scan, cast, TimeZoneAwareExpression, FromUTCTimestamp
-    # Nightly CIs will cover all the cases.
-    TZ=Iran TEST='test_parquet_read_round_trip or test_read_round_trip or test_basic_csv_read or test_cast_string_ts_valid_format or test_unix_timestamp or test_from_utc_timestamp' ./integration_tests/run_pyspark_from_build.sh
+    # Test non-UTC time zone.
+    TZ=Iran ./integration_tests/run_pyspark_from_build.sh
 
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
