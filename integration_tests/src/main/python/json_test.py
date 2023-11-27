@@ -15,14 +15,13 @@
 import pyspark.sql.functions as f
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, \
-    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import *
 from data_gen import *
+from conftest import is_not_utc
 from datetime import timezone
 from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_340, \
-    is_before_spark_341
+from spark_session import *
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -185,6 +184,7 @@ json_supported_ts_parts = ['', # Just the date
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -208,6 +208,7 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
     json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'json', 'FileSourceScanExec')
 
@@ -216,6 +217,7 @@ def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part,
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_ts_formats_round_trip_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
     json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
 
@@ -395,6 +397,7 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
     'CORRECTED',
     'EXCEPTION'
 ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, \
         spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
@@ -452,6 +455,7 @@ def test_json_read_count(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.schema(schema).json(data_path),
             conf=updated_conf)
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_map():
     # The test here is working around some inconsistencies in how the keys are parsed for maps
     # on the GPU the keys are dense, but on the CPU they are sparse
@@ -486,6 +490,7 @@ def test_from_json_map_fallback():
     'struct<c:int,a:string>',
     'struct<a:string,a:string>',
     ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct(schema):
     # note that column 'a' does not use leading zeroes due to https://github.com/NVIDIA/spark-rapids/issues/9588
     json_string_gen = StringGen(r'{"a": [1-9]{0,5}, "b": "[A-Z]{0,5}", "c": 1\d\d\d}') \
@@ -505,6 +510,7 @@ def test_from_json_struct(schema):
     r'{ "bool": [0-9]{4}-[0-9]{2}-[0-9]{2} }',
     r'{ "bool": "[0-9]{4}-[0-9]{2}-[0-9]{2}" }'
 ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_boolean(pattern):
     json_string_gen = StringGen(pattern) \
         .with_special_case('', weight=50) \
@@ -514,6 +520,7 @@ def test_from_json_struct_boolean(pattern):
             .select(f.col('a'), f.from_json('a', 'struct<bool:boolean>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_decimal():
     json_string_gen = StringGen(r'{ "a": "[+-]?([0-9]{0,5})?(\.[0-9]{0,2})?([eE][+-]?[0-9]{1,2})?" }') \
         .with_special_pattern('', weight=50) \
@@ -523,9 +530,172 @@ def test_from_json_struct_decimal():
             .select(f.from_json('a', 'struct<a:decimal>')),
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
+@pytest.mark.parametrize('date_gen', [
+    # "yyyy-MM-dd"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    # "yyyy-MM"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    # "yyyy"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[0-9]{4}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    # "dd/MM/yyyy"
+    "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
+    # special constant values
+    "\"(now|today|tomorrow|epoch)\"",
+    # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
+    pytest.param("\"[0-9]{5}\"", marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
+    # integral
+    "[0-9]{1,5}",
+    # floating-point
+    "[0-9]{0,2}\\.[0-9]{1,2}"
+    # boolean
+    "(true|false)"
+])
+@pytest.mark.parametrize('date_format', [
+    "",
+    "yyyy-MM-dd",
+    # https://github.com/NVIDIA/spark-rapids/issues/9667
+    pytest.param("dd/MM/yyyy", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    "CORRECTED"
+])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
+    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': time_parser_policy})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
+@pytest.mark.parametrize('date_format', [
+    "",
+    "yyyy-MM-dd",
+])
+def test_from_json_struct_date_fallback_legacy(date_gen, date_format):
+    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
+        'ProjectExec',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('date_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}\""])
+@pytest.mark.parametrize('date_format', [
+    "dd/MM/yyyy",
+    "yyyy/MM/dd",
+])
+def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format):
+    json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'dateFormat': date_format } if len(date_format) > 0 else { }
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:date>', options)),
+        'ProjectExec',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+
+@pytest.mark.parametrize('timestamp_gen', [
+    # "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]}?\"",
+    # "yyyy-MM-dd"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    # "yyyy-MM"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    # "yyyy"
+    "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[0-9]{4}[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?\"",
+    # "dd/MM/yyyy"
+    "\"[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}\"",
+    # special constant values
+    pytest.param("\"(now|today|tomorrow|epoch)\"", marks=pytest.mark.xfail(condition=is_before_spark_320(), reason="https://github.com/NVIDIA/spark-rapids/issues/9724")),
+    # "nnnnn" (number of days since epoch prior to Spark 3.4, throws exception from 3.4)
+    pytest.param("\"[0-9]{5}\"", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9664")),
+    # integral
+    pytest.param("[0-9]{1,5}", marks=pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9588")),
+    "[1-9]{1,8}",
+    # floating-point
+    "[0-9]{0,2}\.[0-9]{1,2}"
+    # boolean
+    "(true|false)"
+])
+@pytest.mark.parametrize('timestamp_format', [
+    "",
+    "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]",
+    # https://github.com/NVIDIA/spark-rapids/issues/9723
+    pytest.param("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    pytest.param("dd/MM/yyyy'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+])
+@pytest.mark.parametrize('time_parser_policy', [
+    pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
+    "CORRECTED"
+])
+@pytest.mark.parametrize('ansi_enabled', [ True, False ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
+    json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': time_parser_policy,
+              'spark.sql.ansi.enabled': ansi_enabled })
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('timestamp_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?\""])
+@pytest.mark.parametrize('timestamp_format', [
+    "",
+    "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]",
+])
+def test_from_json_struct_timestamp_fallback_legacy(timestamp_gen, timestamp_format):
+    json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
+        'ProjectExec',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': 'LEGACY'})
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('timestamp_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?\""])
+@pytest.mark.parametrize('timestamp_format', [
+    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+    "dd/MM/yyyy'T'HH:mm:ss[.SSS][XXX]",
+])
+def test_from_json_struct_timestamp_fallback_non_default_format(timestamp_gen, timestamp_format):
+    json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
+        .with_special_case('{ "a": null }') \
+        .with_special_case('null')
+    options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
+        'ProjectExec',
+        conf={"spark.rapids.sql.expression.JsonToStructs": True,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
+
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:struct<name:string,age:int>>',
                                     'struct<teacher:string,student:struct<name:string,age:int>>'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_of_struct(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": {"name": "[A-Z]{1}[a-z]{2,5}", "age": 1\d}}') \
@@ -540,6 +710,7 @@ def test_from_json_struct_of_struct(schema):
 @pytest.mark.parametrize('schema', ['struct<teacher:string>',
                                     'struct<student:array<struct<name:string,class:string>>>',
                                     'struct<teacher:string,student:array<struct<name:string,class:string>>>'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_of_list(schema):
     json_string_gen = StringGen(r'{"teacher": "[A-Z]{1}[a-z]{2,5}",' \
                                 r'"student": \[{"name": "[A-Z]{1}[a-z]{2,5}", "class": "junior"},' \
@@ -552,6 +723,7 @@ def test_from_json_struct_of_list(schema):
         conf={"spark.rapids.sql.expression.JsonToStructs": True})
 
 @pytest.mark.parametrize('schema', ['struct<a:string>', 'struct<a:string,b:int>'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_all_empty_string_input(schema):
     json_string_gen = StringGen('')
     assert_gpu_and_cpu_are_equal_collect(
@@ -628,6 +800,7 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
     False
 ])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty):
     struct_gen = StructGen([
         ('a', data_gen),

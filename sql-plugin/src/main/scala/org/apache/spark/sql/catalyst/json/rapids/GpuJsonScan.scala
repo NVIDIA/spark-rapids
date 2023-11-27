@@ -25,7 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, LegacyBehaviorPolicyShim, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -40,7 +40,8 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -103,11 +104,36 @@ object GpuJsonScan {
   }
 
   def tagJsonToStructsSupport(options:Map[String, String],
-                              meta: RapidsMeta[_, _, _]): Unit = {
+      dt: DataType,
+      meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions = new JSONOptionsInRead(
       options,
       SQLConf.get.sessionLocalTimeZone,
       SQLConf.get.columnNameOfCorruptRecord)
+
+    val hasDates = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[DateType])
+    if (hasDates) {
+      GpuJsonUtils.optionalDateFormatInRead(parsedOptions) match {
+        case None | Some("yyyy-MM-dd") =>
+          // this is fine
+        case dateFormat =>
+          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported dateFormat $dateFormat")
+      }
+    }
+
+    val hasTimestamps = TrampolineUtil.dataTypeExistsRecursively(dt, _.isInstanceOf[TimestampType])
+    if (hasTimestamps) {
+      GpuJsonUtils.optionalTimestampFormatInRead(parsedOptions) match {
+        case None | Some("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]") =>
+          // this is fine
+        case timestampFormat =>
+          meta.willNotWorkOnGpu(s"GpuJsonToStructs unsupported timestampFormat $timestampFormat")
+      }
+    }
+
+    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
+      meta.willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
+    }
 
     tagSupportOptions(parsedOptions, meta)
   }
