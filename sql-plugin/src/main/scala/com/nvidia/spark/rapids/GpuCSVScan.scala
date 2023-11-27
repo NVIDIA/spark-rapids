@@ -168,7 +168,8 @@ object GpuCSVScan {
         GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
     }
 
-    if (types.contains(TimestampType)) {
+    // Date type needs to be checked even it has no time zone info as its fields.
+    if (types.contains(TimestampType) || types.contains(DateType)) {
       meta.checkTimeZoneId(parsedOptions.zoneId)
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)

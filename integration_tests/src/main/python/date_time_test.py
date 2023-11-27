@@ -64,6 +64,7 @@ def test_interval_seconds_overflow_exception():
         error_message="IllegalArgumentException")
 
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_timeadd_from_subquery(data_gen):
 
     def fun(spark):

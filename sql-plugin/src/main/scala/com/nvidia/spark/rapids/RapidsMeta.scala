@@ -37,7 +37,7 @@ import org.apache.spark.sql.execution.python.AggregateInPandasExec
 import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMetaBase, GpuBroadcastNestedLoopJoinMetaBase}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StringType, StructType}
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -1085,22 +1085,22 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   // There are 4 levels of timezone check in GPU plan tag phase:
   //    Level 1: Check whether an expression is related to timezone. This is achieved by
-  //        [[needTimezoneCheck]] below.
+  //        [[needTimeZoneCheck]] below.
   //    Level 2: Check on golden configuration 'spark.rapids.sql.nonUtc.enabled'. If
   //        yes, we pass to next level timezone check. If not, we only pass UTC case as before.
   //    Level 3: Check related expression has been implemented with timezone. There is a
-  //        toggle flag [[isTimezoneSupported]] for this. If false, fallback to UTC-only check as
+  //        toggle flag [[isTimeZoneSupported]] for this. If false, fallback to UTC-only check as
   //        before. If yes, move to next level check. When we add timezone support for a related
-  //        function. [[isTimezoneSupported]] should be override as true.
+  //        function. [[isTimeZoneSupported]] should be override as true.
   //    Level 4: Check whether the desired timezone is supported by Gpu kernel.
   def checkExprForTimezone(): Unit = {
     // Level 1 check
-    if (!needTimezoneCheck) return
+    if (!needTimeZoneCheck) return
 
     // TODO: Level 2 check
 
     // Level 3 check
-    if (!isTimezoneSupported) return checkUTCTimezone(this)
+    if (!isTimeZoneSupported) return checkUTCTimezone(this)
 
     // Level 4 check
     if (TimeZoneDB.isSupportedTimezone(getZoneId())) {
@@ -1122,31 +1122,51 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   // Level 1 timezone checking flag
-  // Both [[isTimezoneSupported]] and [[needTimezoneCheck]] are needed to check whether timezone
+  // Both [[isTimeZoneSupported]] and [[needTimeZoneCheck]] are needed to check whether timezone
   // check needed. For cast expression, only some cases are needed pending on its data type and
   // its child's data type.
   //
   //+------------------------+-------------------+-----------------------------------------+
-  //|         Value          | needTimezoneCheck |           isTimezoneSupported           |
+  //|         Value          | needTimeZoneCheck |           isTimeZoneSupported           |
   //+------------------------+-------------------+-----------------------------------------+
   //| TimezoneAwareExpression| True              | False by default, True when implemented |
   //| UTCTimestamp           | True              | False by default, True when implemented |
   //| Others                 | False             | N/A (will not be checked)               |
   //+------------------------+-------------------+-----------------------------------------+
-  lazy val needTimezoneCheck: Boolean = {
+  lazy val needTimeZoneCheck: Boolean = {
     wrapped match {
       case _: TimeZoneAwareExpression =>
         // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
         // It will be treated as literal in Rapids.
-        if (wrapped.isInstanceOf[Cast]) wrapped.asInstanceOf[Cast].needsTimeZone else true
+        if (wrapped.isInstanceOf[Cast]) {
+          val cast = wrapped.asInstanceOf[Cast]
+          needsTimeZone(cast.child.dataType, cast.dataType)
+        } else {
+          true
+        }
       case _: UTCTimestamp => true
       case _ => false
     }
   }
 
+  // This is to workaround Spark's issue where `needsTimezone``` doesn't consider complex types to
+  // string which is timezone related. (incl. struct/map/list to string).
+  // This is used for complex types to string.
+  private[this] def needsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
+    case (ArrayType(fromType, _), StringType) => needsTimeZone(fromType, to)
+    case (MapType(fromKey, fromValue, _), StringType) =>
+      needsTimeZone(fromKey, to) || needsTimeZone(fromValue, to)
+    case (StructType(fromFields), StringType) =>
+      fromFields.exists {
+        case fromField =>
+          needsTimeZone(fromField.dataType, to)
+      }
+    case _ => Cast.needsTimeZone(from, to)
+  }
+
   // Level 3 timezone checking flag, need to override to true when supports timezone in functions
-  // Useless if it's not timezone related expression defined in [[needTimezoneCheck]]
-  val isTimezoneSupported: Boolean = false
+  // Useless if it's not timezone related expression defined in [[needTimeZoneCheck]]
+  val isTimeZoneSupported: Boolean = false
 
   /**
    * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
