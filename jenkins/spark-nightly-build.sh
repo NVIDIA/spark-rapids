@@ -102,7 +102,7 @@ function distWithReducedPom {
 
 # option to skip unit tests. Used in our CI to separate test runs in parallel stages
 SKIP_TESTS=${SKIP_TESTS:-"false"}
-DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-'sql-plugin-api,aggregator,integration-tests'}
+DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"!${DIST_PL}"} # TODO: deploy only required submodules to save time
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
