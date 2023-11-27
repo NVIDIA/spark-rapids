@@ -988,7 +988,6 @@ def test_columnar_pow(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_least(data_gen):
     num_cols = 20
     s1 = with_cpu_session(
@@ -1005,7 +1004,6 @@ def test_least(data_gen):
                 f.least(*command_args)))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + _arith_decimal_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_greatest(data_gen):
     num_cols = 20
     s1 = with_cpu_session(

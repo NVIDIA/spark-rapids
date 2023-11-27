@@ -90,7 +90,6 @@ def test_union_struct_missing_children(data_gen):
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
@@ -101,7 +100,6 @@ def test_union(data_gen):
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_unionAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)))
@@ -116,7 +114,6 @@ def test_unionAll(data_gen):
                                       struct_of_maps], ids=idfn)
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_union_by_missing_col_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
@@ -158,7 +155,6 @@ def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))

@@ -81,7 +81,6 @@ def test_map_values(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_map_entries(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -117,7 +116,6 @@ def get_map_value_gens(precision=18, scale=0):
                          [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
                           for value in get_map_value_gens()],
                          ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_get_map_value_string_keys(data_gen):
     index_gen = StringGen()
     assert_gpu_and_cpu_are_equal_collect(
@@ -141,7 +139,6 @@ numeric_key_map_gens = [MapGen(key, value(), max_length=6)
 
 
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_get_map_value_numeric_keys(data_gen):
     key_gen = data_gen._key_gen
     assert_gpu_and_cpu_are_equal_collect(

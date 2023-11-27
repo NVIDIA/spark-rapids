@@ -39,7 +39,6 @@ def test_sample_produce_empty_batch(data_gen):
 # the following cases is the normal cases and do not use @ignore_order
 nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sample(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices = 10)
@@ -47,7 +46,6 @@ def test_sample(data_gen):
     )
 
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sample_with_replacement(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, num_slices = 10).sample(

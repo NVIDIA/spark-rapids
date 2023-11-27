@@ -142,7 +142,6 @@ def read_parquet(data_path, local_data_path):
         marks=pytest.mark.xfail(is_databricks_runtime(),
                                 reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
 ], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     """
     This test writes data_gen output to Parquet via Apache Spark, then verifies that fastparquet and the RAPIDS
@@ -209,7 +208,6 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
                               end=pandas_min_datetime),
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
 ], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
     """
     This test writes the data-gen output to file via the RAPIDS plugin, then checks that the data is read identically
@@ -392,7 +390,6 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
         marks=pytest.mark.xfail(reason="fastparquet fails to read nullable Struct columns written from Apache Spark. "
                                        "It fails the rewrite to parquet, thereby failing the test.")),
 ], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_tmp_path):
     """
     This test is a workaround to test data-types that have problems being converted

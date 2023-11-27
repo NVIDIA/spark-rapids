@@ -170,7 +170,6 @@ def test_empty_broadcast_hash_join(join_type):
     (all_gen, '1g'),
     (join_small_batch_gens, '1000')), ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sortmerge_join(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -181,7 +180,6 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sortmerge_join_ridealong(data_gen, join_type):
     def do_join(spark):
         left, right = create_ridealong_df(spark, short_gen, data_gen, 500, 500)

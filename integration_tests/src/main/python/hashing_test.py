@@ -47,13 +47,11 @@ if is_before_spark_320():
 
 @ignore_order(local=True)
 @pytest.mark.parametrize("gen", _xxhash_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_xxhash64_single_column(gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, gen).selectExpr("a", "xxhash64(a)"))
 
 @ignore_order(local=True)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_xxhash64_multi_column():
     gen = StructGen(_struct_of_xxhash_gens.children, nullable=False)
     col_list = ",".join(gen.data_type.fieldNames())
