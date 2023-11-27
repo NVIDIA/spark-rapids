@@ -102,6 +102,7 @@ function distWithReducedPom {
 
 # option to skip unit tests. Used in our CI to separate test runs in parallel stages
 SKIP_TESTS=${SKIP_TESTS:-"false"}
+DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-'sql-plugin-api,aggregator,integration-tests'}
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
@@ -117,10 +118,12 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     fi
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
-        $MVN -B deploy -pl '!dist' $MVN_URM_MIRROR \
+        # this deploys selected submodules
+        $MVN -B deploy -pl $DEPLOY_SUBMODULES $MVN_URM_MIRROR \
             -Dmaven.repo.local=$M2DIR \
             -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
             -DskipTests \
+            -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
             -Dbuildver="${buildver}"
 done
 
@@ -161,10 +164,11 @@ distWithReducedPom "install"
 if [[ $SKIP_DEPLOY != 'true' ]]; then
     distWithReducedPom "deploy"
 
-    # this deploys submodules except dist that is unconditionally built with Spark 3.1.1
-    $MVN -B deploy -pl '!dist' \
+    # this deploys selected submodules that is unconditionally built with Spark 3.1.1
+    $MVN -B deploy -pl $DEPLOY_SUBMODULES \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
-        -DskipTests=$SKIP_TESTS \
+        -DskipTests \
+        -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER
 fi
