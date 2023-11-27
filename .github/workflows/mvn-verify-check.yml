@@ -72,6 +72,11 @@ jobs:
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
+      
+      - name: check deps
+        run: |
+          set -x
+          ls -la ~/.m2/repository
 
   get-shim-versions-from-dist:
     needs: cache-dependencies
@@ -161,6 +166,11 @@ jobs:
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
+
+      - name: check deps
+        run: |
+          set -x
+          ls -la ~/.m2/repository
 
       - name: check runtime before tests
         run: |
