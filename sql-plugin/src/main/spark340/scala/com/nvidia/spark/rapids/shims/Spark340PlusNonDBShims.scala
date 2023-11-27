@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
-trait Spark340PlusShims extends Spark331PlusShims {
+trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     GpuOverrides.exec[GlobalLimitExec](
