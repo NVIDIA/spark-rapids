@@ -35,29 +35,13 @@ jobs:
     strategy:
       matrix:
         java: [ '8']
-    # steps:
-    #   - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
-
-    #   - name: Cache local Maven repository
-    #     uses: actions/cache@v3
-    #     with:
-    #       path: ~/.m2/repository
-    #       key: ${{ runner.os }}-maven-${{ hashFiles('**/**/pom.xml') }}
-    #       restore-keys: |
-    #         ${{ runner.os }}-maven-
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
-          cache: 'maven'
-      
-      - name: check m2 before cache
-        run: |
-          set -x
-          ls -la ~/.m2/repository
-      
+          cache: 'maven'  
       - run: |
           set -x
           max_retry=3; delay=30; i=1
@@ -71,18 +55,12 @@ jobs:
               echo "mvn command failed. Exit 1"; exit 1
             fi
           }
-          done
-      
+          done 
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
-      
-      - name: check deps
-        run: |
-          set -x
-          ls -la ~/.m2/repository
 
   get-shim-versions-from-dist:
     needs: cache-dependencies
@@ -173,11 +151,6 @@ jobs:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('sql-plugin-api/pom.xml') }}
 
-      - name: check deps
-        run: |
-          set -x
-          ls -la ~/.m2/repository
-
       - name: check runtime before tests
         run: |
           env | grep JAVA
@@ -206,11 +179,6 @@ jobs:
             fi
           }
           done
-      
-      - name: check m2 after test
-        run: |
-          set -x
-          ls -la ~/.m2/repository
 
   package-tests-scala213:
     needs: get-shim-versions-from-dist
