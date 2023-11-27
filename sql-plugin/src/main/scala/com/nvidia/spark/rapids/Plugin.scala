@@ -115,8 +115,12 @@ object RapidsPluginUtils extends Logging {
 
   private def detectMultipleJar(propName: String, jarName: String, conf: RapidsConf): Unit = {
     val classloader = ShimLoader.getShimClassLoader()
-    val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filterNot {
-      url => url.toString.contains("test")
+    val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
+      url => {
+        val urlPath = url.toString
+        // filter out submodule jars and files stored under subdirs of '!/'
+        !urlPath.contains("rapids-4-spark-") && urlPath.contains("!/" + propName)
+      }
     }
     val revisionRegex = "revision=(.*)".r
     val revisionMap: Map[String, Seq[URL]] = possibleRapidsJarURLs.map { url =>
@@ -147,11 +151,14 @@ object RapidsPluginUtils extends Logging {
 
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
-        if (revisionMap.size != 1) {
+        if (revisionMap.size != 1 || revisionMap.values.exists(_.size != 1)) {
           logWarning(msg)
         }
       case AllowMultipleJars.SAME_REVISION =>
         require(revisionMap.size == 1, msg)
+        if (revisionMap.values.exists(_.size != 1)) {
+          logWarning(msg)
+        }
       case AllowMultipleJars.NEVER =>
         require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
     }
