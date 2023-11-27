@@ -67,10 +67,10 @@ abstract class GpuBroadcastHashJoinMetaBase(
   def canJoinCondAstAble(): Boolean = {
     if (!taggedForAstCheck) {
       val Seq(leftPlan, rightPlan) = childPlans
-      conditionMeta match {
-        case Some(e) => isAstCond = AstUtil.canExtractNonAstConditionIfNeed(
+      isAstCond = conditionMeta match {
+        case Some(e) => AstUtil.canExtractNonAstConditionIfNeed(
           e, leftPlan.outputAttributes.map(_.exprId), rightPlan.outputAttributes.map(_.exprId))
-        case None => isAstCond = true
+        case None => true
       }
       taggedForAstCheck = true
     }
