@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_not_utc
 from data_gen import *
 from datetime import datetime
 from marks import ignore_order, allow_non_gpu
@@ -29,6 +30,7 @@ _restricted_ts_gen = TimestampGen(start=_restricted_start, end=_restricted_end)
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_grouped_tumbling_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
@@ -40,6 +42,7 @@ def test_grouped_tumbling_window(data_gen):
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_grouped_sliding_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
@@ -47,6 +50,7 @@ def test_grouped_sliding_window(data_gen):
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_grouped_sliding_window_array(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', ArrayGen(data_gen)]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(
@@ -54,6 +58,7 @@ def test_grouped_sliding_window_array(data_gen):
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_tumbling_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
     w = Window.partitionBy(f.window('ts', '5 hour'))
@@ -62,6 +67,7 @@ def test_tumbling_window(data_gen):
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sliding_window(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', data_gen]], nullable=False)
     w = Window.partitionBy(f.window('ts', '5 hour', '1 hour'))
@@ -72,6 +78,7 @@ def test_sliding_window(data_gen):
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + array_gens_sample + map_gens_sample, ids=idfn)
 # This includes an expand and we produce a different order than the CPU does. Sort locally to allow sorting of all types
 @ignore_order(local=True)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_just_window(data_gen):
     row_gen = StructGen([['ts', timestamp_gen],['data', data_gen]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(

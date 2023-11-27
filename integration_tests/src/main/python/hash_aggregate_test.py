@@ -15,11 +15,9 @@
 import math
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,\
-    assert_gpu_and_cpu_are_equal_sql,\
-    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
-    assert_cpu_and_gpu_are_equal_collect_with_capture, run_with_cpu, run_with_cpu_and_gpu
+from asserts import *
 from conftest import is_databricks_runtime
+from conftest import is_not_utc
 from data_gen import *
 from functools import reduce
 from pyspark.sql.types import *
@@ -336,6 +334,7 @@ def test_hash_grpby_sum_count_action(data_gen, override_split_until_size, overri
 @allow_non_gpu("SortAggregateExec", "SortExec", "ShuffleExchangeExec")
 @ignore_order
 @pytest.mark.parametrize('data_gen', _grpkey_nested_structs_with_array_basic_child + _grpkey_list_with_non_nested_children, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_grpby_list_min_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).coalesce(1).groupby('a').agg(f.min('b'), f.max('b'))
@@ -381,6 +380,7 @@ def test_hash_grpby_sum_full_decimal(data_gen, conf):
         conf = conf)
 
 @approximate_float
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/9822")
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [DecimalGen(precision=36, scale=5)], ids=idfn)
@@ -617,6 +617,7 @@ def test_decimal128_min_max_group_by(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _all_basic_gens_with_all_nans_cases, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_min_max_group_by(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, byte_gen, data_gen)
@@ -632,6 +633,7 @@ def test_min_max_group_by(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     def doit(spark):
         df = gen_df(spark, data_gen, length=100)\
@@ -663,6 +665,7 @@ def test_hash_groupby_collect_list_of_maps(use_obj_hash_agg):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_set(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -671,6 +674,7 @@ def test_hash_groupby_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -685,6 +689,7 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 @ignore_order(local=True)
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
@@ -706,6 +711,7 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_reduction_collect_set(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -713,6 +719,7 @@ def test_hash_reduction_collect_set(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_reduction_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -726,6 +733,7 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 @ignore_order(local=True)
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
@@ -745,6 +753,7 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_with_single_distinct(data_gen):
     # test collect_ops with other distinct aggregations
     assert_gpu_and_cpu_are_equal_collect(
@@ -757,6 +766,7 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_single_distinct_collect(data_gen):
     # test distinct collect
     sql = """select a,
@@ -780,6 +790,7 @@ def test_hash_groupby_single_distinct_collect(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_with_multi_distinct(data_gen):
     def spark_fn(spark_session):
         return gen_df(spark_session, data_gen, length=100).groupby('a').agg(
@@ -806,6 +817,7 @@ _replace_modes_non_distinct = [
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_partial_replace_fallback(data_gen,
                                                        replace_mode,
                                                        aqe_enabled,
@@ -853,6 +865,7 @@ _replace_modes_single_distinct = [
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 @pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
                                                                      aqe_enabled,
@@ -1251,6 +1264,7 @@ def test_first_last_reductions_decimal_types(data_gen):
             'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'))
 
 @pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_first_last_reductions_nested_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # Coalesce and sort are to make sure that first and last, which are non-deterministic
@@ -1259,6 +1273,7 @@ def test_first_last_reductions_nested_types(data_gen):
             'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'))
 
 @pytest.mark.parametrize('data_gen', _all_basic_gens_with_all_nans_cases, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_generic_reductions(data_gen):
     local_conf = copy_and_update(_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -1276,6 +1291,7 @@ def test_generic_reductions(data_gen):
         conf=local_conf)
 
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_count(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
@@ -1287,6 +1303,7 @@ def test_count(data_gen):
         conf = {'spark.sql.legacy.allowParameterlessCount': 'true'})
 
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_distinct_count_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
@@ -1310,6 +1327,7 @@ def test_arithmetic_reductions(data_gen):
 @pytest.mark.parametrize('data_gen',
                          all_basic_gens + decimal_gens + _nested_gens,
                          ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_collect_list_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # coalescing because collect_list is not deterministic
@@ -1328,6 +1346,7 @@ _struct_only_nested_gens = [all_basic_struct_gen,
 @pytest.mark.parametrize('data_gen',
                          _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,
                          ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_collect_set_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('sort_array(collect_set(a))'),
@@ -1341,6 +1360,7 @@ def test_collect_empty():
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_groupby_first_last(data_gen):
     gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
@@ -1354,6 +1374,7 @@ def test_groupby_first_last(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen + _struct_only_nested_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sorted_groupby_first_last(data_gen):
     gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
     # sort by more than the group by columns to be sure that first/last don't remove the ordering
@@ -1371,6 +1392,7 @@ def test_sorted_groupby_first_last(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_agg_count(data_gen, count_func):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
@@ -2027,6 +2049,7 @@ gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
     null_gen] + array_gens_sample + struct_gens_sample
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen',  gens_for_max_min, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_min_max_in_groupby_and_reduction(data_gen):
     df_gen = [('a', data_gen), ('b', RepeatSeqGen(IntegerGen(), length=20))]
 

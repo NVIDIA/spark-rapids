@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from spark_session import is_before_spark_320, is_before_spark_330
+from conftest import is_not_utc
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -89,6 +90,7 @@ def test_union_struct_missing_children(data_gen):
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
@@ -99,6 +101,7 @@ def test_union(data_gen):
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_unionAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)))
@@ -113,6 +116,7 @@ def test_unionAll(data_gen):
                                       struct_of_maps], ids=idfn)
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_union_by_missing_col_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
@@ -154,6 +158,7 @@ def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
@@ -165,12 +170,14 @@ def test_union_by_name(data_gen):
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample + [ArrayGen(BinaryGen(max_length=5), max_length=5)])]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_coalesce_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).coalesce(2))
 
 @pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + [binary_gen])]
@@ -186,6 +193,7 @@ def test_coalesce_df(num_parts, length):
 @pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_repartition_df(data_gen, num_parts, length):
     from pyspark.sql.functions import lit
     assert_gpu_and_cpu_are_equal_collect(
@@ -202,6 +210,7 @@ def test_repartition_df(data_gen, num_parts, length):
 @pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_repartition_df_for_round_robin(data_gen, num_parts, length):
     from pyspark.sql.functions import lit
     assert_gpu_and_cpu_are_equal_collect(
@@ -275,6 +284,7 @@ def test_hash_fallback(data_gen):
     ([('a', decimal_gen_64bit), ('b', decimal_gen_64bit), ('c', decimal_gen_64bit)], ['a', 'b', 'c']),
     ([('a', decimal_gen_128bit), ('b', decimal_gen_128bit), ('c', decimal_gen_128bit)], ['a', 'b', 'c']),
     ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
     part_on = gen[1]
