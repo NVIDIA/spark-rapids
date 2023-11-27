@@ -14,11 +14,13 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_are_equal_sql
+from conftest import is_not_utc
 from data_gen import *
 from marks import *
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_scalar_subquery_basics(data_gen):
     # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
     assert_gpu_and_cpu_are_equal_sql(
@@ -31,6 +33,7 @@ def test_scalar_subquery_basics(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_scalar_subquery_struct(basic_gen):
     # single-level struct
     gen = [('ss', StructGen([['a', basic_gen], ['b', basic_gen]]))]
@@ -65,6 +68,7 @@ def test_scalar_subquery_struct(basic_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_scalar_subquery_array(basic_gen):
     # single-level array
     assert_gpu_and_cpu_are_equal_sql(

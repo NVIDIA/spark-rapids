@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from conftest import is_not_utc
 from data_gen import *
 from pyspark.sql.types import *
 from string_test import mk_str_gen
@@ -34,6 +35,7 @@ non_nested_array_gens = [ArrayGen(sub_gen, nullable=nullable)
                          for sub_gen in all_gen + [null_gen]]
 
 @pytest.mark.parametrize('data_gen', non_nested_array_gens + nested_array_gens_sample, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_concat_list(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, data_gen, data_gen, data_gen).selectExpr(
@@ -44,6 +46,7 @@ def test_concat_list(data_gen):
         )
 
 @pytest.mark.parametrize('dg', non_nested_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_concat_double_list_with_lit(dg):
     data_gen = ArrayGen(dg, max_length=2)
     array_lit = with_cpu_session(lambda spark: gen_scalar(data_gen))
@@ -67,6 +70,7 @@ def test_concat_double_list_with_lit(dg):
 
 
 @pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_concat_list_with_lit(data_gen):
     lit_col1 = with_cpu_session(lambda spark: f.lit(gen_scalar(data_gen))).cast(data_gen.data_type)
     lit_col2 = with_cpu_session(lambda spark: f.lit(gen_scalar(data_gen))).cast(data_gen.data_type)
@@ -95,6 +99,7 @@ def test_concat_string():
                 f.concat(f.col('a'), f.lit(''))))
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_map_concat(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, data_gen, data_gen, data_gen
@@ -106,6 +111,7 @@ def test_map_concat(data_gen):
     )
 
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_map_concat_with_lit(data_gen):
     lit_col1 = with_cpu_session(lambda spark: f.lit(gen_scalar(data_gen))).cast(data_gen.data_type)
     lit_col2 = with_cpu_session(lambda spark: f.lit(gen_scalar(data_gen))).cast(data_gen.data_type)
@@ -119,6 +125,7 @@ def test_map_concat_with_lit(data_gen):
 
 @pytest.mark.parametrize('data_gen', all_gen + nested_gens, ids=idfn)
 @pytest.mark.parametrize('size_of_null', ['true', 'false'], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_size_of_array(data_gen, size_of_null):
     gen = ArrayGen(data_gen)
     assert_gpu_and_cpu_are_equal_collect(
@@ -127,12 +134,14 @@ def test_size_of_array(data_gen, size_of_null):
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @pytest.mark.parametrize('size_of_null', ['true', 'false'], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_size_of_map(data_gen, size_of_null):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('size(a)'),
             conf={'spark.sql.legacy.sizeOfNull': size_of_null})
 
 @pytest.mark.parametrize('data_gen', array_gens_sample + [string_gen], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reverse(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('reverse(a)'))
@@ -143,6 +152,7 @@ _sort_array_gens = non_nested_array_gens + [
         ]
 
 @pytest.mark.parametrize('data_gen', _sort_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sort_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).select(
@@ -150,6 +160,7 @@ def test_sort_array(data_gen):
             f.sort_array(f.col('a'), False)))
 
 @pytest.mark.parametrize('data_gen', _sort_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sort_array_lit(data_gen):
     array_lit = with_cpu_session(lambda spark: gen_scalar(data_gen))
     assert_gpu_and_cpu_are_equal_collect(
@@ -250,6 +261,7 @@ sequence_normal_no_step_integral_gens = [(gens[0], gens[1]) for
     gens in sequence_normal_integral_gens]
 
 @pytest.mark.parametrize('start_gen,stop_gen', sequence_normal_no_step_integral_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sequence_without_step(start_gen, stop_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, start_gen, stop_gen).selectExpr(
@@ -258,6 +270,7 @@ def test_sequence_without_step(start_gen, stop_gen):
             "sequence(20, b)"))
 
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_normal_integral_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get the datagen seed we use for all datagens, since we need to call start
     # on step_gen
@@ -304,6 +317,7 @@ sequence_illegal_boundaries_integral_gens = [
 ]
 
 @pytest.mark.parametrize('start_gen,stop_gen,step_gen', sequence_illegal_boundaries_integral_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
     assert_gpu_and_cpu_error(
         lambda spark:three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
@@ -318,6 +332,7 @@ sequence_too_long_length_gens = [
 ]
 
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sequence_too_long_sequence(stop_gen):
     assert_gpu_and_cpu_error(
         # To avoid OOM, reduce the row number to 1, it is enough to verify this case.
@@ -359,6 +374,7 @@ def get_sequence_cases_mixed_df(spark, length=2048):
         mixed_schema)
 
 # test for 3 cases mixed in a single dataset
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sequence_with_step_mixed_cases():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: get_sequence_cases_mixed_df(spark)
