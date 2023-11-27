@@ -386,7 +386,7 @@ object GpuDeviceManager extends Logging {
 
   private def initializeOffHeapLimits(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
     val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-    val pinnedSize = if (conf.offHeapLimitEnabled) {
+    val (pinnedSize, nonPinnedLimit) = if (conf.offHeapLimitEnabled) {
       logWarning("OFF HEAP MEMORY LIMITS IS ENABLED. " +
           "THIS IS EXPERIMENTAL FOR NOW USE WITH CAUTION")
       val perTaskOverhead = conf.perTaskOverhead
@@ -442,14 +442,17 @@ object GpuDeviceManager extends Logging {
           s"${pinnedLimit / 1024 / 1024.0} MiB pinned, " +
           s"${nonPinnedLimit / 1024 / 1024.0} MiB non-pinned, and " +
           s"${totalOverhead / 1024 / 1024.0} MiB of untracked overhead.")
-      HostAlloc.initialize(nonPinnedLimit)
-      pinnedLimit
+      (pinnedLimit, nonPinnedLimit)
     } else {
-      conf.pinnedPoolSize
+      (conf.pinnedPoolSize, -1L)
     }
     if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
       logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
       PinnedMemoryPool.initialize(pinnedSize, gpuId)
+    }
+    if (nonPinnedLimit >= 0) {
+      // Host memory limits must be set after the pinned memory pool is initialized
+      HostAlloc.initialize(nonPinnedLimit)
     }
   }
 
