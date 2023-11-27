@@ -166,11 +166,6 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
-      
-      - name: check m2 before cache
-        run: |
-          set -x
-          ls -la ~/.m2/repository
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
@@ -211,6 +206,11 @@ jobs:
             fi
           }
           done
+      
+      - name: check m2 after test
+        run: |
+          set -x
+          ls -la ~/.m2/repository
 
   package-tests-scala213:
     needs: get-shim-versions-from-dist
