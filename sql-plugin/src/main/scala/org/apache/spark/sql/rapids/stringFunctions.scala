@@ -2353,7 +2353,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val d = rhs.getValue.asInstanceOf[Int]
     x.dataType match {
       case FloatType | DoubleType => {
-        val res = CastStrings.formatFloat(lhs.getBase, d)
+        val res = CastStrings.fromFloatWithFormat(lhs.getBase, d)
         withResource(res) { _ =>
           handleInfAndNan(lhs.getBase, res)
         }
