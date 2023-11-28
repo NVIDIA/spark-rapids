@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
 from conftest import is_not_utc
+from data_gen import *
 from marks import *
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'
@@ -31,7 +32,7 @@ def test_read_int():
     assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass))
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_read_strings():
     assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass))
 

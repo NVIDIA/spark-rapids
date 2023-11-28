@@ -189,11 +189,11 @@ def test_sortmerge_join_ridealong(data_gen, join_type):
 # For floating point values the normalization is done using a higher order function. We could probably work around this
 # for now it falls back to the CPU
 @allow_non_gpu('SortMergeJoinExec', 'SortExec', 'ArrayTransform', 'LambdaFunction',
-        'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
+        'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning',
+        *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -213,7 +213,7 @@ def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 @pytest.mark.parametrize('sub_part_enabled', ['false', 'true'], ids=['SubPartition_OFF', 'SubPartition_ON'])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_hash_join_ridealong(data_gen, join_type, sub_part_enabled):
     def do_join(spark):
         left, right = create_ridealong_df(spark, short_gen, data_gen, 50, 500)
@@ -230,7 +230,7 @@ def test_hash_join_ridealong(data_gen, join_type, sub_part_enabled):
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_right_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -242,7 +242,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_right_table_ridealong(data_gen, join_type):
     def do_join(spark):
         left, right = create_ridealong_df(spark, short_gen, data_gen, 500, 500)
@@ -256,7 +256,7 @@ def test_broadcast_join_right_table_ridealong(data_gen, join_type):
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
     with_cpu_session(lambda spark : spark.sparkContext.setJobGroup("testjob1", "test", False))
     def do_join(spark):
@@ -271,7 +271,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 @pytest.mark.parametrize('data_gen,batch_size', join_batch_size_test_params(
     (all_gen + basic_nested_gens, '1g'),
     (join_small_batch_gens + [basic_struct_gen, ArrayGen(string_gen)], '100')), ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -311,7 +311,7 @@ def test_cartesian_join_special_case_group_by_count(batch_size):
 @pytest.mark.parametrize('data_gen,batch_size', join_batch_size_test_params(
     (all_gen, '1g'),
     (join_small_batch_gens, '100')), ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_cartesian_join_with_condition(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -329,7 +329,7 @@ def test_cartesian_join_with_condition(data_gen, batch_size):
 @pytest.mark.parametrize('data_gen,batch_size', join_batch_size_test_params(
     (all_gen + basic_nested_gens, '1g'),
     (join_small_batch_gens, '100')), ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_nested_loop_join(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -365,7 +365,7 @@ def test_broadcast_nested_loop_join_special_case_group_by_count(batch_size):
     (join_ast_gen, '1g'),
     ([int_gen], 100)), ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -380,7 +380,7 @@ def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_left_broadcast_nested_loop_join_with_ast_condition(data_gen):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -439,7 +439,7 @@ def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type)
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_nested_loop_join_with_array_contains(data_gen, join_type):
     arr_gen = ArrayGen(data_gen)
     literal = with_cpu_session(lambda spark: gen_scalar(data_gen))
@@ -452,7 +452,7 @@ def test_broadcast_nested_loop_join_with_array_contains(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -468,7 +468,7 @@ def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -483,7 +483,7 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
 
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -492,29 +492,27 @@ def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join
 
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_left_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return broadcast(left).join(right, how=join_type).selectExpr('COUNT(*)')
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-@allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'GreaterThanOrEqual')
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'GreaterThanOrEqual', *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['LeftOuter', 'LeftSemi', 'LeftAnti', 'FullOuter'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_broadcast_nested_loop_join_with_conditionals_build_left_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return broadcast(left).join(right, (left.b >= right.r_b), join_type)
     assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec')
 
-@allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'GreaterThanOrEqual')
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'GreaterThanOrEqual', *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['RightOuter', 'FullOuter'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_broadcast_nested_loop_with_conditionals_build_right_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
@@ -531,7 +529,7 @@ def test_broadcast_nested_loop_with_conditionals_build_right_fallback(data_gen, 
 # Specify 200 shuffle partitions to test cases where streaming side is empty
 # as in https://github.com/NVIDIA/spark-rapids/issues/7516
 @pytest.mark.parametrize('shuffle_conf', [{}, {'spark.sql.shuffle.partitions': 200}], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_left_table(data_gen, join_type, shuffle_conf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 250, 500)
@@ -543,7 +541,7 @@ def test_broadcast_join_left_table(data_gen, join_type, shuffle_conf):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_with_conditionals(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -598,7 +596,7 @@ def test_broadcast_join_with_condition_post_filter(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', join_ast_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_sortmerge_join_with_condition_ast(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -715,7 +713,7 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_sortmerge_join_struct_as_key(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -727,7 +725,7 @@ def test_sortmerge_join_struct_as_key(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_sortmerge_join_struct_mixed_key(data_gen, join_type):
     def do_join(spark):
         left = two_col_df(spark, data_gen, int_gen, length=500)
@@ -740,7 +738,7 @@ def test_sortmerge_join_struct_mixed_key(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_sortmerge_join_struct_mixed_key_with_null_filter(data_gen, join_type):
     def do_join(spark):
         left = two_col_df(spark, data_gen, int_gen, length=500)
@@ -755,7 +753,7 @@ def test_sortmerge_join_struct_mixed_key_with_null_filter(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_right_struct_as_key(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
@@ -767,7 +765,7 @@ def test_broadcast_join_right_struct_as_key(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_broadcast_join_right_struct_mixed_key(data_gen, join_type):
     def do_join(spark):
         left = two_col_df(spark, data_gen, int_gen, length=500)
@@ -788,11 +786,11 @@ def test_sortmerge_join_struct_with_floats_key(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
 @allow_non_gpu('SortMergeJoinExec', 'SortExec', 'NormalizeNaNAndZero', 'CreateNamedStruct',
-        'GetStructField', 'Literal', 'If', 'IsNull', 'ShuffleExchangeExec', 'HashPartitioning')
+        'GetStructField', 'Literal', 'If', 'IsNull', 'ShuffleExchangeExec', 'HashPartitioning',
+        *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['FullOuter'], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_sortmerge_join_struct_as_key_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)

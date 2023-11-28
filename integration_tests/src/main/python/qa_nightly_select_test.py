@@ -24,8 +24,8 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from qa_nightly_sql import *
 import pytest
 from spark_session import with_cpu_session, is_jvm_charset_utf8
-from marks import approximate_float, ignore_order, incompat, qarun
-from data_gen import copy_and_update
+from marks import approximate_float, ignore_order, incompat, qarun, allow_non_gpu
+from data_gen import *
 
 def num_stringDf(spark):
     print("### CREATE DATAFRAME 1  ####")
@@ -159,7 +159,7 @@ _first_last_qa_conf = copy_and_update(_qa_conf, {
 @incompat
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_SQL, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -172,7 +172,7 @@ def test_select(sql_query_line, pytestconfig):
 @incompat
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_needs_sort_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:

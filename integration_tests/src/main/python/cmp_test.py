@@ -19,7 +19,7 @@ from conftest import is_not_utc
 from data_gen import *
 from spark_session import with_cpu_session, is_before_spark_330
 from pyspark.sql.types import *
-from marks import datagen_overrides
+from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + struct_gens_sample_with_decimal128_no_list, ids=idfn)
@@ -336,7 +336,7 @@ def test_in(data_gen):
 # This is to test entries over that value.
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9687')
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_in_set(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) + 1

@@ -19,7 +19,7 @@ from conftest import is_not_utc
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
-from marks import datagen_overrides
+from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
 
 def mk_str_gen(pattern):
@@ -233,7 +233,7 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -244,7 +244,7 @@ def test_conditional_with_side_effects_sequence(data_gen):
 
 @pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(

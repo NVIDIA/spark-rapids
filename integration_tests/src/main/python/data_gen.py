@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed
+from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
 import time
 import os
 from functools import lru_cache
@@ -1172,3 +1172,7 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
+
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_allow=['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec', 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec', 'ObjectHashAggregateExec'] if is_not_utc() else []

@@ -194,9 +194,8 @@ db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later(
 # broadcast join. The bug currently manifests in Databricks, but could
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow)
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow, *non_utc_allow)
 @pytest.mark.parametrize('join', joins, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     def prep(spark):

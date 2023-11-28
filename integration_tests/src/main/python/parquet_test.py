@@ -164,7 +164,7 @@ def test_parquet_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabl
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -299,7 +299,7 @@ parquet_pred_push_gens = [
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_pred_push_round_trip(spark_tmp_path, parquet_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('a', RepeatSeqGen(parquet_gen, 100)), ('b', parquet_gen)]
@@ -559,7 +559,7 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -875,7 +875,7 @@ def test_parquet_reading_from_unaligned_pages_basic_filters(spark_tmp_path, read
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
@@ -903,7 +903,7 @@ def test_parquet_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_c
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
+@allow_non_gpu(*non_utc_allow)
 def test_parquet_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
