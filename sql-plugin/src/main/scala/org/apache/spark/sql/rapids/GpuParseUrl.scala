@@ -37,6 +37,15 @@ object GpuParseUrl {
   val FILE = "FILE"
   val AUTHORITY = "AUTHORITY"
   val USERINFO = "USERINFO"
+
+  def isSupportedPart(part: String): Boolean = {
+    part match {
+      case PROTOCOL | HOST =>
+        true
+      case _ =>
+        false
+    }
+  }
 }
 
 case class GpuParseUrl(children: Seq[Expression]) 
@@ -57,7 +66,8 @@ case class GpuParseUrl(children: Seq[Expression])
       case HOST =>
         ParseURI.parseURIHost(url.getBase)
       case PATH | QUERY | REF | FILE | AUTHORITY | USERINFO =>
-        throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part")
+        throw new UnsupportedOperationException(s"$this is not supported partToExtract=$part. " +
+            s"Only PROTOCOL and HOST are supported")
       case _ =>
         throw new IllegalArgumentException(s"Invalid partToExtract: $partToExtract")
     }
