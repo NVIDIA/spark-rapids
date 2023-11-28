@@ -2044,6 +2044,13 @@ object RapidsConf {
         "The gpu to disk spill bounce buffer must have a positive size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val NON_UTC_TIME_ZONE_ENABLED = 
+    conf("spark.rapids.sql.nonUTC.enabled")
+      .doc("An option to enable/disable non-UTC time zone support.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
       .internal()
@@ -2052,12 +2059,6 @@ object RapidsConf {
 
   val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
     .doc("Only for tests: verify for IO encryption")
-    .internal()
-    .booleanConf
-    .createOptional
-
-  val TEST_USE_TIMEZONE_CPU_BACKEND = conf("spark.rapids.test.CPU.timezone")
-    .doc("Only for tests: verify for timezone related functions")
     .internal()
     .booleanConf
     .createOptional
@@ -2753,6 +2754,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
+
+  lazy val nonUTCTimeZoneEnabled: Boolean = get(NON_UTC_TIME_ZONE_ENABLED)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
