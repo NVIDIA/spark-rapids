@@ -37,7 +37,7 @@ import org.apache.spark.sql.execution.python.AggregateInPandasExec
 import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMetaBase, GpuBroadcastNestedLoopJoinMetaBase}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StringType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType, TimestampNTZType, TimestampType}
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -1149,10 +1149,17 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
   }
 
-  // This is to workaround Spark's issue where `needsTimezone``` doesn't consider complex types to
-  // string which is timezone related. (incl. struct/map/list to string).
-  // This is used for complex types to string.
+  // Mostly base on Spark existing [[Cast.needsTimeZone]] method. Two changes are made:
+  //    1. Backport commit https://github.com/apache/spark/pull/40524 merged since Spark 3.5
+  //    2. Existing `needsTimezone``` doesn't consider complex types to string which is timezone
+  //    related. (incl. struct/map/list to string).
   private[this] def needsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
+    case (StringType, TimestampType) => true
+    case (TimestampType, StringType) => true
+    case (DateType, TimestampType) => true
+    case (TimestampType, DateType) => true
+    case (TimestampType, TimestampNTZType) => true
+    case (TimestampNTZType, TimestampType) => true
     case (ArrayType(fromType, _), StringType) => needsTimeZone(fromType, to)
     case (MapType(fromKey, fromValue, _), StringType) =>
       needsTimeZone(fromKey, to) || needsTimeZone(fromValue, to)
@@ -1161,7 +1168,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
         case fromField =>
           needsTimeZone(fromField.dataType, to)
       }
-    case _ => Cast.needsTimeZone(from, to)
+    case (ArrayType(fromType, _), ArrayType(toType, _)) => needsTimeZone(fromType, toType)
+    case (MapType(fromKey, fromValue, _), MapType(toKey, toValue, _)) =>
+      needsTimeZone(fromKey, toKey) || needsTimeZone(fromValue, toValue)
+    case (StructType(fromFields), StructType(toFields)) =>
+      fromFields.length == toFields.length &&
+        fromFields.zip(toFields).exists {
+          case (fromField, toField) =>
+            needsTimeZone(fromField.dataType, toField.dataType)
+        }
+    case _ => false
   }
 
   // Level 3 timezone checking flag, need to override to true when supports timezone in functions

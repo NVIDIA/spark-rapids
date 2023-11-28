@@ -694,6 +694,9 @@ object GpuOverrides extends Logging {
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
 
+  def isContainsDateOrTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType || dt == DateType)
+
   /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
   def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
     def findRootProcessingNode(plan: SparkPlan): SparkPlan = plan match {

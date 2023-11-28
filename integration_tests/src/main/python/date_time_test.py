@@ -25,7 +25,6 @@ import pyspark.sql.functions as f
 # We only support literal intervals for TimeSub
 vals = [(-584, 1563), (1943, 1101), (2693, 2167), (2729, 0), (44, 1534), (2635, 3319),
             (1885, -2828), (0, 2463), (932, 2286), (0, 0)]
-
 @pytest.mark.parametrize('data_gen', vals, ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_timesub(data_gen):
@@ -459,7 +458,6 @@ def test_gettimestamp_ansi_exception():
 
 supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/MM/yyyy',
                           'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM']
-
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
