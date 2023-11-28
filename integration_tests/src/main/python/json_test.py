@@ -969,5 +969,3 @@ def test_structs_to_json_fallback_date_formats(spark_tmp_path, data_gen, timezon
         lambda spark : struct_to_json(spark),
         'ProjectExec',
         conf=conf)
-=======
->>>>>>> nvidia/branch-23.12
