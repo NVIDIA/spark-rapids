@@ -15,9 +15,10 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_not_utc
 from data_gen import *
 from fastparquet_utils import get_fastparquet_result_canonicalizer
-from spark_session import spark_version, with_cpu_session, with_gpu_session
+from spark_session import is_databricks_runtime, spark_version, with_cpu_session, with_gpu_session
 
 
 def fastparquet_unavailable():
@@ -107,8 +108,12 @@ def read_parquet(data_path, local_data_path):
     pytest.param(IntegerGen(nullable=True),
                  marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
     LongGen(nullable=False),
-    FloatGen(nullable=False),
-    DoubleGen(nullable=False),
+    pytest.param(FloatGen(nullable=False),
+                 marks=pytest.mark.xfail(is_databricks_runtime(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
+    pytest.param(DoubleGen(nullable=False),
+                 marks=pytest.mark.xfail(is_databricks_runtime(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
     StringGen(nullable=False),
     pytest.param(DecimalGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
@@ -131,9 +136,13 @@ def read_parquet(data_path, local_data_path):
         marks=pytest.mark.xfail(reason="Conversion from Pandas dataframe (read with fastparquet) to Spark dataframe "
                                        "fails: \"Unable to infer the type of the field a\".")),
 
-    StructGen(children=[("first", IntegerGen(nullable=False)),
-                        ("second", FloatGen(nullable=False))], nullable=False)
+    pytest.param(
+        StructGen(children=[("first", IntegerGen(nullable=False)),
+                            ("second", FloatGen(nullable=False))], nullable=False),
+        marks=pytest.mark.xfail(is_databricks_runtime(),
+                                reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     """
     This test writes data_gen output to Parquet via Apache Spark, then verifies that fastparquet and the RAPIDS
@@ -176,8 +185,12 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     LongGen(nullable=False),
     pytest.param(LongGen(nullable=True),
                  marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
-    FloatGen(nullable=False),
-    DoubleGen(nullable=False),
+    pytest.param(FloatGen(nullable=False),
+                 marks=pytest.mark.xfail(is_databricks_runtime(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
+    pytest.param(DoubleGen(nullable=False),
+                 marks=pytest.mark.xfail(is_databricks_runtime(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
     StringGen(nullable=False),
     pytest.param(DecimalGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
@@ -196,6 +209,7 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
                               end=pandas_min_datetime),
                  marks=pytest.mark.xfail(reason="fastparquet reads timestamps preceding 1900 incorrectly.")),
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
     """
     This test writes the data-gen output to file via the RAPIDS plugin, then checks that the data is read identically
@@ -378,6 +392,7 @@ def test_reading_file_written_with_fastparquet(column_gen, spark_tmp_path):
         marks=pytest.mark.xfail(reason="fastparquet fails to read nullable Struct columns written from Apache Spark. "
                                        "It fails the rewrite to parquet, thereby failing the test.")),
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_reading_file_rewritten_with_fastparquet(column_gen, time_format, spark_tmp_path):
     """
     This test is a workaround to test data-types that have problems being converted

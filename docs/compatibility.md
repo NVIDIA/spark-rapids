@@ -83,6 +83,21 @@ after Spark 3.1.0.
 We do not disable operations that produce different results due to `-0.0` in the data because it is
 considered to be a rare occurrence.
 
+## Decimal Support
+
+Apache Spark supports decimal values with a precision up to 38. This equates to 128-bits.
+When processing the data, in most cases, it is temporarily converted to Java's `BigDecimal` type
+which allows for effectively unlimited precision. Overflows will be detected whenever the
+`BigDecimal` value is converted back into the Spark decimal type.
+
+The RAPIDS Accelerator does not implement a GPU equivalent of `BigDecimal`, but it does implement
+computation on 256-bit values to allow the detection of overflows. The points at which overflows
+are detected may differ between the CPU and GPU. Spark gives no guarantees that overflows are
+detected if an intermediate value could overflow the original decimal type during computation
+but the final value does not (e.g.: a sum of values with many large positive values followed by
+many large negative values). Spark injects overflow detection at various points during aggregation,
+and these points can fluctuate depending on cluster shape and number of shuffle partitions.
+
 ## Unicode
 
 Spark delegates Unicode operations to the underlying JVM. Each version of Java complies with a

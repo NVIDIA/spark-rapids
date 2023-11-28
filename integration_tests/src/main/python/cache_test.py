@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
+from conftest import is_not_utc
 from data_gen import *
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
@@ -64,6 +65,7 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cache_join(data_gen, enable_vectorized_conf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
@@ -91,6 +93,7 @@ def test_cached_join_filter(data_gen, enable_vectorized_conf):
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cache_expand_exec(data_gen, enable_vectorized_conf):
     def op_df(spark, length=2048):
         cached = gen_df(spark, StructGen([
@@ -165,6 +168,7 @@ def test_cache_diff_req_order(spark_tmp_path):
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
 @allow_non_gpu("SortExec", "ShuffleExchangeExec", "RangePartitioning")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA'
     def read_parquet_cached(data_path):
@@ -277,6 +281,7 @@ def function_to_test_on_df(with_x_session, df_gen, func_on_df, test_conf):
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @pytest.mark.parametrize('batch_size', [{"spark.rapids.sql.batchSizeBytes": "100"}, {}], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_size):
     test_conf = copy_and_update(enable_vectorized_conf, batch_size)
     generate_data_and_test_func_on_cached_df(with_x_session, lambda df: df.count(), data_gen, test_conf)
