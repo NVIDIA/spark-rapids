@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from conftest import is_not_utc
 from data_gen import *
 from marks import allow_non_gpu, ignore_order
 from pyspark.sql.types import *
@@ -37,6 +38,7 @@ def four_op_df(spark, gen, length=2048):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_makearray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).selectExpr('a', 'explode(array(b, c, d))'))
@@ -45,6 +47,7 @@ def test_explode_makearray(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_litarray(data_gen):
     array_lit = with_cpu_session(
         lambda spark: gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False)))
@@ -60,6 +63,7 @@ conf_to_enforce_split_input = {'spark.rapids.sql.batchSizeBytes': '8192'}
 @pytest.mark.parametrize('data_gen', explode_gens + struct_gens_sample_with_decimal128 +
                          array_gens_sample + map_gens_sample + arrays_with_binary + maps_with_binary,
                          ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -70,6 +74,7 @@ def test_explode_array_data(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens + maps_with_binary, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -80,6 +85,7 @@ def test_explode_map_data(map_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_nested_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
     assert_gpu_and_cpu_are_equal_collect(
@@ -94,6 +100,7 @@ def test_explode_nested_array_data(data_gen):
 @pytest.mark.parametrize('data_gen', explode_gens + struct_gens_sample_with_decimal128 +
                          array_gens_sample + arrays_with_binary + map_gens_sample + maps_with_binary,
                          ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_outer_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -104,6 +111,7 @@ def test_explode_outer_array_data(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens + maps_with_binary, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_outer_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -114,6 +122,7 @@ def test_explode_outer_map_data(map_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explode_outer_nested_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
     assert_gpu_and_cpu_are_equal_collect(
@@ -125,6 +134,7 @@ def test_explode_outer_nested_array_data(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_makearray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a'))
@@ -133,6 +143,7 @@ def test_posexplode_makearray(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_litarray(data_gen):
     array_lit = with_cpu_session(
         lambda spark: gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False)))
@@ -147,6 +158,7 @@ def test_posexplode_litarray(data_gen):
 @pytest.mark.parametrize('data_gen', explode_gens + struct_gens_sample_with_decimal128 +
                          array_gens_sample + arrays_with_binary + map_gens_sample + maps_with_binary,
                          ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -157,6 +169,7 @@ def test_posexplode_array_data(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens + maps_with_binary, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -167,6 +180,7 @@ def test_posexplode_map_data(map_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_nested_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
     assert_gpu_and_cpu_are_equal_collect(
@@ -181,6 +195,7 @@ def test_posexplode_nested_array_data(data_gen):
 @pytest.mark.parametrize('data_gen', explode_gens + struct_gens_sample_with_decimal128 +
                          array_gens_sample + arrays_with_binary + map_gens_sample + maps_with_binary,
                          ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_outer_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -191,6 +206,7 @@ def test_posexplode_outer_array_data(data_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens + maps_with_binary, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_outer_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -201,6 +217,7 @@ def test_posexplode_outer_map_data(map_gen):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', explode_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_posexplode_nested_outer_array_data(data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
     assert_gpu_and_cpu_are_equal_collect(
@@ -225,6 +242,7 @@ def test_stack():
 
 # gpu stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_stack_mixed_types():
     base_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, string_gen, 
                   boolean_gen, date_gen, timestamp_gen, null_gen, DecimalGen(precision=7, scale=3),

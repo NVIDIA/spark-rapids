@@ -14,6 +14,7 @@
 
 import pytest
 
+from conftest import is_not_utc
 from data_gen import *
 from marks import *
 from pyspark.sql.functions import *
@@ -49,6 +50,7 @@ def test_explain_join(spark_tmp_path, data_gen):
 
     with_cpu_session(do_join_explain)
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_explain_set_config():
     conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
             'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}
