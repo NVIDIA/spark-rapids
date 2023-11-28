@@ -25,7 +25,7 @@ from qa_nightly_sql import *
 import pytest
 from spark_session import with_cpu_session, is_jvm_charset_utf8
 from marks import approximate_float, ignore_order, incompat, qarun, allow_non_gpu
-from data_gen import *
+from data_gen import copy_and_update, non_utc_allow
 
 def num_stringDf(spark):
     print("### CREATE DATAFRAME 1  ####")
