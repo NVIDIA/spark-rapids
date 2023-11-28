@@ -399,9 +399,13 @@ class CombiningIterator(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] {
 
-  private var pending: Option[SpillableColumnarBatch] = None
-  Option(TaskContext.get()).foreach(onTaskCompletion(_)(pending.foreach(_.close())))
+  // This is only for the input.
+  private var pendingInput: Option[SpillableColumnarBatch] = None
+  Option(TaskContext.get()).foreach(onTaskCompletion(_)(pendingInput.foreach(_.close())))
 
+  // The Python output should line up row for row so we only look at the Python output
+  // iterator and no need to check the `inputPending` who will be consumed when draining
+  // the Python output.
   override def hasNext: Boolean = pythonOutputIter.hasNext
 
   override def next(): ColumnarBatch = {
@@ -423,11 +427,11 @@ class CombiningIterator(
 
   private def concatInputBatch(targetNumRows: Int): ColumnarBatch = {
     withResource(mutable.ArrayBuffer[ColumnarBatch]()) { buf =>
-      var curNumRows = pending.map(_.numRows()).getOrElse(0)
-      pending.foreach { scb =>
+      var curNumRows = pendingInput.map(_.numRows()).getOrElse(0)
+      pendingInput.foreach { scb =>
         buf.append(withResource(scb)(_.getColumnarBatch()))
       }
-      pending = None
+      pendingInput = None
       while (curNumRows < targetNumRows) {
         val cb = inputBatchQueue.remove()
         buf.append(cb)
@@ -447,7 +451,7 @@ class CombiningIterator(
             withResource(first) { _ =>
               buf.append(GpuColumnVectorFromBuffer.from(first, batchTypes))
             }
-            pending = Some(SpillableColumnarBatch(second, batchTypes,
+            pendingInput = Some(SpillableColumnarBatch(second, batchTypes,
               SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
