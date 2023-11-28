@@ -78,6 +78,10 @@ object GpuOrcFileFormat extends Logging {
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
+    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
+    // timezone offset is considered when getting [[java.sql.date]] from
+    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
+    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
     val types = schema.map(_.dataType).toSet
     if (types.exists(GpuOverrides.isContainsDateOrTimestamp(_))) {
       if (!TimeZoneDB.isUTCTimezone()) {
