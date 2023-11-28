@@ -119,7 +119,7 @@ object RapidsPluginUtils extends Logging {
       url => {
         val urlPath = url.toString
         // filter out submodule jars and files stored under subdirs of '!/'
-        !urlPath.contains("rapids-4-spark-") && urlPath.contains("!/" + propName)
+        !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
     val revisionRegex = "revision=(.*)".r
