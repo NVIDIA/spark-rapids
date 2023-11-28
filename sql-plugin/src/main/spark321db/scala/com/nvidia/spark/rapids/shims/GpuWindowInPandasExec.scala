@@ -25,7 +25,7 @@ package com.nvidia.spark.rapids.shims
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.TaskContext
@@ -33,7 +33,7 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchProducer, CombiningIterator, GpuPythonHelper, GpuWindowInPandasExecBase, GroupingIterator}
+import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuPythonHelper, GpuWindowInPandasExecBase, GroupingIterator, PeekListenerIterator}
 import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
@@ -197,19 +197,34 @@ case class GpuWindowInPandasExec(
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val pyInputProducer = new BatchProducer(
-        new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches),
-        outputConverter = cb => {
-          // Compute the window bounds and insert to the head of each row for one batch
-          withResource(GpuProjectExec.project(cb, boundDataRefs))(insertWindowBounds)
-        })
+      val peekIter = new PeekListenerIterator(
+        new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
+      val queue = new BatchQueue(peekIter)
+      val pyInputIterator = peekIter.map { case (batch, isForPeek) =>
+        // We have to do the project before we add the batch because the batch might be closed
+        // when it is added
+        val inputBatch = closeOnExcept(batch) { _ =>
+          withResource(GpuProjectExec.project(batch, boundDataRefs)) { projectedCb =>
+            // Compute the window bounds and insert to the head of each row for one batch
+            insertWindowBounds(projectedCb)
+          }
+        }
+        if (isForPeek) {
+          batch.close()
+        } else {
+          // We only add the batch that is not for peek, because the batch for peek is already
+          // added by the reader when peeking the next rows number.
+          queue.add(batch)
+        }
+        inputBatch
+      }
 
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(pyFuncs, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
       }
 
-      if (pyInputProducer.hasNext) {
+      if (pyInputIterator.hasNext) {
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
@@ -221,8 +236,8 @@ case class GpuWindowInPandasExec(
           Int.MaxValue,
           pythonOutputSchema)
 
-        val outputIterator = pyRunner.compute(pyInputProducer, context.partitionId(), context)
-        new CombiningIterator(pyInputProducer, outputIterator, pyRunner, numOutputRows,
+        val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
+        new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
           numOutputBatches).map(projectResult)
       } else {
         // Empty partition, return the input iterator directly

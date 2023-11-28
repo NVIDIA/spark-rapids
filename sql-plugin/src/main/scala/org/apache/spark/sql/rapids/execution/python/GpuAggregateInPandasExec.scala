@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -192,20 +192,29 @@ case class GpuAggregateInPandasExec(
           }
         }
       }
-      val pyInputProducer = new BatchProducer(
-        BatchGroupedIterator(miniIter, miniAttrs, groupingRefs.indices),
-        cacheConverter = keyConverter,
-        outputConverter = groupedBatch => {
-          // Python input batch
+
+      val peekIter = new PeekListenerIterator(
+        BatchGroupedIterator(miniIter, miniAttrs, groupingRefs.indices))
+      val queue = new BatchQueue(peekIter, Some(keyConverter))
+      val pyInputIter = peekIter.map { case (batch, isForPeek) =>
+        val inputBatch = closeOnExcept(batch) { _ =>
           val pyInputColumns = pyInputRefs.indices.safeMap { idx =>
-            groupedBatch.column(idx + groupingRefs.size).asInstanceOf[GpuColumnVector]
-              .incRefCount()
+            batch.column(idx + groupingRefs.size).asInstanceOf[GpuColumnVector].incRefCount()
           }
-          new ColumnarBatch(pyInputColumns.toArray, groupedBatch.numRows())
-        })
+          new ColumnarBatch(pyInputColumns.toArray, batch.numRows())
+        }
+        if (isForPeek) {
+          batch.close()
+        } else {
+          // When adding batch to the queue, queue will convert it to a key batch because this
+          // queue is constructed with the key converter.
+          queue.add(batch)
+        }
+        inputBatch
+      }
 
       // Third, sends to Python to execute the aggregate and returns the result.
-      if (pyInputProducer.hasNext) {
+      if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
@@ -218,12 +227,12 @@ case class GpuAggregateInPandasExec(
           Int.MaxValue,
           DataTypeUtilsShim.fromAttributes(pyOutAttributes))
 
-        val pyOutputIterator = pyRunner.compute(pyInputProducer, context.partitionId(), context)
+        val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 
         val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
         val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
         // Gets the combined batch for each group and projects for the output.
-        new CombiningIterator(pyInputProducer, pyOutputIterator, pyRunner, mNumOutputRows,
+        new CombiningIterator(queue, pyOutputIterator, pyRunner, mNumOutputRows,
             mNumOutputBatches).map { combinedBatch =>
           withResource(combinedBatch) { batch =>
             GpuProjectExec.project(batch, resultRefs)

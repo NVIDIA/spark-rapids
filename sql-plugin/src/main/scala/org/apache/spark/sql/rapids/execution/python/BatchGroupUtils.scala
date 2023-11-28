@@ -393,7 +393,7 @@ private[python] object BatchGroupedIterator {
  * @param numOutputBatches a metric for output batches
  */
 class CombiningIterator(
-    inputBatchQueue: IteratorBatchQueue,
+    inputBatchQueue: BatchQueue,
     pythonOutputIter: Iterator[ColumnarBatch],
     pythonArrowReader: GpuPythonArrowOutput,
     numOutputRows: GpuMetric,
