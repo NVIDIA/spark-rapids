@@ -47,8 +47,8 @@ jobs:
           max_retry=3; delay=30; i=1
           while true; do
             mvn help:evaluate -pl dist -Dexpression=included_buildvers \
-              -DforceStdout -Dmaven.repo.local=$PWD/.m2 \
-              -PnoSnapshots -q | tr -d ',' |  xargs -n 1 bash -c 'mvn dependency:resolve -pl sql-plugin-api  -Dbuildver=$1' _ && break || {
+            -DforceStdout -Dmaven.repo.local=$PWD/.m2 -PnoSnapshots -q | tr -d ',' | \
+            xargs -n 1 bash -c 'mvn initialize -pl sql-plugin-api -am -Dbuildver=$1' _ && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
             else
