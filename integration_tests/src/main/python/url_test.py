@@ -162,10 +162,10 @@ def test_parse_url_host(data_gen):
                 "parse_url(a, 'HOST')"
                 ))
     
-unsupported_part = ['HOST', 'PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
+unsupported_parts = ['HOST', 'PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')
-@pytest.mark.parametrize('part', unsupported_part, ids=idfn)
+@pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
 def test_parse_url_host_fallback(part):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, url_gen).selectExpr(
