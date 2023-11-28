@@ -621,6 +621,10 @@ object GpuOverrides extends Logging {
     }
   }
 
+  def isUTCTimezone(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == UTC_TIMEZONE_ID
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))
 
   /**
