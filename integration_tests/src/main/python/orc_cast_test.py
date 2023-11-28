@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from conftest import is_not_utc
 from data_gen import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
@@ -49,6 +50,7 @@ def test_casting_among_integer_types(spark_tmp_path, reader_confs, v1_enabled_li
 
 
 @pytest.mark.parametrize('to_type', ['float', 'double', 'string', 'timestamp'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_casting_from_integer(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_cast_integer'
     # The Python 'datetime' module only supports a max-year of 10000, so we set the Long type max
@@ -70,6 +72,7 @@ def test_casting_from_integer(spark_tmp_path, to_type):
 @pytest.mark.parametrize('overflow_long_gen', [LongGen(min_val=int(1e16)),
                                                LongGen(max_val=int(-1e16))])
 @pytest.mark.parametrize('to_type', ['timestamp'])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_casting_from_overflow_long(spark_tmp_path, overflow_long_gen,to_type):
     # Timestamp(micro-seconds) is actually type of int64, when casting long(int64) to timestamp,
     # we need to multiply 1e6 (or 1e3), and it may cause overflow. This function aims to test
@@ -100,6 +103,7 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
 
 @pytest.mark.parametrize('data_gen', [DoubleGen(max_exp=32, special_cases=None),
                                       DoubleGen(max_exp=32, special_cases=[8.88e9, 9.99e10, 1.314e11])])
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     # ORC will assume the original double value in seconds, we need to convert them to
     # timestamp(INT64 in micro-seconds).
@@ -123,6 +127,7 @@ def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     )
 
 
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_casting_from_overflow_double_to_timestamp(spark_tmp_path):
     orc_path = spark_tmp_path + '/orc_casting_from_overflow_double_to_timestamp'
     with_cpu_session(

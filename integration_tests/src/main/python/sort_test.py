@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from conftest import is_not_utc
 from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
@@ -51,6 +52,7 @@ def test_sort_nonbinary_carry_binary(data_gen):
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
@@ -58,6 +60,7 @@ def test_single_orderby(data_gen, order):
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_first(), f.col('a').asc_nulls_last(),
                                    f.col('a').desc(), f.col('a').desc_nulls_first(), f.col('a').desc_nulls_last()], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_orderby_on_array(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
@@ -102,6 +105,7 @@ def test_single_orderby_fallback_for_array_of_struct(data_gen, order):
         marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
@@ -129,6 +133,7 @@ def test_single_nested_orderby_fallback_for_nullorder(data_gen, order):
 orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
@@ -139,6 +144,7 @@ def test_single_orderby_with_limit(data_gen, order):
     pytest.param(f.col('a').desc(), all_basic_struct_gen),
     pytest.param(f.col('a').desc_nulls_last(), all_basic_struct_gen)
 ], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_nested_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100),
@@ -161,6 +167,7 @@ def test_single_nested_orderby_with_limit_fallback(data_gen, order):
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_sort_in_part(data_gen, order):
     # We set `num_slices` to handle https://github.com/NVIDIA/spark-rapids/issues/2477
     assert_gpu_and_cpu_are_equal_collect(
@@ -183,6 +190,7 @@ def test_single_sort_in_part(data_gen, order):
     pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_nested_sort_in_part(data_gen, order, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
     assert_gpu_and_cpu_are_equal_collect(
@@ -193,11 +201,13 @@ orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen, float_gen, double
         boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])
                        ] + orderable_decimal_gens + single_level_array_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_multi_orderby_on_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
@@ -205,6 +215,7 @@ def test_multi_orderby_on_array(data_gen):
 # SPARK CPU itself has issue with negative scale for take ordered and project
 orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal + single_level_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_multi_orderby_with_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()).limit(100))
@@ -212,6 +223,7 @@ def test_multi_orderby_with_limit(data_gen):
 # We added in a partitioning optimization to take_ordered_and_project
 # This should trigger it.
 @pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal + single_level_array_gens, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_multi_orderby_with_limit_single_part(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).coalesce(1).orderBy(f.col('a'), f.col('b').desc()).limit(100))
@@ -256,6 +268,7 @@ def test_single_orderby_with_skew(data_gen):
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', all_basic_struct_gen]])], ids=idfn)
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_single_nested_orderby_with_skew(data_gen, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
     # When doing range partitioning the upstream data is sampled to try and get the bounds for cutoffs.
@@ -299,6 +312,7 @@ def test_large_orderby(data_gen, stable_sort):
     simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
 @pytest.mark.order(2)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_large_orderby_nested_ridealong(data_gen):
     # We use a UniqueLongGen to avoid duplicate keys that can cause ambiguity in the sort
     # results, especially on distributed clusters.
@@ -319,6 +333,7 @@ def test_large_orderby_nested_ridealong(data_gen):
     ArrayGen(byte_gen, max_length=5),
     ArrayGen(decimal_gen_128bit, max_length=5)], ids=idfn)
 @pytest.mark.order(2)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_orderby_nested_ridealong_limit(data_gen):
     # We use a UniqueLongGen to avoid duplicate keys that can cause ambiguity in the sort
     # results, especially on distributed clusters.
