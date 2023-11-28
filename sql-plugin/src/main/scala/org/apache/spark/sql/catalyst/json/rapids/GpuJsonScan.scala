@@ -40,6 +40,7 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -166,19 +167,26 @@ object GpuJsonScan {
     if (types.contains(DateType)) {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.dateFormatInRead(parsedOptions), parseString = true)
+
+      // For date type, timezone needs to be checked also. This is because JVM timezone is used
+      // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
+      //
+      // In details, for Json data format, Spark uses dateFormatter to parse string as date data
+      // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. For Json format, it
+      // uses [[LegacyFastDateFormatter]] which is based on Apache Commons FastDateFormat. It parse
+      // string into Java util.Date base on JVM default timezone. From Java util.Date, it's
+      // converted into java.sql.Date type. By leveraging [[JavaDateTimeUtils]], it finally do
+      // `rebaseJulianToGregorianDays` considering its offset to UTC timezone.
+      if(!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)){
+        meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
+      }
     }
 
-    // For date type, timezone needs to be checked also. This is because JVM timezone is used
-    // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
-    //
-    // In details, for Json data format, Spark uses dateFormatter to parse string as date data
-    // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. For Json format, it uses
-    // [[LegacyFastDateFormatter]] which is based on Apache Commons FastDateFormat. It parse string
-    // into Java util.Date base on JVM default timezone. From Java util.Date, it's converted into
-    // java.sql.Date type. By leveraging [[JavaDateTimeUtils]], it finally do
-    // `rebaseJulianToGregorianDays` considering its offset to UTC timezone.
     if (types.contains(TimestampType) || types.contains(DateType)) {
-      meta.checkTimeZoneId(parsedOptions.zoneId)
+      if (!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)) {
+        meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
+      }
+
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuJsonUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }

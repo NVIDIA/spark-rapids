@@ -40,7 +40,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
+import org.apache.spark.sql.rapids.{LegacyTimeParserPolicy, TimeZoneDB}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -166,20 +166,23 @@ object GpuCSVScan {
     if (types.contains(DateType)) {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
+
+      // For date type, timezone needs to be checked also. This is because JVM timezone is used
+      // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
+      //
+      // In details, for CSV data format, Spark uses dateFormatter to parse string as date data
+      // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. And CSV format
+      // (e.g., [[UnivocityParser]]), it uses [[LegacyFastDateFormatter]] which is based on
+      // Apache Commons FastDateFormat. It parse string into Java util.Date base on JVM default
+      // timezone. From Java util.Date, it's converted into java.sql.Date type.
+      // By leveraging [[JavaDateTimeUtils]], it finally do `rebaseJulianToGregorianDays`
+      // considering its offset to UTC timezone.
+      if (!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)) {
+        meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
+      }
     }
 
-    // For date type, timezone needs to be checked also. This is because JVM timezone is used
-    // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
-    //
-    // In details, for CSV data format, Spark uses dateFormatter to parse string as date data
-    // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. And CSV format
-    // (e.g., [[UnivocityParser]]), it uses [[LegacyFastDateFormatter]] which is based on
-    // Apache Commons FastDateFormat. It parse string into Java util.Date base on JVM default
-    // timezone. From Java util.Date, it's converted into java.sql.Date type.
-    // By leveraging [[JavaDateTimeUtils]], it finally do `rebaseJulianToGregorianDays` considering
-    // its offset to UTC timezone.
-    if (types.contains(TimestampType) || types.contains(DateType)) {
-      meta.checkTimeZoneId(parsedOptions.zoneId)
+    if (types.contains(TimestampType)) {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }

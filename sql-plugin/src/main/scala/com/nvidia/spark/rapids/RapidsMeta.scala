@@ -384,13 +384,13 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
     // Both of the Spark session time zone and JVM's default time zone should be UTC.
     if (!TimeZoneDB.isSupportedTimezone(sessionZoneId)) {
-      willNotWorkOnGpu("Only UTC zone id is supported. " +
+      willNotWorkOnGpu("Not supported zone id. " +
         s"Actual session local zone id: $sessionZoneId")
     }
 
     val defaultZoneId = ZoneId.systemDefault()
     if (!TimeZoneDB.isSupportedTimezone(defaultZoneId)) {
-      willNotWorkOnGpu(s"Only UTC zone id is supported. Actual default zone id: $defaultZoneId")
+      willNotWorkOnGpu(s"Not supported zone id. Actual default zone id: $defaultZoneId")
     }
   }
 
