@@ -1840,6 +1840,22 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  object AllowMultipleJars extends Enumeration {
+    val ALWAYS, SAME_REVISION, NEVER = Value
+  }
+
+  val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
+    .internal()
+    .startupOnly()
+    .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
+      "Spark will take the first one it finds, so the version may not be expected. Possisble " +
+      "values are ALWAYS: allow all jars, SAME_REVISION: only allow jars with the same " +
+      "revision, NEVER: do not allow multiple jars at all.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(AllowMultipleJars.values.map(_.toString))
+    .createWithDefault(AllowMultipleJars.SAME_REVISION.toString)
+
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
     .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
@@ -2640,6 +2656,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val allowMultipleJars: AllowMultipleJars.Value = {
+    get(ALLOW_MULTIPLE_JARS) match {
+      case "ALWAYS" => AllowMultipleJars.ALWAYS
+      case "NEVER" => AllowMultipleJars.NEVER
+      case "SAME_REVISION" => AllowMultipleJars.SAME_REVISION
+      case other =>
+        throw new IllegalArgumentException(s"Internal Error $other is not supported for " +
+            s"${ALLOW_MULTIPLE_JARS.key}")
+    }
+  }
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
