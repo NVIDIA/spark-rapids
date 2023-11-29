@@ -55,7 +55,11 @@ jobs:
             fi
           }
           done 
+
+      - name: Get current date
+        run: |
           echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
@@ -142,6 +146,10 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+      
+      - name: Get current date
+        run: |
+          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
@@ -193,6 +201,10 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+
+      - name: Get current date
+        run: |
+          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
@@ -254,6 +266,10 @@ jobs:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
 
+      - name: Get current date
+        run: |
+          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
@@ -302,6 +318,10 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
+
+      - name: Get current date
+        run: |
+          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
