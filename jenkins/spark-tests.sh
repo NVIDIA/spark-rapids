@@ -284,6 +284,7 @@ run_non_utc_time_zone_tests() {
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only
+# - NON_UTC_TZ: test all tests in a non-UTC time zone which is selected according to current date.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
