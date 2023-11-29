@@ -41,7 +41,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
-          cache: 'maven'  
       - run: |
           set -x
           max_retry=3; delay=30; i=1
