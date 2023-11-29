@@ -121,6 +121,7 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     return read_impl
 
 
+non_utc_allow_for_test_basic_hive_text_read=['HiveTableScanExec'] if is_not_utc() else []
 @pytest.mark.skipif(is_spark_cdh(),
                     reason="Hive text reads are disabled on CDH, as per "
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")
@@ -187,7 +188,7 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
     ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
 ], ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
                                                             schema, spark_tmp_table_factory, options),
@@ -240,7 +241,7 @@ def read_hive_text_table(spark, text_table_name, fields="my_field"):
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
 @pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
 def test_hive_text_round_trip(spark_tmp_path, data_gen, spark_tmp_table_factory):
     gen = StructGen([('my_field', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/hive_text_table'
@@ -527,7 +528,7 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
     ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
     ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
 ], ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow_for_test_basic_hive_text_read)
 def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options):
     # Configure table options, including schema.
     if options is None:

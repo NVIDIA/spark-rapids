@@ -810,12 +810,11 @@ _replace_modes_non_distinct = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
-               'AggregateExpression', 'ProjectExec')
+               'AggregateExpression', 'ProjectExec', *non_utc_allow)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_partial_replace_fallback(data_gen,
                                                        replace_mode,
                                                        aqe_enabled,
@@ -857,13 +856,12 @@ _replace_modes_single_distinct = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
-               'AggregateExpression', 'ProjectExec')
+               'AggregateExpression', 'ProjectExec', *non_utc_allow)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 @pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
-@allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
                                                                      aqe_enabled,

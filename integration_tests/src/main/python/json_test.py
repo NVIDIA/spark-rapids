@@ -152,10 +152,12 @@ def test_json_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_block_length()'),
             conf=updated_conf)
 
+allow_non_gpu_for_json_scan = ['FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
 json_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 @pytest.mark.parametrize('date_format', json_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+@allow_non_gpu(*allow_non_gpu_for_json_scan)
 def test_json_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/JSON_DATA'

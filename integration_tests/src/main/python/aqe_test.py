@@ -21,6 +21,9 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_allow=['HashAggregateExec', 'ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec', 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec'] if is_not_utc() else []
+
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
 
 def create_skew_df(spark, length):
