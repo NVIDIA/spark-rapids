@@ -263,6 +263,20 @@ run_pyarrow_tests() {
   ./run_pyspark_from_build.sh -m pyarrow_test --pyarrow_test
 }
 
+run_non_utc_time_zone_tests() {
+  # select one time zone according to date
+  non_utc_time_zones=("Asia/Shanghai" "Iran")
+  time_zones_length=${#non_utc_time_zones[@]}
+  current_date=$(date +%Y%m%d)
+  echo "Current date is: ${current_date}"
+  time_zone_index=$((current_date % time_zones_length))
+  time_zone="${non_utc_time_zones[${time_zone_index}]}"
+  echo "Run Non-UTC tests, time zone is ${time_zone}"
+
+  # run tests
+  TZ=${time_zone} ./run_pyspark_from_build.sh
+}
+
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
@@ -319,6 +333,11 @@ fi
 # Pyarrow tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "PYARROW_ONLY" ]]; then
   run_pyarrow_tests
+fi
+
+# Non-UTC time zone tests
+if [[ "$TEST_MODE" == "NON_UTC_TZ" ]]; then
+  run_non_utc_time_zone_tests
 fi
 
 popd
