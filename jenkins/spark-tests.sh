@@ -264,10 +264,11 @@ run_pyarrow_tests() {
 }
 
 run_non_utc_time_zone_tests() {
-  # select one time zone according to date
+  # select one time zone according to current day of week
   non_utc_time_zones=("Asia/Shanghai" "Iran")
   time_zones_length=${#non_utc_time_zones[@]}
-  current_date=$(date +%Y%m%d)
+  # get day of week, Sunday is represented by 0 and Saturday by 6
+  current_date=$(date +%w)
   echo "Current date is: ${current_date}"
   time_zone_index=$((current_date % time_zones_length))
   time_zone="${non_utc_time_zones[${time_zone_index}]}"
@@ -284,7 +285,7 @@ run_non_utc_time_zone_tests() {
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only
-# - NON_UTC_TZ: test all tests in a non-UTC time zone which is selected according to current date.
+# - NON_UTC_TZ: test all tests in a non-UTC time zone which is selected according to current day of week.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
