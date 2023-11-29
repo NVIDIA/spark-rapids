@@ -60,7 +60,7 @@ class GpuStructsToJsonMeta(
           // tracking issue is https://github.com/NVIDIA/spark-rapids/issues/9602
           willNotWorkOnGpu(s"Unsupported timestampFormat '$timestampFormat' in to_json")
       }
-      if (!GpuOverrides.SUPPORTED_TIMEZONE_IDS.contains(options.zoneId)) {
+      if (options.zoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
         // we hard-code the timezone `Z` in GpuCast.castTimestampToJson
         // so we need to fall back if expr different timeZone is specified
         willNotWorkOnGpu(s"Unsupported timeZone '${options.zoneId}' in to_json")

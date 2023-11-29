@@ -438,7 +438,6 @@ object GpuOverrides extends Logging {
     "the Unicode version used by cuDF and the JVM may differ, resulting in some " +
     "corner-case characters not changing case correctly."
   val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
-  val SUPPORTED_TIMEZONE_IDS = Seq("UTC", "Etc/UTC").map(ZoneId.of)
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
   private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
