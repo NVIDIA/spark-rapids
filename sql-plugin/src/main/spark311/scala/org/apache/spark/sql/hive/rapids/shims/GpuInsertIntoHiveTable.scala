@@ -68,12 +68,10 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     // Only Hive delimited text writes are currently supported.
     // Check whether that is the format currently in play.
     fileFormat = GpuHiveTextFileFormat.tagGpuSupport(this)
-
-    timezoneCheck()
   }
 
   override def convertToGpu(): GpuDataWritingCommand = {

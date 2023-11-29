@@ -319,7 +319,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     if (cmd.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
     }

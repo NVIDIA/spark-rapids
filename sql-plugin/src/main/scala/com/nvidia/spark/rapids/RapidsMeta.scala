@@ -546,10 +546,22 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
-  override def tagSelfForGpu(): Unit = {}
+  val checkTimeZone: Boolean = true
 
-  // Check whether data type of intput/output contains time zone.
-  // Currently only UTC timezone is supported for [[DataWritingCommand]]
+  final override def tagSelfForGpu(): Unit = {
+    if (checkTimeZone) {
+      timezoneCheck()
+    }
+    tagSelfForGpuInternal()
+  }
+
+  protected def tagSelfForGpuInternal(): Unit = {}
+
+  // Check whether data type of intput/output contains timestamp type, which
+  // is related to time zone.
+  // Only UTC time zone is allowed to be consistent with previous behavior
+  // for [[DataWritingCommand]]. Needs to override [[checkTimeZone]] to skip
+  // UTC time zone check in sub class of [[DataWritingCommand]].
   def timezoneCheck(): Unit = {
     val types = (wrapped.inputSet.map(_.dataType) ++ wrapped.outputSet.map(_.dataType)).toSet
     if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
@@ -572,7 +584,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     parent: Option[RapidsMeta[_, _, _]])
     extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     willNotWorkOnGpu(s"GPU does not currently support the operator ${cmd.getClass}")
   }
 
