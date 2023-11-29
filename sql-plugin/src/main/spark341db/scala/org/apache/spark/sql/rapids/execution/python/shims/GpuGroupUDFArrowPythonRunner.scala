@@ -34,7 +34,6 @@ import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.Utils
 
 /**
  * Group Map UDF specific serializer for Databricks because they have a special GroupUDFSerializer.
@@ -82,25 +81,23 @@ class GpuGroupUDFArrowPythonRunner(
       }
 
       override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
-        var wrote = false
         // write out number of columns
-        Utils.tryWithSafeFinally {
-          val builder = ArrowIPCWriterOptions.builder()
-          builder.withMaxChunkSize(batchSize)
-          builder.withCallback((table: Table) => {
-            table.close()
-            GpuSemaphore.releaseIfNecessary(TaskContext.get())
-          })
-          // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
-          GpuPythonRunnerUtils.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+        try {
+          if (inputIterator.hasNext) {
+            val builder = ArrowIPCWriterOptions.builder()
+            builder.withMaxChunkSize(batchSize)
+            builder.withCallback((table: Table) => {
+              table.close()
+              GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            })
+            // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
+            GpuPythonRunnerUtils.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)
               } else {
                 builder.withNotNullableColumnNames(name)
               }
-          }
-          while(inputIterator.hasNext) {
-            wrote = false
+            }
             val writer = {
               // write 1 out to indicate there is more to read
               dataOut.writeInt(1)
@@ -112,20 +109,24 @@ class GpuGroupUDFArrowPythonRunner(
             withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
               // The callback will handle closing table and releasing the semaphore
               writer.write(table)
-              wrote = true
             }
             writer.close()
             dataOut.flush()
+            true
+          } else {
+            // The iterator can grab the semaphore even on an empty batch
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            // tell serializer we are done
+            dataOut.writeInt(0)
+            dataOut.flush()
+            false
           }
-          // indicate not to read more
-          // The iterator can grab the semaphore even on an empty batch
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        } {
-          // tell serializer we are done
-          dataOut.writeInt(0)
-          dataOut.flush()
+        } catch {
+          case t: Throwable =>
+            // release the semaphore in case of exception in the middle of writing a batch
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            throw t
         }
-        wrote
       }
     }
   }

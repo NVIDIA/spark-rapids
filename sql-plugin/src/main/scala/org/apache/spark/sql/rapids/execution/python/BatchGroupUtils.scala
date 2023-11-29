@@ -19,19 +19,18 @@ package org.apache.spark.sql.rapids.execution.python
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.shims.GpuPythonArrowOutput
 import org.apache.spark.sql.rapids.execution.GpuSubPartitionHashJoin
+import org.apache.spark.sql.rapids.execution.python.shims.GpuPythonArrowOutput
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
