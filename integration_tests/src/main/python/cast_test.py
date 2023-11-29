@@ -147,10 +147,9 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9708')
 @pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
                                       StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
-                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]\.[0-9]{0,6}Z?')],
                         ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_cast_string_ts_valid_format(data_gen):
