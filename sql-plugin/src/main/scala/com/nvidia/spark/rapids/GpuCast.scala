@@ -1124,13 +1124,15 @@ object GpuCast {
           }
           if (options.ignoreNullFieldsInStructs) {
             // write the value
-            val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
-            if (needsQuoting) {
-              attrColumns += quote.incRefCount()
-              attrColumns += escapeJsonString(attrValue)
-              attrColumns += quote.incRefCount()
-            } else {
-              attrColumns += attrValue
+            withResource(castToString(cv, inputSchema(fieldIndex).dataType, options)) {
+                attrValue =>
+              if (needsQuoting) {
+                attrColumns += quote.incRefCount()
+                attrColumns += escapeJsonString(attrValue)
+                attrColumns += quote.incRefCount()
+              } else {
+                attrColumns += attrValue.incRefCount()
+              }
             }
             // now concatenate
             val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
