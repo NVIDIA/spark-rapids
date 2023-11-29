@@ -3613,20 +3613,14 @@ object GpuOverrides extends Logging {
         TypeSig.STRING,
         Seq(ParamCheck("struct",
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
-      (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
-            willNotWorkOnGpu("to_json option pretty=true is not supported")
-          }
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuStructsToJson(a.options, child, a.timeZoneId)
-      }).disabledByDefault("to_json support is experimental. See compatibility " +
+      (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
+        .disabledByDefault("to_json support is experimental. See compatibility " +
           "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
