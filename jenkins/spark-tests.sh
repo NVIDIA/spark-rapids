@@ -269,7 +269,7 @@ run_non_utc_time_zone_tests() {
   time_zones_length=${#non_utc_time_zones[@]}
   # get day of week, Sunday is represented by 0 and Saturday by 6
   current_date=$(date +%w)
-  echo "Current date is: ${current_date}"
+  echo "Current day of week is: ${current_date}"
   time_zone_index=$((current_date % time_zones_length))
   time_zone="${non_utc_time_zones[${time_zone_index}]}"
   echo "Run Non-UTC tests, time zone is ${time_zone}"
