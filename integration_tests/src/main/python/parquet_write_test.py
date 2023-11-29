@@ -770,8 +770,9 @@ def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, fun
     func(create_table, read_table, data_path, conf)
 
 # Test to avoid regression on a known bug in Spark. For details please visit https://github.com/NVIDIA/spark-rapids/issues/8693
-@pytest.mark.parametrize('ts_rebase', ['LEGACY', 'CORRECTED'])
-@allow_non_gpu(*non_utc_allow)
+@pytest.mark.parametrize('ts_rebase', [
+    pytest.param('LEGACY', marks=pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")),
+    'CORRECTED'])
 def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase):
     def func_test(create_table, read_table, data_path, conf):
         assert_gpu_and_cpu_writes_are_equal_collect(create_table, read_table, data_path, conf=conf)

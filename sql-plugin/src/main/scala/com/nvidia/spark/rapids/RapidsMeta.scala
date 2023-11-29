@@ -1135,13 +1135,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
   //+------------------------+-------------------+-----------------------------------------+
   lazy val needTimeZoneCheck: Boolean = {
     wrapped match {
+      // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
+      // It will be treated as literal in Rapids.
       case _: TimeZoneAwareExpression =>
-        // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
-        // It will be treated as literal in Rapids.
         if (wrapped.isInstanceOf[Cast]) {
           val cast = wrapped.asInstanceOf[Cast]
           needsTimeZone(cast.child.dataType, cast.dataType)
-        } else {
+        } else if(PlanShims.isAnsiCast(wrapped)) {
+          val (from, to) = PlanShims.extractAnsiCastTypes(wrapped)
+          needsTimeZone(from, to)
+        } else{
           true
         }
       case _: UTCTimestamp => true
