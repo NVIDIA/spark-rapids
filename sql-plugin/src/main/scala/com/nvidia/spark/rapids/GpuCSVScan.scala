@@ -185,6 +185,10 @@ object GpuCSVScan {
     if (types.contains(TimestampType)) {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
+
+      if (!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)) {
+        meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
+      }
     }
     // TODO parsedOptions.emptyValueInRead
 
