@@ -55,12 +55,12 @@ jobs:
             fi
           }
           done 
-          echo "::set-output name=date::$(date +'%Y-%m-%d')"      
+          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ steps.date.outputs.date }}
+          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
 
   get-shim-versions-from-dist:
     needs: cache-dependencies
