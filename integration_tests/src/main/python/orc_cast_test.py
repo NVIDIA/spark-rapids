@@ -49,9 +49,10 @@ def test_casting_among_integer_types(spark_tmp_path, reader_confs, v1_enabled_li
         lambda spark: spark.read.schema(schema_str).orc(data_path),
         conf=all_confs)
 
+non_utc_allow_orc_scan=['ColumnarToRowExec', 'FileScan'] if is_not_utc() else []
 
 @pytest.mark.parametrize('to_type', ['float', 'double', 'string', 'timestamp'])
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_casting_from_integer(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_cast_integer'
     # The Python 'datetime' module only supports a max-year of 10000, so we set the Long type max
