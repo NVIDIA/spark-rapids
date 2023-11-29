@@ -771,8 +771,7 @@
         <databricks.buildvers>
             321db,
             330db,
-            332db,
-            341db
+            332db
         </databricks.buildvers>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
