@@ -29,7 +29,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("inability to get a client raises a fetch failure") {
     val taskId = 1
     try {
-      RmmSpark.associateCurrentThreadWithTask(taskId)
+      RmmSpark.currentThreadIsDedicatedToTask(taskId)
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
       val cl = new RapidsShuffleIterator(
@@ -39,6 +39,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         blocksByAddress,
         testMetricsUpdater,
         Array.empty,
+        taskId,
         mockCatalog,
         123)
 
@@ -60,7 +61,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   private def doTestErrorOrCancelledRaisesFetchFailure(status: TransactionStatus.Value): Unit = {
     val taskId = 1
     try {
-      RmmSpark.associateCurrentThreadWithTask(taskId)
+      RmmSpark.currentThreadIsDedicatedToTask(taskId)
       when(mockTransaction.getStatus).thenReturn(status)
 
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
@@ -72,6 +73,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         blocksByAddress,
         testMetricsUpdater,
         Array.empty,
+        taskId,
         mockCatalog,
         123))
 
@@ -109,7 +111,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("a transport exception raises a fetch failure with the cause exception") {
     val taskId = 1
     try {
-      RmmSpark.associateCurrentThreadWithTask(taskId)
+      RmmSpark.currentThreadIsDedicatedToTask(taskId)
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
       val cl = spy(new RapidsShuffleIterator(
@@ -119,6 +121,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         blocksByAddress,
         testMetricsUpdater,
         Array.empty,
+        taskId,
         mockCatalog,
         123))
 
@@ -158,7 +161,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("a timeout while waiting for batches raises a fetch failure") {
     val taskId = 1
     try {
-      RmmSpark.associateCurrentThreadWithTask(taskId)
+      RmmSpark.currentThreadIsDedicatedToTask(taskId)
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
       val cl = spy(new RapidsShuffleIterator(
@@ -168,6 +171,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         blocksByAddress,
         testMetricsUpdater,
         Array.empty,
+        taskId,
         mockCatalog,
         123))
 
@@ -193,7 +197,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("a new good batch is queued") {
     val taskId = 1
     try {
-      RmmSpark.associateCurrentThreadWithTask(taskId)
+      RmmSpark.currentThreadIsDedicatedToTask(taskId)
       val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
       val cl = new RapidsShuffleIterator(
@@ -203,6 +207,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         blocksByAddress,
         testMetricsUpdater,
         Array.empty,
+        taskId,
         mockCatalog,
         123)
 
