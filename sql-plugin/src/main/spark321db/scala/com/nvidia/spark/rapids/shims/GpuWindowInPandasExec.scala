@@ -33,7 +33,7 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuPythonHelper, GpuWindowInPandasExecBase, GroupingIterator, PeekListenerIterator}
+import org.apache.spark.sql.rapids.execution.python.{BatchProducer, BatchQueue, CombiningIterator, GpuPythonHelper, GpuWindowInPandasExecBase, GroupingIterator}
 import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
@@ -197,10 +197,10 @@ case class GpuWindowInPandasExec(
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val peekIter = new PeekListenerIterator(
+      val batchProducer = new BatchProducer(
         new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
-      val queue = new BatchQueue(peekIter)
-      val pyInputIterator = peekIter.map { case (batch, isForPeek) =>
+      val queue = new BatchQueue(batchProducer)
+      val pyInputIterator = batchProducer.asIterator.map { case (batch, isForPeek) =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
         val inputBatch = closeOnExcept(batch) { _ =>

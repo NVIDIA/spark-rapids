@@ -170,36 +170,87 @@ class RebatchingRoundoffIterator(
   }
 }
 
-/** A listener to work with the BatchQueue. */
-trait BatchQueuePeekListener {
-  // This will be called when the BatchQueue is peeking the rows number but
-  // no batch is in the queue. And it should return a batch for the rows number
-  // peek.
-  // NOTE: The returned batch will be taken over. Do not use it any more.
-  def onNewBatchRequired(): ColumnarBatch
+/**
+ * Work with BatchQueue to support BatchQueue's peek operation by pulling
+ * in a batch from the input iterator on demand.
+ *
+ * It also supports accessing batches from the input by an iterator. Call
+ * "asIterator" to get the iterator. This iterator will return a tuple of
+ * ColumnarBatch and Boolean. And the boolean indicates whether the batch
+ * is pulled in for peak.
+ */
+class BatchProducer(input: Iterator[ColumnarBatch]) extends AutoCloseable { producer =>
+
+  Option(TaskContext.get()).foreach(onTaskCompletion(_)(close()))
+
+  // Cache for batches pulled in by the "produce" call for the peek operation.
+  // In fact, there is usually only one batch. But using a queue here is because in
+  // theory "produce" can be called multiple times, then more than one batch can be
+  // pulled in.
+  private val pending = mutable.Queue[SpillableColumnarBatch]()
+
+  private[rapids] def produce(): ColumnarBatch = producer.synchronized {
+    if (input.hasNext) {
+      val cb = input.next()
+      // Need to duplicate this batch for "next"
+      pending.enqueue(SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+      cb
+    } else {
+      null
+    }
+  }
+
+  def asIterator: Iterator[(ColumnarBatch, Boolean)] = {
+    new Iterator[(ColumnarBatch, Boolean)] {
+
+      override def hasNext: Boolean = producer.synchronized {
+        pending.nonEmpty || input.hasNext
+      }
+
+      override def next(): (ColumnarBatch, Boolean) = producer.synchronized {
+        if (!hasNext) {
+          throw new NoSuchElementException()
+        }
+        if (pending.nonEmpty) {
+          withResource(pending.dequeue()) { scb =>
+            (scb.getColumnarBatch(), true)
+          }
+        } else {
+          (input.next(), false)
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = synchronized {
+    while(pending.nonEmpty) {
+      pending.dequeue().close()
+    }
+  }
 }
 
 /**
  * A simple queue that holds the pending batches that need to line up with
  * and combined with batches coming back from python.
  *
- * It will ask for a batch from "peekListener" when peeking the rows number
+ * It will ask for a batch from "batchProducer" when peeking the rows number
  * and the queue is empty.
  * It also supports an optional converter to convert the input batch and save
  * the converted batch. This is design for the GpuAggregateInPandasExec to save
  * the group key instead of the original input batch.
  */
 class BatchQueue(
-    peekListener: BatchQueuePeekListener,
+    batchProducer: BatchProducer,
     converter: Option[ColumnarBatch => ColumnarBatch] = None
 ) extends AutoCloseable {
 
-  private val queue = mutable.ArrayBuffer[SpillableColumnarBatch]()
-
-  assert(peekListener != null)
+  assert(batchProducer != null, "BatchQueue requires a BatchProducer")
   Option(TaskContext.get()).foreach(onTaskCompletion(_)(close()))
 
-  private def convertIfAny(batch: ColumnarBatch): ColumnarBatch = {
+  private val queue = mutable.ArrayBuffer[SpillableColumnarBatch]()
+
+  private[this] def convertIfAny(batch: ColumnarBatch): ColumnarBatch = {
     converter.map { convert =>
       withResource(batch)(convert)
     }.getOrElse(batch)
@@ -233,7 +284,7 @@ class BatchQueue(
       // happen after this peak in the single threaded python runner, leading
       // to a hang.
       // Do not call it inside a lock to avoid any dead lock.
-      val nextBatch = peekListener.onNewBatchRequired()
+      val nextBatch = batchProducer.produce()
       if (nextBatch != null) {
         val cb = convertIfAny(nextBatch)
         this.synchronized {
@@ -257,60 +308,6 @@ class BatchQueue(
   override def close(): Unit = synchronized {
     while (queue.nonEmpty) {
       queue.remove(0).close()
-    }
-  }
-}
-
-/**
- * An iterator that supports the BatchQueuePeekListener.
- * It will return a tuple of ColumnarBatch and Boolean. The boolean
- * indicates whether the batch is pulled in for peak.
- */
-class PeekListenerIterator(input: Iterator[ColumnarBatch])
-  extends Iterator[(ColumnarBatch, Boolean)]
-    with AutoCloseable with BatchQueuePeekListener {
-
-  Option(TaskContext.get()).foreach(onTaskCompletion(_)(close()))
-
-  // Cache for batches pulled in by the peek operation.
-  // In fact, there is usually only one batch. But using a queue here is because in
-  // theory "onNewBatchRequired" can be called multiple times, then more than one
-  // batch can be pulled in.
-  private val pending: mutable.Queue[SpillableColumnarBatch] =
-    mutable.Queue[SpillableColumnarBatch]()
-
-  override def onNewBatchRequired(): ColumnarBatch = synchronized {
-    if (input.hasNext) {
-      val cb = input.next()
-      // Need to duplicate this batch for "next"
-      pending.enqueue(SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-      cb
-    } else {
-      null
-    }
-  }
-
-  override def hasNext: Boolean = synchronized {
-    pending.nonEmpty || input.hasNext
-  }
-
-  override def next(): (ColumnarBatch, Boolean) = synchronized {
-    if (!hasNext) {
-      throw new NoSuchElementException()
-    }
-    if (pending.nonEmpty) {
-      withResource(pending.dequeue()) { scb =>
-        (scb.getColumnarBatch(), true)
-      }
-    } else {
-      (input.next(), false)
-    }
-  }
-
-  override def close(): Unit = synchronized {
-    while(pending.nonEmpty) {
-      pending.dequeue().close()
     }
   }
 }
@@ -399,11 +396,11 @@ case class GpuArrowEvalPythonExec(
       }.toArray)
 
       val boundReferences = GpuBindReferences.bindReferences(allInputs.toSeq, childOutput)
-      val peekIter = new PeekListenerIterator(
+      val batchProducer = new BatchProducer(
         new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize, numInputRows,
           numInputBatches))
-      val queue = new BatchQueue(peekIter)
-      val pyInputIterator = peekIter.map { case (batch, isForPeek) =>
+      val queue = new BatchQueue(batchProducer)
+      val pyInputIterator = batchProducer.asIterator.map { case (batch, isForPeek) =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
         val ret = closeOnExcept(batch)(GpuProjectExec.project(_, boundReferences))

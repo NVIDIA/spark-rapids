@@ -193,10 +193,10 @@ case class GpuAggregateInPandasExec(
         }
       }
 
-      val peekIter = new PeekListenerIterator(
+      val batchProducer = new BatchProducer(
         BatchGroupedIterator(miniIter, miniAttrs, groupingRefs.indices))
-      val queue = new BatchQueue(peekIter, Some(keyConverter))
-      val pyInputIter = peekIter.map { case (batch, isForPeek) =>
+      val queue = new BatchQueue(batchProducer, Some(keyConverter))
+      val pyInputIter = batchProducer.asIterator.map { case (batch, isForPeek) =>
         val inputBatch = closeOnExcept(batch) { _ =>
           val pyInputColumns = pyInputRefs.indices.safeMap { idx =>
             batch.column(idx + groupingRefs.size).asInstanceOf[GpuColumnVector].incRefCount()

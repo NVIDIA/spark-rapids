@@ -503,10 +503,10 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs.toSeq, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val peekIter = new PeekListenerIterator(
+      val batchProducer = new BatchProducer(
         new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
-      val queue = new BatchQueue(peekIter)
-      val pyInputIterator = peekIter.map { case (batch, isForPeek) =>
+      val queue = new BatchQueue(batchProducer)
+      val pyInputIterator = batchProducer.asIterator.map { case (batch, isForPeek) =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
         val inputBatch = closeOnExcept(batch) { _ =>
