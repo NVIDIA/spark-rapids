@@ -23,13 +23,15 @@ import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.python.shims.GpuPythonArrowOutput
+import org.apache.spark.sql.rapids.execution.GpuSubPartitionHashJoin
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -426,49 +428,39 @@ class CombiningIterator(
   }
 
   private def concatInputBatch(targetNumRows: Int): ColumnarBatch = {
-    withResource(mutable.ArrayBuffer[ColumnarBatch]()) { buf =>
+    withResource(mutable.ArrayBuffer[SpillableColumnarBatch]()) { buf =>
       var curNumRows = pendingInput.map(_.numRows()).getOrElse(0)
-      pendingInput.foreach { scb =>
-        buf.append(withResource(scb)(_.getColumnarBatch()))
-      }
+      pendingInput.foreach(buf.append(_))
       pendingInput = None
       while (curNumRows < targetNumRows) {
-        val cb = inputBatchQueue.remove()
-        buf.append(cb)
-        curNumRows = curNumRows + cb.numRows()
+        val scb = inputBatchQueue.remove()
+        if (scb != null) {
+          buf.append(scb)
+          curNumRows = curNumRows + scb.numRows()
+        }
       }
       assert(buf.nonEmpty, "The input queue is empty")
 
       if (curNumRows > targetNumRows) {
         // Need to split the last batch
-        withResource(buf.remove(buf.size - 1)) { lastCb =>
-          val splitIdx = lastCb.numRows() - (curNumRows - targetNumRows)
-          val batchTypes = GpuColumnVector.extractTypes(lastCb)
-          val Array(first, second) = withResource(GpuColumnVector.from(lastCb)) { table =>
-            table.contiguousSplit(splitIdx)
-          }
-          closeOnExcept(second) { _ =>
-            withResource(first) { _ =>
-              buf.append(GpuColumnVectorFromBuffer.from(first, batchTypes))
+        val Array(first, second) = withRetryNoSplit(buf.remove(buf.size - 1)) { lastScb =>
+          val splitIdx = lastScb.numRows() - (curNumRows - targetNumRows)
+          withResource(lastScb.getColumnarBatch()) { lastCb =>
+            val batchTypes = GpuColumnVector.extractTypes(lastCb)
+            withResource(GpuColumnVector.from(lastCb)) { table =>
+              table.contiguousSplit(splitIdx).safeMap(
+                SpillableColumnarBatch(_, batchTypes, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
             }
-            pendingInput = Some(SpillableColumnarBatch(second, batchTypes,
-              SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
           }
         }
+        buf.append(first)
+        pendingInput = Some(second)
       }
 
-      if (buf.size == 1) {
-        // Simplest case, the current input batch has the same rows number with
-        // the result batch from Python
-        buf.remove(0)
-      } else {
-        // concatenate the batches
-        val concated = withResource(buf.toSeq.safeMap(GpuColumnVector.from)) { tables =>
-          Table.concatenate(tables: _*)
-        }
-        withResource(concated) { _ =>
-          GpuColumnVector.from(concated, GpuColumnVector.extractTypes(buf.head))
-        }
+      val ret = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(buf.toSeq)
+      // "ret" should be non empty because we checked the buf is not empty ahead.
+      withResource(ret.get) { concatedScb =>
+        concatedScb.getColumnarBatch()
       }
     } // end of withResource(mutable.ArrayBuffer)
   }

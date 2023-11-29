@@ -214,19 +214,12 @@ class BatchQueue(
   }
 
   /** Return and remove the first batch in the cache. */
-  def remove(): ColumnarBatch = {
-    val optScb = this.synchronized {
-      if (queue.isEmpty) {
-        None
-      } else {
-        Some(queue.remove(0))
-      }
+  def remove(): SpillableColumnarBatch = synchronized {
+    if (queue.isEmpty) {
+      null
+    } else {
+      queue.remove(0)
     }
-    optScb.map { scb =>
-      withResource(scb) { _ =>
-        scb.getColumnarBatch()
-      }
-    }.orNull
   }
 
   /** Get the number of rows in the next batch, without actually getting the batch. */
