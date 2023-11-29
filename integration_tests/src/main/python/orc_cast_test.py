@@ -105,7 +105,7 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
 
 @pytest.mark.parametrize('data_gen', [DoubleGen(max_exp=32, special_cases=None),
                                       DoubleGen(max_exp=32, special_cases=[8.88e9, 9.99e10, 1.314e11])])
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     # ORC will assume the original double value in seconds, we need to convert them to
     # timestamp(INT64 in micro-seconds).
