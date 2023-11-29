@@ -1179,7 +1179,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * @param meta to check whether it's UTC
    */
   def checkUTCTimezone(meta: RapidsMeta[_, _, _]): Unit = {
-    if (!TimeZoneDB.isUTCTimezone()) {
+    if (!GpuOverrides.isUTCTimezone()) {
       meta.willNotWorkOnGpu(
         TimeZoneDB.nonUTCTimezoneNotSupportedStr(meta.wrapped.getClass.toString))
     }

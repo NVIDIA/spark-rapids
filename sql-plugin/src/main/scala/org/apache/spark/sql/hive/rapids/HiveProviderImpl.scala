@@ -33,7 +33,6 @@ import org.apache.spark.sql.hive.execution.HiveTableScanExec
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -295,7 +294,7 @@ class HiveProviderImpl extends HiveProviderCmdShims {
 
             val types = wrapped.schema.map(_.dataType).toSet
             if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
-              if (!TimeZoneDB.isUTCTimezone()) {
+              if (!GpuOverrides.isUTCTimezone()) {
                 willNotWorkOnGpu("Only UTC timezone is supported. " +
                   s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
                   s"session: ${SQLConf.get.sessionLocalTimeZone}). ")

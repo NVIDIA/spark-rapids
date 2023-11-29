@@ -40,7 +40,6 @@ import org.apache.spark.sql.execution.datasources.{PartitionedFile, Partitioning
 import org.apache.spark.sql.execution.datasources.v2.{FileScan, TextBasedFileScan}
 import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, DateType, DecimalType, DoubleType, FloatType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -177,13 +176,13 @@ object GpuJsonScan {
       // string into Java util.Date base on JVM default timezone. From Java util.Date, it's
       // converted into java.sql.Date type. By leveraging [[JavaDateTimeUtils]], it finally do
       // `rebaseJulianToGregorianDays` considering its offset to UTC timezone.
-      if(!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)){
+      if(!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)){
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
     }
 
     if (types.contains(TimestampType) || types.contains(DateType)) {
-      if (!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)) {
+      if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
 

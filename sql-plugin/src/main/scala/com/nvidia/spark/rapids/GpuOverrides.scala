@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.catalyst.util.ArrayData
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
@@ -619,6 +619,15 @@ object GpuOverrides extends Logging {
         }
       case _ => false
     }
+  }
+
+  def isUTCTimezone(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == UTC_TIMEZONE_ID
+  }
+
+  def isUTCTimezone(): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
+    isUTCTimezone(zoneId.normalized())
   }
 
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))

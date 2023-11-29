@@ -21,11 +21,26 @@ from data_gen import *
 from conftest import is_databricks_runtime
 from delta_lake_utils import *
 from marks import *
-from parquet_write_test import parquet_part_write_gens, parquet_write_gens_list, writer_confs
+from parquet_write_test import parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_spark_340_or_later, with_cpu_session
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
+
+delta_part_write_gens = [
+    byte_gen,
+    short_gen,
+    int_gen,
+    long_gen,
+    # Avoid NaNs since it falsely triggers switch to new file when checking if partition changed
+    FloatGen(no_nans=True),
+    DoubleGen(no_nans=True),
+    # Some file systems have issues with UTF8 strings so to help the test pass even there
+    StringGen('(\\w| ){0,50}'),
+    boolean_gen,
+    date_gen,
+    timestamp_gen
+]
 
 _delta_confs = copy_and_update(writer_confs, delta_writes_enabled_conf,
                                {"spark.rapids.sql.hasExtendedYearValues": "false",
@@ -91,7 +106,7 @@ def test_delta_write_round_trip_unmanaged(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.parametrize("gens", parquet_part_write_gens, ids=idfn)
+@pytest.mark.parametrize("gens", delta_part_write_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens)]
@@ -112,7 +127,7 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
-@pytest.mark.parametrize("gens", parquet_part_write_gens, ids=idfn)
+@pytest.mark.parametrize("gens", delta_part_write_gens, ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
     gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens), ("c", SetValuesGen(StringType(), ["x", "y", "z"]))]

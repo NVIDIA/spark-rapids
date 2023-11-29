@@ -40,7 +40,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{LegacyTimeParserPolicy, TimeZoneDB}
+import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -177,7 +177,7 @@ object GpuCSVScan {
       // timezone. From Java util.Date, it's converted into java.sql.Date type.
       // By leveraging [[JavaDateTimeUtils]], it finally do `rebaseJulianToGregorianDays`
       // considering its offset to UTC timezone.
-      if (!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)) {
+      if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
     }
@@ -186,7 +186,7 @@ object GpuCSVScan {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
 
-      if (!TimeZoneDB.isUTCTimezone(parsedOptions.zoneId)) {
+      if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
     }
