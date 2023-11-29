@@ -60,7 +60,7 @@ def get_ddl(col_gen_pairs):
     """Given a list of column_name, data_generator paris, returns the corresponding DDL string"""
     return ', '.join([f"{c} {g.data_type.simpleString()}" for c, g in col_gen_pairs])
 
-non_utc_allow_for_test_column_add_after_partition = ['DataWritingCommandExec'] if is_not_utc() else []
+non_utc_allow_for_test_column_add_after_partition = ['DataWritingCommandExec', 'FileSourceScanExec'] if is_not_utc() else []
 @ignore_order(local=True)
 @pytest.mark.parametrize("format", _formats)
 @allow_non_gpu(*non_utc_allow_for_test_column_add_after_partition)

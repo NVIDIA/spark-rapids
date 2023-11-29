@@ -291,11 +291,14 @@ def test_filter_with_project(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, BooleanGen(), data_gen).filter(f.col('a')).selectExpr('*', 'a as a2'))
 
+# DateAddInterval is a time zone aware expression
+non_utc_allow_for_date_add_interval = ['ProjectExec', 'FilterExec'] if is_not_utc() else []
 # It takes quite a bit to get filter to have a column it can filter on, but
 # no columns to actually filter. We are making it happen here with a sub-query
 # and some constants that then make it so all we need is the number of rows
 # of input.
 @pytest.mark.parametrize('op', ['>', '<'])
+@allow_non_gpu(*non_utc_allow_for_date_add_interval)
 def test_empty_filter(op, spark_tmp_path):
 
     def do_it(spark):
