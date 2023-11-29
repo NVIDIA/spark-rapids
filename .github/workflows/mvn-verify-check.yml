@@ -131,6 +131,8 @@ jobs:
             svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot)
           fi
 
+          echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
+
   package-tests:
     needs: get-shim-versions-from-dist
     continue-on-error: ${{ matrix.isSnapshot }}
