@@ -567,7 +567,7 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
     if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
       if (!GpuOverrides.isUTCTimezone()) {
         willNotWorkOnGpu("Only UTC timezone is supported for " +
-          "GpuCreateHiveTableAsSelectCommand. " +
+          s"${wrapped.getClass}. " +
           s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
           s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
       }
