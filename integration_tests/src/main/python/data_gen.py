@@ -677,7 +677,9 @@ class MapGen(DataGen):
             length = rand.randint(self._min_length, self._max_length)
             return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
         def make_dict_float():
-            # Make sure at most one key is nan
+            # In Spark map, at most one key can be NaN. However, in Python dict, multiple NaN keys 
+            # are allowed because NaN != NaN. So we need to ensure that there is at most one NaN 
+            # key in the dict when generating map type data.
             length = rand.randint(self._min_length, self._max_length)
             count = 0
             has_nan = False
