@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableComma
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMetaBase, GpuBroadcastNestedLoopJoinMetaBase}
@@ -546,6 +547,20 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override def tagSelfForGpu(): Unit = {}
+
+  // Check whether data type of intput/output contains time zone.
+  // Currently only UTC timezone is supported for [[DataWritingCommand]]
+  def timezoneCheck(): Unit = {
+    val types = (wrapped.inputSet.map(_.dataType) ++ wrapped.outputSet.map(_.dataType)).toSet
+    if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
+      if (!GpuOverrides.isUTCTimezone()) {
+        willNotWorkOnGpu("Only UTC timezone is supported for " +
+          "GpuCreateHiveTableAsSelectCommand. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+      }
+    }
+  }
 }
 
 /**

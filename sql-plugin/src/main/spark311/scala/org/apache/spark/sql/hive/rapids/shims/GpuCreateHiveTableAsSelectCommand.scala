@@ -88,6 +88,8 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
           })
         }
       }
+
+      timezoneCheck()
     }
 
     override def convertToGpu(): GpuDataWritingCommand = GpuCreateHiveTableAsSelectCommand(

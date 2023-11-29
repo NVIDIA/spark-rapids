@@ -121,7 +121,7 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     return read_impl
 
 
-non_utc_allow_for_test_basic_hive_text_read=['HiveTableScanExec'] if is_not_utc() else []
+non_utc_allow_for_test_basic_hive_text_read=['HiveTableScanExec', 'DataWritingCommandExec'] if is_not_utc() else []
 @pytest.mark.skipif(is_spark_cdh(),
                     reason="Hive text reads are disabled on CDH, as per "
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")

@@ -72,6 +72,8 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
     // Only Hive delimited text writes are currently supported.
     // Check whether that is the format currently in play.
     fileFormat = GpuHiveTextFileFormat.tagGpuSupport(this)
+
+    timezoneCheck()
   }
 
   override def convertToGpu(): GpuDataWritingCommand = {
