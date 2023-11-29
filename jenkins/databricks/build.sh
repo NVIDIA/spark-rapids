@@ -144,6 +144,12 @@ if [[ "$WITH_BLOOP" == "1" ]]; then
     MVN_OPT="ch.epfl.scala:bloop-maven-plugin:bloopInstall $MVN_OPT"
 fi
 
+# Disabling build for 341db until 24.02
+if [[ "$BUILDVER" == "341db" ]]; then
+    echo "Databricks 341 is not supported as of release 23.12\n"
+    exit 1
+fi 
+
 # Build the RAPIDS plugin by running package command for databricks
 $MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
