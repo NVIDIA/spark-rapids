@@ -29,12 +29,6 @@ WORKSPACE=${WORKSPACE:-$(pwd)}
 ## export 'M2DIR' so that shims can get the correct Spark dependency info
 export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 
-# Please refer to internal job update_premerge_m2_cache about building m2 tarball details
-M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
-if [ -s "$M2_CACHE_TAR" ] ; then
-    tar xf $M2_CACHE_TAR -C ~/
-fi
-
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
 MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT}"
 
@@ -55,10 +49,8 @@ TMP_PATH="/tmp/$(date '+%Y-%m-%d')-$$"
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$DEFAULT_CUDA_CLASSIFIER"
 DIST_POM_FPATH="$DIST_PL/target/parallel-world/META-INF/maven/$ART_GROUP_ID/$ART_ID/pom.xml"
 
-#DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
-#DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"true"}
-DIST_PROFILE_OPT=-Dincluded_buildvers=311
-DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"false"}
+DIST_PROFILE_OPT=-Dincluded_buildvers=$(IFS=,; echo "${SPARK_SHIM_VERSIONS[*]}")
+DIST_INCLUDES_DATABRICKS=${DIST_INCLUDES_DATABRICKS:-"true"}
 if [[ "$DIST_INCLUDES_DATABRICKS" == "true" ]] && [[ -n ${SPARK_SHIM_VERSIONS_DATABRICKS[*]} ]] && [[ "$SCALA_BINARY_VER" == "2.12" ]]; then
     DIST_PROFILE_OPT="$DIST_PROFILE_OPT,"$(IFS=,; echo "${SPARK_SHIM_VERSIONS_DATABRICKS[*]}")
 fi
@@ -118,9 +110,7 @@ fi
 
 set +H # turn off history expansion
 DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"!${DIST_PL}"} # TODO: deploy only required submodules to save time
-#for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
-A=("311")
-for buildver in "${A[@]:1}" ; do
+for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$DEFAULT_CUDA_CLASSIFIER \
         -DskipTests=$SKIP_TESTS \
