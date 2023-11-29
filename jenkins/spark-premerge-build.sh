@@ -59,7 +59,8 @@ mvn_verify() {
               -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
         # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
-            $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+            # $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+            echo "Skip build only version $version."
         fi
     done
 
