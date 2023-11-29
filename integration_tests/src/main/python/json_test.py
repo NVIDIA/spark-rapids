@@ -183,12 +183,11 @@ json_supported_ts_parts = ['', # Just the date
         "'T'HH:mm[:ss]",
         "'T'HH:mm"]
 
-not_utc_allow=['BatchScanExec'] if is_not_utc() else []
-
+not_utc_allow_for_test_json_scan = ['BatchScanExec', 'FileSourceScanExec'] if is_not_utc() else []
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize('v1_enabled_list', ["", "json"])
-@allow_non_gpu(*not_utc_allow)
+@allow_non_gpu(*not_utc_allow_for_test_json_scan)
 def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
     data_gen = TimestampGen()
@@ -284,6 +283,7 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timesta
 @pytest.mark.parametrize('allow_non_numeric_numbers', ["true", "false"])
 @pytest.mark.parametrize('allow_numeric_leading_zeros', ["true"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
+@allow_non_gpu(*not_utc_allow_for_test_json_scan)
 def test_basic_json_read(std_input_path, filename, schema, read_func, allow_non_numeric_numbers, allow_numeric_leading_zeros, ansi_enabled, spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
         {'spark.sql.ansi.enabled': ansi_enabled,
