@@ -147,7 +147,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ steps.date.outputs.date }}
+          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
 
       - name: check runtime before tests
         run: |
@@ -198,7 +198,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ steps.date.outputs.date }}
+          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
 
       - name: check runtime before tests
         run: |
@@ -258,7 +258,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ steps.date.outputs.date }}
+          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
 
       - name: check runtime before tests
         run: |
@@ -307,7 +307,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ steps.date.outputs.date }}
+          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
