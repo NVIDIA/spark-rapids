@@ -278,6 +278,8 @@ def test_sequence_with_step(start_gen, stop_gen, step_gen):
     # Get a step scalar from the 'step_gen' which follows the rules.
     step_gen.start(random.Random(data_gen_seed))
     step_lit = step_gen.gen()
+    if step_lit is None:
+        step_lit = "null"
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, start_gen, stop_gen, step_gen).selectExpr(
             "sequence(a, b, c)",
@@ -327,8 +329,8 @@ def test_sequence_illegal_boundaries(start_gen, stop_gen, step_gen):
 # Exceed the max length of a sequence
 #     "Too long sequence: xxxxxxxxxx. Should be <= 2147483632"
 sequence_too_long_length_gens = [
-    IntegerGen(min_val=2147483633, max_val=2147483633, special_cases=[]),
-    LongGen(min_val=2147483635, max_val=2147483635, special_cases=[None])
+    IntegerGen(min_val=2147483633, max_val=2147483633, special_cases=[], nullable=False),
+    LongGen(min_val=2147483635, max_val=2147483635, special_cases=[], nullable=False)
 ]
 
 @pytest.mark.parametrize('stop_gen', sequence_too_long_length_gens, ids=idfn)
