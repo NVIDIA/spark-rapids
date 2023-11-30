@@ -49,7 +49,7 @@ ART_GROUP_ID=$(mvnEval $DIST_PL project.groupId)
 ART_VER=$(mvnEval $DIST_PL project.version)
 DEFAULT_CUDA_CLASSIFIER=$(mvnEval $DIST_PL cuda.version)
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"}
-CLASSIFIERS==${CLASSIFIERS:-"$CUDA_CLASSIFIERS"} # default as CUDA_CLASSIFIERS for compatibility
+CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"} # default as CUDA_CLASSIFIERS for compatibility
 
 SQL_PL=${SQL_PL:-"sql-plugin"}
 POM_FILE=${POM_FILE:-"$DIST_PL/target/parallel-world/META-INF/maven/${ART_GROUP_ID}/${ART_ID}/pom.xml"}
