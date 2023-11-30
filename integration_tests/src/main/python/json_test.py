@@ -853,6 +853,7 @@ def test_structs_to_json(spark_tmp_path, data_gen, ignore_null_fields, pretty, t
     'Etc/UTC',
     pytest.param('UTC+07:00', marks=pytest.mark.allow_non_gpu('ProjectExec')),
 ])
+@pytest.mark.skipif(is_not_utc(), reason='Duplicated as original test case designed which it is parameterized by timezone. https://github.com/NVIDIA/spark-rapids/issues/9653.')
 def test_structs_to_json_timestamp(spark_tmp_path, data_gen, timestamp_format, timezone):
     struct_gen = StructGen([
         ("b", StructGen([('child', data_gen)], nullable=True)),

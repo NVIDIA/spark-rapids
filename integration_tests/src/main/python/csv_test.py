@@ -565,13 +565,14 @@ def test_csv_read_count(spark_tmp_path):
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
-@allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec', *non_utc_allow)
+@allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
 @pytest.mark.parametrize("timestamp_type", [
     pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.xfail(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
     "TIMESTAMP_NTZ"])
+@pytest.mark.xfail(is_not_utc(), reason='Timezone is not supported for csv format as https://github.com/NVIDIA/spark-rapids/issues/9653.')
 def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
 
@@ -622,9 +623,9 @@ def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timesta
             non_exist_classes = cpu_scan_class,
             conf = conf)
 
-@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec', *non_utc_allow)
+@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
-
+@pytest.mark.xfail(is_not_utc(), reason='Timezone is not supported for csv format as https://github.com/NVIDIA/spark-rapids/issues/9653.')
 def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
     # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
     data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
