@@ -64,7 +64,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
+          key: ${{ runner.os }}-maven-${{ github.event.pull_request.base.ref }}-${{ env.DATE }}
 
   get-shim-versions-from-dist:
     needs: cache-dependencies
