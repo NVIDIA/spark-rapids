@@ -32,9 +32,6 @@ env:
 jobs:
   cache-dependencies:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        java: ['8']
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
     steps:
@@ -42,7 +39,7 @@ jobs:
       - uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: ${{ matrix.java }}
+          java-version: 8
       - name: populate-daily-cache
         run: |
           set -x
@@ -62,9 +59,7 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-          echo "${{ env.DATE }}"
-          cacheKey="${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${{ env.DATE }}"
+          cacheKey="${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         uses: actions/cache@v3
