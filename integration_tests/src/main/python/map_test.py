@@ -326,7 +326,7 @@ def test_map_expr_literal_keys_dupe_exception(map_expr):
     assert_gpu_and_cpu_error(
             lambda spark: gen_df(spark, data_gen).selectExpr(map_expr).collect(),
             conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
-            error_message = "Duplicate map key")      
+            error_message = "Duplicate map key")
 
 
 def test_map_expr_multi_non_literal_keys():
