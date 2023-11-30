@@ -16,6 +16,7 @@
 from pyspark.sql.types import *
 from pyspark import SparkConf, SparkContext, SQLContext
 import pyspark.sql.functions as f
+from conftest import is_not_utc
 import datetime
 from argparse import ArgumentParser
 from decimal import Decimal
@@ -158,6 +159,7 @@ _first_last_qa_conf = copy_and_update(_qa_conf, {
 @incompat
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_SQL, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -170,6 +172,7 @@ def test_select(sql_query_line, pytestconfig):
 @incompat
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_NEEDS_SORT_SQL, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_needs_sort_select(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -182,6 +185,7 @@ def test_needs_sort_select(sql_query_line, pytestconfig):
 @ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_JOIN_SQL, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_select_join(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -198,6 +202,7 @@ def test_select_join(sql_query_line, pytestconfig):
 @ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_PRE_ORDER_SQL, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_select_first_last(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -210,6 +215,7 @@ def test_select_first_last(sql_query_line, pytestconfig):
 @ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_FLOAT_SQL, ids=idfn)
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_select_float_order_local(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:
@@ -224,6 +230,7 @@ def test_select_float_order_local(sql_query_line, pytestconfig):
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_REGEXP_SQL, ids=idfn)
 @pytest.mark.skipif(not is_jvm_charset_utf8(), reason="Regular expressions require UTF-8")
+@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_select_regexp(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:

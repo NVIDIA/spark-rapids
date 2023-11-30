@@ -42,8 +42,27 @@ object GpuJsonUtils {
   def dateFormatInRead(options: Map[String, String]): String =
     dateFormatInRead(parseJSONReadOptions(options))
 
+  def optionalTimestampFormatInRead(options: JSONOptions): Option[String] =
+    Some(options.timestampFormat)
+  def optionalTimestampFormatInRead(options: Map[String, String]): Option[String] =
+    optionalTimestampFormatInRead(parseJSONReadOptions(options))
+
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormat
+
+  def dateFormatInWrite(options: JSONOptions): String =
+    options.dateFormat
+
+  def timestampFormatInWrite(options: JSONOptions): String =
+    options.timestampFormat
+
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
+
+  def parseJSONOptions(options: Map[String, String]) = {
+    new JSONOptions(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+  }
 
   def parseJSONReadOptions(options: Map[String, String]) = {
     new JSONOptionsInRead(

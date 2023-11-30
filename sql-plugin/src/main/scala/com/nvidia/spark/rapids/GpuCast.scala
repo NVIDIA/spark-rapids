@@ -730,6 +730,7 @@ object GpuCast {
       fromDataType: DataType, options: CastOptions): ColumnVector = fromDataType match {
     case StringType => input.copyToColumnVector()
     case DateType => input.asStrings("%Y-%m-%d")
+    case TimestampType if options.castToJsonString => castTimestampToJson(input)
     case TimestampType => castTimestampToString(input)
     case FloatType | DoubleType => castFloatingTypeToString(input)
     case BinaryType => castBinToString(input, options)
@@ -771,6 +772,14 @@ object GpuCast {
         }
       }
     }
+  }
+
+  private def castTimestampToJson(input: ColumnView): ColumnVector = {
+    // we fall back to CPU if the JSON timezone is not UTC, so it is safe
+    // to hard-code `Z` here for now, but we should really add a timestamp
+    // format to CastOptions when we add support for custom formats in
+    // https://github.com/NVIDIA/spark-rapids/issues/9602
+    input.asStrings("%Y-%m-%dT%H:%M:%S.%3fZ")
   }
 
   /**
@@ -932,7 +941,8 @@ object GpuCast {
         // to be represented by the string literal `null`
         val strValue = closeOnExcept(strKey) { _ =>
           withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-            val valueStr = if (valueColumn.getType == DType.STRING) {
+            val dt = valueColumn.getType
+            val valueStr = if (dt == DType.STRING || dt.isDurationType || dt.isTimestampType) {
               withResource(castToString(valueColumn, from.valueType, options)) { valueStr =>
                 addQuotes(valueStr, valueColumn.getRowCount.toInt)
               }
@@ -1102,8 +1112,9 @@ object GpuCast {
         colon: ColumnVector,
         quote: ColumnVector): ColumnVector = {
       val jsonName = StringEscapeUtils.escapeJson(inputSchema(fieldIndex).name)
-      val dataType = inputSchema(fieldIndex).dataType
-      val needsQuoting = dataType == DataTypes.StringType
+      val dt = inputSchema(fieldIndex).dataType
+      val needsQuoting = dt == DataTypes.StringType || dt == DataTypes.DateType ||
+        dt == DataTypes.TimestampType
       withResource(input.getChildColumnView(fieldIndex)) { cv =>
         withResource(ArrayBuffer.empty[ColumnVector]) { attrColumns =>
           // prefix with quoted column name followed by colon
@@ -1113,13 +1124,15 @@ object GpuCast {
           }
           if (options.ignoreNullFieldsInStructs) {
             // write the value
-            val attrValue = castToString(cv, inputSchema(fieldIndex).dataType, options)
-            if (needsQuoting) {
-              attrColumns += quote.incRefCount()
-              attrColumns += escapeJsonString(attrValue)
-              attrColumns += quote.incRefCount()
-            } else {
-              attrColumns += attrValue
+            withResource(castToString(cv, inputSchema(fieldIndex).dataType, options)) {
+                attrValue =>
+              if (needsQuoting) {
+                attrColumns += quote.incRefCount()
+                attrColumns += escapeJsonString(attrValue)
+                attrColumns += quote.incRefCount()
+              } else {
+                attrColumns += attrValue.incRefCount()
+              }
             }
             // now concatenate
             val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
@@ -1379,7 +1392,7 @@ object GpuCast {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOrNull(
+  def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -1463,7 +1476,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()

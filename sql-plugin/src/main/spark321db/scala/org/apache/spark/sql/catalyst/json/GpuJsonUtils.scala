@@ -36,6 +36,12 @@ object GpuJsonUtils {
   def dateFormatInRead(options: Map[String, String]): String =
     dateFormatInRead(parseJSONReadOptions(options))
 
+  def optionalTimestampFormatInRead(options: JSONOptions): Option[String] =
+    options.timestampFormatInRead
+
+  def optionalTimestampFormatInRead(options: Map[String, String]): Option[String] =
+    optionalTimestampFormatInRead(parseJSONReadOptions(options))
+
   def timestampFormatInRead(options: JSONOptions): String = options.timestampFormatInRead.getOrElse(
     if (SQLConf.get.legacyTimeParserPolicy == SQLConf.LegacyBehaviorPolicy.LEGACY) {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss.SSSXXX"
@@ -43,7 +49,21 @@ object GpuJsonUtils {
       s"${DateFormatter.defaultPattern}'T'HH:mm:ss[.SSS][XXX]"
     })
 
+  def dateFormatInWrite(options: JSONOptions): String =
+    options.dateFormatInWrite
+
+  def timestampFormatInWrite(options: JSONOptions): String =
+    options.timestampFormatInWrite
+
   def enableDateTimeParsingFallback(options: JSONOptions): Boolean = false
+
+  def parseJSONOptions(options: Map[String, String]) = {
+    new JSONOptions(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+  }
+
 
   def parseJSONReadOptions(options: Map[String, String]) = {
     new JSONOptionsInRead(
