@@ -346,7 +346,7 @@ def test_in(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
 
-# We avoid testing inset with NaN in Spark < 3.2.0 since it has issue with NaN comparision.
+# We avoid testing inset with NaN in Spark < 3.2.0 since it has issue with NaN comparisons.
 # See https://github.com/NVIDIA/spark-rapids/issues/9687.
 test_inset_data_gen = [gen for gen in eq_gens_with_decimal_gen if gen != float_gen if gen != double_gen] + \
                                    [FloatGen(no_nans=True), DoubleGen(no_nans=True)] \
