@@ -3614,9 +3614,11 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("struct",
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
             TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.DECIMAL_128 +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
             TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.DECIMAL_128 +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
       (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
