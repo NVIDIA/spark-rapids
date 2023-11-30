@@ -42,7 +42,8 @@ ART_GROUP_ID=$(mvnEval project.groupId)
 ART_VER=$(mvnEval project.version)
 DEFAULT_CUDA_CLASSIFIER=${DEFAULT_CUDA_CLASSIFIER:-$(mvnEval cuda.version)} # default cuda version
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"} # e.g. cuda11,cuda12
-IFS=',' read -a CUDA_CLASSIFIERS_ARR <<< "$CUDA_CLASSIFIERS"
+CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"}  # default as CUDA_CLASSIFIERS for compatibility
+IFS=',' read -a CLASSIFIERS_ARR <<< "$CLASSIFIERS"
 TMP_PATH="/tmp/$(date '+%Y-%m-%d')-$$"
 
 DIST_FPATH="$DIST_PL/target/$ART_ID-$ART_VER-$DEFAULT_CUDA_CLASSIFIER"
@@ -72,7 +73,7 @@ function distWithReducedPom {
 
         deploy)
             mvnCmd="deploy:deploy-file"
-            if (( ${#CUDA_CLASSIFIERS_ARR[@]} > 1 )); then
+            if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
               # try move tmp artifacts back to target folder for simplifying separate release process
               mv ${TMP_PATH}/${ART_ID}-${ART_VER}-*.jar ${DIST_PL}/target/
             fi
@@ -102,6 +103,11 @@ function distWithReducedPom {
 
 # option to skip unit tests. Used in our CI to separate test runs in parallel stages
 SKIP_TESTS=${SKIP_TESTS:-"false"}
+if [[ "${SKIP_TESTS}" == "true" ]]; then
+  # if skip test, we could try speed up build with multiple-threads
+  MVN="${MVN} -T1C"
+fi
+
 set +H # turn off history expansion
 DEPLOY_SUBMODULES=${DEPLOY_SUBMODULES:-"!${DIST_PL}"} # TODO: deploy only required submodules to save time
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
@@ -129,25 +135,34 @@ for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
 done
 
 installDistArtifact() {
-  local cuda_classifier="$1"
+  local cuda_version="$1"
+  local opt="$2"
   $MVN -B clean install \
+      $opt \
       $DIST_PROFILE_OPT \
       -Dbuildver=$SPARK_BASE_SHIM_VERSION \
       $MVN_URM_MIRROR \
       -Dmaven.repo.local=$M2DIR \
-      -Dcuda.version=$cuda_classifier \
+      -Dcuda.version=$cuda_version \
       -DskipTests=$SKIP_TESTS
 }
 
 # build extra cuda classifiers
-if (( ${#CUDA_CLASSIFIERS_ARR[@]} > 1 )); then
+if (( ${#CLASSIFIERS_ARR[@]} > 1 )); then
   mkdir -p ${TMP_PATH}
-  for classifier in "${CUDA_CLASSIFIERS_ARR[@]}"; do
+  for classifier in "${CLASSIFIERS_ARR[@]}"; do
     if [ "${classifier}" == "${DEFAULT_CUDA_CLASSIFIER}" ]; then
       echo "skip default: ${DEFAULT_CUDA_CLASSIFIER} in build extra cuda classifiers step..."
       continue
     fi
-    installDistArtifact ${classifier}
+
+    opt=""
+    if [[ "${classifier}" == *"-arm64" ]]; then
+      opt="-Parm64"
+    fi
+    # pass cuda version and extra opt
+    installDistArtifact ${classifier%%-*} ${opt}
+
     # move artifacts to temp for deployment later
     artifactFile="${ART_ID}-${ART_VER}-${classifier}.jar"
     mv ${DIST_PL}/target/${artifactFile} ${TMP_PATH}/
