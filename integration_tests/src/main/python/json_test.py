@@ -208,7 +208,6 @@ def test_json_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_ena
 
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec')
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+.')
-@pytest.mark.xfail(is_not_utc(), reason='Timezone is not supported for json format as https://github.com/NVIDIA/spark-rapids/issues/9653.')
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
@@ -217,7 +216,6 @@ def test_json_ts_formats_round_trip_ntz_v1(spark_tmp_path, date_format, ts_part,
 
 @allow_non_gpu('BatchScanExec', 'ProjectExec')
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+.')
-@pytest.mark.xfail(is_not_utc(), reason='Timezone is not supported for json format as https://github.com/NVIDIA/spark-rapids/issues/9653.')
 @pytest.mark.parametrize('ts_part', json_supported_ts_parts)
 @pytest.mark.parametrize('date_format', json_supported_date_formats)
 @pytest.mark.parametrize("timestamp_type", ["TIMESTAMP_LTZ", "TIMESTAMP_NTZ"])
@@ -248,11 +246,16 @@ def json_ts_formats_round_trip_ntz(spark_tmp_path, date_format, ts_part, timesta
 
 
     if timestamp_type == "TIMESTAMP_LTZ":
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark : do_read(spark),
-            exist_classes = 'Gpu' + cpu_scan_class,
-            non_exist_classes = cpu_scan_class,
-            conf=updated_conf)
+        if is_not_utc():  # non UTC is not support for csv, skip capture check
+            assert_gpu_and_cpu_are_equal_collect(lambda spark: do_read(spark), conf = updated_conf)
+        else:
+            assert_cpu_and_gpu_are_equal_collect_with_capture(
+                lambda spark : do_read(spark),
+                exist_classes = 'Gpu' + cpu_scan_class,
+                non_exist_classes = cpu_scan_class,
+                conf=updated_conf)
+
+
     else:
         # we fall back to CPU due to "unsupported data types in output: TimestampNTZType"
         assert_gpu_fallback_collect(

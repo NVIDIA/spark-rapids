@@ -573,7 +573,6 @@ def test_csv_read_count(spark_tmp_path):
 @pytest.mark.parametrize("timestamp_type", [
     pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.xfail(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
     "TIMESTAMP_NTZ"])
-@pytest.mark.xfail(is_not_utc(), reason='Timezone is not supported for csv format as https://github.com/NVIDIA/spark-rapids/issues/9653.')
 def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
     csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
 
@@ -618,15 +617,19 @@ def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timesta
             cpu_fallback_class_name = cpu_scan_class,
             conf = conf)
     else:
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: do_read(spark),
-            exist_classes = 'Gpu' + cpu_scan_class,
-            non_exist_classes = cpu_scan_class,
-            conf = conf)
+        if is_not_utc():  # non UTC is not support for csv, skip capture check
+            assert_gpu_and_cpu_are_equal_collect(lambda spark: do_read(spark), conf = conf)
+        else:
+            assert_cpu_and_gpu_are_equal_collect_with_capture(
+                lambda spark: do_read(spark),
+                exist_classes = 'Gpu' + cpu_scan_class,
+                non_exist_classes = cpu_scan_class,
+                conf = conf)
+
+
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='`preferDate` is only supported in Spark 340+')
-@pytest.mark.xfail(is_not_utc(), reason='Timezone is not supported for csv format as https://github.com/NVIDIA/spark-rapids/issues/9653.')
 def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
     # start date ""0001-01-02" required due to: https://github.com/NVIDIA/spark-rapids/issues/5606
     data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, timestamp_gen, DateGen(start=date(1, 1, 2))]
@@ -635,14 +638,21 @@ def test_csv_prefer_date_with_infer_schema(spark_tmp_path):
 
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
+    if is_not_utc(): # non UTC is not support for csv
+        exist_clazz = 'FileSourceScanExec'
+        non_exist_clazz = 'GpuFileSourceScanExec'
+    else:
+        exist_clazz = 'GpuFileSourceScanExec'
+        non_exist_clazz = 'FileSourceScanExec'
+
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option("inferSchema", "true").csv(data_path),
-        exist_classes = 'GpuFileSourceScanExec',
-        non_exist_classes = 'FileSourceScanExec')
+        exist_classes = exist_clazz,
+        non_exist_classes = non_exist_clazz)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.option("inferSchema", "true").option("preferDate", "false").csv(data_path),
-        exist_classes = 'GpuFileSourceScanExec',
-        non_exist_classes = 'FileSourceScanExec')
+        exist_classes = exist_clazz,
+        non_exist_classes = non_exist_clazz)
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.skipif(is_before_spark_340(), reason='enableDateTimeParsingFallback is supported from Spark3.4.0')
