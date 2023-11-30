@@ -627,11 +627,10 @@ def test_min_max_group_by(data_gen):
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@allow_non_gpu("ProjectExec", "SortArray")
+@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     def doit(spark):
         df = gen_df(spark, data_gen, length=100)\
@@ -685,9 +684,8 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
 @ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "SortArray")
+@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
@@ -729,9 +727,8 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
 @ignore_order(local=True)
-@allow_non_gpu("ProjectExec", "SortArray")
+@allow_non_gpu("ProjectExec", "SortArray", *non_utc_allow)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
     conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",

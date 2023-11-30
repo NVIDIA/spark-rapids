@@ -394,6 +394,11 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
     else:
         assert_gpu_and_cpu_are_equal_collect(f, conf=updated_conf)
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_file_source_scan_allow = ['FileSourceScanExec'] if is_not_utc() else []
+
+non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
+
 @approximate_float
 @pytest.mark.parametrize('filename', [
     'timestamps.json',
@@ -403,10 +408,10 @@ def test_json_read_invalid_dates(std_input_path, filename, schema, read_func, an
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    # For non UTC cases, corrected and exception will have CPU fallback in lack of timezone support.
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_file_source_scan_allow)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_file_source_scan_allow))
 ])
-@allow_non_gpu(*non_utc_allow)
 def test_json_read_valid_timestamps(std_input_path, filename, schema, read_func, ansi_enabled, time_parser_policy, \
         spark_tmp_table_factory):
     updated_conf = copy_and_update(_enable_all_types_conf,
@@ -560,8 +565,8 @@ def test_from_json_struct_decimal():
     "(true|false)"
 ])
 @pytest.mark.parametrize('date_format', [
-    "",
-    "yyyy-MM-dd",
+    pytest.param("", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
+    pytest.param("yyyy-MM-dd", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
     # https://github.com/NVIDIA/spark-rapids/issues/9667
     pytest.param("dd/MM/yyyy", marks=pytest.mark.allow_non_gpu('ProjectExec')),
 ])
@@ -569,7 +574,6 @@ def test_from_json_struct_decimal():
     pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     "CORRECTED"
 ])
-@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_date(date_gen, date_format, time_parser_policy):
     json_string_gen = StringGen(r'{ "a": ' + date_gen + ' }') \
         .with_special_case('{ "a": null }') \
@@ -617,6 +621,9 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
         conf={"spark.rapids.sql.expression.JsonToStructs": True,
               'spark.sql.legacy.timeParserPolicy': 'CORRECTED'})
 
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
+
 @pytest.mark.parametrize('timestamp_gen', [
     # "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"
     "\"[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]?[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?[ \t\xA0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000]}?\"",
@@ -641,8 +648,9 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     "(true|false)"
 ])
 @pytest.mark.parametrize('timestamp_format', [
-    "",
-    "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]",
+    # Even valid timestamp format, CPU fallback happens still since non UTC is not supported for json.
+    pytest.param("", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
+    pytest.param("yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu(*non_utc_project_allow)),
     # https://github.com/NVIDIA/spark-rapids/issues/9723
     pytest.param("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     pytest.param("dd/MM/yyyy'T'HH:mm:ss[.SSS][XXX]", marks=pytest.mark.allow_non_gpu('ProjectExec')),
@@ -652,7 +660,6 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     "CORRECTED"
 ])
 @pytest.mark.parametrize('ansi_enabled', [ True, False ])
-@allow_non_gpu(*non_utc_allow)
 def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
         .with_special_case('{ "a": null }') \

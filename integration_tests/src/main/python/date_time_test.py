@@ -514,9 +514,8 @@ def test_date_format_maybe_incompat(data_gen, date_format):
 # where we had a failure due to GpuCast canonicalization with timezone.
 # In this case it was doing filter after project, the way I get that to happen is by adding in the
 # input_file_name(), otherwise filter happens before project.
-@allow_non_gpu('CollectLimitExec,FileSourceScanExec,DeserializeToObjectExec')
+@allow_non_gpu("CollectLimitExec", "FileSourceScanExec" ,"DeserializeToObjectExec", *non_utc_allow)
 @ignore_order()
-@allow_non_gpu(*non_utc_allow)
 def test_date_format_mmyyyy_cast_canonicalization(spark_tmp_path):
     data_path = spark_tmp_path + '/CSV_DATA'
     gen = StringGen(pattern='[0][0-9][1][8-9][1-9][1-9]', nullable=False)

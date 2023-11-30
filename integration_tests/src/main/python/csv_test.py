@@ -331,10 +331,10 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    'CORRECTED',
-    'EXCEPTION'
+    # Date is also time zone related for csv since rebase.
+    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow)),
+    pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow))
 ])
-@allow_non_gpu(*non_utc_allow) # Date is also time zone related for csv since rebasing.
 def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
