@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_not_utc
 from data_gen import *
 from marks import approximate_float, datagen_overrides
 from spark_session import with_cpu_session, is_before_spark_330

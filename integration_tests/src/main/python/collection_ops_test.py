@@ -25,7 +25,6 @@ from spark_session import with_cpu_session, with_gpu_session
 from conftest import get_datagen_seed
 from marks import allow_non_gpu
 
-
 nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_128bit),
                StructGen([("a", LongGen()), ("b", decimal_gen_128bit)]),
                MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen()),
