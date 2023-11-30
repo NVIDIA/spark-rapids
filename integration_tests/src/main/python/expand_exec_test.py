@@ -14,7 +14,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
-from conftest import is_not_utc
 from data_gen import *
 import pyspark.sql.functions as f
 from marks import ignore_order

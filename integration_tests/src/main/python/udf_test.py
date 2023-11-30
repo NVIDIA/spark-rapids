@@ -14,7 +14,7 @@
 
 import pytest
 
-from conftest import is_at_least_precommit_run, is_not_utc
+from conftest import is_at_least_precommit_run
 from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_340_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version

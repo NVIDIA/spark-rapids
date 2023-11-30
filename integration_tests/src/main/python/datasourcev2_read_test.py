@@ -15,8 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
-from conftest import is_not_utc
-from data_gen import *
+from data_gen import non_utc_allow
 from marks import *
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'

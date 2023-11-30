@@ -334,7 +334,7 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
     'CORRECTED',
     'EXCEPTION'
 ])
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_allow) # Date is also time zone related for csv since rebasing.
 def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
@@ -366,13 +366,14 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, a
                     .csv(data_path),
             conf=updated_conf)
 
+non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourceScanExec'] if is_not_utc() else []
 
-non_utc_allow_for_test_read_valid_and_invalid_dates=['FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
 @pytest.mark.parametrize('filename', ["date.csv"])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
+    # Date is also time zone related for csv since rebasing.
     pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates)),
     pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
 ])

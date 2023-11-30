@@ -809,7 +809,6 @@ def test_read_case_col_name(spark_tmp_path, v1_enabled_list, col_name):
     pytest.param(True, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/9517')),
     False
 ])
-
 @pytest.mark.parametrize('timezone', [
     'UTC',
     'Etc/UTC',

@@ -14,7 +14,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from conftest import is_not_utc
 from data_gen import *
 from pyspark.sql.types import *
 from spark_session import is_before_spark_330

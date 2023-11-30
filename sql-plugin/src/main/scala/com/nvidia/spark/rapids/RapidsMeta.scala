@@ -1112,7 +1112,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   // There are 4 levels of timezone check in GPU plan tag phase:
   //    Level 1: Check whether an expression is related to timezone. This is achieved by
   //        [[needTimeZoneCheck]] below.
-  //    Level 2: Check on golden configuration 'spark.rapids.sql.nonUtc.enabled'. If
+  //    Level 2: Check on golden configuration 'spark.rapids.sql.nonUTC.enabled'. If
   //        yes, we pass to next level timezone check. If not, we only pass UTC case as before.
   //    Level 3: Check related expression has been implemented with timezone. There is a
   //        toggle flag [[isTimeZoneSupported]] for this. If false, fallback to UTC-only check as
@@ -1123,7 +1123,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // Level 1 check
     if (!needTimeZoneCheck) return
 
-    // TODO: Level 2 check
+    // Level 2 check
+    if(!conf.nonUTCTimeZoneEnabled) return checkUTCTimezone(this)
 
     // Level 3 check
     if (!isTimeZoneSupported) return checkUTCTimezone(this)

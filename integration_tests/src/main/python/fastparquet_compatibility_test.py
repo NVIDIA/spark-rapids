@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from conftest import is_not_utc
 from data_gen import *
 from fastparquet_utils import get_fastparquet_result_canonicalizer
 from spark_session import is_databricks_runtime, spark_version, with_cpu_session, with_gpu_session
