@@ -61,9 +61,9 @@ jobs:
       - name: Generate daily cache key
         id: generateCacheKey
         run: |
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-          cacheKey="${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${{ env.DATE }}"
-          echo "$cacheKey"
+          currentDate="$(date +'%Y-%m-%d')"
+          echo "$currentDate"
+          cacheKey="${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${{ currentDate }}"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         uses: actions/cache@v3
