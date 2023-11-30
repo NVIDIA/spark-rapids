@@ -41,6 +41,7 @@ jobs:
           distribution: 'temurin'
           java-version: 8
       - name: populate-daily-cache
+        if: steps.cache.outputs.cache-hit != 'true'
         run: |
           set -x
           max_retry=3; delay=30; i=1
