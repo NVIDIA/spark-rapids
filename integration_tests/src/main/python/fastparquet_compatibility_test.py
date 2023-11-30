@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from conftest import is_not_utc
 from data_gen import *
 from fastparquet_utils import get_fastparquet_result_canonicalizer
 from spark_session import spark_version, with_cpu_session, with_gpu_session
@@ -94,13 +95,6 @@ def read_parquet(data_path, local_data_path):
     return read_with_fastparquet_or_plugin
 
 
-def is_timezone_utc():
-    from spark_init_internal import get_spark_i_know_what_i_am_doing
-    import time
-    spark = get_spark_i_know_what_i_am_doing()
-    return spark.conf.get("spark.sql.session.timeZone") == "UTC" and time.tzname[time.daylight] == "UTC"
-
-
 @pytest.mark.skipif(condition=fastparquet_unavailable(),
                     reason="fastparquet is required for testing fastparquet compatibility")
 @pytest.mark.skipif(condition=spark_version() < "3.4.0",
@@ -129,7 +123,7 @@ def is_timezone_utc():
     pytest.param(TimestampGen(nullable=False,
                               start=pandas_min_datetime,
                               end=pandas_max_datetime),
-                 marks=pytest.mark.skipif(condition=not is_timezone_utc(),
+                 marks=pytest.mark.skipif(condition=is_not_utc(),
                                           reason="fastparquet interprets timestamps in UTC timezone, regardless "
                                                  "of timezone settings")),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
@@ -201,7 +195,7 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     pytest.param(TimestampGen(nullable=False,
                               start=pandas_min_datetime,
                               end=pandas_max_datetime),
-                 marks=pytest.mark.skipif(condition=not is_timezone_utc(),
+                 marks=pytest.mark.skipif(condition=is_not_utc(),
                                           reason="fastparquet interprets timestamps in UTC timezone, regardless "
                                                  "of timezone settings")),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
