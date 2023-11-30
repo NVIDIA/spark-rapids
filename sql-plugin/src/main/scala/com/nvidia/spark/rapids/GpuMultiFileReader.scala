@@ -30,7 +30,7 @@ import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
-import com.nvidia.spark.rapids.jni.SplitAndRetryOOM
+import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -1029,7 +1029,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * Set this to a splitter instance when chunked reading is supported
    */
   def chunkedSplit(buffer: HostMemoryBuffer): Seq[HostMemoryBuffer] = {
-    throw new SplitAndRetryOOM("Split is not currently supported")
+    throw new GpuSplitAndRetryOOM("Split is not currently supported")
   }
 
   /**

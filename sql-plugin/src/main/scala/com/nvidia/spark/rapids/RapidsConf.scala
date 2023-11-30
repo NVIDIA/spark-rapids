@@ -1379,8 +1379,8 @@ object RapidsConf {
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
-    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
-         "once per invocation.")
+    .doc("Only to be used in tests. If enabled the retry iterator will inject a GpuRetryOOM " +
+         "or CpuRetryOOM once per invocation.")
     .internal()
     .booleanConf
     .createWithDefault(false)
