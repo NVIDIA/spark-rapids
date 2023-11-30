@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        java: [ '8']
+        java: ['8']
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
     steps:
@@ -63,6 +63,7 @@ jobs:
         run: |
           echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
           cacheKey="${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${{ env.DATE }}"
+          echo "$cacheKey"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         uses: actions/cache@v3
