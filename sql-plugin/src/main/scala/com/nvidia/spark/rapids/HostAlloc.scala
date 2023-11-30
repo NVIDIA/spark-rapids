@@ -16,12 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.internal.Logging
 
-private class HostAlloc(nonPinnedLimit: Long) extends Logging {
+private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
   private var currentNonPinnedAllocated: Long = 0L
   private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes
   // For now we are going to assume that we are the only ones calling into the pinned pool
@@ -219,6 +219,12 @@ private class HostAlloc(nonPinnedLimit: Long) extends Logging {
     }
     ret.get
   }
+
+  override def allocate(amount: Long, preferPinned: Boolean): HostMemoryBuffer =
+    alloc(amount, preferPinned)
+
+  override def allocate(amount: Long): HostMemoryBuffer =
+    alloc(amount)
 }
 
 /**
@@ -233,6 +239,7 @@ object HostAlloc {
 
   def initialize(nonPinnedLimit: Long): Unit = synchronized {
     singleton = new HostAlloc(nonPinnedLimit)
+    DefaultHostMemoryAllocator.set(singleton)
   }
 
   def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
