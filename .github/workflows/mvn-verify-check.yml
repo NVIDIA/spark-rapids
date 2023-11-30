@@ -35,13 +35,16 @@ jobs:
     strategy:
       matrix:
         java: [ '8']
+    outputs:
+      dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
-      - run: |
+      - name: populate-daily-cache
+        run: |
           set -x
           max_retry=3; delay=30; i=1
           while true; do
@@ -55,16 +58,17 @@ jobs:
             fi
           }
           done 
-
-      - name: Get current date
+      - name: Generate daily cache key
+        id: generateCacheKey
         run: |
           echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-${{ env.DATE }}"
+          echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.event.pull_request.base.ref }}-${{ env.DATE }}
+          path: ~/.m2
+          key: ${{ env.dailyCacheKey }}
 
   get-shim-versions-from-dist:
     needs: cache-dependencies
@@ -134,7 +138,7 @@ jobs:
           echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkTailVersions) }}
@@ -148,16 +152,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
-      
-      - name: Get current date
-        run: |
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -189,7 +189,7 @@ jobs:
           done
 
   package-tests-scala213:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
@@ -204,15 +204,11 @@ jobs:
           distribution: adopt
           java-version: 8
 
-      - name: Get current date
-        run: |
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -255,7 +251,7 @@ jobs:
 
 
   verify-all-modules:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDKVersions) }}
@@ -268,15 +264,11 @@ jobs:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
 
-      - name: Get current date
-        run: |
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -307,7 +299,7 @@ jobs:
           done
 
   install-modules:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -321,15 +313,11 @@ jobs:
           distribution: adopt
           java-version: 11
 
-      - name: Get current date
-        run: |
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
-
       - name: Cache local Maven repository
         uses: actions/cache@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ github.ref }}-${{ env.DATE }}
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}
