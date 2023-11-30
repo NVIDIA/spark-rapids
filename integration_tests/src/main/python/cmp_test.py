@@ -346,10 +346,14 @@ def test_in(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
 
+# We avoid testing with NaN since inset in Spark has issue with NaN comparision.
+# See https://github.com/NVIDIA/spark-rapids/issues/9687.
+eq_gens_with_decimal_gen_no_nans = [gen for gen in eq_gens_with_decimal_gen if gen != float_gen if gen != double_gen] + \
+                                   [FloatGen(no_nans=True), DoubleGen(no_nans=True)]
+
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries over that value.
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9687')
-@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen_no_nans, ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_in_set(data_gen):
     # nulls are not supported for in on the GPU yet
