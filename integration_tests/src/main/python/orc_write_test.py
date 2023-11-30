@@ -189,11 +189,13 @@ def write_orc_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING ORC location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+non_utc_hive_save_table_allow = ['ExecutedCommandExec', 'DataWritingCommandExec', 'CreateDataSourceTableAsSelectCommand', 'WriteFilesExec'] if is_not_utc() else []
+
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_hive_save_table_allow)
 def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'

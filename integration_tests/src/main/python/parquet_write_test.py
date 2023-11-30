@@ -265,9 +265,11 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING PARQUET location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+non_utc_hive_save_table_allow = ['ExecutedCommandExec', 'DataWritingCommandExec', 'CreateDataSourceTableAsSelectCommand', 'WriteFilesExec'] if is_not_utc() else []
+
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@allow_non_gpu(*non_utc_allow)
+@allow_non_gpu(*non_utc_hive_save_table_allow)
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
