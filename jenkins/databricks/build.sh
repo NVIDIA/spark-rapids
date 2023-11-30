@@ -130,6 +130,10 @@ install_dependencies()
 ##########################
 # Main script starts here
 ##########################
+## 'foo=abc,bar=123,...' to 'export foo=abc bar=123 ...'
+if [ -n "$EXTRA_ENVS" ]; then
+    export ${EXTRA_ENVS//','/' '}
+fi
 
 initialize
 if [[ $SKIP_DEP_INSTALL == "1" ]]
