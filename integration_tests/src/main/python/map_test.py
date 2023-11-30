@@ -318,6 +318,7 @@ def test_map_expr_literal_keys_dupe_last_win():
                 'map("key1", b, "key1", a) as m1'),
             conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
 
+
 @pytest.mark.parametrize('map_expr',['map("key1", b, "key1", a) as m1', 
                                      'map(double("NaN"), b, double("NaN"), a) as m1'], ids=idfn)
 def test_map_expr_literal_keys_dupe_exception(map_expr):
@@ -326,6 +327,7 @@ def test_map_expr_literal_keys_dupe_exception(map_expr):
             lambda spark: gen_df(spark, data_gen).selectExpr(map_expr).collect(),
             conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
             error_message = "Duplicate map key")      
+
 
 def test_map_expr_multi_non_literal_keys():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
