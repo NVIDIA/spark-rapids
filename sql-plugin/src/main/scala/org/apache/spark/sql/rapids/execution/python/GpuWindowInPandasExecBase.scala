@@ -22,7 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -499,23 +499,29 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
-      val queue: BatchQueue = new BatchQueue()
-      onTaskCompletion(context)(queue.close())
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs.toSeq, childOutput)
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
-      val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches)
-      val pyInputIterator = groupedIterator.map { batch =>
+      val batchProducer = new BatchProducer(
+        new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
+      val queue = new BatchQueue(batchProducer)
+      val pyInputIterator = batchProducer.asIterator.map { case (batch, isForPeek) =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
-        val projectedBatch = GpuProjectExec.project(batch, boundDataRefs)
-        // Compute the window bounds and insert to the head of each row for one batch
-        val inputBatch = withResource(projectedBatch) { projectedCb =>
-          insertWindowBounds(projectedCb)
+        val inputBatch = closeOnExcept(batch) { _ =>
+          withResource(GpuProjectExec.project(batch, boundDataRefs)) { projectedCb =>
+            // Compute the window bounds and insert to the head of each row for one batch
+            insertWindowBounds(projectedCb)
+          }
         }
-        queue.add(batch)
+        if (isForPeek) {
+          batch.close()
+        } else {
+          // We only add the batch that is not for peek, because the batch for peek is already
+          // added by the reader when peeking the next rows number.
+          queue.add(batch)
+        }
         inputBatch
       }
 
@@ -534,12 +540,11 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          pythonOutputSchema,
-          () => queue.finish())
+          pythonOutputSchema)
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
         new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
-          numOutputBatches).map(projectResult(_))
+          numOutputBatches).map(projectResult)
       } else {
         // Empty partition, return the input iterator directly
         inputIter
