@@ -250,8 +250,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         .setNameFormat("shuffle-transport-client-exec-%d")
         .setDaemon(true)
         .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()),
+      null,
+      () => RmmSpark.removeAllCurrentThreadAssociation()),
     // if we can't hand off because we are too busy, block the caller (in UCX's case,
     // the progress thread)
     new CallerRunsAndLogs())
@@ -262,8 +262,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat("shuffle-client-copy-thread-%d")
       .setDaemon(true)
       .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()))
+      null,
+      () => RmmSpark.removeAllCurrentThreadAssociation()))
 
   override def makeClient(blockManagerId: BlockManagerId): RapidsShuffleClient = {
     val peerExecutorId = blockManagerId.executorId.toLong
@@ -286,8 +286,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat(s"shuffle-server-conn-thread-${shuffleServerId.executorId}-%d")
       .setDaemon(true)
       .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()))
+      null,
+      () => RmmSpark.removeAllCurrentThreadAssociation()))
 
   // This is used to queue up on the server all the [[BufferSendState]] as the server waits for
   // bounce buffers to become available (it is the equivalent of the transport's throttle, minus
@@ -297,8 +297,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setNameFormat(s"shuffle-server-bss-thread-%d")
       .setDaemon(true)
       .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()))
+      null,
+      () => RmmSpark.removeAllCurrentThreadAssociation()))
 
   /**
    * Construct a server instance
@@ -359,8 +359,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         .setNameFormat(s"shuffle-transport-throttle-monitor")
         .setDaemon(true)
         .build,
-      () => RmmSpark.associateCurrentThreadWithShuffle(),
-      () => RmmSpark.removeCurrentThreadAssociation()))
+      null,
+      () => RmmSpark.removeAllCurrentThreadAssociation()))
 
   // helper class to hold transfer requests that have a bounce buffer
   // and should be ready to be handled by a `BufferReceiveState`

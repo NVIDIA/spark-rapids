@@ -31,7 +31,6 @@ import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.Utils
 
 /**
  * Python UDF Runner for cogrouped UDFs, designed for `GpuFlatMapCoGroupsInPandasExec` only.
@@ -40,24 +39,24 @@ import org.apache.spark.util.Utils
  * and receive it back in JVM as batches of single DataFrame.
  */
 class GpuCoGroupedArrowPythonRunner(
-                                     funcs: Seq[ChainedPythonFunctions],
-                                     evalType: Int,
-                                     argOffsets: Array[Array[Int]],
-                                     leftSchema: StructType,
-                                     rightSchema: StructType,
-                                     timeZoneId: String,
-                                     conf: Map[String, String],
-                                     batchSize: Int,
-                                     pythonOutSchema: StructType)
+    funcs: Seq[ChainedPythonFunctions],
+    evalType: Int,
+    argOffsets: Array[Array[Int]],
+    leftSchema: StructType,
+    rightSchema: StructType,
+    timeZoneId: String,
+    conf: Map[String, String],
+    batchSize: Int,
+    pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[(ColumnarBatch, ColumnarBatch)](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
 
   protected override def newWriter(
-                                    env: SparkEnv,
-                                    worker: PythonWorker,
-                                    inputIterator: Iterator[(ColumnarBatch, ColumnarBatch)],
-                                    partitionIndex: Int,
-                                    context: TaskContext): Writer = {
+      env: SparkEnv,
+      worker: PythonWorker,
+      inputIterator: Iterator[(ColumnarBatch, ColumnarBatch)],
+      partitionIndex: Int,
+      context: TaskContext): Writer = {
     new Writer(env, worker, inputIterator, partitionIndex, context) {
 
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
@@ -75,24 +74,24 @@ class GpuCoGroupedArrowPythonRunner(
       override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
         // For each we first send the number of dataframes in each group then send
         // first df, then send second df.  End of data is marked by sending 0.
-        var wrote = false
-        while (inputIterator.hasNext) {
-          wrote = false
+        if (inputIterator.hasNext) {
           dataOut.writeInt(2)
           val (leftGroupBatch, rightGroupBatch) = inputIterator.next()
           withResource(Seq(leftGroupBatch, rightGroupBatch)) { _ =>
-            wrote = writeGroupBatch(leftGroupBatch, leftSchema, dataOut)
-            wrote = writeGroupBatch(rightGroupBatch, rightSchema, dataOut)
+            writeGroupBatch(leftGroupBatch, leftSchema, dataOut)
+            writeGroupBatch(rightGroupBatch, rightSchema, dataOut)
           }
+          true
+        } else {
+          // The iterator can grab the semaphore even on an empty batch
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          dataOut.writeInt(0)
+          false
         }
-        // The iterator can grab the semaphore even on an empty batch
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        dataOut.writeInt(0)
-        wrote
       }
 
       private def writeGroupBatch(groupBatch: ColumnarBatch, batchSchema: StructType,
-                                  dataOut: DataOutputStream): Boolean = {
+          dataOut: DataOutputStream): Unit = {
         val writer = {
           val builder = ArrowIPCWriterOptions.builder()
           builder.withMaxChunkSize(batchSize)
@@ -101,7 +100,7 @@ class GpuCoGroupedArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
-          GpuArrowPythonRunner.flattenNames(batchSchema).foreach { case (name, nullable) =>
+          GpuPythonRunnerUtils.flattenNames(batchSchema).foreach { case (name, nullable) =>
             if (nullable) {
               builder.withColumnNames(name)
             } else {
@@ -110,18 +109,20 @@ class GpuCoGroupedArrowPythonRunner(
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
-        var wrote = false
-        Utils.tryWithSafeFinally {
+        try {
           withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
             // The callback will handle closing table and releasing the semaphore
             writer.write(GpuColumnVector.from(groupBatch))
-            wrote = true
           }
-        } {
+        } catch {
+          case t: Throwable =>
+            // release the semaphore in case of exception in the middle of writing a batch
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            throw t
+        } finally {
           writer.close()
           dataOut.flush()
         }
-        wrote
       } // end of writeGroup
     }
   } // end of newWriterThread
