@@ -147,13 +147,10 @@ object RapidsPluginUtils extends Logging {
         }.mkString + "\n"
       }
     }.mkString
-    // scalastyle:off line.size.limit
-    lazy val msg = s"""Multiple $jarName jars found in the classpath:
-        |$rapidsJarsVersMsg
-        |Please make sure there is only one $jarName jar in the classpath.
-        |If it is impossible to fix the classpath you can suppress the error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS.
-        """.stripMargin
-    // scalastyle:on line.size.limit
+    lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
+        s"Please make sure there is only one $jarName jar in the classpath. "
+
+    require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
 
     conf.allowMultipleJars match {
       case AllowMultipleJars.ALWAYS =>
@@ -163,10 +160,14 @@ object RapidsPluginUtils extends Logging {
       case AllowMultipleJars.SAME_REVISION =>
         require(revisionMap.size == 1, msg)
         if (revisionMap.values.exists(_.size != 1)) {
-          logWarning(msg)
+          val recommended = "If it is impossible to fix the classpath you can suppress the " +
+              s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS."
+          logWarning(msg + recommended)
         }
       case AllowMultipleJars.NEVER =>
-        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg)
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+            s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS."
+        require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
     }
   }
 
