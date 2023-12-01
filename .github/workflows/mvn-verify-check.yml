@@ -29,6 +29,7 @@ env:
     -DskipTests
     -Dmaven.scaladoc.skip
     --threads 2C
+    -Dmaven.artifact.threads=4
     --no-transfer-progress
 
 
@@ -59,6 +60,7 @@ jobs:
         with:
           path: ~/.m2
           key: ${{ env.dailyCacheKey }}
+          restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
         if: steps.cache.outputs.cache-hit != 'true'
         run: |

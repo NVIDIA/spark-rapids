@@ -648,6 +648,7 @@
     </profiles>
 
     <properties>
+        <maven.repo.local>${user.home}/.m2/repository</maven.repo.local>
         <rapids.module>.</rapids.module>
         <allowConventionalDistJar>false</allowConventionalDistJar>
         <buildver>311</buildver>
