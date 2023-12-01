@@ -171,7 +171,7 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
     extends DataWritingCommandMeta[OptimizedCreateHiveTableAsSelectCommand](
       cmd, conf, parent, rule) {
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     // It would be cleaner if we could simply call `cmd.getWritingCommand` and let
     // InsertIntoHadoopFsRelationCommandMeta tag the result, but calling getWritingCommand
     // before the table exists will crash. So this ends up replicating a portion of the logic
