@@ -124,9 +124,12 @@ def read_parquet(data_path, local_data_path):
                  marks=pytest.mark.xfail(reason="fastparquet reads dates as timestamps.")),
     pytest.param(DateGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads far future dates (e.g. year=8705) incorrectly.")),
-    TimestampGen(nullable=False,
-                 start=pandas_min_datetime,
-                 end=pandas_max_datetime),  # Vanilla case.
+    pytest.param(TimestampGen(nullable=False,
+                              start=pandas_min_datetime,
+                              end=pandas_max_datetime),
+                 marks=pytest.mark.skipif(condition=is_not_utc(),
+                                          reason="fastparquet interprets timestamps in UTC timezone, regardless "
+                                                 "of timezone settings")),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
                               start=pandas_min_datetime,
                               end=pandas_max_datetime),
@@ -201,9 +204,12 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
                  marks=pytest.mark.xfail(reason="fastparquet reads dates as timestamps.")),
     pytest.param(DateGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads far future dates (e.g. year=8705) incorrectly.")),
-    TimestampGen(nullable=False,
-                 start=pandas_min_datetime,
-                 end=pandas_max_datetime),  # Vanilla case.
+    pytest.param(TimestampGen(nullable=False,
+                              start=pandas_min_datetime,
+                              end=pandas_max_datetime),
+                 marks=pytest.mark.skipif(condition=is_not_utc(),
+                                          reason="fastparquet interprets timestamps in UTC timezone, regardless "
+                                                 "of timezone settings")),  # Vanilla case.
     pytest.param(TimestampGen(nullable=False,
                               start=datetime(1, 2, 1, tzinfo=timezone.utc),
                               end=pandas_min_datetime),
