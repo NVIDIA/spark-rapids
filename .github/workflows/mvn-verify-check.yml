@@ -28,8 +28,7 @@ env:
     -Ddist.jar.compress=false
     -DskipTests
     -Dmaven.scaladoc.skip
-    --threads 2C
-    -Dmaven.artifact.threads=4
+    -Dmaven.artifact.threads=2
     --no-transfer-progress
 
 
