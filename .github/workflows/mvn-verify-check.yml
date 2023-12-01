@@ -71,7 +71,7 @@ jobs:
                 -Dexpression=included_buildvers \
                 -DforceStdout -PnoSnapshots -q | tr -d ',' | \
                   xargs -n 1 bash -c \
-                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies -Dbuildver=$2' _ $pom
+                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 -pl sql-plugin-api' _ $pom
             done && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))

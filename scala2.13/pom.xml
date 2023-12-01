@@ -1216,7 +1216,7 @@ This will force full Scala code rebuild in downstream modules.
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
                         <addJavacArgs>${scala.javac.args}</addJavacArgs>
-                        <secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
+                        <secondaryCacheDir>${maven.repo.local}/spark-rapids-secondaryCacheDir/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
                         <!-- #if scala-2.13 -->
                         <compilerPlugins combine.self="override">
                         </compilerPlugins>
