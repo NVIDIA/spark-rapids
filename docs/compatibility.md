@@ -89,7 +89,7 @@ Apache Spark does not have a consistent way to handle `NaN` comparison. Sometime
 considered as one unique value while other times they can be treated as different. The outcome of
 `NaN` comparison can differ in various operations and also changed between Spark versions.
 The RAPIDS Accelerator tries to match its output with Apache Spark except for a few operation(s) listed below:
- -  - `IN` SQL expression: `NaN` can be treated as different values in Spark 3.1.2 and
+ - `IN` SQL expression: `NaN` can be treated as different values in Spark 3.1.2 and
  prior versions, see [SPARK-36792](https://issues.apache.org/jira/browse/SPARK-36792) for more details.
 The RAPIDS Accelerator compares `NaN` values as equal for this operation which matches
 the behavior of Apache Spark 3.1.3 and later versions.
