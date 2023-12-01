@@ -617,7 +617,9 @@ def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timesta
             cpu_fallback_class_name = cpu_scan_class,
             conf = conf)
     else:
-        if is_not_utc():  # non UTC is not support for csv, skip capture check
+        if is_not_utc():
+            # non UTC is not support for csv, skip capture check
+            # tracked in https://github.com/NVIDIA/spark-rapids/issues/9913
             assert_gpu_and_cpu_are_equal_collect(lambda spark: do_read(spark), conf = conf)
         else:
             assert_cpu_and_gpu_are_equal_collect_with_capture(
