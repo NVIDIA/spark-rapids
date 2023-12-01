@@ -37,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
+      defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
+      sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
+      sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
+      scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v3
@@ -75,24 +79,7 @@ jobs:
               echo "mvn command failed. Exit 1"; exit 1
             fi
           }
-          done 
-
-  get-shim-versions-from-dist:
-    runs-on: ubuntu-latest
-    outputs:
-      defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
-      sparkTailVersions: ${{ steps.allShimVersionsStep.outputs.tailVersions }}
-      sparkJDKVersions: ${{ steps.allShimVersionsStep.outputs.jdkVersions }}
-      scala213Versions: ${{ steps.allShimVersionsStep.outputs.scala213Versions }}
-    steps:
-      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
-
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
-        with:
-          distribution: adopt
-          java-version: 8
-
+          done
       - name: all shim versions
         id: allShimVersionsStep
         run: |
@@ -144,10 +131,10 @@ jobs:
           echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
-    needs: [get-shim-versions-from-dist, cache-dependencies]
+    needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkTailVersions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.sparkTailVersions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -195,10 +182,10 @@ jobs:
           done
 
   package-tests-scala213:
-    needs: [get-shim-versions-from-dist, cache-dependencies]
+    needs: cache-dependencies
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.scala213Versions) }}
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
@@ -257,10 +244,10 @@ jobs:
 
 
   verify-all-modules:
-    needs: [get-shim-versions-from-dist, cache-dependencies]
+    needs: cache-dependencies
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDKVersions) }}
+      matrix: ${{ fromJSON(needs.cache-dependencies.outputs.sparkJDKVersions) }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -305,7 +292,7 @@ jobs:
           done
 
   install-modules:
-    needs: [get-shim-versions-from-dist, cache-dependencies]
+    needs: cache-dependencies
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -347,7 +334,7 @@ jobs:
               -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
               -Daether.connector.http.connectionMaxTtl=30 -B install \
               -P "individual,pre-merge" \
-              -Dbuildver=${{ needs.get-shim-versions-from-dist.outputs.defaultSparkVersion }} \
+              -Dbuildver=${{ needs.cache-dependencies.outputs.defaultSparkVersion }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
