@@ -371,3 +371,9 @@ def test_or(data_gen):
                        f.col('a') | f.lit(True),
                        f.lit(False) | f.col('b'),
                        f.col('a') | f.col('b')))
+
+def test_multi_tier_ast():
+    assert_gpu_ast(
+        is_supported=True,
+        func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
+            .selectExpr("(id < x) == (id < (id + x))"))
