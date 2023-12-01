@@ -23,16 +23,11 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
-import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
-import org.apache.spark.sql.rapids.GpuElementAtMeta
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
-trait Spark332PlusDBShims extends Spark321PlusDBShims {
+trait Spark332PlusDBShims extends Spark330PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
@@ -45,10 +40,9 @@ trait Spark332PlusDBShims extends Spark321PlusDBShims {
         (a, conf, p, r) => new UnaryExprMeta[KnownNullable](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression = GpuKnownNullable(child)
         }
-      ),
-      GpuElementAtMeta.elementAtRule(true)
+      )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
+    super.getExprs ++ shimExprs
   }
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
@@ -63,7 +57,7 @@ trait Spark332PlusDBShims extends Spark321PlusDBShims {
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ shimExecs ++ PythonMapInArrowExecShims.execs
+    super.getExecs ++ shimExecs
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
     DataWritingCommandRule[_ <: DataWritingCommand]] = {
@@ -77,33 +71,5 @@ trait Spark332PlusDBShims extends Spark321PlusDBShims {
         "Write to a data source",
         (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
-  }
-
-  override def reproduceEmptyStringBug: Boolean = false
-
-  override def isExecutorBroadcastShuffle(shuffle: ShuffleExchangeLike): Boolean = {
-    shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-  }
-
-  override def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike,
-                                             parent: SparkPlan): Boolean = {
-    parent match {
-      case _: GpuBroadcastHashJoinExec =>
-        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-      case _: GpuBroadcastNestedLoopJoinExec =>
-        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-      case _ => false
-    }
-  }
-
-  override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
-      sqse: ShuffleQueryStageExec): SparkPlan = {
-    val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
-    plan match {
-      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
-        ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
-      case _ =>
-        c2r
-    }
   }
 }

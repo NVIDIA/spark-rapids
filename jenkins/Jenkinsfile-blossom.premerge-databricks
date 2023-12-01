@@ -112,6 +112,7 @@ pipeline {
                             script {
                                 unstash('source_tree')
                                 databricksBuild()
+                                deleteDir() // cleanup content if no error
                             }
                         }
                     }

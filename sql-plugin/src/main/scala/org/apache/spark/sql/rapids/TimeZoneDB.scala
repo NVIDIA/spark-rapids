@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.timezone
+package org.apache.spark.sql.rapids
 
 import java.time.ZoneId
 
@@ -24,6 +24,21 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 
 object TimeZoneDB {
+  // Copied from Spark. Used to format time zone ID string with (+|-)h:mm and (+|-)hh:m
+  def getZoneId(timezoneId: String): ZoneId = {
+    val formattedZoneId = timezoneId
+      // To support the (+|-)h:mm format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d):", "$10$2:")
+      // To support the (+|-)hh:m format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d\\d):(\\d)$", "$1$2:0$3")
+    DateTimeUtils.getZoneId(formattedZoneId)
+  }
+
+  // Support fixed offset or no transition rule case
+  def isSupportedTimeZone(timezoneId: String): Boolean = {
+    val rules = getZoneId(timezoneId).getRules
+    rules.isFixedOffset || rules.getTransitionRules.isEmpty
+  }
 
   def cacheDatabase(): Unit = {}
 
@@ -42,10 +57,14 @@ object TimeZoneDB {
       withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
         var currRow = 0
         while (currRow < rowCount) {
-          val origin = input.getLong(currRow)
-          // Spark implementation
-          val dist = DateTimeUtils.toUTCTime(origin, zoneStr)
-          builder.append(dist)
+          if (input.isNull(currRow)) {
+            builder.appendNull()
+          } else {
+            val origin = input.getLong(currRow)
+            // Spark implementation
+            val dist = DateTimeUtils.toUTCTime(origin, zoneStr)
+            builder.append(dist)
+          }
           currRow += 1
         }
         withResource(builder.build()) { b =>
@@ -72,10 +91,14 @@ object TimeZoneDB {
       withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
         var currRow = 0
         while (currRow < rowCount) {
-          val origin = input.getLong(currRow)
-          // Spark implementation
-          val dist = DateTimeUtils.fromUTCTime(origin, zoneStr)
-          builder.append(dist)
+          if(input.isNull(currRow)) {
+            builder.appendNull()
+          } else {
+            val origin = input.getLong(currRow)
+            // Spark implementation
+            val dist = DateTimeUtils.fromUTCTime(origin, zoneStr)
+            builder.append(dist)
+          }
           currRow += 1
         }
         withResource(builder.build()) { b =>
@@ -97,10 +120,14 @@ object TimeZoneDB {
       withResource(HostColumnVector.builder(DType.TIMESTAMP_DAYS, rowCount)) { builder =>
         var currRow = 0
         while (currRow < rowCount) {
-          val origin = input.getLong(currRow)
-          // Spark implementation
-          val dist = DateTimeUtils.microsToDays(origin, currentTimeZone)
-          builder.append(dist)
+          if (input.isNull(currRow)) {
+            builder.appendNull()
+          } else {
+            val origin = input.getLong(currRow)
+            // Spark implementation
+            val dist = DateTimeUtils.microsToDays(origin, currentTimeZone)
+            builder.append(dist)
+          }
           currRow += 1
         }
         withResource(builder.build()) { b =>
@@ -121,13 +148,17 @@ object TimeZoneDB {
     assert(inputVector.getType == DType.TIMESTAMP_DAYS)
     val rowCount = inputVector.getRowCount.toInt
     withResource(inputVector.copyToHost()) { input =>
-      withResource(HostColumnVector.builder(DType.INT64, rowCount)) { builder =>
+      withResource(HostColumnVector.builder(DType.TIMESTAMP_MICROSECONDS, rowCount)) { builder =>
         var currRow = 0
         while (currRow < rowCount) {
-          val origin = input.getInt(currRow)
-          // Spark implementation
-          val dist = DateTimeUtils.daysToMicros(origin, desiredTimeZone)
-          builder.append(dist)
+          if (input.isNull(currRow)) {
+            builder.appendNull()
+          } else {
+            val origin = input.getInt(currRow)
+            // Spark implementation
+            val dist = DateTimeUtils.daysToMicros(origin, desiredTimeZone)
+            builder.append(dist)
+          }
           currRow += 1
         }
         withResource(builder.build()) { b =>

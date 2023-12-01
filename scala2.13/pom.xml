@@ -510,6 +510,31 @@
             </modules>
         </profile>
         <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=341db -->
+            <id>release341db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <spark.version.classifier>spark341db</spark.version.classifier>
+                <spark.version>${spark341db.version}</spark.version>
+                <spark.test.version>${spark341db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>shim-deps/databricks</module>
+                <module>delta-lake/delta-spark341db</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release350</id>
             <activation>
                 <property>
@@ -648,7 +673,7 @@
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
-        <ucx.version>1.14</ucx.version>
+        <ucx.version>1.15.0</ucx.version>
         <rapids.compressed.artifact>true</rapids.compressed.artifact>
         <rapids.default.jar.excludePattern/>
         <rapids.default.jar.phase>package</rapids.default.jar.phase>
@@ -691,6 +716,7 @@
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
+        <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
@@ -819,6 +845,8 @@
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
+        <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
+        <nonfail.errors.quiet>false</nonfail.errors.quiet>
     </properties>
 
     <dependencyManagement>
@@ -967,29 +995,74 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <id>setup-dirs</id>
+                        <phase>initialize</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <mkdir dir="${project.build.directory}/tmp"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>generate-build-info</id>
                         <phase>generate-resources</phase>
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash"
-                                      output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties"
-                                      resultproperty="build-info.exitCode"
-                                      errorproperty="build-info.errorMsg"
-                                      failonerror="false">
-                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
-                                    <arg value="${project.version}"/>
-                                    <arg value="${spark-rapids-jni.version}"/>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <exec executable="git"
+                                      outputproperty="git.head.revision"
+                                      discardError="${nonfail.errors.quiet}">
+                                    <arg value="rev-parse"/>
+                                    <arg value="HEAD"/>
                                 </exec>
-                                <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
-                                    <condition>
-                                        <not>
-                                            <equals arg1="${build-info.exitCode}" arg2="0"/>
-                                        </not>
-                                    </condition>
-                                </fail>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${build.info.path}" type="file"/>
+                                    <then>
+                                        <property file="${build.info.path}" prefix="saved.build-info"/>
+                                    </then>
+                                    <else>
+                                        <property name="saved.build-info.revision" value="N/A"/>
+                                    </else>
+                                </ac:if>
+                                <echo>
+Comparing git revisions:
+    previous=${saved.build-info.revision}
+     current=${git.head.revision}
+                                </echo>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <equals arg1="${git.head.revision}" arg2="${saved.build-info.revision}"/>
+                                    <then>
+                                        <echo>
+Git revisions unchanged: skipping version info file generation.
+Delete ${build.info.path} or mvn clean if regeneration desired.
+This will force full Scala code rebuild in downstream modules.
+                                        </echo>
+                                    </then>
+                                    <else>
+                                        <echo>Generating new version info file</echo>
+                                        <mkdir dir="${project.build.outputDirectory}"/>
+                                        <exec executable="bash"
+                                            output="${build.info.path}"
+                                            resultproperty="build-info.exitCode"
+                                            errorproperty="build-info.errorMsg"
+                                            failonerror="false">
+                                            <arg value="${spark.rapids.source.basedir}/build/build-info"/>
+                                            <arg value="${project.version}"/>
+                                            <arg value="${spark-rapids-jni.version}"/>
+                                        </exec>
+                                        <fail message="exec build-info.sh failed, exit code is ${build-info.exitCode}, error msg is ${build-info.errorMsg}">
+                                            <condition>
+                                                <not>
+                                                    <equals arg1="${build-info.exitCode}" arg2="0"/>
+                                                </not>
+                                            </condition>
+                                        </fail>
+                                    </else>
+                                </ac:if>
                             </target>
                         </configuration>
 
@@ -1049,6 +1122,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
                     <executions>
                         <execution>
                             <id>default-compile</id>
@@ -1118,8 +1192,8 @@
                             <arg>-Xfatal-warnings</arg>
                             --><!-- #endif scala-2.12 -->
                             <arg>-Wconf:cat=lint-adapted-args:e</arg>
-                            <arg>-Xsource:2.13</arg>
                             <!-- #if scala-2.13 -->
+                            <arg>-Xsource:2.13</arg>
                             <arg>-Ywarn-unused:locals,patvars,privates</arg>
                             <arg>-Wconf:cat=deprecation:wv,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
@@ -1435,7 +1509,9 @@
                                 </pathconvert>
                                 <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
                                 <!-- workaround ant delete does not work with dirset -->
-                                <exec dir="${project.basedir}" executable="rm">
+                                <exec dir="${project.basedir}"
+                                      executable="rm"
+                                      discardError="${nonfail.errors.quiet}">
                                     <arg value="-rf"/>
                                     <arg line="${target.dirs.str}"/>
                                 </exec>

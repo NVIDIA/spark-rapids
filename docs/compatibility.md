@@ -83,6 +83,21 @@ after Spark 3.1.0.
 We do not disable operations that produce different results due to `-0.0` in the data because it is
 considered to be a rare occurrence.
 
+## Decimal Support
+
+Apache Spark supports decimal values with a precision up to 38. This equates to 128-bits.
+When processing the data, in most cases, it is temporarily converted to Java's `BigDecimal` type
+which allows for effectively unlimited precision. Overflows will be detected whenever the
+`BigDecimal` value is converted back into the Spark decimal type.
+
+The RAPIDS Accelerator does not implement a GPU equivalent of `BigDecimal`, but it does implement
+computation on 256-bit values to allow the detection of overflows. The points at which overflows
+are detected may differ between the CPU and GPU. Spark gives no guarantees that overflows are
+detected if an intermediate value could overflow the original decimal type during computation
+but the final value does not (e.g.: a sum of values with many large positive values followed by
+many large negative values). Spark injects overflow detection at various points during aggregation,
+and these points can fluctuate depending on cluster shape and number of shuffle partitions.
+
 ## Unicode
 
 Spark delegates Unicode operations to the underlying JVM. Each version of Java complies with a
@@ -322,9 +337,23 @@ This particular function supports to output a map or struct type with limited fu
 The `from_json` function is disabled by default because it is experimental and has some known incompatibilities
 with Spark, and can be enabled by setting `spark.rapids.sql.expression.JsonToStructs=true`.
 
-There are several known issues:
+Dates are partially supported but there are some known issues:
 
-Dates and timestamps are not supported ([#9590](https://github.com/NVIDIA/spark-rapids/issues/9590)).
+- Only the default `dateFormat` of `yyyy-MM-dd` is supported. The query will fall back to CPU if any other format
+  is specified ([#9667](https://github.com/NVIDIA/spark-rapids/issues/9667))
+- Strings containing integers with more than four digits will be 
+  parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4 
+  will parse these numbers as number of days since the epoch, and in Spark 3.4 and later, an exception will be thrown.
+
+Timestamps are partially supported but there are some known issues:
+
+- Only the default `timestampFormat` of `yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]` is supported. The query will fall back to CPU if any other format
+  is specified ([#9273](https://github.com/NVIDIA/spark-rapids/issues/9723))
+- Strings containing integers with more than four digits will be
+  parsed as null ([#9664](https://github.com/NVIDIA/spark-rapids/issues/9664)) whereas Spark versions prior to 3.4
+  will parse these numbers as number of days since the epoch, and in Spark 3.4 and later, an exception will be thrown.
+- Strings containing special date constant values such as `now` and `today` will parse as null ([#9724](https://github.com/NVIDIA/spark-rapids/issues/9724)),
+  which differs from the behavior in Spark 3.1.x
 
 When reading numeric values, the GPU implementation always supports leading zeros regardless of the setting
 for the JSON option `allowNumericLeadingZeros` ([#9588](https://github.com/NVIDIA/spark-rapids/issues/9588)).
@@ -346,7 +375,6 @@ with Spark, and can be enabled by setting `spark.rapids.sql.expression.StructsTo
 
 Known issues are:
 
-- There is no support for timestamp types
 - There can be rounding differences when formatting floating-point numbers as strings. For example, Spark may
   produce `-4.1243574E26` but the GPU may produce `-4.124357351E26`.
 - Not all JSON options are respected

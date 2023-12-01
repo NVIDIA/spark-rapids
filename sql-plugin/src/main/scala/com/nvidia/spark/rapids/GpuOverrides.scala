@@ -621,6 +621,10 @@ object GpuOverrides extends Logging {
     }
   }
 
+  def isUTCTimezone(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == UTC_TIMEZONE_ID
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))
 
   /**
@@ -3598,13 +3602,14 @@ object GpuOverrides extends Logging {
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
         TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.integral +
-          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN) +
+          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN + TypeSig.DATE +
+          TypeSig.TIMESTAMP) +
           TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
           "MAP only supports keys and values that are of STRING type"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
-        override def tagExprForGpu(): Unit =
+        override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
             case _: StructType => ()
@@ -3612,7 +3617,8 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
           }
-          GpuJsonScan.tagJsonToStructsSupport(a.options, this)
+          GpuJsonScan.tagJsonToStructsSupport(a.options, a.dataType, this)
+        }
 
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
@@ -3626,20 +3632,16 @@ object GpuOverrides extends Logging {
         TypeSig.STRING,
         Seq(ParamCheck("struct",
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
-      (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
-            willNotWorkOnGpu("to_json option pretty=true is not supported")
-          }
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuStructsToJson(a.options, child, a.timeZoneId)
-      }).disabledByDefault("to_json support is experimental. See compatibility " +
+      (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
+        .disabledByDefault("to_json support is experimental. See compatibility " +
           "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +
