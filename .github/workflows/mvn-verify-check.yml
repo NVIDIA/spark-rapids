@@ -28,7 +28,9 @@ env:
     -Ddist.jar.compress=false
     -DskipTests
     -Dmaven.scaladoc.skip
-    -T1.5C
+    --threads 1.5C
+    --no-transfer-progress
+
 
 jobs:
   cache-dependencies:
@@ -65,7 +67,7 @@ jobs:
                 -Dexpression=included_buildvers \
                 -DforceStdout -PnoSnapshots -q | tr -d ',' | \
                   xargs -n 1 bash -c \
-                    'mvn -T1.5C --file $1 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies -Dmaven.repo.local=$PWD/.m2 -Dbuildver=$2' _ $pom
+                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies -Dbuildver=$2' _ $pom
             done && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
