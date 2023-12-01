@@ -178,13 +178,16 @@ class GpuBatchedBoundedWindowIterator(
               }
 
               // Min 0, Max inputRowCount
-              // numPrecedingRowsAdded = (numUnprocessedInCache + maxFollowing) max inputRowCount
-              numPrecedingRowsAdded = (numUnprocessedInCache + maxPreceding) min inputRowCount
+              // TODO: The following seems wrong. numPrecedingRowsAdded can't include numUnProcessed
+//              numPrecedingRowsAdded = (numUnprocessedInCache + maxPreceding) min inputRowCount
+              numPrecedingRowsAdded = maxPreceding min (inputRowCount - numUnprocessedInCache)
               val inputCols = Range(0, inputCB.numCols()).map {
                 inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
               }.toArray
 
-              val newCached = trim(inputCols, inputRowCount - numPrecedingRowsAdded, 0)
+              val newCached = trim(inputCols,
+                                   inputRowCount - (numPrecedingRowsAdded + numUnprocessedInCache),
+                                   0)
               resetInputCache(Some(newCached), numUnprocessedInCache, numPrecedingRowsAdded)
             }
           }
