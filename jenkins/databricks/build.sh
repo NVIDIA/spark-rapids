@@ -112,6 +112,7 @@ initialize()
     echo "Build Version                                 : ${BUILDVER}"
     echo "Skip Dependencies                             : ${SKIP_DEP_INSTALL}"
     echo "Include Default Spark Shim                    : ${WITH_DEFAULT_UPSTREAM_SHIM}"
+    echo "Extra environments                            : ${EXTRA_ENVS}"
     printf '+ %*s +\n' 100 '' | tr ' ' =
 }
 
