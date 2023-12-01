@@ -83,6 +83,17 @@ after Spark 3.1.0.
 We do not disable operations that produce different results due to `-0.0` in the data because it is
 considered to be a rare occurrence.
 
+### `NaN` vs `NaN`
+
+Apache Spark does not have a consistent way to handle `NaN` comparison. Sometimes, all `NaN` are
+considered as one unique value while other times they can be treated as different. The outcome of
+`NaN` comparison can differ in various operations and also changed between Spark versions.
+Our plugin tries to match its output with Apache Spark except for a few operation(s) listed below:
+ - `IN` SQL expression: `NaN` can be treated as different values in Spark 3.1.2 but not from
+Spark 3.1.3 (see the [issue](https://issues.apache.org/jira/browse/SPARK-36792)).
+On the other hand, our plugin always compares all `NaN` as equal value for this operation.
+
+
 ## Decimal Support
 
 Apache Spark supports decimal values with a precision up to 38. This equates to 128-bits.
