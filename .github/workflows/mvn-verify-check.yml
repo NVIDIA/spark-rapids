@@ -51,7 +51,7 @@ jobs:
         id: generateCacheKey
         run: |
           set -x
-          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.ref }}-$(date +'%Y-%m-%d')"
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
           echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
       - name: Cache local Maven repository
         id: cache
@@ -71,7 +71,7 @@ jobs:
                 -Dexpression=included_buildvers \
                 -DforceStdout -PnoSnapshots -q | tr -d ',' | \
                   xargs -n 1 bash -c \
-                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 -pl sql-plugin-api' _ $pom
+                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 -pl sql-plugin-api -am package' _ $pom
             done && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
