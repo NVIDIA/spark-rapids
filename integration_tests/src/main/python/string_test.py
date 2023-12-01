@@ -650,6 +650,12 @@ def test_byte_length():
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'BIT_LENGTH(a)', 'OCTET_LENGTH(a)'))
 
+def test_ascii():
+    gen = mk_str_gen('.{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(f.col('a'), 
+                f.ascii(f.col('a'))))
+
 @incompat
 def test_initcap():
     # Because we don't use the same unicode version we need to limit

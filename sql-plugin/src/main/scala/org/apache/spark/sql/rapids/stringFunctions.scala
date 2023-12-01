@@ -92,6 +92,37 @@ case class GpuOctetLength(child: Expression) extends GpuUnaryExpression with Exp
     input.getBase.getByteCount
 }
 
+case class GpuAscii(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes 
+    with NullIntolerant {
+
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    // replace nulls with 'n' and save the null mask
+    val nullMask = input.getBase.isNull
+    val nullsReplaced = withResource(Scalar.fromString("n")) { nullScalar =>
+      nullMask.ifElse(nullScalar, input.getBase)
+    }
+    // replace empty strings with 'e' and save the null mask
+    val emptyMask = withResource(Scalar.fromString("")) { emptyScalar =>
+      nullsReplaced.equalTo(emptyScalar)
+    }
+    val emptyReplaced = withResource(nullsReplaced) { _ =>
+      withResource(Scalar.fromString("e")) { eScalar =>
+        emptyMask.ifElse(eScalar, nullsReplaced)
+      }
+    }
+    // substr(0,1)
+    val substr = emptyReplaced.substring(0, 1)
+    // codePoints
+    val codePoints = withResource(substr) { substr =>
+      substr.codePoints()
+    }
+    codePoints
+  }
+}
+
 case class GpuStringLocate(substr: Expression, col: Expression, start: Expression)
   extends GpuTernaryExpressionArgsScalarAnyScalar
       with ImplicitCastInputTypes {
