@@ -28,6 +28,9 @@ env:
     -PbuildFaster
     -Dmaven.artifact.threads=20
     --batch-mode
+    -Dmaven.wagon.http.retryHandler.count=3
+    -Dmaven.wagon.httpconnectionManager.ttlSeconds=30
+    -Daether.connector.http.connectionMaxTtl=30
 
 jobs:
   cache-dependencies:
@@ -58,14 +61,21 @@ jobs:
           key: ${{ env.dailyCacheKey }}
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
-        # if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.cache.outputs.cache-hit != 'true'
         run: |
           set -x
           max_retry=3; delay=30; i=1
           while true; do
             for pom in pom.xml scala2.13/pom.xml
             do
-              mvn -f $pom help:evaluate -pl dist \
+              # compile base versions to cache scala compiler and compiler bridge 
+              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom \
+                process-test-resources -pl sql-plugin-api -am \
+                -Drapids.secondaryCacheDir=$HOME/.m2/repository/.sbt/1.0/zinc/org.scala-sbt
+            done
+            for pom in pom.xml scala2.13/pom.xml
+            do
+              mvn ${{ env.COMMON_MVN_FLAGS }} --file $pom help:evaluate -pl dist \
                 -Dexpression=included_buildvers \
                 -DforceStdout -PnoSnapshots -q | tr -d ',' | \
                   xargs -n 1 bash -c \
@@ -165,9 +175,7 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B package \
+            mvn package \
               -pl integration_tests,tests -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
@@ -226,9 +234,7 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B package \
+            mvn package \
               -pl integration_tests,tests -am -P 'individual,pre-merge' \
               -Dbuildver=${{ matrix.spark-version }} -Dmaven.scalastyle.skip=true \
               -Drat.skip=true ${{ env.COMMON_MVN_FLAGS }} && break || {
@@ -276,9 +282,7 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            mvn -Dmaven.wagon.http.retryHandler.count=$max_retry \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B verify \
+            mvn verify \
               -P "individual,pre-merge" -Dbuildver=${{ matrix.spark-version }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {
             if [[ $i -le $max_retry ]]; then
@@ -328,9 +332,7 @@ jobs:
           # test command, will retry for 3 times if failed.
           max_retry=3; delay=30; i=1
           while true; do
-            ./mvnw -Dmaven.wagon.http.retryHandler.count=3 \
-              -Dmaven.wagon.httpconnectionManager.ttlSeconds=30 \
-              -Daether.connector.http.connectionMaxTtl=30 -B install \
+            ./mvnw install \
               -P "individual,pre-merge" \
               -Dbuildver=${{ needs.cache-dependencies.outputs.defaultSparkVersion }} \
               ${{ env.COMMON_MVN_FLAGS }} && break || {

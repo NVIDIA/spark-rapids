@@ -648,8 +648,8 @@
     </profiles>
 
     <properties>
-        <maven.repo.local>${user.home}/.m2/repository</maven.repo.local>
         <rapids.module>.</rapids.module>
+        <rapids.secondaryCacheDir>${spark.rapids.project.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</rapids.secondaryCacheDir>
         <allowConventionalDistJar>false</allowConventionalDistJar>
         <buildver>311</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -1217,7 +1217,7 @@ This will force full Scala code rebuild in downstream modules.
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
                         <addJavacArgs>${scala.javac.args}</addJavacArgs>
-                        <secondaryCacheDir>${maven.repo.local}/spark-rapids-secondaryCacheDir/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
+                        <secondaryCacheDir>${rapids.secondaryCacheDir}</secondaryCacheDir>
                         <!-- #if scala-2.13 --><!--
                         <compilerPlugins combine.self="override">
                         </compilerPlugins>
