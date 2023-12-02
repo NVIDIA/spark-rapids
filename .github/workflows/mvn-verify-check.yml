@@ -25,12 +25,9 @@ concurrency:
 
 env:
   COMMON_MVN_FLAGS: >-
-    -Ddist.jar.compress=false
-    -DskipTests
-    -Dmaven.scaladoc.skip
-    -Dmaven.artifact.threads=2
-    --no-transfer-progress
-
+    -PbuildFaster
+    -Dmaven.artifact.threads=20
+    --batch-mode
 
 jobs:
   cache-dependencies:
@@ -61,7 +58,7 @@ jobs:
           key: ${{ env.dailyCacheKey }}
           restore-keys: ${{ runner.os }}-maven-
       - name: populate-daily-cache
-        if: steps.cache.outputs.cache-hit != 'true'
+        # if: steps.cache.outputs.cache-hit != 'true'
         run: |
           set -x
           max_retry=3; delay=30; i=1
@@ -72,7 +69,7 @@ jobs:
                 -Dexpression=included_buildvers \
                 -DforceStdout -PnoSnapshots -q | tr -d ',' | \
                   xargs -n 1 bash -c \
-                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 -pl sql-plugin-api -am package' _ $pom
+                    'mvn ${{ env.COMMON_MVN_FLAGS }} --file $1 -Dbuildver=$2 de.qaware.maven:go-offline-maven-plugin:resolve-dependencies' _ $pom
             done && break || {
             if [[ $i -le $max_retry ]]; then
               echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))

@@ -197,11 +197,12 @@ else
       "$LOCAL_ROOTDIR"/src/main/python)
 
     REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
+    PYTEST_COLOR=${PYTEST_COLOR:-yes}
     TEST_COMMON_OPTS=(-v
           -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$INPUT_PATH"/src/test/resources
-          --color=yes
+          --color="${PYTEST_COLOR}"
           $TEST_TYPE_PARAM
           "$TEST_ARGS"
           $RUN_TEST_PARAMS
