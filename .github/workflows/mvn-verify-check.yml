@@ -26,7 +26,8 @@ concurrency:
 env:
   COMMON_MVN_FLAGS: >-
     -PbuildFaster
-    -Dmaven.artifact.threads=20
+    -Dmaven.artifact.threads=10
+    --threads 1C
     --batch-mode
     -Dmaven.wagon.http.retryHandler.count=3
     -Dmaven.wagon.httpconnectionManager.ttlSeconds=30
