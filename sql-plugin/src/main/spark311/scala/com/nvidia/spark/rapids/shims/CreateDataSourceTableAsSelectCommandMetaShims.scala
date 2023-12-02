@@ -55,7 +55,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   private var origProvider: Class[_] = _
   private var gpuProvider: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     if (cmd.table.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
     }
