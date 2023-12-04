@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, NvtxColor, Table => CudfTable}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
@@ -47,10 +49,16 @@ class GpuBatchedBoundedWindowIterator(
   private var numUnprocessedInCache: Int = 0  // numRows at the bottom not processed completely.
   private var numPrecedingRowsAdded: Int = 0  // numRows at the top, added for preceding context.
 
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      clearCached()
+    }
+  }
+
   var inputTypes: Option[Array[DataType]] = None
 
   // Clears cached column vectors, after consumption.
-  def clearCached(): Unit = {
+  private def clearCached(): Unit = {
     cached.foreach(_.foreach(_.close))
     cached = None
   }
