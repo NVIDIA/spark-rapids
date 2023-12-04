@@ -642,6 +642,7 @@ def test_from_json_struct_date_fallback_non_default_format(date_gen, date_format
     pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     "CORRECTED"
 ])
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9747')
 @pytest.mark.parametrize('ansi_enabled', [ True, False ])
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
@@ -650,8 +651,7 @@ def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser
         .with_special_case('null')
     options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
     assert_gpu_and_cpu_are_equal_collect(
-        # Remove the fix seed when fix https://github.com/NVIDIA/spark-rapids/issues/9747
-        lambda spark : unary_op_df(spark, json_string_gen, seed = 0) \
+        lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True,
               'spark.sql.legacy.timeParserPolicy': time_parser_policy,
