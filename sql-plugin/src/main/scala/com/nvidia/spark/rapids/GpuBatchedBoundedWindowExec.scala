@@ -49,23 +49,15 @@ class GpuBatchedBoundedWindowIterator(
 
   var inputTypes: Option[Array[DataType]] = None
 
-  // TODO: Move into getNextInputBatch.
-  private def concatenateColumns(cached: Array[CudfColumnVector],
-                                 freshBatchTable: CudfTable)
-    : Array[CudfColumnVector] = {
-
-    if (cached.length != freshBatchTable.getNumberOfColumns) {
-      throw new IllegalArgumentException("Expected the same number of columns " +
-        "in input batch and cached batch.")
-    }
-    cached.zipWithIndex.map { case (cachedCol, idx) =>
-      CudfColumnVector.concatenate(cachedCol, freshBatchTable.getColumn(idx))
-    }
+  // Clears cached column vectors, after consumption.
+  def clearCached(): Unit = {
+    cached.foreach(_.foreach(_.close))
+    cached = None
   }
 
-  // TODO: Consider returning ColumnarBatch instead.
   private def getNextInputBatch: SpillableColumnarBatch = {
-
+    // Sets column batch types using the types cached from the
+    // first input column read.
     def optionallySetInputTypes(inputCB: ColumnarBatch): Unit = {
       if (inputTypes.isEmpty) {
         inputTypes = Some(GpuColumnVector.extractTypes(inputCB))
@@ -79,10 +71,17 @@ class GpuBatchedBoundedWindowIterator(
       fresh_batch
     }
 
-    // Clears cached column vectors, after consumption.
-    def clearCached(): Unit = {
-      cached.foreach(_.foreach(_.close))
-      cached = None
+    def concatenateColumns(cached: Array[CudfColumnVector],
+                                   freshBatchTable: CudfTable)
+    : Array[CudfColumnVector] = {
+
+      if (cached.length != freshBatchTable.getNumberOfColumns) {
+        throw new IllegalArgumentException("Expected the same number of columns " +
+          "in input batch and cached batch.")
+      }
+      cached.zipWithIndex.map { case (cachedCol, idx) =>
+        CudfColumnVector.concatenate(cachedCol, freshBatchTable.getColumn(idx))
+      }
     }
 
     // Either cached has unprocessed rows, or input.hasNext().
@@ -145,7 +144,7 @@ class GpuBatchedBoundedWindowIterator(
 
   override def next(): ColumnarBatch = {
     var outputBatch: ColumnarBatch = null
-    while (outputBatch == null  &&  hasNext) { // TODO: && input.hasNext? Simply hasNext?
+    while (outputBatch == null  &&  hasNext) {
       withResource(getNextInputBatch) { inputCbSpillable =>
         withResource(inputCbSpillable.getColumnarBatch()) { inputCB =>
           withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
@@ -177,9 +176,6 @@ class GpuBatchedBoundedWindowIterator(
                 outputBatch = convertToBatch(outputTypes, trimmedOutputCols)
               }
 
-              // Min 0, Max inputRowCount
-              // TODO: The following seems wrong. numPrecedingRowsAdded can't include numUnProcessed
-//              numPrecedingRowsAdded = (numUnprocessedInCache + maxPreceding) min inputRowCount
               numPrecedingRowsAdded = maxPreceding min (inputRowCount - numUnprocessedInCache)
               val inputCols = Range(0, inputCB.numCols()).map {
                 inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
