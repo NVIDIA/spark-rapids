@@ -650,7 +650,7 @@ def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser
         .with_special_case('null')
     options = { 'timestampFormat': timestamp_format } if len(timestamp_format) > 0 else { }
     assert_gpu_and_cpu_are_equal_collect(
-        # Use zero seed to workaround for the branch-23.12 relase
+        # Remove the fix seed when fix https://github.com/NVIDIA/spark-rapids/issues/9747
         lambda spark : unary_op_df(spark, json_string_gen, seed = 0) \
             .select(f.col('a'), f.from_json('a', 'struct<a:timestamp>', options)),
         conf={"spark.rapids.sql.expression.JsonToStructs": True,
