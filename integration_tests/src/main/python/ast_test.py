@@ -385,5 +385,6 @@ def test_or(data_gen):
 def test_multi_tier_ast():
     assert_gpu_ast(
         is_supported=True,
+        # repartition is here to avoid Spark simplifying the expression
         func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
             .selectExpr("x", "(id < x) == (id < (id + x))"))
