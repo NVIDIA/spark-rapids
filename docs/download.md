@@ -92,13 +92,13 @@ The output of signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-
 * Introduced support for chunked reading of ORC files.
 * Memory usage limitations have been enforced for various operations.
 * Enhanced performance for join and aggregation operations.
 * Scala 2.13 is now supported, and RAPIDS Accelerator also built and tested with Scala 2.13.
 * Kernel optimizations have been implemented to improve Parquet read performance.
 * Databricks 13.3 ML LTS is now supported, expanding compatibility and functionality.
+* Discontinues support for Pascal-based Nvidia GPUs.
 * Qualification and Profiling tool:
 	* 
 
