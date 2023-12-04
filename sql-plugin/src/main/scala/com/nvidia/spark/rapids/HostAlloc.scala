@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
-import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 
 import org.apache.spark.internal.Logging
 
@@ -133,20 +133,20 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       "First attempt"
     }
 
-    logInfo(s"Host allocation of $allocSize bytes failed, host store has " +
+    logWarning(s"Host allocation of $allocSize bytes failed, host store has " +
         s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
     if (storeSpillableSize == 0) {
       logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
-          s"Total RMM allocated is $totalSize bytes.")
+          s"Total Host allocated is $totalSize bytes.")
       false
     } else {
       val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-      logDebug(s"Targeting host store size of $targetSize bytes")
+      logWarning(s"Targeting host store size of $targetSize bytes")
       // We could not make it work so try and spill enough to make it work
       val maybeAmountSpilled =
         RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, allocSize)
       maybeAmountSpilled.foreach { amountSpilled =>
-        logInfo(s"Spilled $amountSpilled bytes from the host store")
+        logWarning(s"Spilled $amountSpilled bytes from the host store")
       }
       true
     }
@@ -163,6 +163,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     var allocAttemptFinishedWithoutException = false
     try {
       do {
+        if (retryCount > 0) {
+          logWarning(s"RETRY HOST ALLOC $amount $preferPinned $blocking $retryCount")
+        }
         val firstPass = if (preferPinned) {
           tryAllocPinned(amount)
         } else {
@@ -213,9 +216,17 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
   def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
     checkSize(amount, preferPinned)
     var ret = Option.empty[HostMemoryBuffer]
-    while (ret.isEmpty) {
+    var count = 0
+    while (ret.isEmpty && count < 1000) {
       val (r, _) = tryAllocInternal(amount, preferPinned, blocking = true)
       ret = r
+      count += 1
+    }
+    if (ret.isEmpty) {
+      // This can happen if someone broke the rules and not all host memory is
+      // spillable when doing an allocation, like if not all of the code has
+      // been updated yet.
+      throw new CpuRetryOOM("Could not complete allocation after 1000 retries")
     }
     ret.get
   }
