@@ -24,9 +24,9 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.SparkSession
 
-class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
+trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
-  protected var deviceStorage: RapidsDeviceMemoryStore = null
+  protected var deviceStorage: RapidsDeviceMemoryStore = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
