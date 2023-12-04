@@ -133,20 +133,20 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       "First attempt"
     }
 
-    logWarning(s"Host allocation of $allocSize bytes failed, host store has " +
+    logInfo(s"Host allocation of $allocSize bytes failed, host store has " +
         s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg.")
     if (storeSpillableSize == 0) {
       logWarning(s"Host store exhausted, unable to allocate $allocSize bytes. " +
-          s"Total Host allocated is $totalSize bytes.")
+          s"Total host allocated is $totalSize bytes.")
       false
     } else {
       val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-      logWarning(s"Targeting host store size of $targetSize bytes")
+      logDebug(s"Targeting host store size of $targetSize bytes")
       // We could not make it work so try and spill enough to make it work
       val maybeAmountSpilled =
         RapidsBufferCatalog.synchronousSpill(RapidsBufferCatalog.getHostStorage, allocSize)
       maybeAmountSpilled.foreach { amountSpilled =>
-        logWarning(s"Spilled $amountSpilled bytes from the host store")
+        logInfo(s"Spilled $amountSpilled bytes from the host store")
       }
       true
     }
@@ -163,9 +163,6 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     var allocAttemptFinishedWithoutException = false
     try {
       do {
-        if (retryCount > 0) {
-          logWarning(s"RETRY HOST ALLOC $amount $preferPinned $blocking $retryCount")
-        }
         val firstPass = if (preferPinned) {
           tryAllocPinned(amount)
         } else {
