@@ -154,7 +154,9 @@ def pytest_runtest_setup(item):
     _inject_oom = item.get_closest_marker('inject_oom')
     datagen_overrides = item.get_closest_marker('datagen_overrides')
     if datagen_overrides:
-        _test_datagen_random_seed = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
+        override_seed = datagen_overrides.kwargs.get('condition', True)
+        if override_seed:
+            _test_datagen_random_seed = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
 
     order = item.get_closest_marker('ignore_order')
     if order:
