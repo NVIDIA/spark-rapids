@@ -30,7 +30,49 @@ env:
     -Dmaven.scaladoc.skip
 
 jobs:
+  cache-dependencies:
+    runs-on: ubuntu-latest
+    outputs:
+      dailyCacheKey: ${{ steps.generateCacheKey.outputs.dailyCacheKey }}
+    steps:
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: 8
+      - name: Generate daily cache key
+        id: generateCacheKey
+        run: |
+          set -x
+          cacheKey="${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}-${{ github.event.pull_request.base.ref }}-$(date +'%Y-%m-%d')"
+          echo "dailyCacheKey=$cacheKey" | tee $GITHUB_ENV $GITHUB_OUTPUT
+      - name: Cache local Maven repository
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ env.dailyCacheKey }}
+      - name: populate-daily-cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -x
+          max_retry=3; delay=30; i=1
+          while true; do
+            for pom in pom.xml scala2.13/pom.xml; do 
+              mvn -f $pom help:evaluate -pl dist -Dexpression=included_buildvers \
+              -DforceStdout -PnoSnapshots -q | tr -d ',' | \
+              xargs -n 1 bash -c 'mvn -f $1 initialize -pl sql-plugin-api -am -Dbuildver=$2' _ $pom;
+            done && break || {
+            if [[ $i -le $max_retry ]]; then
+              echo "mvn command failed. Retry $i/$max_retry."; ((i++)); sleep $delay; ((delay=delay*2))
+            else
+              echo "mvn command failed. Exit 1"; exit 1
+            fi
+          }
+          done 
+
   get-shim-versions-from-dist:
+    needs: cache-dependencies
     runs-on: ubuntu-latest
     outputs:
       defaultSparkVersion: ${{ steps.allShimVersionsStep.outputs.defaultSparkVersion }}
@@ -97,7 +139,7 @@ jobs:
           echo "scala213Versions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-tests:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkTailVersions) }}
@@ -111,6 +153,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -142,7 +190,7 @@ jobs:
           done
 
   package-tests-scala213:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.scala213Versions) }}
@@ -156,6 +204,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -198,7 +252,7 @@ jobs:
 
 
   verify-all-modules:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkJDKVersions) }}
@@ -210,6 +264,12 @@ jobs:
         with:
           distribution: adopt
           java-version: ${{ matrix.java-version }}
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: check runtime before tests
         run: |
@@ -240,7 +300,7 @@ jobs:
           done
 
   install-modules:
-    needs: get-shim-versions-from-dist
+    needs: [get-shim-versions-from-dist, cache-dependencies]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -253,6 +313,12 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
 
       - name: Setup Maven Wrapper
         run: mvn wrapper:wrapper -Dmaven=${{ matrix.maven-version }}

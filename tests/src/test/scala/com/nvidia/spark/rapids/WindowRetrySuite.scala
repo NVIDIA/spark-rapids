@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 import org.mockito.Mockito._
 import org.scalatestplus.mockito.MockitoSugar
 
@@ -62,7 +62,7 @@ class WindowRetrySuite
     it
   }
 
-  test("row based window handles RetryOOM") {
+  test("row based window handles GpuRetryOOM") {
     val frame = GpuSpecifiedWindowFrame(
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
@@ -83,7 +83,7 @@ class WindowRetrySuite
     }
   }
 
-  test("optimized-row based window handles RetryOOM") {
+  test("optimized-row based window handles GpuRetryOOM") {
     val frame = GpuSpecifiedWindowFrame(
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
@@ -104,7 +104,7 @@ class WindowRetrySuite
     }
   }
 
-  test("ranged based window handles RetryOOM") {
+  test("ranged based window handles GpuRetryOOM") {
     val frame = GpuSpecifiedWindowFrame(
       RangeFrame,
       GpuLiteral.create(-1, IntegerType),
@@ -127,7 +127,7 @@ class WindowRetrySuite
     }
   }
 
-  test("SplitAndRetryOOM is not handled in doAggs") {
+  test("GpuSplitAndRetryOOM is not handled in doAggs") {
     val frame = GpuSpecifiedWindowFrame(
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
@@ -135,14 +135,14 @@ class WindowRetrySuite
     val it = setupWindowIterator(frame)
     val inputBatch = it.onDeck.get
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    assertThrows[SplitAndRetryOOM] {
+    assertThrows[GpuSplitAndRetryOOM] {
       it.next()
     }
     verify(inputBatch, times(1)).getColumnarBatch()
     verify(inputBatch, times(1)).close()
   }
 
-  test("row based group by window handles RetryOOM") {
+  test("row based group by window handles GpuRetryOOM") {
     val frame = GpuSpecifiedWindowFrame(
       RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding),
@@ -172,7 +172,7 @@ class WindowRetrySuite
     }
   }
 
-  test("row-based group by running window handles SplitAndRetryOOM") {
+  test("row-based group by running window handles GpuSplitAndRetryOOM") {
     val runningFrame = GpuSpecifiedWindowFrame(RowFrame,
       GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))
     val boundOrderSpec = SortOrder(

@@ -30,6 +30,7 @@
 #   POM_FILE:       Project pom file to be deployed
 #   OUT_PATH:       The path where jar files are
 #   CUDA_CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12"
+#   CLASSIFIERS:    Comma separated classifiers, e.g., "cuda11,cuda12,cuda11-arm64,cuda12-arm64"
 ###
 
 set -ex
@@ -48,6 +49,7 @@ ART_GROUP_ID=$(mvnEval $DIST_PL project.groupId)
 ART_VER=$(mvnEval $DIST_PL project.version)
 DEFAULT_CUDA_CLASSIFIER=$(mvnEval $DIST_PL cuda.version)
 CUDA_CLASSIFIERS=${CUDA_CLASSIFIERS:-"$DEFAULT_CUDA_CLASSIFIER"}
+CLASSIFIERS=${CLASSIFIERS:-"$CUDA_CLASSIFIERS"} # default as CUDA_CLASSIFIERS for compatibility
 
 SQL_PL=${SQL_PL:-"sql-plugin"}
 POM_FILE=${POM_FILE:-"$DIST_PL/target/parallel-world/META-INF/maven/${ART_GROUP_ID}/${ART_ID}/pom.xml"}
@@ -57,9 +59,8 @@ SIGN_TOOL=${SIGN_TOOL:-"gpg"}
 FPATH="$OUT_PATH/$ART_ID-$ART_VER"
 DEPLOY_TYPES=''
 DEPLOY_FILES=''
-IFS=',' read -a CUDA_CLASSIFIERS_ARR <<< "$CUDA_CLASSIFIERS"
-DEPLOY_TYPES=$(echo $CUDA_CLASSIFIERS | sed -e 's;[^,]*;jar;g')
-DEPLOY_FILES=$(echo $CUDA_CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
+DEPLOY_TYPES=$(echo $CLASSIFIERS | sed -e 's;[^,]*;jar;g')
+DEPLOY_FILES=$(echo $CLASSIFIERS | sed -e "s;\([^,]*\);${FPATH}-\1.jar;g")
 
 # dist does not have javadoc and sources jars, use 'sql-plugin' instead
 source jenkins/version-def.sh >/dev/null 2&>1
@@ -103,4 +104,4 @@ $DEPLOY_CMD -DpomFile=$POM_FILE \
             -Djavadoc=$FPATH-javadoc.jar \
             -Dfiles=$DEPLOY_FILES \
             -Dtypes=$DEPLOY_TYPES \
-            -Dclassifiers=$CUDA_CLASSIFIERS
+            -Dclassifiers=$CLASSIFIERS
