@@ -148,8 +148,9 @@ object RapidsPluginUtils extends Logging {
       }
     }.mkString
     lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
-        s"Please make sure there is only one $jarName jar in the classpath. "
-
+        s"Please make sure there is only one $jarName jar in the classpath, otherwise this " +
+        s"can cause unpredictible behavior as the plugin may pick up the wrong jar. "
+    
     require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
 
     conf.allowMultipleJars match {
