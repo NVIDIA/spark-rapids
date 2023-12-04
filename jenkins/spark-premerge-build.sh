@@ -28,8 +28,9 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
+CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
-MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
+MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."
@@ -75,7 +76,7 @@ mvn_verify() {
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
