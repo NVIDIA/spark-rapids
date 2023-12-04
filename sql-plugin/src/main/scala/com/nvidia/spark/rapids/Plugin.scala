@@ -148,9 +148,8 @@ object RapidsPluginUtils extends Logging {
       }
     }.mkString
     lazy val msg = s"Multiple $jarName jars found in the classpath:\n$rapidsJarsVersMsg" +
-        s"Please make sure there is only one $jarName jar in the classpath, otherwise this " +
-        s"can cause unpredictible behavior as the plugin may pick up the wrong jar. "
-    
+        s"Please make sure there is only one $jarName jar in the classpath. "
+
     require(revisionMap.size > 0, s"Could not find any $jarName jars in the classpath")
 
     conf.allowMultipleJars match {
@@ -159,15 +158,18 @@ object RapidsPluginUtils extends Logging {
           logWarning(msg)
         }
       case AllowMultipleJars.SAME_REVISION =>
-        require(revisionMap.size == 1, msg)
+        val recommended = "If it is impossible to fix the classpath you can suppress the " +
+              s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS, but this " +
+              s"can cause unpredictable behavior as the plugin may pick up the wrong jar."
+        require(revisionMap.size == 1, msg + recommended)
         if (revisionMap.values.exists(_.size != 1)) {
-          val recommended = "If it is impossible to fix the classpath you can suppress the " +
-              s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to ALWAYS."
           logWarning(msg + recommended)
         }
       case AllowMultipleJars.NEVER =>
         val recommended = "If it is impossible to fix the classpath you can suppress the " +
-            s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS."
+            s"error by setting ${RapidsConf.ALLOW_MULTIPLE_JARS.key} to SAME_REVISION or ALWAYS." +
+            " But setting it to ALWAYS can cause unpredictable behavior as the plugin may pick " +
+            "up the wrong jar."
         require(revisionMap.size == 1 && revisionMap.values.forall(_.size == 1), msg + recommended)
     }
   }
