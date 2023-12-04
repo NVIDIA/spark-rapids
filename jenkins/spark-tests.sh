@@ -121,10 +121,16 @@ export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
 
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
-PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
-# Put conda package path ahead of the env 'PYTHONPATH',
-# to import the right pandas from conda instead of spark binary path.
-export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
+if [[ x"$CONDA_ROOT" != x ]]; then
+  # Put conda package path ahead of the env 'PYTHONPATH',
+  # to import the right pandas from conda instead of spark binary path.
+  PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
+  export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
+else
+  # if no conda, then try with default python
+  DEFAULT_SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+  export PYTHONPATH="$DEFAULT_SITE_PACKAGES:$PYTHONPATH"
+fi
 
 
 echo "----------------------------START TEST------------------------------------"
