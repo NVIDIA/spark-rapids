@@ -1009,8 +1009,19 @@ case class GpuFromUnixTime(
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
     // expressions map and passed down here as strfFormat
-    withResource(lhs.getBase.asTimestampSeconds) { tsVector =>
-      tsVector.asStrings(strfFormat)
+    withResource(lhs.getBase.asTimestampSeconds) { secondsVector =>
+      withResource(secondsVector.asTimestampMicroseconds) { tsVector =>
+        if (TimeZoneDB.isSupportedTimezone(zoneId)) {
+          // UTC time zone
+          tsVector.asStrings(strfFormat)
+        } else {
+          // Non-UTC TZ
+          withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(tsVector, zoneId.normalized())) {
+            shifted =>
+              shifted.asStrings(strfFormat)
+          }
+        }
+      }
     }
   }
 

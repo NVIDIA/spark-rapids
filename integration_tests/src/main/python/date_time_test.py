@@ -474,6 +474,18 @@ def test_date_format(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
+# TODO use non-UTC CI to test this: Remove `spark.sql.session.timeZone` config
+# Should update this after https://github.com/NVIDIA/spark-rapids/pull/9773
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+# from 0000-01-03 to 9999-12-30
+@pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 1, 3).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
+@pytest.mark.parametrize('time_zone', ['UTC', 'Asia/Shanghai', '+01:00'], ids=idfn)
+def test_from_unixtime_for_non_utc(data_gen, date_format, time_zone):
+    conf = {'spark.sql.session.timeZone': time_zone}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("from_unixtime(a, '{}')".format(date_format)),
+        conf)
+
 unsupported_date_formats = ['F']
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)

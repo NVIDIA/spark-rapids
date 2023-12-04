@@ -1201,7 +1201,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   // Level 3 timezone checking flag, need to override to true when supports timezone in functions
   // Useless if it's not timezone related expression defined in [[needTimeZoneCheck]]
-  val isTimeZoneSupported: Boolean = false
+  def isTimeZoneSupported: Boolean = false
 
   /**
    * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
