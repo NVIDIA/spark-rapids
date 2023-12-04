@@ -1130,7 +1130,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (!isTimeZoneSupported) return checkUTCTimezone(this)
 
     // Level 4 check
-    if (TimeZoneDB.isSupportedTimezone(getZoneId())) {
+    if (!TimeZoneDB.isSupportedTimezone(getZoneId())) {
       willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
     }
   }

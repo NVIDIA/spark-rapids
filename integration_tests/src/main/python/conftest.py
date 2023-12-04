@@ -17,6 +17,8 @@ import pytest
 import random
 import warnings
 
+from time_zone_utils import *
+
 # TODO redo _spark stuff using fixtures
 #
 # Don't import pyspark / _spark directly in conftest globally
@@ -85,6 +87,14 @@ def is_utc():
 
 def is_not_utc():
     return not is_utc()
+
+def is_dst_time_zone():
+    """
+    Is current TZ is Daylight Saving Time zone
+    """
+    tz = get_test_tz()
+    assert tz in all_valid_time_zones
+    return tz in dst_time_zones
 
 _is_nightly_run = False
 _is_precommit_run = False
