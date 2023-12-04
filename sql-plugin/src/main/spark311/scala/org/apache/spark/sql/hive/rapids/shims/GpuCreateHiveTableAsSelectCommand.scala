@@ -52,7 +52,7 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
 
     private var cpuWritingCommand: Option[InsertIntoHiveTable] = None
 
-    override def tagSelfForGpu(): Unit = {
+    override def tagSelfForGpuInternal(): Unit = {
 
       val spark = SparkSession.active
       val tableDesc = cmd.tableDesc // For the *new* table.

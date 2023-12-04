@@ -97,7 +97,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
           TestUtils.compareBatches(expected, devBatch)
         }
       }
-      assertResult(5)(getAndResetNumRetryThrowCurrentTask)
+      assertResult(6)(getAndResetNumRetryThrowCurrentTask)
       assert(!myIter.hasNext)
       assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
       // This is my wrap around of checking that we did retry the last part
@@ -141,7 +141,7 @@ class GeneratedInternalRowToCudfRowIteratorRetrySuite
           TestUtils.compareBatches(expected, devBatch)
         }
       }
-      assertResult(5)(getAndResetNumRetryThrowCurrentTask)
+      assertResult(6)(getAndResetNumRetryThrowCurrentTask)
       assert(!myIter.hasNext)
       assertResult(0)(RapidsBufferCatalog.getDeviceStorage.currentSize)
       // This is my wrap around of checking that we did retry the last part
