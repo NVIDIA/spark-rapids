@@ -57,6 +57,15 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     }
   }
 
+  override def endCapture(): Unit = endCapture(10000)
+
+  override def endCapture(timeoutMillis: Long): Unit = synchronized {
+    if (shouldCapture) {
+      shouldCapture = false
+      execPlans.clear()
+    }
+  }
+
   override def getResultsWithTimeout(timeoutMs: Long = 10000): Array[SparkPlan] = {
     try {
       val spark = SparkSession.active
