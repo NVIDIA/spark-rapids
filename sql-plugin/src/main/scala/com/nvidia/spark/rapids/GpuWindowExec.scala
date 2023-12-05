@@ -293,8 +293,7 @@ case class BatchedOps(running: Seq[NamedExpression],
     new GpuBatchedBoundedWindowExec(getBoundedExpressionsWithTheRestAsPassthrough,
                                     gpuPartitionSpec,
                                     gpuOrderSpec,
-                                    child/*, prec, foll*/)(
-      cpuPartitionSpec, cpuOrderSpec, prec, foll)
+                                    child)(cpuPartitionSpec, cpuOrderSpec, prec, foll)
   }
 
   def getWindowExec(
@@ -543,7 +542,6 @@ object GpuWindowExec {
   /**
    * Checks whether the window spec is both ROWS-based and bounded.
    * Window functions of this spec can possibly still be batched.
-   * TODO: Check if this can be rewritten with getBoundedWindowPrecedingAndFollowing().
    */
   def isBoundedRowsWindowAndBatchable(spec: GpuWindowSpecDefinition): Boolean = spec match {
     case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
