@@ -144,7 +144,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
 
     val allBatched = fixedUpWindowOps.forall {
       case GpuAlias(GpuWindowExpression(func, spec), _) =>
-        GpuWindowExec.isBatchedFunc(func, spec)
+        GpuWindowExec.isBatchedFunc(func, spec, conf)
       case GpuAlias(_: AttributeReference, _) | _: AttributeReference =>
         // We allow pure result columns for running windows
         true
@@ -162,7 +162,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     }
 
     val windowExpr = if (allBatched) {
-      val batchedOps = GpuWindowExec.splitBatchedOps(fixedUpWindowOps)
+      val batchedOps = GpuWindowExec.splitBatchedOps(fixedUpWindowOps, conf)
       batchedOps.getWindowExec(
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
@@ -246,7 +246,7 @@ case class BatchedOps(running: Seq[NamedExpression],
   def getBoundedExpressionsWithTheRestAsPassthrough: Seq[NamedExpression] =
     passThrough ++ bounded ++ (unboundedToUnbounded ++ running).map(_.toAttribute)
 
-  def getMaxBoundedPrecedingAndFollowing: (Int, Int) = {
+  def getMinPrecedingMaxFollowingForBoundedWindows: (Int, Int) = {
     // All bounded window expressions should have window bound window specs.
     val boundedWindowSpecs = bounded.map{
       case GpuAlias(GpuWindowExpression(_, spec), _) => spec
@@ -256,7 +256,7 @@ case class BatchedOps(running: Seq[NamedExpression],
     val precedingAndFollowing = boundedWindowSpecs.map(
       GpuWindowExec.getBoundedWindowPrecedingAndFollowing
     )
-    (precedingAndFollowing.map{ p => Math.abs(p._1) }.max, // Only Negative values supported.
+    (precedingAndFollowing.map{ _._1 }.min, // Only non-positive (>=0) values supported.
      precedingAndFollowing.map{ _._2 }.max)
   }
 
@@ -289,7 +289,7 @@ case class BatchedOps(running: Seq[NamedExpression],
                                           child: SparkPlan,
                                           cpuPartitionSpec: Seq[Expression],
                                           cpuOrderSpec: Seq[SortOrder]): GpuExec = {
-    val (prec@_, foll@_) = getMaxBoundedPrecedingAndFollowing
+    val (prec@_, foll@_) = getMinPrecedingMaxFollowingForBoundedWindows
     new GpuBatchedBoundedWindowExec(getBoundedExpressionsWithTheRestAsPassthrough,
                                     gpuPartitionSpec,
                                     gpuOrderSpec,
@@ -542,25 +542,40 @@ object GpuWindowExec {
   /**
    * Checks whether the window spec is both ROWS-based and bounded.
    * Window functions of this spec can possibly still be batched.
+   * TODO: (future): Change here to support +ve preceding, -ve following.
    */
-  def isBoundedRowsWindowAndBatchable(spec: GpuWindowSpecDefinition): Boolean = spec match {
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
-                                        RowFrame,
-                                        GpuLiteral(prec: Int, _),
-                                        GpuLiteral(foll: Int, _))) => prec <= 0 && foll >= 0
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
-                                        RowFrame,
-                                        GpuSpecialFrameBoundary(CurrentRow),
-                                        GpuLiteral(foll: Int, _))) => foll >= 0
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
-                                        RowFrame,
-                                        GpuLiteral(prec: Int,_),
-                                        GpuSpecialFrameBoundary(CurrentRow))) => prec <= 0
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
-                                        RowFrame,
-                                        GpuSpecialFrameBoundary(CurrentRow),
-                                        GpuSpecialFrameBoundary(CurrentRow))) => true
-    case _ => false
+  private def isBoundedRowsWindowAndBatchable(spec: GpuWindowSpecDefinition,
+                                              conf: RapidsConf): Boolean = {
+
+    def precInPermissibleRange(prec: Int) =
+      prec <= 0 && Math.abs(prec) <= conf.boundedRowsWindowMaxExtent
+
+    def follInPermissibleRange(foll: Int) =
+      foll >= 0 && Math.abs(foll) <= conf.boundedRowsWindowMaxExtent
+
+    spec match {
+
+      case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                          RowFrame,
+                                          GpuLiteral(prec: Int, _),
+                                          GpuLiteral(foll: Int, _))) =>
+           precInPermissibleRange(prec) && follInPermissibleRange(foll)
+      case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                          RowFrame,
+                                          GpuSpecialFrameBoundary(CurrentRow),
+                                          GpuLiteral(foll: Int, _))) =>
+           follInPermissibleRange(foll)
+      case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                          RowFrame,
+                                          GpuLiteral(prec: Int, _),
+                                          GpuSpecialFrameBoundary(CurrentRow))) =>
+           precInPermissibleRange(prec)
+      case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
+                                          RowFrame,
+                                          GpuSpecialFrameBoundary(CurrentRow),
+                                          GpuSpecialFrameBoundary(CurrentRow))) => true
+      case _ => false
+    }
   }
 
   def getBoundedWindowPrecedingAndFollowing(spec: GpuWindowSpecDefinition): (Int, Int) =
@@ -582,7 +597,7 @@ object GpuWindowExec {
                                           GpuSpecialFrameBoundary(CurrentRow),
                                           GpuSpecialFrameBoundary(CurrentRow))) => (0, 0)
       case _ => throw new IllegalArgumentException("Expected bounded ROWS spec, " +
-        s"found $spec") // (null, null) // Can't reach here.
+        s"found $spec") // Can't reach here.
   }
 
   def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
@@ -611,13 +626,16 @@ object GpuWindowExec {
       case _ => false
     }
 
-  def isBatchedFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean = {
+  def isBatchedFunc(func: Expression,
+                    spec: GpuWindowSpecDefinition,
+                    conf: RapidsConf): Boolean = {
     isBatchedRunningFunc(func, spec) ||
       isBatchedUnboundedToUnboundedFunc(func, spec) ||
-        isBoundedRowsWindowAndBatchable(spec)
+        isBoundedRowsWindowAndBatchable(spec, conf)
   }
 
-  def splitBatchedOps(windowOps: Seq[NamedExpression]): BatchedOps = {
+  def splitBatchedOps(windowOps: Seq[NamedExpression],
+                      conf: RapidsConf): BatchedOps = {
     val running = ArrayBuffer[NamedExpression]()
     val doublePass = ArrayBuffer[NamedExpression]()
     val batchedBounded = ArrayBuffer[NamedExpression]()
@@ -628,7 +646,7 @@ object GpuWindowExec {
           running.append(expr)
         } else if (isBatchedUnboundedToUnboundedFunc(func, spec)) {
           doublePass.append(expr)
-        } else if (isBoundedRowsWindowAndBatchable(spec)) {
+        } else if (isBoundedRowsWindowAndBatchable(spec, conf)) {
           batchedBounded.append(expr)
         } else {
           throw new IllegalArgumentException(

@@ -34,7 +34,7 @@ class GpuBatchedBoundedWindowIterator(
   override val boundPartitionSpec: Seq[GpuExpression],
   override val boundOrderSpec: Seq[SortOrder],
   val outputTypes: Array[DataType],
-  maxPreceding: Int,
+  minPreceding: Int,
   maxFollowing: Int,
   numOutputBatches: GpuMetric,
   numOutputRows: GpuMetric,
@@ -83,7 +83,7 @@ class GpuBatchedBoundedWindowIterator(
     }
 
     def concatenateColumns(cached: Array[CudfColumnVector],
-                                   freshBatchTable: CudfTable)
+                           freshBatchTable: CudfTable)
     : Array[CudfColumnVector] = {
 
       if (cached.length != freshBatchTable.getNumberOfColumns) {
@@ -167,6 +167,7 @@ class GpuBatchedBoundedWindowIterator(
           } else {
             // More input rows expected. The last `maxFollowing` rows can't be finalized.
             // Cannot exceed `inputRowCount`.
+            // TODO: Account for maxFollowing < 0 (e.g. LAG()) => numUnprocessedInCache = 0.
             maxFollowing min inputRowCount
           }
 
@@ -186,7 +187,8 @@ class GpuBatchedBoundedWindowIterator(
           }
 
           // Compute new cache using current input.
-          numPrecedingRowsAdded = maxPreceding min (inputRowCount - numUnprocessedInCache)
+          // TODO: Account for minPreceding >0 (e.g. LEAD()) => numPrecedingRowsAdded = 0.
+          numPrecedingRowsAdded = Math.abs(minPreceding) min (inputRowCount - numUnprocessedInCache)
           val inputCols = Range(0, inputCB.numCols()).map {
             inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
           }.toArray
@@ -212,7 +214,7 @@ class GpuBatchedBoundedWindowExec(
     override val child: SparkPlan)(
     override val cpuPartitionSpec: Seq[Expression],
     override val cpuOrderSpec: Seq[SortOrder],
-    maxPreceding: Integer,
+    minPreceding: Integer,
     maxFollowing: Integer
 ) extends GpuWindowExec(windowOps,
                         gpuPartitionSpec,
@@ -220,7 +222,7 @@ class GpuBatchedBoundedWindowExec(
                         child)(cpuPartitionSpec, cpuOrderSpec) {
 
   override def otherCopyArgs: Seq[AnyRef] =
-    cpuPartitionSpec :: cpuOrderSpec :: maxPreceding :: maxFollowing :: Nil
+    cpuPartitionSpec :: cpuOrderSpec :: minPreceding :: maxFollowing :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
@@ -241,7 +243,7 @@ class GpuBatchedBoundedWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuBatchedBoundedWindowIterator(iter, boundWindowOps, boundPartitionSpec,
-        boundOrderSpec, output.map(_.dataType).toArray, maxPreceding, maxFollowing,
+        boundOrderSpec, output.map(_.dataType).toArray, minPreceding, maxFollowing,
         numOutputBatches, numOutputRows, opTime)
     }
   }

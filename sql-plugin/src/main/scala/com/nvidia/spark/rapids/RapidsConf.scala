@@ -1340,6 +1340,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val BATCHED_BOUNDED_ROW_WINDOW_MAX_EXTENT: ConfEntryWithDefault[Integer] =
+    conf("spark.rapids.sql.window.batched.bounded.row.extent")
+      .doc("Max value for bounded row window preceding/following extents " +
+      "permissible for the window to be evaluated in batched mode")
+      .integerConf
+      .createWithDefault(value = 100)
+
   val ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.agg.singlePassPartialSortEnabled")
     .doc("Enable or disable a single pass partial sort optimization where if a heuristic " +
@@ -2708,6 +2715,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowDoubleEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DOUBLE)
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
+
+  lazy val boundedRowsWindowMaxExtent: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX_EXTENT)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 
