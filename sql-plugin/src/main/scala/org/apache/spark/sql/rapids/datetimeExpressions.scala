@@ -1017,8 +1017,7 @@ case class GpuFromUnixTime(
         } else {
           // Non-UTC TZ
           withResource(GpuTimeZoneDB.fromUtcTimestampToTimestamp(tsVector, zoneId.normalized())) {
-            shifted =>
-              shifted.asStrings(strfFormat)
+            shifted => shifted.asStrings(strfFormat)
           }
         }
       }
