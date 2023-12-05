@@ -50,6 +50,7 @@ class GpuBatchedBoundedWindowIterator(
   private var numUnprocessedInCache: Int = 0  // numRows at the bottom not processed completely.
   private var numPrecedingRowsAdded: Int = 0  // numRows at the top, added for preceding context.
 
+  // Register handler to clean up cache when task completes.
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
       clearCached()
