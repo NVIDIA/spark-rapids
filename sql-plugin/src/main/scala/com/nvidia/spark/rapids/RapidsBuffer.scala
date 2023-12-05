@@ -130,11 +130,17 @@ class ChunkedPacker(
     tableMeta
   }
 
-  override def hasNext: Boolean = {
-    !closed && chunkedPack.hasNext
+  override def hasNext: Boolean = synchronized {
+    if (closed) {
+      throw new IllegalStateException(s"ChunkedPacker for $id is closed")
+    }
+    chunkedPack.hasNext
   }
 
-  def next(): MemoryBuffer = {
+  def next(): MemoryBuffer = synchronized {
+    if (closed) {
+      throw new IllegalStateException(s"ChunkedPacker for $id is closed")
+    }
     val bytesWritten = chunkedPack.next(bounceBuffer)
     // we increment the refcount because the caller has no idea where
     // this memory came from, so it should close it.
@@ -171,7 +177,7 @@ class RapidsBufferCopyIterator(buffer: RapidsBuffer)
     extends Iterator[MemoryBuffer] with AutoCloseable with Logging {
 
   private val chunkedPacker: Option[ChunkedPacker] = if (buffer.supportsChunkedPacker) {
-    Some(buffer.getChunkedPacker)
+    Some(buffer.makeChunkedPacker)
   } else {
     None
   }
@@ -285,7 +291,10 @@ trait RapidsBuffer extends AutoCloseable {
 
   val supportsChunkedPacker: Boolean = false
 
-  def getChunkedPacker: ChunkedPacker = {
+  /**
+   * Makes a new chunked packer. It is the responsibility of the caller to close this.
+   */
+  def makeChunkedPacker: ChunkedPacker = {
     throw new NotImplementedError("not implemented for this store")
   }
 

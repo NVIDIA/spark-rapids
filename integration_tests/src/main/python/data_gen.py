@@ -24,7 +24,7 @@ import random
 from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed
+from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
 import time
 import os
 from functools import lru_cache
@@ -676,7 +676,29 @@ class MapGen(DataGen):
         def make_dict():
             length = rand.randint(self._min_length, self._max_length)
             return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
-        self._start(rand, make_dict)
+        def make_dict_float():
+            # In Spark map, at most one key can be NaN. However, in Python dict, multiple NaN keys 
+            # are allowed because NaN != NaN. So we need to ensure that there is at most one NaN 
+            # key in the dict when generating map type data.
+            length = rand.randint(self._min_length, self._max_length)
+            count = 0
+            has_nan = False
+            result = {}
+            while count < length:
+                key = self._key_gen.gen()
+                if math.isnan(key):
+                    if has_nan:
+                        continue
+                    else:
+                        has_nan = True
+                result[key] = self._value_gen.gen()
+                count += 1
+            return result
+
+        if self._key_gen.data_type == FloatType() or self._key_gen.data_type == DoubleType():
+            self._start(rand, make_dict_float)
+        else:
+            self._start(rand, make_dict)
 
     def contains_ts(self):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()
@@ -1172,3 +1194,10 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
+
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+# This will be deprecated and replaced case specified non GPU allow list
+non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if is_not_utc() else []
