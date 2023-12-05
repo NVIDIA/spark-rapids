@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
@@ -37,7 +38,7 @@ class GpuBatchedBoundedWindowIterator(
   maxFollowing: Int,
   numOutputBatches: GpuMetric,
   numOutputRows: GpuMetric,
-  opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
+  opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc with Logging {
 
   override def isRunningBatched: Boolean = false  // Not "Running Window" optimized.
                                                   // This is strictly for batching.
@@ -45,7 +46,7 @@ class GpuBatchedBoundedWindowIterator(
   override def hasNext: Boolean = numUnprocessedInCache > 0 || input.hasNext
 
   var cached: Option[Array[CudfColumnVector]] = None  // For processing with the next batch.
-  // TODO: Rename numUnprocessedInCache to numIncomplete.
+
   private var numUnprocessedInCache: Int = 0  // numRows at the bottom not processed completely.
   private var numPrecedingRowsAdded: Int = 0  // numRows at the top, added for preceding context.
 
@@ -176,12 +177,14 @@ class GpuBatchedBoundedWindowIterator(
               // TODO: Optimize. If no rows can be output, skip calling the kernel.
 
               if (numPrecedingRowsAdded + numUnprocessedInCache >= inputRowCount) {
-                println("Not enough rows! Cannot output a batch.")
+                logWarning("Not enough rows! Cannot output a batch.")
               }
               else {
-                val trimmedOutputCols = trim(outputCols,
-                                             numPrecedingRowsAdded, numUnprocessedInCache)
-                outputBatch = convertToBatch(outputTypes, trimmedOutputCols)
+                outputBatch = withResource(
+                                trim(outputCols,
+                                     numPrecedingRowsAdded, numUnprocessedInCache)) { trimmed =>
+                  convertToBatch(outputTypes, trimmed)
+                }
               }
 
               numPrecedingRowsAdded = maxPreceding min (inputRowCount - numUnprocessedInCache)
