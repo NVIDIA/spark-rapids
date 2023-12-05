@@ -21,6 +21,7 @@ import java.time.ZoneId
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
+import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -1130,7 +1131,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (!isTimeZoneSupported) return checkUTCTimezone(this)
 
     // Level 4 check
-    if (!TimeZoneDB.isSupportedTimezone(getZoneId())) {
+    if (!GpuTimeZoneDB.isSupportedTimeZone(getZoneId())) {
       willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
     }
   }
