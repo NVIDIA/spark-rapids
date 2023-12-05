@@ -190,6 +190,7 @@ object AstUtil {
       case GpuBuildLeft => (joinLeftOutput, joinRightOutput)
       case GpuBuildRight => (joinRightOutput, joinLeftOutput)
     }
+
     override def remainedCond(): Option[Expression] = remains
 
     // This is the left side child of join. In `split as project` strategy, it may be different
