@@ -477,7 +477,7 @@ def test_date_format(data_gen, date_format):
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 # from 0001-02-01 to 9999-12-30
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
-@pytest.mark.skipif(is_dst_time_zone(), reason="only support non-DST time zone, refer to https://github.com/NVIDIA/spark-rapids/issues/6839")
+@pytest.mark.xfail(is_dst_time_zone(), reason="only support non-DST time zone, refer to https://github.com/NVIDIA/spark-rapids/issues/6839")
 def test_from_unixtime(data_gen, date_format):
     conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_and_cpu_are_equal_collect(
