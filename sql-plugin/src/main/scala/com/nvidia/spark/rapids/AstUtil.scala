@@ -143,10 +143,10 @@ object AstUtil {
   case class JoinCondSplitAsPostFilter(expr: Option[Expression],
       attributeSeq: scala.collection.Seq[Attribute])
       extends NonAstJoinCondSplitStrategy {
-    lazy val postFilter = if (expr.isDefined) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(
-        scala.collection.Seq(expr.get), attributeSeq, false))
-    } else None
+    lazy val postFilter = expr.map { e =>
+      GpuBindReferences.bindGpuReferencesTiered(
+        scala.collection.Seq(e), attributeSeq, false)
+    }
 
     override def remainedCond(): Option[Expression] = None
 
