@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
-        <version>23.12.0-SNAPSHOT</version>
+        <version>24.02.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>23.12.0-SNAPSHOT</version>
+    <version>24.02.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>aggregator</rapids.module>
@@ -39,6 +39,10 @@
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.shim.jar.test.phase>none</rapids.shim.jar.test.phase>
+        <rapids.default.jar.excludePattern>**/*</rapids.default.jar.excludePattern>
+        <rapids.default.jar.phase>initialize</rapids.default.jar.phase>
+        <!-- Maven to register attached artifact , which we later replace -->
+        <rapids.shim.jar.phase>initialize</rapids.shim.jar.phase>
     </properties>
     <dependencies>
         <dependency>
@@ -73,7 +77,6 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
-                    <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
                     <artifactSet>
                         <excludes>
                             <exclude>org.slf4j:*</exclude>
@@ -108,10 +111,83 @@
                 <executions>
                     <execution>
                         <id>main-${spark.version.classifier}</id>
-                        <phase>package</phase>
+                        <phase>compile</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>init-dirs</id>
+                        <phase>initialize</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.outputDirectory}"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>generate-build-info</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>create-aggregator-for-downstream-if-content-changed</id>
+                        <goals><goal>run</goal></goals>
+                        <phase>process-classes</phase>
+                        <configuration>
+                            <target>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <property name="realAggJar"
+                                          location="${project.build.outputDirectory}/../${project.build.finalName}-shaded.jar"/>
+                                <property name="aggJarForDownstream"
+                                          location="${project.build.outputDirectory}/../${project.build.finalName}-${spark.version.classifier}.jar"/>
+                                <property name="newClassesDir" location="${project.build.outputDirectory}/../new-classes"/>
+                                <property name="oldClassesDir" location="${project.build.outputDirectory}/../old-classes"/>
+                                <echo>Checking if need to recreate: ${aggJarForDownstream}</echo>
+                                <!-- using diff instead of checksum to deal with the expected zip metadata diff -->
+
+                                <!-- make sure we start with a clean new dir -->
+                                <mkdir dir="${newClassesDir}"/>
+                                <delete dir="${newClassesDir}"/>
+                                <unzip src="${realAggJar}" dest="${newClassesDir}"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${oldClassesDir}" type="dir"/>
+                                    <then>
+                                        <exec executable="diff"
+                                            resultproperty="diff.result"
+                                            discardOutput="${nonfail.errors.quiet}"
+                                            discardError="${nonfail.errors.quiet}">
+                                            <arg value="-q"/>
+                                            <arg value="-r"/>
+                                            <arg value="${oldClassesDir}"/>
+                                            <arg value="${newClassesDir}"/>
+                                        </exec>
+                                    </then>
+                                    <else>
+                                        <echo>Clean build? Skipping diff because ${oldClassesDir} does not exist</echo>
+                                    </else>
+                                </ac:if>
+
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <equals arg1="0" arg2="${diff.result}"/>
+                                    <then>
+                                        <echo>Aggregator jar unchanged</echo>
+                                    </then>
+                                    <else>
+                                        <echo>Aggregator jar changed, recreating final jar</echo>
+                                        <delete dir="${oldClassesDir}"/>
+                                        <move file="${newClassesDir}" tofile="${oldClassesDir}"/>
+                                        <copy file="${realAggJar}" tofile="${aggJarForDownstream}"/>
+                                    </else>
+                                </ac:if>
+                            </target>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -538,6 +614,23 @@
                 <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-delta-spark332db_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release341db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-delta-spark341db_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <classifier>${spark.version.classifier}</classifier>
                 </dependency>

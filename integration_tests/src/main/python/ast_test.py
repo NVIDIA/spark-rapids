@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
-from marks import approximate_float, datagen_overrides
+from marks import approximate_float, datagen_overrides, ignore_order
 from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
 
@@ -258,7 +258,6 @@ def test_lt(data_descr):
             s2 < f.col('b'),
             f.col('a') < f.col('b')))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9711')
 @pytest.mark.parametrize('data_descr', ast_comparable_descrs, ids=idfn)
 def test_lte(data_descr):
     (s1, s2) = with_cpu_session(lambda spark: gen_scalars(data_descr[0], 2))
@@ -372,3 +371,11 @@ def test_or(data_gen):
                        f.col('a') | f.lit(True),
                        f.lit(False) | f.col('b'),
                        f.col('a') | f.col('b')))
+
+@ignore_order
+def test_multi_tier_ast():
+    assert_gpu_ast(
+        is_supported=True,
+        # repartition is here to avoid Spark simplifying the expression
+        func=lambda spark: spark.range(10).withColumn("x", f.col("id")).repartition(1)\
+            .selectExpr("x", "(id < x) == (id < (id + x))"))

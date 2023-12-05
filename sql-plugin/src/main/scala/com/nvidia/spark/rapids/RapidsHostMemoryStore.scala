@@ -122,7 +122,7 @@ class RapidsHostMemoryStore(
       withResource(other.getCopyIterator) { otherBufferIterator =>
         val isChunked = otherBufferIterator.isChunked
         val totalCopySize = otherBufferIterator.getTotalCopySize
-        closeOnExcept(HostAlloc.allocHighPriority(totalCopySize)) { hb =>
+        closeOnExcept(HostAlloc.tryAlloc(totalCopySize)) { hb =>
           hb.map { hostBuffer =>
             val spillNs = GpuTaskMetrics.get.spillToHostTime {
               var hostOffset = 0L

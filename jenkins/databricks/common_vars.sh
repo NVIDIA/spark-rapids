@@ -15,6 +15,11 @@
 # limitations under the License.
 #
 
+## 'foo=abc,bar=123,...' to 'export foo=abc bar=123 ...'
+if [ -n "$EXTRA_ENVS" ]; then
+    export ${EXTRA_ENVS//','/' '}
+fi
+
 SPARK_VER=${SPARK_VER:-$(< /databricks/spark/VERSION)}
 export SPARK_SHIM_VER=${SPARK_SHIM_VER:-spark${SPARK_VER//.}db}
 

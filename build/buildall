@@ -262,7 +262,7 @@ function build_single_shim() {
       -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
-      -Dskip \
+      -Dmaven.scaladoc.skip \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl aggregator -am > "$LOG_FILE" 2>&1 || {
         [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -20 "$LOG_FILE" || true
@@ -303,5 +303,5 @@ time (
   echo "Resuming from $joinShimBuildFrom build only using $BASE_VER"
   $MVN $FINAL_OP -rf $joinShimBuildFrom $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
-    -DskipTests -Dskip
+    -DskipTests -Dmaven.scaladoc.skip
 )

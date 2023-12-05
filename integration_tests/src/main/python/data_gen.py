@@ -21,19 +21,14 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc, is_before_spark_340, with_cpu_session
+from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests,get_datagen_seed
+from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
 import time
 import os
 from functools import lru_cache
 import hashlib
-
-# set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
-# refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
-os.environ['TZ'] = 'UTC'
-time.tzset()
 
 class DataGen:
     """Base class for data generation"""
@@ -578,18 +573,24 @@ class TimestampGen(DataGen):
             # Spark supports times starting at
             # "0001-01-01 00:00:00.000000"
             # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days,
+            # in a different format which causes roundoff, so we have to add a few days, even a month,
             # just to be sure
-            start = datetime(1, 1, 3, tzinfo=tzinfo)
+            start = datetime(1, 2, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
+        # Spark supports time through: "9999-12-31 23:59:59.999999"
+        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
+        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
+        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
-            # Spark supports time through
-            # "9999-12-31 23:59:59.999999"
-            end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
+            end = max_end
         elif isinstance(end, timedelta):
-            end = start + end
+            max_timedelta = max_end - start
+            if ( end >= max_timedelta):
+                end = max_end
+            else:
+                end = start + end
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for end {}'.format(end))
 
@@ -675,7 +676,29 @@ class MapGen(DataGen):
         def make_dict():
             length = rand.randint(self._min_length, self._max_length)
             return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
-        self._start(rand, make_dict)
+        def make_dict_float():
+            # In Spark map, at most one key can be NaN. However, in Python dict, multiple NaN keys 
+            # are allowed because NaN != NaN. So we need to ensure that there is at most one NaN 
+            # key in the dict when generating map type data.
+            length = rand.randint(self._min_length, self._max_length)
+            count = 0
+            has_nan = False
+            result = {}
+            while count < length:
+                key = self._key_gen.gen()
+                if math.isnan(key):
+                    if has_nan:
+                        continue
+                    else:
+                        has_nan = True
+                result[key] = self._value_gen.gen()
+                count += 1
+            return result
+
+        if self._key_gen.data_type == FloatType() or self._key_gen.data_type == DoubleType():
+            self._start(rand, make_dict_float)
+        else:
+            self._start(rand, make_dict)
 
     def contains_ts(self):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()
@@ -749,10 +772,6 @@ class BinaryGen(DataGen):
             return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
 
-def skip_if_not_utc():
-    if (not is_tz_utc()):
-        skip_unless_precommit_tests('The java system time zone is not set to UTC')
-
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
@@ -775,10 +794,6 @@ def gen_df(spark, data_gen, length=2048, seed=None, num_slices=None):
         src = data_gen
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
-
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
 
     data = gen_df_help(src, length, seed_value)
 
@@ -831,10 +846,6 @@ def _gen_scalars_common(data_gen, count, seed=None):
         seed_value = get_datagen_seed()
     else:
         seed_value = seed
-
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
 
     rand = random.Random(seed_value)
     src.start(rand)
@@ -1183,3 +1194,10 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
+
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+# This will be deprecated and replaced case specified non GPU allow list
+non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if is_not_utc() else []

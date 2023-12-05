@@ -8141,8 +8141,8 @@ are limited.
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
-<td><em>PS<br/>MAP only supports keys and values that are of STRING type;<br/>unsupported child types DATE, TIMESTAMP, NULL, BINARY, CALENDAR, MAP, UDT</em></td>
-<td><em>PS<br/>unsupported child types DATE, TIMESTAMP, NULL, BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>MAP only supports keys and values that are of STRING type;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, MAP, UDT</em></td>
 <td> </td>
 </tr>
 <tr>
@@ -14541,16 +14541,16 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td> </td>
-<td> </td>
 <td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
 <td> </td>
 </tr>
 <tr>

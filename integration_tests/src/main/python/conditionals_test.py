@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
-from marks import datagen_overrides
+from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
 
 def mk_str_gen(pattern):
@@ -69,7 +69,6 @@ def test_if_else_map(data_gen):
                 'IF(TRUE, b, c)',
                 'IF(a, b, c)'))
 
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9685')
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
 def test_case_when(data_gen):
@@ -132,7 +131,6 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9684')
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + map_gens_sample, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
@@ -232,6 +230,7 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -242,6 +241,7 @@ def test_conditional_with_side_effects_sequence(data_gen):
 
 @pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(

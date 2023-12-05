@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, Cast, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -32,9 +32,13 @@ import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.TimeZoneDB
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinMetaBase, GpuBroadcastNestedLoopJoinMetaBase}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType}
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -168,13 +172,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childScans.foreach(_.recursiveSparkPlanRemoved())
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
     childRunnableCmds.foreach(_.recursiveSparkPlanRemoved())
-  }
-
-  final def inputFilePreventsRunningOnGpu(): Unit = {
-    if (canThisBeReplaced) {
-      willNotWorkOnGpu("Removed by InputFileBlockRule preventing plans " +
-        "[SparkPlan(with input_file_xxx), FileScan) running on GPU")
-    }
   }
 
   /**
@@ -387,14 +384,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   def checkTimeZoneId(sessionZoneId: ZoneId): Unit = {
     // Both of the Spark session time zone and JVM's default time zone should be UTC.
-    if (!TypeChecks.areTimestampsSupported(sessionZoneId)) {
-      willNotWorkOnGpu("Only UTC zone id is supported. " +
+    if (!TimeZoneDB.isSupportedTimezone(sessionZoneId)) {
+      willNotWorkOnGpu("Not supported zone id. " +
         s"Actual session local zone id: $sessionZoneId")
     }
 
     val defaultZoneId = ZoneId.systemDefault()
-    if (!TypeChecks.areTimestampsSupported(defaultZoneId)) {
-      willNotWorkOnGpu(s"Only UTC zone id is supported. Actual default zone id: $defaultZoneId")
+    if (!TimeZoneDB.isSupportedTimezone(defaultZoneId)) {
+      willNotWorkOnGpu(s"Not supported zone id. Actual default zone id: $defaultZoneId")
     }
   }
 
@@ -549,7 +546,32 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
-  override def tagSelfForGpu(): Unit = {}
+  val checkTimeZone: Boolean = true
+
+  final override def tagSelfForGpu(): Unit = {
+    if (checkTimeZone) {
+      timezoneCheck()
+    }
+    tagSelfForGpuInternal()
+  }
+
+  protected def tagSelfForGpuInternal(): Unit = {}
+
+  // Check whether data type of intput/output contains timestamp type, which
+  // is related to time zone.
+  // Only UTC time zone is allowed to be consistent with previous behavior
+  // for [[DataWritingCommand]]. Needs to override [[checkTimeZone]] to skip
+  // UTC time zone check in sub class of [[DataWritingCommand]].
+  def timezoneCheck(): Unit = {
+    val types = (wrapped.inputSet.map(_.dataType) ++ wrapped.outputSet.map(_.dataType)).toSet
+    if (types.exists(GpuOverrides.isOrContainsTimestamp(_))) {
+      if (!GpuOverrides.isUTCTimezone()) {
+        willNotWorkOnGpu("Only UTC timezone is supported. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+      }
+    }
+  }
 }
 
 /**
@@ -561,7 +583,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     parent: Option[RapidsMeta[_, _, _]])
     extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     willNotWorkOnGpu(s"GPU does not currently support the operator ${cmd.getClass}")
   }
 
@@ -672,6 +694,17 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
+  private def fixUpBroadcastJoins(): Unit = {
+    childPlans.foreach(_.fixUpBroadcastJoins())
+    wrapped match {
+      case _: BroadcastHashJoinExec =>
+        this.asInstanceOf[GpuBroadcastHashJoinMetaBase].checkTagForBuildSide()
+      case _: BroadcastNestedLoopJoinExec =>
+        this.asInstanceOf[GpuBroadcastNestedLoopJoinMetaBase].checkTagForBuildSide()
+      case _ => // noop
+    }
+  }
+
   /**
    * Run rules that happen for the entire tree after it has been tagged initially.
    */
@@ -693,7 +726,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // So input_file_xxx in the following GPU operators will get empty value.
     // InputFileBlockRule is to prevent the SparkPlans
     // [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
-    InputFileBlockRule.apply(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
+    InputFileBlockRule(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
 
     // 2) For shuffles, avoid replacing the shuffle if the child is not going to be replaced.
     fixUpExchangeOverhead()
@@ -702,6 +735,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // WriteFilesExec is a new operator from Spark version 340,
     // Did not extract a shim code for simplicity
     tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
+
+    // 4) InputFileBlockRule may change the meta of broadcast join and its child plans,
+    //    and this change may cause mismatch between the join and its build side
+    //    BroadcastExchangeExec, leading to errors. Need to fix the mismatch.
+    fixUpBroadcastJoins()
   }
 
   /**
@@ -1071,21 +1109,110 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
+  // There are 4 levels of timezone check in GPU plan tag phase:
+  //    Level 1: Check whether an expression is related to timezone. This is achieved by
+  //        [[needTimeZoneCheck]] below.
+  //    Level 2: Check on golden configuration 'spark.rapids.sql.nonUTC.enabled'. If
+  //        yes, we pass to next level timezone check. If not, we only pass UTC case as before.
+  //    Level 3: Check related expression has been implemented with timezone. There is a
+  //        toggle flag [[isTimeZoneSupported]] for this. If false, fallback to UTC-only check as
+  //        before. If yes, move to next level check. When we add timezone support for a related
+  //        function. [[isTimeZoneSupported]] should be override as true.
+  //    Level 4: Check whether the desired timezone is supported by Gpu kernel.
+  def checkExprForTimezone(): Unit = {
+    // Level 1 check
+    if (!needTimeZoneCheck) return
+
+    // Level 2 check
+    if(!conf.nonUTCTimeZoneEnabled) return checkUTCTimezone(this)
+
+    // Level 3 check
+    if (!isTimeZoneSupported) return checkUTCTimezone(this)
+
+    // Level 4 check
+    if (TimeZoneDB.isSupportedTimezone(getZoneId())) {
+      willNotWorkOnGpu(TimeZoneDB.timezoneNotSupportedStr(this.wrapped.getClass.toString))
+    }
+  }
+
+  protected def getZoneId(): ZoneId = {
+    this.wrapped match {
+      case tzExpr: TimeZoneAwareExpression => tzExpr.zoneId
+      case ts: UTCTimestamp => {
+        assert(false, s"Have to override getZoneId() of BaseExprMeta in ${this.getClass.toString}")
+        throw new IllegalArgumentException(s"Failed to get zone id from ${ts.getClass.toString}")
+      }
+      case _ => throw new IllegalArgumentException(
+        s"Zone check should never been happened to ${this.getClass.toString} " +
+          "which is not timezone related")
+    }
+  }
+
+  // Level 1 timezone checking flag
+  // Both [[isTimeZoneSupported]] and [[needTimeZoneCheck]] are needed to check whether timezone
+  // check needed. For cast expression, only some cases are needed pending on its data type and
+  // its child's data type.
+  //
+  //+------------------------+-------------------+-----------------------------------------+
+  //|         Value          | needTimeZoneCheck |           isTimeZoneSupported           |
+  //+------------------------+-------------------+-----------------------------------------+
+  //| TimezoneAwareExpression| True              | False by default, True when implemented |
+  //| UTCTimestamp           | True              | False by default, True when implemented |
+  //| Others                 | False             | N/A (will not be checked)               |
+  //+------------------------+-------------------+-----------------------------------------+
+  lazy val needTimeZoneCheck: Boolean = {
+    wrapped match {
+      // CurrentDate expression will not go through this even it's a `TimeZoneAwareExpression`.
+      // It will be treated as literal in Rapids.
+      case _: TimeZoneAwareExpression =>
+        if (wrapped.isInstanceOf[Cast]) {
+          val cast = wrapped.asInstanceOf[Cast]
+          needsTimeZone(cast.child.dataType, cast.dataType)
+        } else if(PlanShims.isAnsiCast(wrapped)) {
+          val (from, to) = PlanShims.extractAnsiCastTypes(wrapped)
+          needsTimeZone(from, to)
+        } else{
+          true
+        }
+      case _: UTCTimestamp => true
+      case _ => false
+    }
+  }
+
+  // Mostly base on Spark existing [[Cast.needsTimeZone]] method. Two changes are made:
+  //    1. Override date related based on https://github.com/apache/spark/pull/40524 merged
+  //    2. Existing `needsTimezone` doesn't consider complex types to string which is timezone
+  //    related. (incl. struct/map/list to string).
+  private[this] def needsTimeZone(from: DataType, to: DataType): Boolean = (from, to) match {
+    case (StringType, DateType) => false
+    case (DateType, StringType) => false
+    case (ArrayType(fromType, _), StringType) => needsTimeZone(fromType, to)
+    case (MapType(fromKey, fromValue, _), StringType) =>
+      needsTimeZone(fromKey, to) || needsTimeZone(fromValue, to)
+    case (StructType(fromFields), StringType) =>
+      fromFields.exists {
+        case fromField =>
+          needsTimeZone(fromField.dataType, to)
+      }
+    // Avoid copying full implementation here. Otherwise needs to create shim for TimestampNTZ
+    // since Spark 3.4.0
+    case _ => Cast.needsTimeZone(from, to)
+  }
+
+  // Level 3 timezone checking flag, need to override to true when supports timezone in functions
+  // Useless if it's not timezone related expression defined in [[needTimeZoneCheck]]
+  val isTimeZoneSupported: Boolean = false
+
   /**
-   * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
-   * is done.
-   * By default a TimeZoneAwareExpression always requires the timezone tagging, but
-   * there are some exceptions, e.g. 'Cast', who requires timezone tagging only when it
-   * has timezone sensitive type as input or output.
+   * Timezone check which only allows UTC timezone. This is consistent with previous behavior.
    *
-   * Override this to match special cases.
+   * @param meta to check whether it's UTC
    */
-  protected def needTimezoneTagging: Boolean = {
-    // A TimeZoneAwareExpression with no timezone sensitive types as input/output will
-    // escape from the timezone tagging in the prior type checks. So ask for tagging here.
-    // e.g. 'UnixTimestamp' with 'DateType' as the input, timezone will be taken into
-    // account when converting a Date to a Long.
-    !(dataType +: childExprs.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
+  def checkUTCTimezone(meta: RapidsMeta[_, _, _]): Unit = {
+    if (!GpuOverrides.isUTCTimezone()) {
+      meta.willNotWorkOnGpu(
+        TimeZoneDB.nonUTCTimezoneNotSupportedStr(meta.wrapped.getClass.toString))
+    }
   }
 
   final override def tagSelfForGpu(): Unit = {
@@ -1094,12 +1221,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
+    checkExprForTimezone()
     tagExprForGpu()
-    wrapped match {
-      case tzAware: TimeZoneAwareExpression if needTimezoneTagging =>
-        checkTimeZoneId(tzAware.zoneId)
-      case _ => // do nothing
-    }
   }
 
   /**

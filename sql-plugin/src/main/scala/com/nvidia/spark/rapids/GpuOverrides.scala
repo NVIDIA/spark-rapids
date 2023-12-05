@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.catalyst.util.ArrayData
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
@@ -319,7 +319,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
 
   private var fileFormat: Option[ColumnarFileFormat] = None
 
-  override def tagSelfForGpu(): Unit = {
+  override def tagSelfForGpuInternal(): Unit = {
     if (cmd.bucketSpec.isDefined) {
       willNotWorkOnGpu("bucketing is not supported")
     }
@@ -621,6 +621,15 @@ object GpuOverrides extends Logging {
     }
   }
 
+  def isUTCTimezone(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == UTC_TIMEZONE_ID
+  }
+
+  def isUTCTimezone(): Boolean = {
+    val zoneId = DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone)
+    isUTCTimezone(zoneId.normalized())
+  }
+
   def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupportedType(_))
 
   /**
@@ -669,9 +678,7 @@ object GpuOverrides extends Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType =>
-        TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
-        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
+      case TimestampType => true
       case StringType => true
       case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
       case NullType => allowNull
@@ -695,6 +702,12 @@ object GpuOverrides extends Logging {
 
   def isOrContainsFloatingPoint(dataType: DataType): Boolean =
     TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  def isOrContainsDateOrTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType || dt == DateType)
+
+  def isOrContainsTimestamp(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == TimestampType)
 
   /** Tries to predict whether an adaptive plan will end up with data on the GPU or not. */
   def probablyGpuPlan(adaptivePlan: AdaptiveSparkPlanExec, conf: RapidsConf): Boolean = {
@@ -3570,13 +3583,14 @@ object GpuOverrides extends Logging {
       "Returns a struct value with the given `jsonStr` and `schema`",
       ExprChecks.projectOnly(
         TypeSig.STRUCT.nested(TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.STRING + TypeSig.integral +
-          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN) +
+          TypeSig.fp + TypeSig.DECIMAL_64 + TypeSig.DECIMAL_128 + TypeSig.BOOLEAN + TypeSig.DATE +
+          TypeSig.TIMESTAMP) +
           TypeSig.MAP.nested(TypeSig.STRING).withPsNote(TypeEnum.MAP,
           "MAP only supports keys and values that are of STRING type"),
         (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
         Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
-        override def tagExprForGpu(): Unit =
+        override def tagExprForGpu(): Unit = {
           a.schema match {
             case MapType(_: StringType, _: StringType, _) => ()
             case _: StructType => ()
@@ -3584,7 +3598,8 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("from_json on GPU only supports MapType<StringType, StringType> " +
                 "or StructType schema")
           }
-          GpuJsonScan.tagJsonToStructsSupport(a.options, this)
+          GpuJsonScan.tagJsonToStructsSupport(a.options, a.dataType, this)
+        }
 
         override def convertToGpu(child: Expression): GpuExpression =
           // GPU implementation currently does not support duplicated json key names in input
@@ -3598,20 +3613,16 @@ object GpuOverrides extends Logging {
         TypeSig.STRING,
         Seq(ParamCheck("struct",
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           (TypeSig.BOOLEAN + TypeSig.STRING + TypeSig.integral + TypeSig.FLOAT +
-            TypeSig.DOUBLE + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
+            TypeSig.DOUBLE + TypeSig.DATE + TypeSig.TIMESTAMP +
+            TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested()
         ))),
-      (a, conf, p, r) => new UnaryExprMeta[StructsToJson](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (a.options.get("pretty").exists(_.equalsIgnoreCase("true"))) {
-            willNotWorkOnGpu("to_json option pretty=true is not supported")
-          }
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuStructsToJson(a.options, child, a.timeZoneId)
-      }).disabledByDefault("to_json support is experimental. See compatibility " +
+      (a, conf, p, r) => new GpuStructsToJsonMeta(a, conf, p, r))
+        .disabledByDefault("to_json support is experimental. See compatibility " +
           "guide for more information."),
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " +

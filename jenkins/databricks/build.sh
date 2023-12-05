@@ -112,6 +112,7 @@ initialize()
     echo "Build Version                                 : ${BUILDVER}"
     echo "Skip Dependencies                             : ${SKIP_DEP_INSTALL}"
     echo "Include Default Spark Shim                    : ${WITH_DEFAULT_UPSTREAM_SHIM}"
+    echo "Extra environments                            : ${EXTRA_ENVS}"
     printf '+ %*s +\n' 100 '' | tr ' ' =
 }
 
@@ -130,6 +131,10 @@ install_dependencies()
 ##########################
 # Main script starts here
 ##########################
+## 'foo=abc,bar=123,...' to 'export foo=abc bar=123 ...'
+if [ -n "$EXTRA_ENVS" ]; then
+    export ${EXTRA_ENVS//','/' '}
+fi
 
 initialize
 if [[ $SKIP_DEP_INSTALL == "1" ]]
@@ -150,7 +155,7 @@ $MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creating a two-shim dist jar"
     UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=buildver -DforceStdout)
-    $MVN_CMD -B package -pl dist -am -DskipTests -Dskip $MVN_OPT \
+    $MVN_CMD -B package -pl dist -am -DskipTests -Dmaven.scaladoc.skip $MVN_OPT \
         -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
 
