@@ -467,12 +467,21 @@ def test_gettimestamp_ansi_exception():
 
 supported_date_formats = ['yyyy-MM-dd', 'yyyy-MM', 'yyyy/MM/dd', 'yyyy/MM', 'dd/MM/yyyy',
                           'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM']
-@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('date_format', [date_gen], ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
-def test_date_format(data_gen, date_format):
+def test_date_format_for_date(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
+
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.xfail(is_dst_time_zone(), reason="only support non-DST time zone, refer to https://github.com/NVIDIA/spark-rapids/issues/6839")
+def test_date_format_for_time(data_gen, date_format):
+    conf = {'spark.rapids.sql.nonUTC.enabled': True}
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
+        conf)
 
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
 # from 0001-02-01 to 9999-12-30
