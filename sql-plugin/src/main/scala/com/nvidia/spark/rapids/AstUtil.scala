@@ -151,10 +151,11 @@ object AstUtil {
     override def remainedCond(): Option[Expression] = None
 
     override def processPostJoin(iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
-      postFilter.map( filter =>
-        iter.flatMap(cb =>
-          GpuFilter.filterAndClose(cb, filter, NoopMetric, NoopMetric, NoopMetric)))
-          .getOrElse(iter)
+      postFilter.map { filter =>
+        iter.flatMap { cb =>
+          GpuFilter.filterAndClose(cb, filter, NoopMetric, NoopMetric, NoopMetric)
+        }
+      }.getOrElse(iter)
     }
   }
 
