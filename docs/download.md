@@ -32,7 +32,7 @@ The plugin is tested on the following architectures:
 	NVIDIA Driver*: R470+
 
 	Runtime: 
-		Scala 2.12, 2.13
+		Scala 2.12
 		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
 
 		* Check the Spark documentation for Python and Java version compatibility with your specific 
@@ -57,8 +57,6 @@ The plugin is tested on the following architectures:
 	
 	Supported Dataproc Serverless versions:
 		Spark runtime 1.1 LTS
-		Spark runtime 2.0
-		Spark runtime 2.1
 
 *Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
 for your hardware's minimum driver version.
@@ -95,12 +93,12 @@ New functionality and performance improvements for this release include:
 * Introduced support for chunked reading of ORC files.
 * Memory usage limitations have been enforced for various operations.
 * Enhanced performance for join and aggregation operations.
-* Scala 2.13 is now supported, and RAPIDS Accelerator also built and tested with Scala 2.13.
 * Kernel optimizations have been implemented to improve Parquet read performance.
-* Databricks 13.3 ML LTS is now supported, expanding compatibility and functionality.
 * Discontinues support for Pascal-based Nvidia GPUs.
 * Qualification and Profiling tool:
-	* 
+	* Profiling Tool now processes Spark Driver log for GPU runs, enhancing feature analysis.
+	* Auto-tuner recommendations include AQE settings for optimized performance.
+	* New configurations in Profiler for enabling off-default features: udfCompiler, incompatibleDateFormats, hasExtendedYearValues.
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
