@@ -151,7 +151,7 @@ unsupported_parts = ['PATH', 'QUERY', 'REF', 'FILE', 'AUTHORITY', 'USERINFO']
     
 @pytest.mark.parametrize('data_gen', [url_gen, edge_cases_gen], ids=idfn)
 @pytest.mark.parametrize('part', supported_parts, ids=idfn)
-def test_parse_url_protocol(data_gen, part):
+def test_parse_url_supported(data_gen, part):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 "a",
@@ -160,7 +160,7 @@ def test_parse_url_protocol(data_gen, part):
 
 @allow_non_gpu('ProjectExec', 'ParseUrl')
 @pytest.mark.parametrize('part', unsupported_parts, ids=idfn)
-def test_parse_url_host_fallback(part):
+def test_parse_url_unsupported_fallback(part):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, url_gen).selectExpr(
                 "a",
