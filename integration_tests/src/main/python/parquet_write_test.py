@@ -176,8 +176,15 @@ parquet_part_write_gens = [
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_part_write_round_trip(spark_tmp_path, parquet_gen):
-    gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
-            ('b', parquet_gen)]
+    part_gen = parquet_gen
+    # Avoid generating NaNs for partition values.
+    # Spark does not handle partition switching properly since NaN != NaN.
+    if isinstance(part_gen, FloatGen):
+        part_gen = FloatGen(no_nans=True)
+    elif isinstance(part_gen, DoubleGen):
+        part_gen = DoubleGen(no_nans=True)
+    gen_list = [('a', RepeatSeqGen(part_gen, 10)),
+                ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),
