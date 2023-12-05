@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AstUtil.NoopJoinCondSplit
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -614,8 +615,10 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
             }
           }
           // Leverage the original join iterators
-          val joinIter = doJoin(buildCb, streamIter, targetSize, 
-            numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+          val joinIter = doJoin(
+            buildCb, streamIter, targetSize,
+            numOutputRows, joinOutputRows, numOutputBatches, NoopJoinCondSplit(None), opTime,
+            joinTime)
           Some(joinIter)
         }
       }

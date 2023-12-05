@@ -22,8 +22,9 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsPostFilter, JoinCondSplitAsProject, NonAstJoinCondSplitStrategy, NoopJoinCondSplit}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
@@ -43,63 +44,32 @@ class GpuBroadcastHashJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
-
     // First to check whether we can extract some non-supported AST conditions. If not, will do a
-    // post-join filter right after hash join node.
-    if (canJoinCondAstAble()) {
-      val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta, left
-          .output, right.output, true)
-
-      // Reconstruct the child with wrapped project node if needed.
-      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
-        GpuProjectExec(leftExpr ++ left.output, left)(true)
-      } else {
-        left
-      }
-      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
-        GpuProjectExec(rightExpr ++ right.output, right)(true)
-      } else {
-        right
-      }
-
-      val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
-        (left.output.toList, leftExpr ++ left.output)
-      } else {
-        (right.output.toList, rightExpr ++ right.output)
-      }
-
-      val joinExec = GpuBroadcastHashJoinExec(
-        leftKeys.map(_.convertToGpu()),
-        rightKeys.map(_.convertToGpu()),
-        join.joinType,
-        buildSide,
-        remain,
-        postBuildCondition,
-        postBuildAttr,
-        leftChild, rightChild)
-      if (leftExpr.isEmpty && rightExpr.isEmpty) {
-        joinExec
-      } else {
-        // Remove the intermediate attributes from left and right side project nodes. Output
-        // attributes need to be updated based on types
-        GpuProjectExec(
-          GpuHashJoin.output(join.joinType, left.output, right.output).toList,
-          joinExec)(false)
-      }
+    // post-join filter right after hash join node. Otherwise, do split as project.
+    val nonAstJoinCond = if (!canJoinCondAstAble()) {
+      JoinCondSplitAsPostFilter(conditionMeta.map(_.convertToGpu()), GpuHashJoin.output(
+        join.joinType, left.output, right.output))
     } else {
-      val joinExec = GpuBroadcastHashJoinExec(
-        leftKeys.map(_.convertToGpu()),
-        rightKeys.map(_.convertToGpu()),
-        join.joinType,
-        buildSide,
-        None,
-        List.empty,
-        List.empty,
-        left, right)
-      // For inner joins we can apply a post-join condition for any conditions that cannot be
-      // evaluated directly in a mixed join that leverages a cudf AST expression
-      conditionMeta.map(_.convertToGpu()).map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+      val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output, true)
+      if(leftExpr.isEmpty && rightExpr.isEmpty) {
+        NoopJoinCondSplit(remain)
+      } else {
+        JoinCondSplitAsProject(
+          remain, leftExpr ++ left.output, left.output, rightExpr ++ right.output, right.output,
+          GpuHashJoin.output(join.joinType, left.output, right.output),
+          (leftExpr ++ left.output ++ rightExpr ++ right.output).map(_.toAttribute), buildSide)
+      }
     }
+
+    GpuBroadcastHashJoinExec(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType,
+      buildSide,
+      nonAstJoinCond.remainedCond(),
+      nonAstJoinCond,
+      left, right)
   }
 }
 
@@ -109,8 +79,7 @@ case class GpuBroadcastHashJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    postBuildCondition: List[NamedExpression],
-    postBuildAttr: List[Attribute],
+    nonAstJoinCondSplit: NonAstJoinCondSplitStrategy,
     left: SparkPlan,
-    right: SparkPlan) extends GpuBroadcastHashJoinExecBase(leftKeys, rightKeys, joinType,
-      buildSide, condition, postBuildCondition, postBuildAttr, left, right)
+    right: SparkPlan) extends GpuBroadcastHashJoinExecBase(
+      leftKeys, rightKeys, joinType, buildSide, condition, nonAstJoinCondSplit, left, right)

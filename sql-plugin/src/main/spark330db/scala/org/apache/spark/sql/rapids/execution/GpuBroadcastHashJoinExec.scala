@@ -24,11 +24,12 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsPostFilter, JoinCondSplitAsProject, NonAstJoinCondSplitStrategy, NoopJoinCondSplit}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
@@ -46,72 +47,40 @@ class GpuBroadcastHashJoinMeta(
 
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => left
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
-
     // First to check whether we can extract some non-supported AST conditions. If not, will do a
-    // post-join filter right after hash join node.
-    if (canJoinCondAstAble()) {
-      val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
-        conditionMeta, left
-            .output, right.output, true)
-
-      // Reconstruct the child with wrapped project node if needed.
-      val leftChild = if (!leftExpr.isEmpty && buildSide != GpuBuildLeft) {
-        GpuProjectExec(leftExpr ++ left.output, left)(true)
-      } else {
-        left
-      }
-      val rightChild = if (!rightExpr.isEmpty && buildSide == GpuBuildLeft) {
-        GpuProjectExec(rightExpr ++ right.output, right)(true)
-      } else {
-        right
-      }
-
-      val (postBuildAttr, postBuildCondition) = if (buildSide == GpuBuildLeft) {
-        (left.output.toList, leftExpr ++ left.output)
-      } else {
-        (right.output.toList, rightExpr ++ right.output)
-      }
-
-      val joinExec = GpuBroadcastHashJoinExec(
-        leftKeys.map(_.convertToGpu()),
-        rightKeys.map(_.convertToGpu()),
-        join.joinType,
-        buildSide,
-        remain,
-        postBuildCondition,
-        postBuildAttr,
-        leftChild, rightChild,
-        join.isExecutorBroadcast)
-      if (leftExpr.isEmpty && rightExpr.isEmpty) {
-        joinExec
-      } else {
-        // Remove the intermediate attributes from left and right side project nodes. Output
-        // attributes need to be updated based on types
-        GpuProjectExec(
-          GpuHashJoin.output(join.joinType, left.output, right.output).toList,
-          joinExec)(false)
-      }
+    // post-join filter right after hash join node. Otherwise, do split as project.
+    val nonAstJoinCond = if (!canJoinCondAstAble()) {
+      JoinCondSplitAsPostFilter(
+        conditionMeta.map(_.convertToGpu()), GpuHashJoin.output(
+          join.joinType, left.output, right.output))
     } else {
-      val joinExec = GpuBroadcastHashJoinExec(
-        leftKeys.map(_.convertToGpu()),
-        rightKeys.map(_.convertToGpu()),
-        join.joinType,
-        buildSide,
-        None,
-        List.empty,
-        List.empty,
-        left, right,
-        join.isExecutorBroadcast)
-      // For inner joins we can apply a post-join condition for any conditions that cannot be
-      // evaluated directly in a mixed join that leverages a cudf AST expression
-      conditionMeta.map(_.convertToGpu()).map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+      val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output, true)
+      if (leftExpr.isEmpty && rightExpr.isEmpty) {
+        NoopJoinCondSplit(remain)
+      } else {
+        JoinCondSplitAsProject(
+          remain, leftExpr ++ left.output, left.output, rightExpr ++ right.output, right.output,
+          GpuHashJoin.output(join.joinType, left.output, right.output),
+          (leftExpr ++ left.output ++ rightExpr ++ right.output).map(_.toAttribute), buildSide)
+      }
     }
+
+    GpuBroadcastHashJoinExec(
+      leftKeys.map(_.convertToGpu()),
+      rightKeys.map(_.convertToGpu()),
+      join.joinType,
+      buildSide,
+      nonAstJoinCond.remainedCond(),
+      nonAstJoinCond,
+      left, right)
   }
 }
 
@@ -121,13 +90,12 @@ case class GpuBroadcastHashJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    postBuildCondition: List[NamedExpression],
-    postBuildAttr: List[Attribute],
+    nonAstJoinCondSplit: NonAstJoinCondSplitStrategy,
     left: SparkPlan,
     right: SparkPlan,
     executorBroadcast: Boolean)
       extends GpuBroadcastHashJoinExecBase(leftKeys, rightKeys, joinType, buildSide,
-        condition, postBuildCondition, postBuildAttr, left, right) {
+        condition, nonAstJoinCondSplit, left, right) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -191,10 +159,8 @@ case class GpuBroadcastHashJoinExec(
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
-      val buildBatch = projectEvalIfNeed(
-        GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(
-          buildRelation,
-          buildSchema, buildOutput, metricsMap, targetSize))
+      val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(
+        buildRelation, buildSchema, buildOutput, metricsMap, targetSize)
       (buildBatch, bufferedStreamIter)
     }
   }
@@ -227,7 +193,7 @@ case class GpuBroadcastHashJoinExec(
           allMetrics)
       // builtBatch will be closed in doJoin
       doJoin(builtBatch, streamIter, targetSize,
-        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+        numOutputRows, joinOutputRows, numOutputBatches, nonAstJoinCondSplit, opTime, joinTime)
     }
   }
 

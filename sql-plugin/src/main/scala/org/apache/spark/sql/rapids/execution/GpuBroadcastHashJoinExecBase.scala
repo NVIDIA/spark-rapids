@@ -19,13 +19,14 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsProject, NonAstJoinCondSplitStrategy}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
@@ -125,8 +126,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    postBuildCondition: List[NamedExpression],
-    postBuildAttr: List[Attribute],
+    nonAstJoinCondSplit: NonAstJoinCondSplitStrategy,
     left: SparkPlan,
     right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
@@ -139,34 +139,12 @@ abstract class GpuBroadcastHashJoinExecBase(
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
-  override lazy val buildAttrList: List[Attribute] = if (postBuildCondition.isEmpty) {
-    buildPlan.output.toList
-  } else {
-    postBuildCondition.map(expr => expr.toAttribute)
-  }
-
-  override lazy val leftOutput: Seq[Attribute] =
-    if (!postBuildCondition.isEmpty && buildSide == GpuBuildLeft) {
-      postBuildCondition.map(expr => expr.toAttribute)
-    } else {
-      left.output
-    }
-
-  override lazy val rightOutput: Seq[Attribute] =
-    if (!postBuildCondition.isEmpty && buildSide == GpuBuildRight) {
-      postBuildCondition.map(expr => expr.toAttribute)
-    } else {
-      right.output
-    }
-
-  // Needed when original join condition contains non-ast-able condition. Some conditions are
-  // extracted and evaluated as project node on top of built batch.
-  private lazy val postBuildProj: Option[GpuTieredProject] = if (!postBuildCondition.isEmpty) {
-    Some(GpuBindReferences.bindGpuReferencesTiered(
-      postBuildCondition,
-      postBuildAttr, true))
-  } else {
-    None
+  override lazy val (buildOutput, streamedOutput, joinLeftOutput, joinRightOutput) =
+    nonAstJoinCondSplit match {
+    case asProj: JoinCondSplitAsProject =>
+      (asProj.buildOutput(), asProj.streamOutput(),
+          asProj.joinLeftOutput(), asProj.joinRightOutput())
+    case _ => (buildPlan.output, streamedPlan.output, left.output, right.output)
   }
 
   override def requiredChildDistribution: Seq[Distribution] = {
@@ -222,19 +200,8 @@ abstract class GpuBroadcastHashJoinExecBase(
         }
       }
 
-      val buildBatch = projectEvalIfNeed(
-        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema))
+      val buildBatch = GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
       (buildBatch, bufferedStreamIter)
-    }
-  }
-
-  final def projectEvalIfNeed(batch: ColumnarBatch): ColumnarBatch = {
-    postBuildProj match {
-      case Some(proj) =>
-        withResource(batch) {
-          cb => proj.project(cb)
-        }
-      case None => batch
     }
   }
 
@@ -261,7 +228,7 @@ abstract class GpuBroadcastHashJoinExecBase(
           allMetrics)
       // builtBatch will be closed in doJoin
       doJoin(builtBatch, streamIter, targetSize,
-        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+        numOutputRows, joinOutputRows, numOutputBatches, nonAstJoinCondSplit, opTime, joinTime)
     }
   }
 
