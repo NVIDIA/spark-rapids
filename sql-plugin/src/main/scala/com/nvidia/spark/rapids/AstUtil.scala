@@ -138,7 +138,7 @@ object AstUtil {
     override def remainedCond(): Option[Expression] = condition
   }
 
-  // For inner joins we can apply a post -join condition for any conditions that cannot be
+  // For inner joins we can apply a post-join condition for any conditions that cannot be
   // evaluated directly in a mixed join that leverages a cudf AST expression.
   case class JoinCondSplitAsPostFilter(expr: Option[Expression],
       attributeSeq: scala.collection.Seq[Attribute])
