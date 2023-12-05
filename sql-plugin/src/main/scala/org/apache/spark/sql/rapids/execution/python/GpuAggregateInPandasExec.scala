@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -194,23 +194,14 @@ case class GpuAggregateInPandasExec(
       }
 
       val batchProducer = new BatchProducer(
-        BatchGroupedIterator(miniIter, miniAttrs, groupingRefs.indices))
-      val queue = new BatchQueue(batchProducer, Some(keyConverter))
-      val pyInputIter = batchProducer.asIterator.map { case (batch, isForPeek) =>
-        val inputBatch = closeOnExcept(batch) { _ =>
+        BatchGroupedIterator(miniIter, miniAttrs, groupingRefs.indices), Some(keyConverter))
+      val pyInputIter = batchProducer.asIterator.map { batch =>
+        withResource(batch) { _ =>
           val pyInputColumns = pyInputRefs.indices.safeMap { idx =>
             batch.column(idx + groupingRefs.size).asInstanceOf[GpuColumnVector].incRefCount()
           }
           new ColumnarBatch(pyInputColumns.toArray, batch.numRows())
         }
-        if (isForPeek) {
-          batch.close()
-        } else {
-          // When adding batch to the queue, queue will convert it to a key batch because this
-          // queue is constructed with the key converter.
-          queue.add(batch)
-        }
-        inputBatch
       }
 
       // Third, sends to Python to execute the aggregate and returns the result.
@@ -232,8 +223,8 @@ case class GpuAggregateInPandasExec(
         val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
         val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
         // Gets the combined batch for each group and projects for the output.
-        new CombiningIterator(queue, pyOutputIterator, pyRunner, mNumOutputRows,
-            mNumOutputBatches).map { combinedBatch =>
+        new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator, pyRunner,
+            mNumOutputRows, mNumOutputBatches).map { combinedBatch =>
           withResource(combinedBatch) { batch =>
             GpuProjectExec.project(batch, resultRefs)
           }
