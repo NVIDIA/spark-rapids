@@ -32,12 +32,11 @@ The plugin is tested on the following architectures:
 	NVIDIA Driver*: R470+
 
 	Runtime: 
-		Scala 2.12
+		Scala 2.12, 2.13
 		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
 
 		* Check the Spark documentation for Python and Java version compatibility with your specific 
-		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1. 
-		Please be aware that we do not currently support Spark builds with Scala 2.13.
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
 
 	Supported Spark versions:
 		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
@@ -93,6 +92,7 @@ New functionality and performance improvements for this release include:
 * Memory usage limitations have been enforced for various operations.
 * Enhanced performance for join and aggregation operations.
 * Kernel optimizations have been implemented to improve Parquet read performance.
+* Scala 2.13 is now supported, and RAPIDS Accelerator also built and tested with Scala 2.13.
 * Discontinues support for Pascal-based Nvidia GPUs.
 * Qualification and Profiling tool:
 	* Profiling Tool now processes Spark Driver log for GPU runs, enhancing feature analysis.
