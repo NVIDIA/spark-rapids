@@ -582,6 +582,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val CHUNKED_SUBPAGE_READER = conf("spark.rapids.sql.reader.chunked.subPage")
+      .doc("Enable a chunked reader for where possible for reading data that is smaller " +
+          "than the typical row group/page limit.")
+      .booleanConf
+      .createWithDefault(false)
+
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
@@ -2381,6 +2387,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
   lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+
+  lazy val chunkedSubPageReaderEnabled: Boolean = get(CHUNKED_SUBPAGE_READER)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
