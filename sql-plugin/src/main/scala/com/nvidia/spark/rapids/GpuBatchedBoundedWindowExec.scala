@@ -57,6 +57,7 @@ class GpuBatchedBoundedWindowIterator(
     }
   }
 
+  // Caches input column schema on first read.
   var inputTypes: Option[Array[DataType]] = None
 
   // Clears cached column vectors, after consumption.
@@ -144,11 +145,9 @@ class GpuBatchedBoundedWindowIterator(
   }
 
   private def resetInputCache(newCache: Option[Array[CudfColumnVector]],
-                              newUnprocessed: Int, // TODO: Not required here. Already set prior.
                               newPrecedingAdded: Int): Unit= {
     cached.foreach(_.foreach(_.close))
     cached = newCache
-    numUnprocessedInCache = newUnprocessed
     numPrecedingRowsAdded = newPrecedingAdded
   }
 
@@ -157,48 +156,45 @@ class GpuBatchedBoundedWindowIterator(
     while (outputBatch == null  &&  hasNext) {
       withResource(getNextInputBatch) { inputCbSpillable =>
         withResource(inputCbSpillable.getColumnarBatch()) { inputCB =>
-          withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
-            withResource(computeBasicWindow(inputCB)) { outputCols =>
-              val inputRowCount = inputCB.numRows()
 
-              val noMoreInput = !input.hasNext
+          val inputRowCount = inputCB.numRows()
+          val noMoreInput = !input.hasNext
+          numUnprocessedInCache = if (noMoreInput) {
+            // If there are no more input rows expected,
+            // this is the last output batch.
+            // Consider all rows in the batch as processed.
+            0
+          } else {
+            // More input rows expected. The last `maxFollowing` rows can't be finalized.
+            // Cannot exceed `inputRowCount`.
+            maxFollowing min inputRowCount
+          }
 
-              numUnprocessedInCache = if (noMoreInput) {
-                // If there are no more input rows expected,
-                // this is the last output batch.
-                0
-              } else {
-                // More input rows expected. The last `maxFollowing` rows can't be finalized.
-                // Cannot exceed `inputRowCount`.
-                maxFollowing min inputRowCount
-              }
-
-              // Trim output. Remove numPrecedingRowsAdded from the top,
-              // and numUnprocessedInCache from the bottom.
-              // TODO: Optimize. If no rows can be output, skip calling the kernel.
-
-              if (numPrecedingRowsAdded + numUnprocessedInCache >= inputRowCount) {
-                logWarning("Not enough rows! Cannot output a batch.")
-              }
-              else {
-                outputBatch = withResource(
-                                trim(outputCols,
-                                     numPrecedingRowsAdded, numUnprocessedInCache)) { trimmed =>
-                  convertToBatch(outputTypes, trimmed)
+          if (numPrecedingRowsAdded + numUnprocessedInCache >= inputRowCount) {
+            // No point calling windowing kernel: the results will simply be ignored.
+            logWarning("Not enough rows! Cannot output a batch.")
+          } else {
+            withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
+              withResource(computeBasicWindow(inputCB)) { outputCols =>
+                outputBatch =  withResource(
+                                  trim(outputCols,
+                                    numPrecedingRowsAdded, numUnprocessedInCache)) { trimmed =>
+                                  convertToBatch(outputTypes, trimmed)
                 }
               }
-
-              numPrecedingRowsAdded = maxPreceding min (inputRowCount - numUnprocessedInCache)
-              val inputCols = Range(0, inputCB.numCols()).map {
-                inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
-              }.toArray
-
-              val newCached = trim(inputCols,
-                                   inputRowCount - (numPrecedingRowsAdded + numUnprocessedInCache),
-                                   0)
-              resetInputCache(Some(newCached), numUnprocessedInCache, numPrecedingRowsAdded)
             }
           }
+
+          // Compute new cache using current input.
+          numPrecedingRowsAdded = maxPreceding min (inputRowCount - numUnprocessedInCache)
+          val inputCols = Range(0, inputCB.numCols()).map {
+            inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
+          }.toArray
+
+          val newCached = trim(inputCols,
+            inputRowCount - (numPrecedingRowsAdded + numUnprocessedInCache),
+            0)
+          resetInputCache(Some(newCached), numPrecedingRowsAdded)
         }
       }
     }
