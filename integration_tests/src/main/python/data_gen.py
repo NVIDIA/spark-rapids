@@ -779,6 +779,7 @@ def gen_df_help(data_gen, length, seed_value):
     rand = random.Random(seed_value)
     data_gen.start(rand)
     data = [data_gen.gen() for index in range(0, length)]
+    print(data)
     return data
 
 def gen_df(spark, data_gen, length=2048, seed=None, num_slices=None):
@@ -1201,3 +1202,9 @@ def get_25_partitions_df(spark):
 non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
                  'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
                  'ExecutedCommandExec'] if is_not_utc() else []
+
+# date related regexps for generating date strings within python's range limits
+
+date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{0,2}[01])-[0-3]?[0-9])-[0-5]?[0-9]'
+
+yyyy_start_0003 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'
