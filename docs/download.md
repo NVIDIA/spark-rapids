@@ -89,11 +89,12 @@ The output of signature verify:
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Introduced support for chunked reading of ORC files.
-* Memory usage limitations have been enforced for various operations.
+* Enhanced partial support for additional time zones and added stack function support.
 * Enhanced performance for join and aggregation operations.
 * Kernel optimizations have been implemented to improve Parquet read performance.
-* Scala 2.13 is now supported, and RAPIDS Accelerator also built and tested with Scala 2.13.
-* Discontinues support for Pascal-based Nvidia GPUs.
+* RAPIDS Accelerator also built and tested with Scala 2.13.
+* Last version to support Pascal-based Nvidia GPUs; discontinued in the next release.
+* Introducing support for AST expressions.
 * Qualification and Profiling tool:
 	* Profiling Tool now processes Spark Driver log for GPU runs, enhancing feature analysis.
 	* Auto-tuner recommendations include AQE settings for optimized performance.
