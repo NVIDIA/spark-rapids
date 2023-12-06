@@ -1873,6 +1873,45 @@ def test_window_aggs_for_batched_finite_row_windows_unpartitioned(data_gen, batc
         conf=conf)
 
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [_grpkey_int_with_nulls,], ids=idfn)
+def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
+    """
+    This test is to verify that batching is disabled for bounded windows if
+    the window extents exceed the window-extents specified in the RAPIDS conf.
+    """
+
+    # Query with window extent = { 200 PRECEDING, 200 FOLLOWING }.
+    query = """
+        SELECT
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC
+                         ROWS BETWEEN 200 PRECEDING AND 200 FOLLOWING) AS count_1_asc    
+        FROM window_agg_table                 
+    """
+
+    def get_conf_with_extent(extent):
+      return {'spark.rapids.sql.batchSizeBytes': '1000',
+              'spark.rapids.sql.window.batched.bounded.row.extent': extent}
+
+    def assert_query_runs_on(exec, conf):
+        assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: gen_df(spark, data_gen, length=2048),
+            'window_agg_table',
+            query,
+            validate_execs_in_gpu_plan=[exec],
+            conf=conf)
+
+    # Check that with max window extent set to 100,
+    # query runs without batching, i.e. `GpuWindowExec`.
+    conf_100 = get_conf_with_extent(100)
+    assert_query_runs_on(exec='GpuWindowExec', conf=conf_100)
+
+    # Check that with max window extent set to 200,
+    # query runs *with* batching, i.e. `GpuBatchedBoundedWindowExec`.
+    conf_200 = get_conf_with_extent(200)
+    assert_query_runs_on(exec='GpuBatchedBoundedWindowExec', conf=conf_200)
+
+
 def test_lru_cache_datagen():
     # log cache info at the end of integration tests, not related to window functions
     info = gen_df_help.cache_info()
