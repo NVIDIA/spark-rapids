@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.DateTimeException
 import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
@@ -36,7 +35,7 @@ import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
+import org.apache.spark.sql.rapids.{GpuToTimestamp, LegacyTimeParserPolicy}
 import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -372,7 +371,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
-  def dateFormat: String
+  def dateFormat: Option[String]
   def timestampFormat: String
 
   def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
@@ -380,22 +379,32 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
-    val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
-    withResource(input.strip()) { stripped =>
-      withResource(stripped.isTimestamp(cudfFormat)) { isDate =>
-        if (failOnInvalid && GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy) {
-          withResource(isDate.all()) { all =>
-            if (all.isValid && !all.getBoolean) {
-              throw new DateTimeException("One or more values is not a valid date")
-            }
+
+    // TODO make these same changes for timestamps and add tests
+
+    val dateFormatPattern = dateFormat.getOrElse("yyyy-MM-dd")
+
+    val cudfFormat = DateUtils.toStrf(dateFormatPattern, parseString = true)
+
+    dateFormat match {
+      case Some(_) =>
+        val twoDigits = raw"\d{2}"
+        val fourDigits = raw"\d{4}"
+
+        val regexRoot = dateFormatPattern
+          .replace("yyyy", fourDigits)
+          .replace("MM", twoDigits)
+          .replace("dd", twoDigits)
+        GpuCast.convertDateOrNull(input, "^" + regexRoot + "$", cudfFormat)
+      case _ =>
+        // legacy behavior
+        // TODO this is similar to, but different from  GpuJsonToStructsShim
+//        withResource(Scalar.fromString(" ")) { space =>
+          withResource(input.strip()) { trimmed =>
+            // TODO add tests for EXCEPTION policy handling
+            GpuCast.castStringToDateAnsi(trimmed, ansiMode = false) // TODO
           }
-        }
-        withResource(stripped.asTimestamp(dt, cudfFormat)) { asDate =>
-          withResource(Scalar.fromNull(dt)) { nullScalar =>
-            isDate.ifElse(asDate, nullScalar)
-          }
-        }
-      }
+//        }
     }
   }
 

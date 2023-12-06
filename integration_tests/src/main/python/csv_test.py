@@ -324,6 +324,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_f
             cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf=updated_conf)
 
+# todo add '' to represent no date format specified
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)

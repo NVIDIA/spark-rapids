@@ -22,7 +22,7 @@ import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, DecimalUtils, RegexProgram, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -1376,7 +1376,7 @@ object GpuCast {
     }
   }
 
-  private def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+  def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
     val result = castStringToDate(input)
     if (ansiMode) {
       // When ANSI mode is enabled, we need to throw an exception if any values could not be

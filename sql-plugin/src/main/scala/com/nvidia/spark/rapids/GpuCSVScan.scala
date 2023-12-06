@@ -359,7 +359,7 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
     }
   }
 
-  override def dateFormat: String = GpuCsvUtils.dateFormatInRead(parsedOptions)
+  override def dateFormat: Option[String] = Some(GpuCsvUtils.dateFormatInRead(parsedOptions))
   override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
 }
 
