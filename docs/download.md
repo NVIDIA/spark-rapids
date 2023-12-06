@@ -89,7 +89,7 @@ The output of signature verify:
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Introduced support for chunked reading of ORC files.
-* Enhanced partial support for additional time zones and added stack function support.
+* Enhanced support for additional time zones and added stack function support.
 * Enhanced performance for join and aggregation operations.
 * Kernel optimizations have been implemented to improve Parquet read performance.
 * RAPIDS Accelerator also built and tested with Scala 2.13.
