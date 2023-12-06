@@ -36,8 +36,8 @@ object AstUtil {
    *         attributes from both join sides. In such case, it's not able
    *         to push down into single child.
    */
-  def canExtractNonAstConditionIfNeed(expr: BaseExprMeta[_], left: scala.collection.Seq[ExprId],
-      right: scala.collection.Seq[ExprId]): Boolean = {
+  def canExtractNonAstConditionIfNeed(expr: BaseExprMeta[_], left: Seq[ExprId],
+      right: Seq[ExprId]): Boolean = {
     if (!expr.canSelfBeAst) {
       // It needs to be split since not ast-able. Check itself and childerns to ensure
       // pushing-down can be made, which doesn't need attributions from both sides.
@@ -98,8 +98,7 @@ object AstUtil {
   }
 
   private[this] def splitNonAstInternal(condition: BaseExprMeta[_],
-      childAtt: scala.collection.Seq[ExprId],
-      left: ListBuffer[NamedExpression], right: ListBuffer[NamedExpression],
+      childAtt: Seq[ExprId], left: ListBuffer[NamedExpression], right: ListBuffer[NamedExpression],
       substitutionMap: mutable.HashMap[GpuExpressionEquals, Expression], isLeft: Boolean): Unit = {
     for (child <- condition.childExprs) {
       if (!child.canSelfBeAst) {
@@ -144,6 +143,14 @@ object AstUtil {
       case GpuBuildRight => (joinRightOutput, joinLeftOutput)
     }
 
+    // This is the left side child of join. In `split as project` strategy, it may be different
+    // from original left child with extracted join condition attribute.
+    val leftOutput: Seq[NamedExpression] = left
+
+    // This is the right side child of join. In `split as project` strategy, it may be different
+    // from original right child with extracted join condition attribute.
+    val rightOutput: Seq[NamedExpression] = right
+
     def astCondition(): Option[Expression]
 
     def processBuildSideAndClose(input: ColumnarBatch): ColumnarBatch = input
@@ -152,25 +159,21 @@ object AstUtil {
 
     def processPostJoin(iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = iter
 
-    def leftOutput(): Seq[NamedExpression] = left
-
-    def rightOutput(): Seq[NamedExpression] = right
-
     // This is the left side child of join. In `split as project` strategy, it may be different
     // from original left child with extracted join condition attribute.
-    def joinLeftOutput(): Seq[Attribute] = leftOutput.toSeq.map(expr => expr.toAttribute)
+    def joinLeftOutput(): Seq[Attribute] = leftOutput.map(expr => expr.toAttribute)
 
     // This is the right side child of join. In `split as project` strategy, it may be different
     // from original right child with extracted join condition attribute.
-    def joinRightOutput(): Seq[Attribute] = rightOutput.toSeq.map(expr => expr.toAttribute)
+    def joinRightOutput(): Seq[Attribute] = rightOutput.map(expr => expr.toAttribute)
 
     // Updated build attribute list after join condition split as project node.
     // It may include extra attributes from split join condition.
-    def buildSideOutput(): scala.collection.Seq[Attribute] = buildOutputAttr
+    def buildSideOutput(): Seq[Attribute] = buildOutputAttr
 
     // Updated stream attribute list after join condition split as project node.
     // It may include extra attributes from split join condition.
-    def streamedSideOutput(): scala.collection.Seq[Attribute] = streamOutputAttr
+    def streamedSideOutput(): Seq[Attribute] = streamOutputAttr
   }
 
   // For the case entire join condition can be evaluated as ast.
@@ -183,10 +186,10 @@ object AstUtil {
   // For inner joins we can apply a post-join condition for any conditions that cannot be
   // evaluated directly in a mixed join that leverages a cudf AST expression.
   case class JoinCondSplitAsPostFilter(expr: Option[Expression],
-      attributeSeq: scala.collection.Seq[Attribute], left: Seq[NamedExpression],
+      attributeSeq: scala.Seq[Attribute], left: Seq[NamedExpression],
       right: Seq[NamedExpression], buildSide: GpuBuildSide)
     extends JoinCondSplitStrategy(left, right, buildSide) {
-    lazy val postFilter = expr.map { e =>
+    private[this] val postFilter = expr.map { e =>
       GpuBindReferences.bindGpuReferencesTiered(
         Seq(e), attributeSeq.toSeq, false)
     }
@@ -223,9 +226,9 @@ object AstUtil {
       left: Seq[NamedExpression], leftProj: Seq[NamedExpression],
       right: Seq[NamedExpression], rightProj: Seq[NamedExpression],
       post: Seq[NamedExpression], buildSide: GpuBuildSide
-  ) extends JoinCondSplitStrategy(left, right, buildSide) {
-    private[this] val leftInput = left.toSeq.map(_.toAttribute)
-    private[this] val rightInput = right.toSeq.map(_.toAttribute)
+  ) extends JoinCondSplitStrategy(left ++ leftProj, right ++ rightProj, buildSide) {
+    private[this] val leftInput = left.map(_.toAttribute)
+    private[this] val rightInput = right.map(_.toAttribute)
 
     // Used to build build/stream side project
     private[this] val (buildOutput, streamOutput, buildInput, streamInput) = buildSide match {
@@ -236,11 +239,11 @@ object AstUtil {
     }
 
     private[this] val buildProj = if (!buildOutput.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(buildOutput.toSeq, buildInput.toSeq, false))
+      Some(GpuBindReferences.bindGpuReferencesTiered(buildOutput, buildInput.toSeq, false))
     } else None
 
     private[this] val streamProj = if (!streamOutput.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(streamOutput.toSeq, streamInput.toSeq, false))
+      Some(GpuBindReferences.bindGpuReferencesTiered(streamOutput, streamInput.toSeq, false))
     } else None
 
     // Remove the intermediate attributes from left and right side project nodes. Output attributes
@@ -249,18 +252,10 @@ object AstUtil {
     private[this] val postProj = if (!post.isEmpty) {
       Some(
         GpuBindReferences.bindGpuReferencesTiered(
-          post.toSeq, (leftOutput ++ rightOutput).map(_.toAttribute).toSeq, false))
+          post, (leftOutput ++ rightOutput).map(_.toAttribute).toSeq, false))
     } else None
 
     override def astCondition(): Option[Expression] = astCond
-
-    // This is the left side child of join. In `split as project` strategy, it may be different
-    // from original left child with extracted join condition attribute.
-    override def leftOutput(): Seq[NamedExpression] = left ++ leftProj
-
-    // This is the right side child of join. In `split as project` strategy, it may be different
-    // from original right child with extracted join condition attribute.
-    override def rightOutput(): Seq[NamedExpression] = right ++ rightProj
 
     override def processBuildSideAndClose(input: ColumnarBatch): ColumnarBatch = {
       buildProj.map { pj =>
