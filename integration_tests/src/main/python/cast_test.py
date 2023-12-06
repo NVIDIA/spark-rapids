@@ -459,7 +459,6 @@ long_gen_to_timestamp = LongGen(max_val=math.floor((9999-1970) * 365 * 86400),
     short_gen,
     int_gen,
     long_gen_to_timestamp], ids=idfn)
-@allow_non_gpu(*non_utc_allow)
 def test_cast_integral_to_timestamp(gen, ansi_enabled):
     if(is_before_spark_330() and ansi_enabled): # 330- does not support in ANSI mode
         pytest.skip()
@@ -496,7 +495,6 @@ def test_cast_double_to_timestamp(ansi_enabled):
     (INT_MIN - 1, IntegerType()),
 ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
-@allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
     (invalid, to_type) = invalid_and_type
     assert_gpu_and_cpu_error(
@@ -507,7 +505,6 @@ def test_cast_timestamp_to_integral_ansi_overflow(invalid_and_type):
         error_message="overflow")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="Spark 330- does not ansi casting between numeric and timestamp")
-@allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_numeric_ansi_no_overflow():
     data = [datetime.fromtimestamp(i) for i in range(BYTE_MIN, BYTE_MAX + 1)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -516,7 +513,6 @@ def test_cast_timestamp_to_numeric_ansi_no_overflow():
                         "cast(value as float)", "cast(value as double)"),
         conf=ansi_enabled_conf)
 
-@allow_non_gpu(*non_utc_allow)
 def test_cast_timestamp_to_numeric_non_ansi():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, timestamp_gen)
@@ -694,3 +690,8 @@ def test_cast_fallback_not_UTC(from_gen, to_type):
         "Cast",
         {"spark.sql.session.timeZone": "+08",
          "spark.rapids.sql.castStringToTimestamp.enabled": "true"})
+
+def test_cast_date_integral():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, date_gen).selectExpr(
+            "cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)"))

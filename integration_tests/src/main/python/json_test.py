@@ -20,7 +20,7 @@ from data_gen import *
 from conftest import is_not_utc
 from datetime import timezone
 from conftest import is_databricks_runtime
-from marks import approximate_float, allow_non_gpu, ignore_order
+from marks import approximate_float, allow_non_gpu, ignore_order, datagen_overrides
 from spark_session import *
 
 json_supported_gens = [
@@ -664,6 +664,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     "CORRECTED"
 ])
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9747')
 @pytest.mark.parametrize('ansi_enabled', [ True, False ])
 def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
