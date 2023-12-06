@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent_2.13</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>23.12.0-SNAPSHOT</version>
+    <version>24.02.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -510,6 +510,31 @@
             </modules>
         </profile>
         <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=341db -->
+            <id>release341db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>341db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <spark.version.classifier>spark341db</spark.version.classifier>
+                <spark.version>${spark341db.version}</spark.version>
+                <spark.test.version>${spark341db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+            </properties>
+            <modules>
+                <module>shim-deps/databricks</module>
+                <module>delta-lake/delta-spark341db</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release350</id>
             <activation>
                 <property>
@@ -635,8 +660,8 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>23.12.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>23.12.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-jni.version>24.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>24.02.0-SNAPSHOT</spark-rapids-private.version>
         <scala.binary.version>2.13</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -648,7 +673,7 @@
         https://github.com/openjdk/jdk17/blob/4afbcaf55383ec2f5da53282a1547bac3d099e9d/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties#L1993-L1994
         -->
         <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing|-Werror</scala.javac.args>
-        <ucx.version>1.14</ucx.version>
+        <ucx.version>1.15.0</ucx.version>
         <rapids.compressed.artifact>true</rapids.compressed.artifact>
         <rapids.default.jar.excludePattern/>
         <rapids.default.jar.phase>package</rapids.default.jar.phase>
@@ -691,6 +716,7 @@
         <spark332cdh.version>3.3.2.3.3.7190.0-91</spark332cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
+        <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350.version>3.5.0</spark350.version>
         <mockito.version>3.12.4</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
@@ -745,7 +771,8 @@
         <databricks.buildvers>
             321db,
             330db,
-            332db
+            332db,
+            341db
         </databricks.buildvers>
         <!--
           Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
@@ -820,6 +847,7 @@
         <bloop.installPhase>install</bloop.installPhase>
         <bloop.configDirectory>${spark.rapids.source.basedir}/.bloop</bloop.configDirectory>
         <build.info.path>${project.build.outputDirectory}/rapids4spark-version-info.properties</build.info.path>
+        <nonfail.errors.quiet>false</nonfail.errors.quiet>
     </properties>
 
     <dependencyManagement>
@@ -984,11 +1012,22 @@
                         <configuration>
                             <!-- Execute the shell script to generate the plugin build information. -->
                             <target name="build-info">
-                                <exec executable="git" outputproperty="git.head.revision">
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <exec executable="git"
+                                      outputproperty="git.head.revision"
+                                      discardError="${nonfail.errors.quiet}">
                                     <arg value="rev-parse"/>
                                     <arg value="HEAD"/>
                                 </exec>
-                                <property file="${build.info.path}" prefix="saved.build-info"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <available file="${build.info.path}" type="file"/>
+                                    <then>
+                                        <property file="${build.info.path}" prefix="saved.build-info"/>
+                                    </then>
+                                    <else>
+                                        <property name="saved.build-info.revision" value="N/A"/>
+                                    </else>
+                                </ac:if>
                                 <echo>
 Comparing git revisions:
     previous=${saved.build-info.revision}
@@ -1471,7 +1510,9 @@ This will force full Scala code rebuild in downstream modules.
                                 </pathconvert>
                                 <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
                                 <!-- workaround ant delete does not work with dirset -->
-                                <exec dir="${project.basedir}" executable="rm">
+                                <exec dir="${project.basedir}"
+                                      executable="rm"
+                                      discardError="${nonfail.errors.quiet}">
                                     <arg value="-rf"/>
                                     <arg line="${target.dirs.str}"/>
                                 </exec>

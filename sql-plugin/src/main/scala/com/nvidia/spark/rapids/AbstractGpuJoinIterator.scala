@@ -144,7 +144,7 @@ abstract class AbstractGpuJoinIterator(
         // This withRetry block will always return an iterator with one ColumnarBatch.
         // The gatherer tracks how many rows we have used already.  The withRestoreOnRetry
         // ensures that we restart at the same place in the gatherer.  In the case of a
-        // SplitAndRetryOOM, we retry with a smaller (halved) targetSize, so we are taking
+        // GpuSplitAndRetryOOM, we retry with a smaller (halved) targetSize, so we are taking
         // less from the gatherer, but because the gatherer tracks how much is used, the
         // next call to this function will start in the right place.
         gather.checkpoint()

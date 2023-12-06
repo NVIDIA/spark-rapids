@@ -21,28 +21,12 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
-import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
-import org.apache.spark.sql.rapids.GpuElementAtMeta
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
-object SparkShimImpl extends Spark321PlusDBShims {
+object SparkShimImpl extends Spark330PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val elementAtExpr: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuElementAtMeta.elementAtRule(true)
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
-  }
-
-  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ PythonMapInArrowExecShims.execs
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = {
@@ -55,33 +39,5 @@ object SparkShimImpl extends Spark321PlusDBShims {
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
       Map.empty
-  }
-
-  override def reproduceEmptyStringBug: Boolean = false
-
-  override def isExecutorBroadcastShuffle(shuffle: ShuffleExchangeLike): Boolean = {
-    shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-  }
-
-  override def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike,
-      parent: SparkPlan): Boolean = {
-    parent match {
-      case _: GpuBroadcastHashJoinExec =>
-        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-      case _: GpuBroadcastNestedLoopJoinExec =>
-        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
-      case _ => false
-    }
-  }
-
-  override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
-      sqse: ShuffleQueryStageExec): SparkPlan = {
-    val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
-    plan match {
-      case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
-        ShuffleExchangeExec(SinglePartition, c2r, EXECUTOR_BROADCAST)
-      case _ =>
-        c2r
-    }
   }
 }
