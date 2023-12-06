@@ -29,7 +29,7 @@ import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsPostFilter, JoinCondSplit
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
@@ -78,7 +78,7 @@ class GpuBroadcastHashJoinMeta(
       buildSide,
       nonAstJoinCond.astCondition(),
       nonAstJoinCond,
-      left, right)
+      left, right, join.isExecutorBroadcast)
   }
 }
 
@@ -191,7 +191,7 @@ case class GpuBroadcastHashJoinExec(
           allMetrics)
       // builtBatch will be closed in doJoin
       doJoin(builtBatch, streamIter, targetSize,
-        numOutputRows, joinOutputRows, numOutputBatches, nonAstJoinCondSplit, opTime, joinTime)
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 
