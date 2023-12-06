@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-12-05
+Generated on 2023-12-06
 
 ## Release 23.12
 
@@ -24,21 +24,16 @@ Generated on 2023-12-05
 |[#9516](https://github.com/NVIDIA/spark-rapids/issues/9516)|[FEA] Add support for JSON data source option `ignoreNullFields=false` in `to_json`|
 |[#9520](https://github.com/NVIDIA/spark-rapids/issues/9520)|[FEA] Add support for `LAST()` as running window function|
 |[#9518](https://github.com/NVIDIA/spark-rapids/issues/9518)|[FEA] Add support for relevant JSON data source options in `to_json`|
-|[#9577](https://github.com/NVIDIA/spark-rapids/issues/9577)|[TASK] Replace scala.Proxy usage since it is deprecated in 2.13|
 |[#9218](https://github.com/NVIDIA/spark-rapids/issues/9218)|[FEA] Support stack function|
 |[#9532](https://github.com/NVIDIA/spark-rapids/issues/9532)|[FEA] Support Delta Lake 2.3.0|
 |[#1525](https://github.com/NVIDIA/spark-rapids/issues/1525)|[FEA] Support Scala 2.13|
-|[#9331](https://github.com/NVIDIA/spark-rapids/issues/9331)|[FEA] Improve Scala 2.13 build process to not require building against unstaged git changes|
 |[#7279](https://github.com/NVIDIA/spark-rapids/issues/7279)|[FEA] Support OverwriteByExpressionExecV1 for Delta Lake|
 |[#9326](https://github.com/NVIDIA/spark-rapids/issues/9326)|[FEA] Specify `recover_with_null` when reading JSON files|
 |[#8780](https://github.com/NVIDIA/spark-rapids/issues/8780)|[FEA] Support to_json function|
-|[#9467](https://github.com/NVIDIA/spark-rapids/issues/9467)|[FEA] Optimize configuration handling in BatchWithPartitionData|
-|[#9533](https://github.com/NVIDIA/spark-rapids/issues/9533)|[FEA] Setup Databricks CI for pyarrow test|
 |[#7278](https://github.com/NVIDIA/spark-rapids/issues/7278)|[FEA] Support AppendDataExecV1 for Delta Lake|
 |[#6266](https://github.com/NVIDIA/spark-rapids/issues/6266)|[FEA] Support Percentile|
 |[#7277](https://github.com/NVIDIA/spark-rapids/issues/7277)|[FEA] Support AtomicReplaceTableAsSelect for Delta Lake|
 |[#7276](https://github.com/NVIDIA/spark-rapids/issues/7276)|[FEA] Support AtomicCreateTableAsSelect for Delta Lake|
-|[#8326](https://github.com/NVIDIA/spark-rapids/issues/8326)|[FEA] Support Retry on HostColumnarToGpu|
 
 ### Performance
 |||
@@ -50,6 +45,8 @@ Generated on 2023-12-05
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#9934](https://github.com/NVIDIA/spark-rapids/issues/9934)|[BUG] test_delta_multi_part_write_round_trip_unmanaged and test_delta_part_write_round_trip_unmanaged failed DATA_SEED=1701608331 |
+|[#9933](https://github.com/NVIDIA/spark-rapids/issues/9933)|[BUG] collection_ops_test.py::test_sequence_too_long_sequence[Long(not_null)][DATAGEN_SEED=1701553915, INJECT_OOM]|
 |[#9932](https://github.com/NVIDIA/spark-rapids/issues/9932)|[BUG] Failed test_multi_tier_ast[DATAGEN_SEED=1701445668] on CI|
 |[#9403](https://github.com/NVIDIA/spark-rapids/issues/9403)|[BUG] test_cogroup_apply_udf[Short(not_null)] failed with pandas 2.1.X|
 |[#9684](https://github.com/NVIDIA/spark-rapids/issues/9684)|[BUG] test_coalesce fails with DATAGEN_SEED=1698940723|
@@ -63,7 +60,6 @@ Generated on 2023-12-05
 |[#9714](https://github.com/NVIDIA/spark-rapids/issues/9714)|Scala Map class not found when executing the benchmark on Spark 3.5.0 with Scala 2.13|
 |[#9856](https://github.com/NVIDIA/spark-rapids/issues/9856)|collection_ops_test.py failed on Dataproc-2.1 with: Column 'None' does not exist|
 |[#9397](https://github.com/NVIDIA/spark-rapids/issues/9397)|[BUG] RapidsShuffleManager MULTITHREADED on Databricks, we see loss of executors due to Rpc issues|
-|[#9783](https://github.com/NVIDIA/spark-rapids/issues/9783)|[BUG] Dead links related to FAQ|
 |[#9738](https://github.com/NVIDIA/spark-rapids/issues/9738)|[BUG] `test_delta_part_write_round_trip_unmanaged` and `test_delta_multi_part_write_round_trip_unmanaged` fail with `DATAGEN_SEED=1700105176`|
 |[#9771](https://github.com/NVIDIA/spark-rapids/issues/9771)|[BUG] ast_test.py::test_X[(String, True)][DATAGEN_SEED=1700205785] failed|
 |[#9782](https://github.com/NVIDIA/spark-rapids/issues/9782)|[BUG] Error messages appear in a clean build|
@@ -101,10 +97,8 @@ Generated on 2023-12-05
 |[#9571](https://github.com/NVIDIA/spark-rapids/issues/9571)|[BUG] non-deterministic compiled SQLExecPlugin.class with scala 2.13 deployment|
 |[#9569](https://github.com/NVIDIA/spark-rapids/issues/9569)|[BUG] test_window_running failed in 3.1.2+3.1.3|
 |[#9480](https://github.com/NVIDIA/spark-rapids/issues/9480)|[BUG] mapInPandas doesn't invoke udf on empty partitions|
-|[#9553](https://github.com/NVIDIA/spark-rapids/issues/9553)|[BUG] `fastparquet` pip install fails on Databricks|
 |[#8644](https://github.com/NVIDIA/spark-rapids/issues/8644)|[BUG] Parquet file with malformed dictionary does not error when loaded|
 |[#9310](https://github.com/NVIDIA/spark-rapids/issues/9310)|[BUG] Improve support for reading JSON files with malformed rows|
-|[#9399](https://github.com/NVIDIA/spark-rapids/issues/9399)|[BUG] Fix `STRUCT` comparison between Pandas and Spark dataframes in `fastparquet` tests|
 |[#9457](https://github.com/NVIDIA/spark-rapids/issues/9457)|[BUG] CDH 332 unit tests failing|
 |[#9404](https://github.com/NVIDIA/spark-rapids/issues/9404)|[BUG] Spark reports a decimal error when create lit scalar when generate Decimal(34, -5) data.|
 |[#9110](https://github.com/NVIDIA/spark-rapids/issues/9110)|[BUG] GPU Reader fails due to partition column creating column larger then cudf column size limit|
@@ -114,6 +108,9 @@ Generated on 2023-12-05
 ### PRs
 |||
 |:---|:---|
+|[#9949](https://github.com/NVIDIA/spark-rapids/pull/9949)|Override the seed for `test_map_scalars_supported_key_types ` for version of Spark before 3.4.0 [Databricks]|
+|[#9961](https://github.com/NVIDIA/spark-rapids/pull/9961)|Avoid using floating point for partition values in Delta Lake tests|
+|[#9960](https://github.com/NVIDIA/spark-rapids/pull/9960)|Fix LongGen accidentally using special cases when none are desired|
 |[#9950](https://github.com/NVIDIA/spark-rapids/pull/9950)|Avoid generating NaNs as partition values in test_part_write_round_trip|
 |[#9940](https://github.com/NVIDIA/spark-rapids/pull/9940)|Fix 'year 0 is out of range' by setting a fix seed|
 |[#9946](https://github.com/NVIDIA/spark-rapids/pull/9946)|Fix test_multi_tier_ast to ignore ordering of output rows|
