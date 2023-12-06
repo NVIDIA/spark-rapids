@@ -21,7 +21,6 @@ import scala.collection.mutable
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.HostConcatResult
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.AstUtil.NoopJoinCondSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -189,8 +188,7 @@ case class GpuShuffledHashJoinExec(
             // doJoin will close singleBatch
             doJoin(
               singleBatch, maybeBufferedStreamIter, realTarget,
-              numOutputRows, joinOutputRows, numOutputBatches, NoopJoinCondSplit(None), opTime,
-              joinTime)
+              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>

@@ -443,7 +443,6 @@ db_113_cpu_bhj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later()
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen()], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-# @pytest.mark.parametrize('join_type', ['LeftAnti'], ids=idfn)
 def test_broadcast_hash_join_on_non_ast_condition_without_fallback(data_gen, join_type):
     # This is to test BHJ with a condition not fully supported by AST. With extra project nodes wrapped, join can still run on GPU other than fallback.
     def do_join(spark):

@@ -19,7 +19,7 @@ import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEqu
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.AstUtil.NonAstJoinCondSplitStrategy
+import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitStrategy, NoopJoinCondSplit}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuOOM
@@ -897,23 +897,13 @@ trait GpuHashJoin extends GpuExec {
   def leftKeys: Seq[Expression]
   def rightKeys: Seq[Expression]
   def buildSide: GpuBuildSide
+  def joinCondSplitStrategy: JoinCondSplitStrategy = NoopJoinCondSplit(
+    condition, left.output, right.output, buildSide)
 
   protected lazy val (buildPlan, streamedPlan) = buildSide match {
     case GpuBuildLeft => (left, right)
     case GpuBuildRight => (right, left)
   }
-
-  // This can be overridden when a post-build project happens. When some non-ast-supported cases
-  // exist in join condition, it will be extracted from join condition and wrapped as pre-project
-  // nodes.
-  protected lazy val joinLeftOutput = left.output;
-  protected lazy val joinRightOutput = right.output;
-
-  // This can be overridden when a post-build project happens. When some non-ast-supported cases
-  // exist in join condition, it will be extracted from join condition and wrapped as pre-project
-  // nodes.
-  protected lazy val buildOutput = buildPlan.output
-  protected lazy val streamedOutput = streamedPlan.output
 
   protected lazy val (buildKeys, streamedKeys) = {
     require(leftKeys.length == rightKeys.length &&
@@ -981,8 +971,10 @@ trait GpuHashJoin extends GpuExec {
       GpuHashJoin.anyNullableStructChild(buildKeys)
 
   protected lazy val (boundBuildKeys, boundStreamKeys) = {
-    val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, joinLeftOutput)
-    val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, joinRightOutput)
+    val lkeys =
+      GpuBindReferences.bindGpuReferences(leftKeys, joinCondSplitStrategy.joinLeftOutput)
+    val rkeys =
+      GpuBindReferences.bindGpuReferences(rightKeys, joinCondSplitStrategy.joinRightOutput)
 
     buildSide match {
       case GpuBuildLeft => (lkeys, rkeys)
@@ -994,19 +986,20 @@ trait GpuHashJoin extends GpuExec {
     val joinLeft = joinType match {
       case RightOuter =>
         if(buildSide == GpuBuildRight) {
-          buildOutput
+          joinCondSplitStrategy.buildSideOutput
         } else {
-          streamedOutput
+          joinCondSplitStrategy.streamedSideOutput
         }
       case _ =>
         if (buildSide == GpuBuildRight) {
-          streamedOutput
+          joinCondSplitStrategy.streamedSideOutput
         } else {
-          buildOutput
+          joinCondSplitStrategy.buildSideOutput
         }
     }
     val boundCondition = condition.map { c =>
-      GpuBindReferences.bindGpuReference(c, streamedOutput ++ buildOutput)
+      GpuBindReferences.bindGpuReference(c,
+        joinCondSplitStrategy.streamedSideOutput ++ joinCondSplitStrategy.buildSideOutput)
     }
     (joinLeft.size, boundCondition)
   }
@@ -1018,7 +1011,6 @@ trait GpuHashJoin extends GpuExec {
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      nonAstJoinCondSplit: NonAstJoinCondSplitStrategy,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
     // Filtering nulls on the build side is a workaround for Struct joins with nullable children
@@ -1033,12 +1025,13 @@ trait GpuHashJoin extends GpuExec {
       builtBatch
     }
 
-    val spillableBuiltBatch = withResource(nonAstJoinCondSplit.processBuildSide(nullFiltered)) {
+    val spillableBuiltBatch = withResource(joinCondSplitStrategy
+      .processBuildSideAndClose(nullFiltered)) {
       LazySpillableColumnarBatch(_, "built")
     }
 
     val lazyStream = stream.map { cb =>
-      withResource(nonAstJoinCondSplit.processStreamSide(cb)) { updatedBatch =>
+      withResource(joinCondSplitStrategy.processStreamSideAndClose(cb)) { updatedBatch =>
         LazySpillableColumnarBatch(updatedBatch, "stream_batch")
       }
     }
@@ -1058,25 +1051,29 @@ trait GpuHashJoin extends GpuExec {
           opTime,
           joinTime)
       case FullOuter =>
-        new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
-          boundStreamKeys, streamedOutput, boundCondition, numFirstConditionTableColumns,
-          targetSize, buildSide, compareNullsEqual, opTime, joinTime)
+        new HashFullJoinIterator(
+          spillableBuiltBatch, boundBuildKeys, lazyStream,
+          boundStreamKeys, joinCondSplitStrategy.streamedSideOutput, boundCondition,
+          numFirstConditionTableColumns, targetSize, buildSide, compareNullsEqual, opTime,
+          joinTime)
       case _ =>
         if (boundCondition.isDefined) {
           // ConditionalHashJoinIterator will close the compiled condition
           val compiledCondition =
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
-          new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
-            boundStreamKeys, streamedOutput, compiledCondition,
+          new ConditionalHashJoinIterator(
+            spillableBuiltBatch, boundBuildKeys, lazyStream,
+            boundStreamKeys, joinCondSplitStrategy.streamedSideOutput, compiledCondition,
             targetSize, joinType, buildSide, compareNullsEqual, opTime, joinTime)
         } else {
-          new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
-            streamedOutput, targetSize, joinType, buildSide, compareNullsEqual,
-            opTime, joinTime)
+          new HashJoinIterator(
+            spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
+            joinCondSplitStrategy.streamedSideOutput, targetSize, joinType, buildSide,
+            compareNullsEqual, opTime, joinTime)
         }
     }
 
-    nonAstJoinCondSplit.processPostJoin(joinIterator).map { cb =>
+    joinCondSplitStrategy.processPostJoin(joinIterator).map { cb =>
       joinOutputRows += cb.numRows()
       numOutputRows += cb.numRows()
       numOutputBatches += 1

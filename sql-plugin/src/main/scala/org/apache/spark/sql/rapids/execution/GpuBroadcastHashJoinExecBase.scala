@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsProject, NonAstJoinCondSplitStrategy}
+import com.nvidia.spark.rapids.AstUtil.JoinCondSplitStrategy
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -126,7 +126,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    nonAstJoinCondSplit: NonAstJoinCondSplitStrategy,
+    override val joinCondSplitStrategy: JoinCondSplitStrategy,
     left: SparkPlan,
     right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
@@ -138,14 +138,6 @@ abstract class GpuBroadcastHashJoinExecBase(
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
-
-  override lazy val (buildOutput, streamedOutput, joinLeftOutput, joinRightOutput) =
-    nonAstJoinCondSplit match {
-    case asProj: JoinCondSplitAsProject =>
-      (asProj.buildOutput(), asProj.streamOutput(),
-          asProj.joinLeftOutput(), asProj.joinRightOutput())
-    case _ => (buildPlan.output, streamedPlan.output, left.output, right.output)
-  }
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -227,8 +219,9 @@ abstract class GpuBroadcastHashJoinExecBase(
           new CollectTimeIterator("broadcast join stream", it, streamTime),
           allMetrics)
       // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize,
-        numOutputRows, joinOutputRows, numOutputBatches, nonAstJoinCondSplit, opTime, joinTime)
+      doJoin(
+        builtBatch, streamIter, targetSize,
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 

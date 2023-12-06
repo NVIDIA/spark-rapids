@@ -24,7 +24,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsPostFilter, JoinCondSplitAsProject, NonAstJoinCondSplitStrategy, NoopJoinCondSplit}
+import com.nvidia.spark.rapids.AstUtil.{JoinCondSplitAsPostFilter, JoinCondSplitAsProject, JoinCondSplitStrategy, NoopJoinCondSplit}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -59,17 +59,16 @@ class GpuBroadcastHashJoinMeta(
     val nonAstJoinCond = if (!canJoinCondAstAble()) {
       JoinCondSplitAsPostFilter(
         conditionMeta.map(_.convertToGpu()), GpuHashJoin.output(
-          join.joinType, left.output, right.output))
+          join.joinType, left.output, right.output), left.output, right.output, buildSide)
     } else {
       val (remain, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
         conditionMeta, left.output, right.output, true)
       if (leftExpr.isEmpty && rightExpr.isEmpty) {
-        NoopJoinCondSplit(remain)
+        NoopJoinCondSplit(remain, left.output, right.output, buildSide)
       } else {
         JoinCondSplitAsProject(
-          remain, leftExpr ++ left.output, left.output, rightExpr ++ right.output, right.output,
-          GpuHashJoin.output(join.joinType, left.output, right.output),
-          (leftExpr ++ left.output ++ rightExpr ++ right.output).map(_.toAttribute), buildSide)
+          remain, left.output, leftExpr, right.output, rightExpr,
+          GpuHashJoin.output(join.joinType, left.output, right.output), buildSide)
       }
     }
 
@@ -78,7 +77,7 @@ class GpuBroadcastHashJoinMeta(
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       buildSide,
-      nonAstJoinCond.remainedCond(),
+      nonAstJoinCond.astCondition(),
       nonAstJoinCond,
       left, right)
   }
@@ -90,12 +89,12 @@ case class GpuBroadcastHashJoinExec(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    nonAstJoinCondSplit: NonAstJoinCondSplitStrategy,
+    override val joinCondSplitStrategy: JoinCondSplitStrategy,
     left: SparkPlan,
     right: SparkPlan,
     executorBroadcast: Boolean)
       extends GpuBroadcastHashJoinExecBase(leftKeys, rightKeys, joinType, buildSide,
-        condition, nonAstJoinCondSplit, left, right) {
+        condition, joinCondSplitStrategy, left, right) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(

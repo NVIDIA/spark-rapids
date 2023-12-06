@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.Serializable
+
 import com.nvidia.spark.rapids.Arm.withResource
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -123,32 +125,74 @@ object AstUtil {
     }
   }
 
-  abstract class NonAstJoinCondSplitStrategy() {
-    def remainedCond(): Option[Expression]
+  /**
+   * [NonAstJoinCondSplitStrategy] is to transform original join condition into extra
+   * filter/project when necessary. It's targeted for some cases join condition is not fully
+   * evaluated by ast.
+   * Base on join condition, it can be transformed into three major strategies:
+   * (1) [NoopJoinCondSplit]: noop when join condition can be fully evaluated with ast.
+   * (2) [JoinCondSplitAsPostFilter]: entire join condition is pulled out as a post filter
+   * after join condition.
+   * (3) [JoinCondSplitAsProject]: extract not supported join condition into pre-project nodes
+   * on each join child. One extra project node is introduced to remove intermediate attributes.
+   */
+  abstract class JoinCondSplitStrategy(left: Seq[NamedExpression],
+      right: Seq[NamedExpression], buildSide: GpuBuildSide) extends Serializable {
 
-    def processBuildSide(input: ColumnarBatch): ColumnarBatch = { input }
+    // Actual output of build/stream side project due to join condition split
+    private[this] val (buildOutputAttr, streamOutputAttr) = buildSide match {
+      case GpuBuildLeft => (joinLeftOutput, joinRightOutput)
+      case GpuBuildRight => (joinRightOutput, joinLeftOutput)
+    }
 
-    def processStreamSide(input: ColumnarBatch): ColumnarBatch = { input }
+    def astCondition(): Option[Expression]
 
-    def processPostJoin(iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = { iter }
+    def processBuildSideAndClose(input: ColumnarBatch): ColumnarBatch = input
+
+    def processStreamSideAndClose(input: ColumnarBatch): ColumnarBatch = input
+
+    def processPostJoin(iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = iter
+
+    def leftOutput(): Seq[NamedExpression] = left
+
+    def rightOutput(): Seq[NamedExpression] = right
+
+    // This is the left side child of join. In `split as project` strategy, it may be different
+    // from original left child with extracted join condition attribute.
+    def joinLeftOutput(): Seq[Attribute] = leftOutput.toSeq.map(expr => expr.toAttribute)
+
+    // This is the right side child of join. In `split as project` strategy, it may be different
+    // from original right child with extracted join condition attribute.
+    def joinRightOutput(): Seq[Attribute] = rightOutput.toSeq.map(expr => expr.toAttribute)
+
+    // Updated build attribute list after join condition split as project node.
+    // It may include extra attributes from split join condition.
+    def buildSideOutput(): scala.collection.Seq[Attribute] = buildOutputAttr
+
+    // Updated stream attribute list after join condition split as project node.
+    // It may include extra attributes from split join condition.
+    def streamedSideOutput(): scala.collection.Seq[Attribute] = streamOutputAttr
   }
 
-  case class NoopJoinCondSplit(condition: Option[Expression]) extends
-      NonAstJoinCondSplitStrategy {
-    override def remainedCond(): Option[Expression] = condition
+  // For the case entire join condition can be evaluated as ast.
+  case class NoopJoinCondSplit(condition: Option[Expression], left: Seq[NamedExpression],
+      right: Seq[NamedExpression], buildSide: GpuBuildSide)
+    extends JoinCondSplitStrategy(left, right, buildSide) {
+    override def astCondition(): Option[Expression] = condition
   }
 
   // For inner joins we can apply a post-join condition for any conditions that cannot be
   // evaluated directly in a mixed join that leverages a cudf AST expression.
   case class JoinCondSplitAsPostFilter(expr: Option[Expression],
-      attributeSeq: scala.collection.Seq[Attribute])
-      extends NonAstJoinCondSplitStrategy {
+      attributeSeq: scala.collection.Seq[Attribute], left: Seq[NamedExpression],
+      right: Seq[NamedExpression], buildSide: GpuBuildSide)
+    extends JoinCondSplitStrategy(left, right, buildSide) {
     lazy val postFilter = expr.map { e =>
       GpuBindReferences.bindGpuReferencesTiered(
-        scala.collection.Seq(e), attributeSeq, false)
+        scala.collection.Seq(e).toSeq, attributeSeq.toSeq, false)
     }
 
-    override def remainedCond(): Option[Expression] = None
+    override def astCondition(): Option[Expression] = None
 
     override def processPostJoin(iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
       postFilter.map { filter =>
@@ -159,77 +203,90 @@ object AstUtil {
     }
   }
 
+  /**
+   * This is the split strategy targeting on the case where ast not supported join condition can be
+   * extracted and wrapped into extra project node(s).
+   *
+   * @param astCond   remained join condition after extracting ast not supported parts
+   * @param left      original expressions from join's left child. It's left project input
+   *                  attribute.
+   * @param leftProj  extra expressions extracted from original join condition which is not
+   *                  supported by ast. It will be evaluated as a project on left side batch.
+   * @param right     original expressions from join's right child. It's left project input
+   *                  attribute.
+   * @param rightProj extra expressions extracted from original join condition which is not
+   *                  supported by ast. It will be evaluated as a project on right side batch.
+   * @param post      eliminate the extra columns introduced by join condition split
+   * @param buildSide indicates which side is build
+   */
   case class JoinCondSplitAsProject(
-    remains: Option[Expression],
-    left: scala.collection.Seq[NamedExpression], leftAttrSeq: scala.collection.Seq[Attribute],
-    right: scala.collection.Seq[NamedExpression], rightAttrSeq: scala.collection.Seq[Attribute],
-    post: scala.collection.Seq[NamedExpression], postAttrSeq: scala.collection.Seq[Attribute],
-    buildSide: GpuBuildSide
-  ) extends NonAstJoinCondSplitStrategy {
+      astCond: Option[Expression],
+      left: Seq[NamedExpression], leftProj: Seq[NamedExpression],
+      right: Seq[NamedExpression], rightProj: Seq[NamedExpression],
+      post: Seq[NamedExpression], buildSide: GpuBuildSide
+  ) extends JoinCondSplitStrategy(left, right, buildSide) {
+    private[this] val leftInput = left.toSeq.map(_.toAttribute)
+    private[this] val rightInput = right.toSeq.map(_.toAttribute)
+
     // Used to build build/stream side project
-    lazy val (build, stream, buildAttr, streamAttr) = buildSide match {
-      case GpuBuildLeft => (left, right, leftAttrSeq, rightAttrSeq)
-      case GpuBuildRight => (right, left, rightAttrSeq, leftAttrSeq)
+    private[this] val (buildOutput, streamOutput, buildInput, streamInput) = buildSide match {
+      case GpuBuildLeft =>
+        (leftOutput, rightOutput, leftInput, rightInput)
+      case GpuBuildRight =>
+        (rightOutput, leftOutput, rightInput, leftInput)
     }
 
-    lazy val buildProj = if (!build.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(build, buildAttr, false))
+    private[this] val buildProj = if (!buildOutput.isEmpty) {
+      Some(GpuBindReferences.bindGpuReferencesTiered(buildOutput.toSeq, buildInput.toSeq, false))
     } else None
 
-    lazy val streamProj = if (!stream.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(stream, streamAttr, false))
+    private[this] val streamProj = if (!streamOutput.isEmpty) {
+      Some(GpuBindReferences.bindGpuReferencesTiered(streamOutput.toSeq, streamInput.toSeq, false))
     } else None
 
-    // Remove the intermediate attributes from left and right side project nodes. Output
-    // attributes need to be updated based on types
-    lazy val postProj = if (!post.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(post, postAttrSeq, false))
+    // Remove the intermediate attributes from left and right side project nodes. Output attributes
+    // need to be updated based on join type. And its attributes covers both original plan and
+    // extra project node.
+    private[this] val postProj = if (!post.isEmpty) {
+      Some(
+        GpuBindReferences.bindGpuReferencesTiered(
+          post.toSeq, (leftOutput ++ rightOutput).map(_.toAttribute).toSeq, false))
     } else None
 
-    // Actual output of build/stream side project due to join condition split
-    lazy val (buildOutputAttr, streamOutputAttr) = buildSide match {
-      case GpuBuildLeft => (joinLeftOutput, joinRightOutput)
-      case GpuBuildRight => (joinRightOutput, joinLeftOutput)
-    }
-
-    override def remainedCond(): Option[Expression] = remains
+    override def astCondition(): Option[Expression] = astCond
 
     // This is the left side child of join. In `split as project` strategy, it may be different
-    // from original left child in case of extracting join condition as a project on top of original
-    // left child.
-    def joinLeftOutput(): Seq[Attribute] = left.map(expr => expr.toAttribute)
+    // from original left child with extracted join condition attribute.
+    override def leftOutput(): Seq[NamedExpression] = left ++ leftProj
 
     // This is the right side child of join. In `split as project` strategy, it may be different
-    // from original right child in case of extracting join condition as a project on top of
-    // original right child.
-    def joinRightOutput(): Seq[Attribute] = right.map(expr => expr.toAttribute)
+    // from original right child with extracted join condition attribute.
+    override def rightOutput(): Seq[NamedExpression] = right ++ rightProj
 
-    // Overriden build attribute list after join condition split as project node
-    def buildOutput(): scala.collection.Seq[Attribute] = buildOutputAttr
-
-    // Overriden stream attribute list after join condition split as project node
-    def streamOutput(): scala.collection.Seq[Attribute] = streamOutputAttr
-
-    override def processBuildSide(input: ColumnarBatch): ColumnarBatch = {
-      buildProj.map( pj =>
+    override def processBuildSideAndClose(input: ColumnarBatch): ColumnarBatch = {
+      buildProj.map { pj =>
         withResource(input) { cb =>
           pj.project(cb)
-        }).getOrElse(input)
+        }
+      }.getOrElse(input)
     }
 
-    override def processStreamSide(input: ColumnarBatch): ColumnarBatch = {
-      streamProj.map( pj =>
+    override def processStreamSideAndClose(input: ColumnarBatch): ColumnarBatch = {
+      streamProj.map { pj =>
         withResource(input) { cb =>
           pj.project(cb)
-        }).getOrElse(input)
+        }
+      }.getOrElse(input)
     }
 
     override def processPostJoin(iter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
-      postProj.map( proj =>
-        iter.map( cb =>
+      postProj.map { proj =>
+        iter.map { cb =>
           withResource(cb) { b =>
             proj.project(b)
-          })).getOrElse(iter)
+          }
+        }
+      }.getOrElse(iter)
     }
   }
 }
