@@ -1808,38 +1808,67 @@ def test_window_aggs_for_negative_rows_unpartitioned(data_gen, batch_size):
 
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
 @pytest.mark.parametrize('data_gen', [
     _grpkey_short_with_nulls,
     _grpkey_int_with_nulls,
     _grpkey_long_with_nulls,
     _grpkey_date_with_nulls,
 ], ids=idfn)
-def test_window_aggs_for_batched_finite_row_windows(data_gen, batch_size):
+def test_window_aggs_for_batched_finite_row_windows_partitioned(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
         'window_agg_table',
-        'select '
-        ' count(1) over '
-        '   (partition by a order by b,c asc  '
-        '      rows between CURRENT ROW and 100 following) as count_1_asc, '
-        ' count(c) over '
-        '   (partition by a order by b,c asc  '
-        '       rows between 100 PRECEDING AND CURRENT ROW) as count_b_asc, '
-        ' sum(c) over '
-        '   (partition by a order by b,c asc '
-        '      rows between 1 preceding and 3 following) as sum_c_asc, '
-        ' avg(c) over '
-        '   (partition by a order by b,c asc  '
-        '      rows between 10 preceding and 30 following) as avg_b_asc, '
-        ' max(c) over '
-        '   (partition by a order by b,c desc '
-        '      rows between 1 preceding and 3 following) as max_b_desc, '
-        ' min(c) over '
-        '   (partition by a order by b,c asc  '
-        '      rows between 1 preceding and 3 following) as min_b_asc '
-        'from window_agg_table ',
+        """
+        SELECT
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC
+                         ROWS BETWEEN CURRENT ROW AND 100 FOLLOWING) AS count_1_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c ASC 
+                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_b_asc,
+          SUM(c) OVER (PARTITION BY a ORDER BY b,c ASC 
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS sum_c_asc, 
+          AVG(c) OVER (PARTITION BY a ORDER BY b,c ASC
+                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_b_asc,
+          MAX(c) OVER (PARTITION BY a ORDER BY b,c DESC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_b_desc,
+          MIN(c) OVER (PARTITION BY a ORDER BY b,c ASC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_b_asc
+        FROM window_agg_table
+        """,
+        validate_execs_in_gpu_plan=['GpuBatchedBoundedWindowExec'],
+        conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    _grpkey_short_with_nulls,
+    _grpkey_int_with_nulls,
+    _grpkey_long_with_nulls,
+    _grpkey_date_with_nulls,
+], ids=idfn)
+def test_window_aggs_for_batched_finite_row_windows_unpartitioned(data_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        'window_agg_table',
+        """
+        SELECT
+          COUNT(1) OVER (ORDER BY b,c,a ASC
+                         ROWS BETWEEN CURRENT ROW AND 100 FOLLOWING) AS count_1_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_b_asc,
+          SUM(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS sum_c_asc, 
+          AVG(c) OVER (PARTITION BY a ORDER BY b,c,a ASC
+                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_b_asc,
+          MAX(c) OVER (PARTITION BY a ORDER BY b,c,a DESC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_b_desc,
+          MIN(c) OVER (PARTITION BY a ORDER BY b,c,a ASC
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_b_asc
+        FROM window_agg_table
+        """,
         validate_execs_in_gpu_plan=['GpuBatchedBoundedWindowExec'],
         conf=conf)
 
