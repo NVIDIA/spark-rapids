@@ -1033,7 +1033,7 @@ class FromUnitTimeMeta(a: FromUnixTime,
             tempFormat
           }.getOrElse(sparkFormat)
         strfFormat = DateUtils.tagAndGetCudfFormat(this,
-          inputFormat, a.left.dataType == DataTypes.StringType)
+          sparkFormat, a.left.dataType == DataTypes.StringType, inputFormat)
       case None =>
         willNotWorkOnGpu("format has to be a string literal")
     }
