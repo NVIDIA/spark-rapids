@@ -126,10 +126,9 @@ object AstUtil {
   }
 
   /**
-   * [NonAstJoinCondSplitStrategy] is to transform original join condition into extra
-   * filter/project when necessary. It's targeted for some cases join condition is not fully
-   * evaluated by ast.
-   * Base on join condition, it can be transformed into three major strategies:
+   * Transforms the original join condition into extra filter/project when necessary.
+   * It's targeted for some cases join condition is not fully evaluated by ast.
+   * Based on join condition, it can be transformed into three major strategies:
    * (1) [NoopJoinCondSplit]: noop when join condition can be fully evaluated with ast.
    * (2) [JoinCondSplitAsPostFilter]: entire join condition is pulled out as a post filter
    * after join condition.
