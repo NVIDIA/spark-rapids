@@ -186,8 +186,7 @@ case class GpuShuffledHashJoinExec(
               buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBatch)
             }
             // doJoin will close singleBatch
-            doJoin(
-              singleBatch, maybeBufferedStreamIter, realTarget,
+            doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
               numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.

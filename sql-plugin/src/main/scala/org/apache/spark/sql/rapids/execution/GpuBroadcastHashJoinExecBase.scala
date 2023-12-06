@@ -192,7 +192,8 @@ abstract class GpuBroadcastHashJoinExecBase(
         }
       }
 
-      val buildBatch = GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
+      val buildBatch =
+        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
       (buildBatch, bufferedStreamIter)
     }
   }
@@ -219,8 +220,7 @@ abstract class GpuBroadcastHashJoinExecBase(
           new CollectTimeIterator("broadcast join stream", it, streamTime),
           allMetrics)
       // builtBatch will be closed in doJoin
-      doJoin(
-        builtBatch, streamIter, targetSize,
+      doJoin(builtBatch, streamIter, targetSize,
         numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
