@@ -999,7 +999,7 @@ trait GpuHashJoin extends GpuExec {
     }
     val boundCondition = condition.map { c =>
       GpuBindReferences.bindGpuReference(c,
-        joinCondSplitStrategy.streamedSideOutput ++ joinCondSplitStrategy.buildSideOutput)
+        (joinCondSplitStrategy.streamedSideOutput ++ joinCondSplitStrategy.buildSideOutput).toSeq)
     }
     (joinLeft.size, boundCondition)
   }
@@ -1053,7 +1053,7 @@ trait GpuHashJoin extends GpuExec {
       case FullOuter =>
         new HashFullJoinIterator(
           spillableBuiltBatch, boundBuildKeys, lazyStream,
-          boundStreamKeys, joinCondSplitStrategy.streamedSideOutput, boundCondition,
+          boundStreamKeys, joinCondSplitStrategy.streamedSideOutput.toSeq, boundCondition,
           numFirstConditionTableColumns, targetSize, buildSide, compareNullsEqual, opTime,
           joinTime)
       case _ =>
@@ -1063,12 +1063,12 @@ trait GpuHashJoin extends GpuExec {
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
           new ConditionalHashJoinIterator(
             spillableBuiltBatch, boundBuildKeys, lazyStream,
-            boundStreamKeys, joinCondSplitStrategy.streamedSideOutput, compiledCondition,
+            boundStreamKeys, joinCondSplitStrategy.streamedSideOutput.toSeq, compiledCondition,
             targetSize, joinType, buildSide, compareNullsEqual, opTime, joinTime)
         } else {
           new HashJoinIterator(
             spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
-            joinCondSplitStrategy.streamedSideOutput, targetSize, joinType, buildSide,
+            joinCondSplitStrategy.streamedSideOutput.toSeq, targetSize, joinType, buildSide,
             compareNullsEqual, opTime, joinTime)
         }
     }
