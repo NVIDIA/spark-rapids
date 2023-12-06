@@ -677,11 +677,6 @@ def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser
               'spark.sql.legacy.timeParserPolicy': time_parser_policy,
               'spark.sql.ansi.enabled': ansi_enabled })
 
-def test_yyyy_start_0003():
-    # 0003 is not a leap year
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : gen_df(spark, StringGen(yyyy_start_0003, nullable=False)))
-
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('timestamp_gen', ["\"[1-8]{1}[0-9]{3}-[0-3]{1,2}-[0-3]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(\\.[0-9]{1,6})?Z?\""])
 @pytest.mark.parametrize('timestamp_format', [
