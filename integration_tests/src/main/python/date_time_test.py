@@ -14,7 +14,7 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error
-from conftest import is_dst_time_zone
+from conftest import is_supported_time_zone
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu
@@ -475,13 +475,24 @@ def test_date_format(data_gen, date_format):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
 @pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
-# from 0001-02-01 to 9999-12-30
+# from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
-@pytest.mark.xfail(is_dst_time_zone(), reason="only support non-DST time zone, refer to https://github.com/NVIDIA/spark-rapids/issues/6839")
+@pytest.mark.skipif(not is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
 def test_from_unixtime(data_gen, date_format):
     conf = {'spark.rapids.sql.nonUTC.enabled': True}
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)),
+        conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('date_format', supported_date_formats, ids=idfn)
+# from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
+@pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(9999, 12, 30).timestamp()))], ids=idfn)
+@pytest.mark.skipif(is_supported_time_zone(), reason="not all time zones are supported now, refer to https://github.com/NVIDIA/spark-rapids/issues/6839, please update after all time zones are supported")
+def test_from_unixtime_fall_back(data_gen, date_format):
+    conf = {'spark.rapids.sql.nonUTC.enabled': True}
+    assert_gpu_fallback_collect(lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)),
+        'ProjectExec',
         conf)
 
 unsupported_date_formats = ['F']
