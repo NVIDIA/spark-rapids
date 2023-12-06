@@ -660,7 +660,7 @@ object GpuWindowExec {
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
-    BatchedOps(running.toSeq, doublePass.toSeq, batchedBounded, passThrough.toSeq)
+    BatchedOps(running.toSeq, doublePass.toSeq, batchedBounded.toSeq, passThrough.toSeq)
   }
 }
 
