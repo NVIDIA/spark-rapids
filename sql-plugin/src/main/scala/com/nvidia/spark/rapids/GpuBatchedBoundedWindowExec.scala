@@ -131,9 +131,7 @@ class GpuBatchedBoundedWindowIterator(
                     offTheBottom: Int): Array[CudfColumnVector] = {
 
     def checkValidSizes(col: CudfColumnVector): Unit =
-      if (offTheTop >= col.getRowCount ||
-        offTheBottom >= col.getRowCount ||
-        (offTheTop + offTheBottom) > col.getRowCount) {
+      if ((offTheTop + offTheBottom) > col.getRowCount) {
         throw new IllegalArgumentException(s"Cannot trim column of size ${col.getRowCount} by " +
           s"$offTheTop rows at the top, and $offTheBottom rows at the bottom.")
       }
