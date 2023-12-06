@@ -189,7 +189,7 @@ object AstUtil {
     extends JoinCondSplitStrategy(left, right, buildSide) {
     lazy val postFilter = expr.map { e =>
       GpuBindReferences.bindGpuReferencesTiered(
-        scala.collection.Seq(e).toSeq, attributeSeq.toSeq, false)
+        Seq(e), attributeSeq.toSeq, false)
     }
 
     override def astCondition(): Option[Expression] = None
