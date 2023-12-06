@@ -101,10 +101,11 @@ class GpuBatchedBoundedWindowIterator(
         // Cached input AND new input rows exist.  Return concat-ed rows.
         withResource(getFreshInputBatch) { freshBatchCB =>
           withResource(GpuColumnVector.from(freshBatchCB)) { freshBatchTable =>
-            val concat = concatenateColumns(cached.get, freshBatchTable)
-            clearCached()
-            SpillableColumnarBatch(convertToBatch(inputTypes.get, concat),
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+            withResource(concatenateColumns(cached.get, freshBatchTable)) { concat =>
+              clearCached()
+              SpillableColumnarBatch(convertToBatch(inputTypes.get, concat),
+                SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+            }
           }
         }
       } else {
