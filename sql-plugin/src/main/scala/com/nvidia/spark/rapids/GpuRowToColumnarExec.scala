@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -634,7 +635,11 @@ class RowToColumnarIterator(
         while (rowIter.hasNext &&
             (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
           val row = rowIter.next()
-          byteCount += converters.convert(row, builders)
+          withRetryNoSplit {
+            // Sadly there is no good way to make the converters spillable in-between each use
+            // TODO add follow on issue here...
+            byteCount += converters.convert(row, builders)
+          }
           rowCount += 1
         }
 
@@ -655,6 +660,9 @@ class RowToColumnarIterator(
         val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
             opTime)) { _ =>
           RmmRapidsRetryIterator.withRetryNoSplit[ColumnarBatch] {
+            // Same problem here ideally we will need a way to make the builder spillable before
+            // going down this path.
+            // TODO add follow on issue here...
             builders.tryBuild(rowCount)
           }
         }

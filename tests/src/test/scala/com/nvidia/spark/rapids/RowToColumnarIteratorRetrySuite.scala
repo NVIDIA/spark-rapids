@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.jni.{CpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types._
@@ -39,7 +39,7 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val row2ColIter = new RowToColumnarIterator(
       rowIter, schema, RequireSingleBatch, new GpuRowToColumnConverter(schema))
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
-    assertThrows[GpuSplitAndRetryOOM] {
+    assertThrows[CpuSplitAndRetryOOM] {
       row2ColIter.next()
     }
   }
