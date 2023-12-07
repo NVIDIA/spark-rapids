@@ -145,11 +145,11 @@ object AstUtil {
 
     // This is the left side child of join. In `split as project` strategy, it may be different
     // from original left child with extracted join condition attribute.
-    val leftOutput: Seq[NamedExpression] = left
+    def leftOutput(): Seq[NamedExpression] = left
 
     // This is the right side child of join. In `split as project` strategy, it may be different
     // from original right child with extracted join condition attribute.
-    val rightOutput: Seq[NamedExpression] = right
+    def rightOutput(): Seq[NamedExpression] = right
 
     def astCondition(): Option[Expression]
 
