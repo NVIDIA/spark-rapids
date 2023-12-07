@@ -252,7 +252,7 @@ object AstUtil {
     private[this] val postProj = if (!post.isEmpty) {
       Some(
         GpuBindReferences.bindGpuReferencesTiered(
-          post, (leftOutput ++ rightOutput).map(_.toAttribute).toSeq, false))
+          post, (leftOutput ++ rightOutput).map(_.toAttribute), false))
     } else None
 
     override def astCondition(): Option[Expression] = astCond
