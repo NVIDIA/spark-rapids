@@ -239,7 +239,7 @@ object AstUtil {
     }
 
     private[this] val buildProj = if (!buildOutput.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(buildOutput, buildInput.toSeq, false))
+      Some(GpuBindReferences.bindGpuReferencesTiered(buildOutput, buildInput, false))
     } else None
 
     private[this] val streamProj = if (!streamOutput.isEmpty) {
