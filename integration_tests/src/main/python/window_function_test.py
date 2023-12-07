@@ -1903,7 +1903,7 @@ def test_window_aggs_for_batched_finite_row_windows_fallback(data_gen):
 
     def get_conf_with_extent(extent):
       return {'spark.rapids.sql.batchSizeBytes': '1000',
-              'spark.rapids.sql.window.batched.bounded.row.extent': extent}
+              'spark.rapids.sql.window.batched.bounded.row.max': extent}
 
     def assert_query_runs_on(exec, conf):
         assert_gpu_and_cpu_are_equal_sql(

@@ -1340,10 +1340,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val BATCHED_BOUNDED_ROW_WINDOW_MAX_EXTENT: ConfEntryWithDefault[Integer] =
-    conf("spark.rapids.sql.window.batched.bounded.row.extent")
+  val BATCHED_BOUNDED_ROW_WINDOW_MAX: ConfEntryWithDefault[Integer] =
+    conf("spark.rapids.sql.window.batched.bounded.row.max")
       .doc("Max value for bounded row window preceding/following extents " +
-      "permissible for the window to be evaluated in batched mode")
+      "permissible for the window to be evaluated in batched mode. This value affects " +
+      "both the preceding and following bounds, potentially doubling the window size " +
+      "permitted for batched execution")
       .integerConf
       .createWithDefault(value = 100)
 
@@ -2716,7 +2718,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
 
-  lazy val boundedRowsWindowMaxExtent: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX_EXTENT)
+  lazy val batchedBoundedRowsWindowMax: Int = get(BATCHED_BOUNDED_ROW_WINDOW_MAX)
 
   lazy val allowSinglePassPartialSortAgg: Boolean = get(ENABLE_SINGLE_PASS_PARTIAL_SORT_AGG)
 

@@ -166,7 +166,6 @@ class GpuBatchedBoundedWindowIterator(
           } else {
             // More input rows expected. The last `maxFollowing` rows can't be finalized.
             // Cannot exceed `inputRowCount`.
-            // TODO: Account for maxFollowing < 0 (e.g. LAG()) => numUnprocessedInCache = 0.
             if (maxFollowing < 0) { // E.g. LAG(3) => [ preceding=-3, following=-3 ]
               // -ve following => No need to wait for more following rows.
               // All "following" context is already available in the current batch.
@@ -192,7 +191,6 @@ class GpuBatchedBoundedWindowIterator(
           }
 
           // Compute new cache using current input.
-          // TODO: Account for minPreceding >0 (e.g. LEAD()) => numPrecedingRowsAdded = 0.
           numPrecedingRowsAdded = if (minPreceding > 0) { // E.g. LEAD(3) => [prec=3, foll=3]
             // preceding > 0 => No "preceding" rows need be carried forward.
             // Only the rows that need to be recomputed.

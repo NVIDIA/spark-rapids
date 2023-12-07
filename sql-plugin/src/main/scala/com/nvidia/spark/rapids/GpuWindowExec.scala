@@ -546,7 +546,7 @@ object GpuWindowExec {
                                               conf: RapidsConf): Boolean = {
 
     def inPermissibleRange(bounds: Int) =
-      Math.abs(bounds) <= conf.boundedRowsWindowMaxExtent
+      Math.abs(bounds) <= conf.batchedBoundedRowsWindowMax
 
     spec match {
 
