@@ -1825,15 +1825,21 @@ def test_window_aggs_for_batched_finite_row_windows_partitioned(data_gen, batch_
           COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC
                          ROWS BETWEEN CURRENT ROW AND 100 FOLLOWING) AS count_1_asc,
           COUNT(c) OVER (PARTITION BY a ORDER BY b,c ASC 
-                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_b_asc,
+                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_c_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c ASC 
+                         ROWS BETWEEN -50 PRECEDING AND 100 FOLLOWING) AS count_c_negative,
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c ASC 
+                         ROWS BETWEEN 50 PRECEDING AND -10 FOLLOWING) AS count_1_negative,
           SUM(c) OVER (PARTITION BY a ORDER BY b,c ASC 
                        ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS sum_c_asc, 
           AVG(c) OVER (PARTITION BY a ORDER BY b,c ASC
-                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_b_asc,
+                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_c_asc,
           MAX(c) OVER (PARTITION BY a ORDER BY b,c DESC
-                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_b_desc,
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_c_desc,
           MIN(c) OVER (PARTITION BY a ORDER BY b,c ASC
-                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_b_asc
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_c_asc,
+          LAG(c, 30) OVER (PARTITION BY a ORDER BY b,c ASC) AS lag_c_30_asc,
+          LEAD(c, 40) OVER (PARTITION BY a ORDER BY b,c ASC) AS lead_c_40_asc
         FROM window_agg_table
         """,
         validate_execs_in_gpu_plan=['GpuBatchedBoundedWindowExec'],
@@ -1858,15 +1864,21 @@ def test_window_aggs_for_batched_finite_row_windows_unpartitioned(data_gen, batc
           COUNT(1) OVER (ORDER BY b,c,a ASC
                          ROWS BETWEEN CURRENT ROW AND 100 FOLLOWING) AS count_1_asc,
           COUNT(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
-                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_b_asc,
+                         ROWS BETWEEN 100 PRECEDING AND CURRENT ROW) AS count_c_asc,
+          COUNT(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                         ROWS BETWEEN -50 PRECEDING AND 100 FOLLOWING) AS count_c_negative,
+          COUNT(1) OVER (PARTITION BY a ORDER BY b,c,a ASC 
+                         ROWS BETWEEN 50 PRECEDING AND -10 FOLLOWING) AS count_1_negative,
           SUM(c) OVER (PARTITION BY a ORDER BY b,c,a ASC 
                        ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS sum_c_asc, 
           AVG(c) OVER (PARTITION BY a ORDER BY b,c,a ASC
-                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_b_asc,
+                       ROWS BETWEEN 10 PRECEDING AND 30 FOLLOWING) AS avg_c_asc,
           MAX(c) OVER (PARTITION BY a ORDER BY b,c,a DESC
-                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_b_desc,
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS max_c_desc,
           MIN(c) OVER (PARTITION BY a ORDER BY b,c,a ASC
-                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_b_asc
+                       ROWS BETWEEN 1 PRECEDING AND 3 FOLLOWING) AS min_c_asc,
+          LAG(c, 6)  OVER (PARTITION BY a ORDER BY b,c,a ASC) AS lag_c_6,
+          LEAD(c,4)  OVER (PARTITION BY a ORDER BY b,c,a ASC) AS lead_c_4
         FROM window_agg_table
         """,
         validate_execs_in_gpu_plan=['GpuBatchedBoundedWindowExec'],

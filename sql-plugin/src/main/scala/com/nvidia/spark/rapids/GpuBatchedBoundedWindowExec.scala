@@ -167,7 +167,13 @@ class GpuBatchedBoundedWindowIterator(
             // More input rows expected. The last `maxFollowing` rows can't be finalized.
             // Cannot exceed `inputRowCount`.
             // TODO: Account for maxFollowing < 0 (e.g. LAG()) => numUnprocessedInCache = 0.
-            maxFollowing min inputRowCount
+            if (maxFollowing < 0) { // E.g. LAG(3) => [ preceding=-3, following=-3 ]
+              // -ve following => No need to wait for more following rows.
+              // All "following" context is already available in the current batch.
+              0
+            } else {
+              maxFollowing min inputRowCount
+            }
           }
 
           if (numPrecedingRowsAdded + numUnprocessedInCache >= inputRowCount) {
@@ -187,7 +193,13 @@ class GpuBatchedBoundedWindowIterator(
 
           // Compute new cache using current input.
           // TODO: Account for minPreceding >0 (e.g. LEAD()) => numPrecedingRowsAdded = 0.
-          numPrecedingRowsAdded = Math.abs(minPreceding) min (inputRowCount - numUnprocessedInCache)
+          numPrecedingRowsAdded = if (minPreceding > 0) { // E.g. LEAD(3) => [prec=3, foll=3]
+            // preceding > 0 => No "preceding" rows need be carried forward.
+            // Only the rows that need to be recomputed.
+            0
+          } else {
+            Math.abs(minPreceding) min (inputRowCount - numUnprocessedInCache)
+          }
           val inputCols = Range(0, inputCB.numCols()).map {
             inputCB.column(_).asInstanceOf[GpuColumnVector].getBase
           }.toArray

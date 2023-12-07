@@ -303,7 +303,6 @@ case class BatchedOps(running: Seq[NamedExpression],
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec = {
     // The order of these matter so we can pass the output of the first through the second one
-    // TODO: Use a separate function for everything below the hasRunning check.
     if (hasRunning) {
       val runningExec = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
         cpuPartitionSpec, cpuOrderSpec)
@@ -542,16 +541,12 @@ object GpuWindowExec {
   /**
    * Checks whether the window spec is both ROWS-based and bounded.
    * Window functions of this spec can possibly still be batched.
-   * TODO: (future): Change here to support +ve preceding, -ve following.
    */
   private def isBoundedRowsWindowAndBatchable(spec: GpuWindowSpecDefinition,
                                               conf: RapidsConf): Boolean = {
 
-    def precInPermissibleRange(prec: Int) =
-      prec <= 0 && Math.abs(prec) <= conf.boundedRowsWindowMaxExtent
-
-    def follInPermissibleRange(foll: Int) =
-      foll >= 0 && Math.abs(foll) <= conf.boundedRowsWindowMaxExtent
+    def inPermissibleRange(bounds: Int) =
+      Math.abs(bounds) <= conf.boundedRowsWindowMaxExtent
 
     spec match {
 
@@ -559,17 +554,17 @@ object GpuWindowExec {
                                           RowFrame,
                                           GpuLiteral(prec: Int, _),
                                           GpuLiteral(foll: Int, _))) =>
-           precInPermissibleRange(prec) && follInPermissibleRange(foll)
+           inPermissibleRange(prec) && inPermissibleRange(foll)
       case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
                                           RowFrame,
                                           GpuSpecialFrameBoundary(CurrentRow),
                                           GpuLiteral(foll: Int, _))) =>
-           follInPermissibleRange(foll)
+           inPermissibleRange(foll)
       case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
                                           RowFrame,
                                           GpuLiteral(prec: Int, _),
                                           GpuSpecialFrameBoundary(CurrentRow))) =>
-           precInPermissibleRange(prec)
+           inPermissibleRange(prec)
       case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(
                                           RowFrame,
                                           GpuSpecialFrameBoundary(CurrentRow),
