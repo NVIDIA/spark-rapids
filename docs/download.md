@@ -68,11 +68,11 @@ The RAPIDS Accelerator maintains support for Apache Spark versions available for
 ### Download RAPIDS Accelerator for Apache Spark v23.12.0
 - **Scala 2.12:**
   - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.12 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar)
-  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.12 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar.asc)
+  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.12 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.12.0/rapids-4-spark_2.12-23.12.0.jar.asc)
 
 - **Scala 2.13:**
   - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.13 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/23.12.0/rapids-4-spark_2.13-23.12.0.jar)
-  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.13 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/23.12.0/rapids-4-spark_2.13-23.12.0.jar.asc)
+  - [RAPIDS Accelerator for Apache Spark 23.12.0 - Scala 2.13 jar.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/23.12.0/rapids-4-spark_2.13-23.12.0.jar.asc)
 
 This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
 CUDA 11.8 through CUDA 12.0.
