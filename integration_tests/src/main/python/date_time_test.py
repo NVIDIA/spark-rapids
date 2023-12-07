@@ -245,7 +245,6 @@ def test_dayofyear(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(f.dayofyear(f.col('a'))))
 
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 def test_unix_timestamp(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.unix_timestamp(f.col('a'))))
@@ -276,13 +275,6 @@ def test_unsupported_fallback_to_unix_timestamp(data_gen):
         spark, [("a", data_gen), ("b", string_gen)], length=10).selectExpr(
         "to_unix_timestamp(a, b)"),
         "ToUnixTimestamp")
-
-# TODO: has another test for this called test_unix_timestamp
-@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-def test_unix_timestamp_non_UTC(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: gen_df(
-        spark, [("a", data_gen)], length=10).selectExpr(
-        "unix_timestamp(a, 'yyyy-MM-dd HH:mm:ss')"))
 
 
 @pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
