@@ -1053,7 +1053,7 @@ trait GpuHashJoin extends GpuExec {
       case FullOuter =>
         new HashFullJoinIterator(
           spillableBuiltBatch, boundBuildKeys, lazyStream,
-          boundStreamKeys, joinCondSplitStrategy.streamedSideOutput.toSeq, boundCondition,
+          boundStreamKeys, joinCondSplitStrategy.streamedSideOutput, boundCondition,
           numFirstConditionTableColumns, targetSize, buildSide, compareNullsEqual, opTime,
           joinTime)
       case _ =>
