@@ -999,7 +999,7 @@ trait GpuHashJoin extends GpuExec {
     }
     val boundCondition = condition.map { c =>
       GpuBindReferences.bindGpuReference(c,
-        (joinCondSplitStrategy.streamedSideOutput ++ joinCondSplitStrategy.buildSideOutput).toSeq)
+        joinCondSplitStrategy.streamedSideOutput ++ joinCondSplitStrategy.buildSideOutput)
     }
     (joinLeft.size, boundCondition)
   }
