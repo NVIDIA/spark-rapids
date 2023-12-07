@@ -722,7 +722,7 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     # "yyyy-MM"
     "\"" + optional_whitespace_regex + "[1-8]{1}[0-9]{3}-[0-3]{1,2}" + optional_whitespace_regex + "\"",
     # "yyyy"
-    "\"" + optional_whitespace_regex + "[0-9]{4}" + optional_whitespace_regex + "\"",
+    "\"" + optional_whitespace_regex + yyyy_start_0002 + optional_whitespace_regex + "\"",
     # "dd/MM/yyyy"
     "\"" + optional_whitespace_regex + "[0-9]{2}/[0-9]{2}/[1-8]{1}[0-9]{3}" + optional_whitespace_regex + "\"",
     # special constant values
@@ -749,7 +749,6 @@ non_utc_project_allow = ['ProjectExec'] if is_not_utc() else []
     pytest.param("LEGACY", marks=pytest.mark.allow_non_gpu('ProjectExec')),
     "CORRECTED"
 ])
-@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9747')
 @pytest.mark.parametrize('ansi_enabled', [ True, False ])
 def test_from_json_struct_timestamp(timestamp_gen, timestamp_format, time_parser_policy, ansi_enabled):
     json_string_gen = StringGen(r'{ "a": ' + timestamp_gen + ' }') \
