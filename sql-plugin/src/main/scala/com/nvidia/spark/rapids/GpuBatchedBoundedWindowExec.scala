@@ -235,13 +235,9 @@ class GpuBatchedBoundedWindowExec(
   override def otherCopyArgs: Seq[AnyRef] =
     cpuPartitionSpec :: cpuOrderSpec :: minPreceding :: maxFollowing :: Nil
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq.fill(children.size)(null)
 
-  override def outputBatching: CoalesceGoal = if (gpuPartitionSpec.isEmpty) {
-    RequireSingleBatch
-  } else {
-    BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
-  }
+  override def outputBatching: CoalesceGoal = null
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
