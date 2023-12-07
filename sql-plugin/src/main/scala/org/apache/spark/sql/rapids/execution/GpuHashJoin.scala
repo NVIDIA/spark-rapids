@@ -1068,7 +1068,7 @@ trait GpuHashJoin extends GpuExec {
         } else {
           new HashJoinIterator(
             spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
-            joinCondSplitStrategy.streamedSideOutput.toSeq, targetSize, joinType, buildSide,
+            joinCondSplitStrategy.streamedSideOutput, targetSize, joinType, buildSide,
             compareNullsEqual, opTime, joinTime)
         }
     }
