@@ -97,8 +97,8 @@ object AstUtil {
           substitutionMap))), leftExprs.toList, rightExprs.toList)
   }
 
-  private[this] def splitNonAstInternal(condition: BaseExprMeta[_],
-      childAtt: Seq[ExprId], left: ListBuffer[NamedExpression], right: ListBuffer[NamedExpression],
+  private[this] def splitNonAstInternal(condition: BaseExprMeta[_], childAtt: Seq[ExprId],
+      left: ListBuffer[NamedExpression], right: ListBuffer[NamedExpression],
       substitutionMap: mutable.HashMap[GpuExpressionEquals, Expression], isLeft: Boolean): Unit = {
     for (child <- condition.childExprs) {
       if (!child.canSelfBeAst) {
