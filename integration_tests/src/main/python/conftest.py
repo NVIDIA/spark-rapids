@@ -17,7 +17,6 @@ import pytest
 import random
 import warnings
 
-
 # TODO redo _spark stuff using fixtures
 #
 # Don't import pyspark / _spark directly in conftest globally
