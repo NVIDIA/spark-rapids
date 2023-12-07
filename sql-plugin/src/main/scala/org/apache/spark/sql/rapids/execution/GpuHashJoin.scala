@@ -1063,7 +1063,7 @@ trait GpuHashJoin extends GpuExec {
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
           new ConditionalHashJoinIterator(
             spillableBuiltBatch, boundBuildKeys, lazyStream,
-            boundStreamKeys, joinCondSplitStrategy.streamedSideOutput.toSeq, compiledCondition,
+            boundStreamKeys, joinCondSplitStrategy.streamedSideOutput, compiledCondition,
             targetSize, joinType, buildSide, compareNullsEqual, opTime, joinTime)
         } else {
           new HashJoinIterator(
