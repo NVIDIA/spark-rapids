@@ -243,7 +243,7 @@ object AstUtil {
     } else None
 
     private[this] val streamProj = if (!streamOutput.isEmpty) {
-      Some(GpuBindReferences.bindGpuReferencesTiered(streamOutput, streamInput.toSeq, false))
+      Some(GpuBindReferences.bindGpuReferencesTiered(streamOutput, streamInput, false))
     } else None
 
     // Remove the intermediate attributes from left and right side project nodes. Output attributes
