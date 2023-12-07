@@ -574,7 +574,7 @@ def test_timestamp_seconds_long_overflow():
         conf={},
         error_message='long overflow')
 
-# Make sure every decimal value in test data is rounding necessary by set full_precision=True to
+# Make sure every decimal value in test data is 'Rounding necessary' by set full_precision=True to
 # avoid leading and trailing zeros
 @pytest.mark.xfail(condition = is_not_utc(), reason = 'xfail non-UTC time zone tests because of https://github.com/NVIDIA/spark-rapids/issues/9653')
 @pytest.mark.parametrize('data_gen', [DecimalGen(7, 7, full_precision=True), DecimalGen(20, 7, full_precision=True)], ids=idfn)

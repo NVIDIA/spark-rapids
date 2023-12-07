@@ -245,6 +245,7 @@ class IntegerGen(DataGen):
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
     def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False, full_precision=False):
+        """full_precision: If True, generate decimals with full precision without leading and trailing zeros."""
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
