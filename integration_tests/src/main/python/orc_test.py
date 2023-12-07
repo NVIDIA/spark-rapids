@@ -14,12 +14,13 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import *
+from conftest import is_not_utc
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh, is_spark_340_or_later
+from spark_init_internal import spark_version
+from spark_session import *
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -61,12 +62,14 @@ reader_opt_confs = reader_opt_confs_common + [
 # The Count result can not be sorted, so local sort can not be used.
 reader_opt_confs_for_count = reader_opt_confs_common + [multithreaded_orc_file_reader_combine_unordered_conf]
 
+non_utc_allow_orc_file_source_scan=['ColumnarToRowExec', 'FileSourceScanExec'] if is_not_utc() else []
 
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@allow_non_gpu(*non_utc_allow_orc_file_source_scan)
 def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, reader_confs):
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -125,6 +128,8 @@ orc_map_gens_sample = orc_basic_map_gens + [
     MapGen(StructGen([['child0', byte_gen], ['child1', long_gen]], nullable=False),
            StructGen([['child0', byte_gen], ['child1', long_gen]]))]
 
+non_utc_allow_orc_scan=['ColumnarToRowExec', 'FileSourceScanExec', 'BatchScanExec'] if is_not_utc() else []
+
 orc_gens_list = [orc_basic_gens,
     orc_array_gens_sample,
     orc_struct_gens_sample,
@@ -157,7 +162,8 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
 @pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
-@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('v1_enabled_list', ['', 'orc'])
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -183,6 +189,7 @@ orc_pred_push_gens = [
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/ORC_DATA'
     # Append two struct columns to verify nested predicate pushdown.
@@ -239,6 +246,7 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
     # we should go with a more standard set of generators
@@ -305,6 +313,7 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/131 is fixed
     # we should go with a more standard set of generators
@@ -583,6 +592,7 @@ def test_read_struct_without_stream(spark_tmp_path):
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('case_sensitive', ["false", "true"])
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enabled_list, case_sensitive):
     struct_gen = StructGen([('nested_col', orc_gen)])
     # Map is not supported yet.
@@ -770,6 +780,7 @@ def test_orc_read_varchar_as_string(std_input_path):
 
 @pytest.mark.parametrize('gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_order):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -784,6 +795,7 @@ def test_read_round_trip_for_multithreaded_combining(spark_tmp_path, gens, keep_
 
 
 @pytest.mark.parametrize('keep_order', [True, pytest.param(False, marks=pytest.mark.ignore_order(local=True))])
+@allow_non_gpu(*non_utc_allow_orc_scan)
 def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, keep_order):
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                 string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -805,8 +817,7 @@ def test_simple_partitioned_read_for_multithreaded_combining(spark_tmp_path, kee
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.orc(data_path), conf=all_confs)
 
-
-@pytest.mark.skipif(is_spark_340_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_spark_340_or_later() and (not (is_databricks_runtime() and spark_version() == "3.4.1")), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
@@ -819,7 +830,7 @@ def test_read_hive_fixed_length_char(std_input_path, data_file, reader):
 
 
 @allow_non_gpu("ProjectExec")
-@pytest.mark.skipif(is_before_spark_340(), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
+@pytest.mark.skipif(is_before_spark_340() or (is_databricks_runtime() and spark_version() == "3.4.1"), reason="https://github.com/NVIDIA/spark-rapids/issues/8324")
 @pytest.mark.parametrize('data_file', ['fixed-length-char-column-from-hive.orc'])
 @pytest.mark.parametrize('reader', [read_orc_df, read_orc_sql])
 def test_project_fallback_when_reading_hive_fixed_length_char(std_input_path, data_file, reader):

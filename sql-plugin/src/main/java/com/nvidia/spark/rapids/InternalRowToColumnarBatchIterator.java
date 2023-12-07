@@ -22,6 +22,7 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import scala.Option;
+import scala.Tuple2;
 import scala.collection.Iterator;
 
 import ai.rapids.cudf.ColumnVector;
@@ -112,62 +113,87 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
 
     long collectStart = System.nanoTime();
 
-    SpillableColumnarBatch batchWithColumnToConvert;
-    NvtxRange buildRange;
+    Tuple2<SpillableColumnarBatch, NvtxRange> batchAndRange;
+
     // The row formatted data is stored as a column of lists of bytes.  The current java CUDF APIs
     // don't do a great job from a performance standpoint with building this type of data structure
     // and we want this to be as efficient as possible so we are going to allocate two host memory
     // buffers.  One will be for the byte data and the second will be for the offsets. We will then
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
-    try (HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
-         HostMemoryBuffer offsetsBuffer =
-             HostMemoryBuffer.allocate(((long)numRowsEstimate + 1) * BYTES_PER_OFFSET)) {
+    HostMemoryBuffer db =
+        RmmRapidsRetryIterator.withRetryNoSplit( () -> {
+          return HostAlloc$.MODULE$.alloc(dataLength, true);
+        });
+    try (
+        SpillableHostBuffer sdb = SpillableHostBuffer$.MODULE$.apply(db, db.getLength(),
+            SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
+            RapidsBufferCatalog$.MODULE$.singleton());
+    ) {
+      HostMemoryBuffer ob =
+          RmmRapidsRetryIterator.withRetryNoSplit( () -> {
+            return HostAlloc$.MODULE$.alloc(
+                ((long) numRowsEstimate + 1) * BYTES_PER_OFFSET, true);
+          });
+      try (
+          SpillableHostBuffer sob = SpillableHostBuffer$.MODULE$.apply(ob, ob.getLength(),
+              SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY(),
+              RapidsBufferCatalog$.MODULE$.singleton());
+      ) {
+        // Fill in buffer under write lock for host buffers
+        int[] used = sdb.withHostBufferWriteLock( (dataBuffer) -> {
+          return sob.withHostBufferWriteLock( (offsetsBuffer) -> {
+            return fillBatch(dataBuffer, offsetsBuffer);
+          });
+        });
+        batchAndRange = sdb.withHostBufferReadOnly( (dataBuffer) -> {
+          return sob.withHostBufferReadOnly( (offsetsBuffer) -> {
+            int dataOffset = used[0];
+            int currentRow = used[1];
+            // We don't want to loop forever trying to copy nothing
+            assert (currentRow > 0);
+            if (numInputRows != null) {
+              numInputRows.add(currentRow);
+            }
+            if (numOutputRows != null) {
+              numOutputRows.add(currentRow);
+            }
+            if (numOutputBatches != null) {
+              numOutputBatches.add(1);
+            }
+            // Now that we have filled the buffers with the data, we need to turn them into a
+            // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
+            // To do this we first need to make a HostColumnCoreVector for the data, and then
+            // put that into a HostColumnVector as its child.  This the basics of building up
+            // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
+            // APIs.
+            dataBuffer.incRefCount();
+            offsetsBuffer.incRefCount();
+            try (HostColumnVectorCore dataCv =
+                     new HostColumnVectorCore(DType.INT8, dataOffset, Optional.of(0L),
+                         dataBuffer, null, null, new ArrayList<>());
+                 HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
+                     currentRow, Optional.of(0L), null, null,
+                     offsetsBuffer, Collections.singletonList(dataCv))) {
 
-      int[] used = fillBatch(dataBuffer, offsetsBuffer);
+              long ct = System.nanoTime() - collectStart;
+              streamTime.add(ct);
 
-      int dataOffset = used[0];
-      int currentRow = used[1];
-      // We don't want to loop forever trying to copy nothing
-      assert (currentRow > 0);
-      if (numInputRows != null) {
-        numInputRows.add(currentRow);
-      }
-      if (numOutputRows != null) {
-        numOutputRows.add(currentRow);
-      }
-      if (numOutputBatches != null) {
-        numOutputBatches.add(1);
-      }
-      // Now that we have filled the buffers with the data, we need to turn them into a
-      // HostColumnVector and copy them to the device so the GPU can turn it into a Table.
-      // To do this we first need to make a HostColumnCoreVector for the data, and then
-      // put that into a HostColumnVector as its child.  This the basics of building up
-      // a column of lists of bytes in CUDF but it is typically hidden behind the higer level
-      // APIs.
-      dataBuffer.incRefCount();
-      offsetsBuffer.incRefCount();
-      try (HostColumnVectorCore dataCv =
-               new HostColumnVectorCore(DType.INT8, dataOffset, Optional.of(0L),
-                   dataBuffer, null, null, new ArrayList<>());
-           HostColumnVector hostColumn = new HostColumnVector(DType.LIST,
-               currentRow, Optional.of(0L), null, null,
-               offsetsBuffer, Collections.singletonList(dataCv))) {
-
-        long ct = System.nanoTime() - collectStart;
-        streamTime.add(ct);
-
-        // Grab the semaphore because we are about to put data onto the GPU.
-        GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
-        buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(opTime));
-        ColumnVector devColumn =
-            RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
-        batchWithColumnToConvert = makeSpillableBatch(devColumn);
+              // Grab the semaphore because we are about to put data onto the GPU.
+              GpuSemaphore$.MODULE$.acquireIfNecessary(TaskContext.get());
+              NvtxRange range = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN,
+                  Option.apply(opTime));
+              ColumnVector devColumn =
+                  RmmRapidsRetryIterator.withRetryNoSplit(hostColumn::copyToDevice);
+              return Tuple2.apply(makeSpillableBatch(devColumn), range);
+            }
+          });
+        });
       }
     }
-    try (NvtxRange ignored = buildRange;
+    try (NvtxRange ignored = batchAndRange._2;
          Table tab =
-           RmmRapidsRetryIterator.withRetryNoSplit(batchWithColumnToConvert, (attempt) -> {
+           RmmRapidsRetryIterator.withRetryNoSplit(batchAndRange._1, (attempt) -> {
              try (ColumnarBatch cb = attempt.getColumnarBatch()) {
                return convertFromRowsUnderRetry(cb);
              }

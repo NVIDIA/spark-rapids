@@ -18,6 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
+from marks import datagen_overrides, allow_non_gpu
 import pyspark.sql.functions as f
 
 def mk_str_gen(pattern):
@@ -140,7 +141,6 @@ def test_coalesce(data_gen):
         for x in range(0, num_cols)], nullable=False)
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
     command_args.append(s1)
-    data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
                 f.coalesce(*command_args)))
@@ -230,6 +230,7 @@ def test_conditional_with_side_effects_case_when(data_gen):
                 conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -240,6 +241,7 @@ def test_conditional_with_side_effects_sequence(data_gen):
 
 @pytest.mark.skipif(is_before_spark_320(), reason='Earlier versions of Spark cannot cast sequence to string')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[a-z]{0,3}')], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_conditional_with_side_effects_sequence_cast(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(

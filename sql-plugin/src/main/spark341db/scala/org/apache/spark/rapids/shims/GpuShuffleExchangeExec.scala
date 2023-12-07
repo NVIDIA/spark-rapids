@@ -21,24 +21,28 @@ package org.apache.spark.rapids.shims
 import com.nvidia.spark.rapids.GpuPartitioning
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
+import org.apache.spark.sql.rapids.execution.ShuffledBatchRDD
 
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
-  extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child, shuffleOrigin)(
+  extends GpuDatabricksShuffleExchangeExecBase(gpuOutputPartitioning, child, shuffleOrigin)(
     cpuOutputPartitioning) {
 
   override def getShuffleRDD(
       partitionSpecs: Array[ShufflePartitionSpec],
       lazyFetching: Boolean): RDD[_] = {
     new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
+  }
+
+  // DB SPECIFIC - throw if called since we don't know how its used
+  override def withNewNumPartitions(numPartitions: Int): ShuffleExchangeLike = {
+    throw new UnsupportedOperationException
   }
 
   // DB SPECIFIC - throw if called since we don't know how its used

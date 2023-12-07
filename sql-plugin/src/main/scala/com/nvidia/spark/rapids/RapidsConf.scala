@@ -1388,8 +1388,8 @@ object RapidsConf {
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_RETRY_OOM_INJECTION_ENABLED = conf("spark.rapids.sql.test.injectRetryOOM")
-    .doc("Only to be used in tests. If enabled the retry iterator will inject a RetryOOM " +
-         "once per invocation.")
+    .doc("Only to be used in tests. If enabled the retry iterator will inject a GpuRetryOOM " +
+         "or CpuRetryOOM once per invocation.")
     .internal()
     .booleanConf
     .createWithDefault(false)
@@ -1670,8 +1670,9 @@ object RapidsConf {
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc(
         "The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-        "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
-        "also the maximum amount of memory that will be used per task. This should be set larger " +
+        "\"MULTITHREADED\" mode will allow to be serialized or deserialized concurrently " +
+        "per task. This is also the maximum amount of memory that will be used per task. " +
+        "This should be set larger " +
         "than Spark's default maxBytesInFlight (48MB). The larger this setting is, the " +
         "more compressed shuffle chunks are processed concurrently. In practice, " +
         "care needs to be taken to not go over the amount of off-heap memory that Netty has " +
@@ -1847,6 +1848,21 @@ object RapidsConf {
       "with the RAPIDS Accelerator version, then set this to true.")
     .booleanConf
     .createWithDefault(false)
+
+  object AllowMultipleJars extends Enumeration {
+    val ALWAYS, SAME_REVISION, NEVER = Value
+  }
+
+  val ALLOW_MULTIPLE_JARS = conf("spark.rapids.sql.allowMultipleJars")
+    .startupOnly()
+    .doc("Allow multiple rapids-4-spark, spark-rapids-jni, and cudf jars on the classpath. " +
+      "Spark will take the first one it finds, so the version may not be expected. Possisble " +
+      "values are ALWAYS: allow all jars, SAME_REVISION: only allow jars with the same " +
+      "revision, NEVER: do not allow multiple jars at all.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(AllowMultipleJars.values.map(_.toString))
+    .createWithDefault(AllowMultipleJars.SAME_REVISION.toString)
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
@@ -2052,6 +2068,13 @@ object RapidsConf {
         "The gpu to disk spill bounce buffer must have a positive size")
       .createWithDefault(128L * 1024 * 1024)
 
+  val NON_UTC_TIME_ZONE_ENABLED = 
+    conf("spark.rapids.sql.nonUTC.enabled")
+      .doc("An option to enable/disable non-UTC time zone support.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val SPLIT_UNTIL_SIZE_OVERRIDE = conf("spark.rapids.sql.test.overrides.splitUntilSize")
       .doc("Only for tests: override the value of GpuDeviceManager.splitUntilSize")
       .internal()
@@ -2099,7 +2122,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-24.02.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2643,6 +2666,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
+  lazy val allowMultipleJars: AllowMultipleJars.Value = {
+    get(ALLOW_MULTIPLE_JARS) match {
+      case "ALWAYS" => AllowMultipleJars.ALWAYS
+      case "NEVER" => AllowMultipleJars.NEVER
+      case "SAME_REVISION" => AllowMultipleJars.SAME_REVISION
+      case other =>
+        throw new IllegalArgumentException(s"Internal Error $other is not supported for " +
+            s"${ALLOW_MULTIPLE_JARS.key}")
+    }
+  }
+
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
   lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
@@ -2757,6 +2791,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val spillToDiskBounceBufferSize: Long = get(SPILL_TO_DISK_BOUNCE_BUFFER_SIZE)
 
   lazy val splitUntilSizeOverride: Option[Long] = get(SPLIT_UNTIL_SIZE_OVERRIDE)
+
+  lazy val nonUTCTimeZoneEnabled: Boolean = get(NON_UTC_TIME_ZONE_ENABLED)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

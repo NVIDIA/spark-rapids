@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import java.util.TimeZone
+
+import ai.rapids.cudf.{ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.util.RebaseDateTime
+import org.apache.spark.sql.catalyst.util.{DateTimeUtils, RebaseDateTime}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -87,11 +89,16 @@ object DateTimeRebaseUtils {
 
     // Check the timezone of the file if the mode is LEGACY.
     if (mode == DateTimeRebaseLegacy) {
-      val fileTimeZone = lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)
-      if (fileTimeZone != null && fileTimeZone != "UTC") {
+      val fileTimeZoneId = Option(lookupFileMeta(SPARK_TIMEZONE_METADATA_KEY)).map { str =>
+        DateTimeUtils.getZoneId(str)
+      }.getOrElse {
+        // Use the default JVM time zone for backward compatibility
+        TimeZone.getDefault.toZoneId
+      }
+      if (fileTimeZoneId.normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
         throw new UnsupportedOperationException(
           "LEGACY datetime rebase mode is only supported for files written in UTC timezone. " +
-            s"Actual file timezone: $fileTimeZone")
+            s"Actual file timezone: $fileTimeZoneId")
       }
     }
 
@@ -110,54 +117,50 @@ object DateTimeRebaseUtils {
       SPARK_LEGACY_INT96_METADATA_KEY)
   }
 
-  private[this] def isDateRebaseNeeded(column: ColumnVector,
-      startDay: Int): Boolean = {
-    // TODO update this for nested column checks
-    //  https://github.com/NVIDIA/spark-rapids/issues/1126
+  private[this] def isRebaseNeeded(column: ColumnView, checkType: DType,
+      minGood: Scalar): Boolean = {
     val dtype = column.getType
-    if (dtype == DType.TIMESTAMP_DAYS) {
-      val hasBad = withResource(Scalar.timestampDaysFromInt(startDay)) {
-        column.lessThan
-      }
-      val anyBad = withResource(hasBad) {
-        _.any()
-      }
-      withResource(anyBad) { _ =>
-        anyBad.isValid && anyBad.getBoolean
-      }
-    } else {
-      false
-    }
-  }
+    require(!dtype.hasTimeResolution || dtype == DType.TIMESTAMP_MICROSECONDS)
 
-  private[this] def isTimeRebaseNeeded(column: ColumnVector,
-      startTs: Long): Boolean = {
-    val dtype = column.getType
-    if (dtype.hasTimeResolution) {
-      require(dtype == DType.TIMESTAMP_MICROSECONDS)
-      withResource(
-        Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+    dtype match {
+      case `checkType` =>
         withResource(column.lessThan(minGood)) { hasBad =>
-          withResource(hasBad.any()) { a =>
-            a.isValid && a.getBoolean
+          withResource(hasBad.any()) { anyBad =>
+            anyBad.isValid && anyBad.getBoolean
           }
         }
-      }
-    } else {
-      false
+
+      case DType.LIST | DType.STRUCT => (0 until column.getNumChildren).exists(i =>
+        withResource(column.getChildColumnView(i)) { child =>
+          isRebaseNeeded(child, checkType, minGood)
+        })
+
+      case _ => false
     }
   }
 
-  def isDateRebaseNeededInRead(column: ColumnVector): Boolean =
+  private[this] def isDateRebaseNeeded(column: ColumnView, startDay: Int): Boolean = {
+    withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
+      isRebaseNeeded(column, DType.TIMESTAMP_DAYS, minGood)
+    }
+  }
+
+  private[this] def isTimeRebaseNeeded(column: ColumnView, startTs: Long): Boolean = {
+    withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
+      isRebaseNeeded(column, DType.TIMESTAMP_MICROSECONDS, minGood)
+    }
+  }
+
+  def isDateRebaseNeededInRead(column: ColumnView): Boolean =
     isDateRebaseNeeded(column, RebaseDateTime.lastSwitchJulianDay)
 
-  def isTimeRebaseNeededInRead(column: ColumnVector): Boolean =
+  def isTimeRebaseNeededInRead(column: ColumnView): Boolean =
     isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchJulianTs)
 
-  def isDateRebaseNeededInWrite(column: ColumnVector): Boolean =
+  def isDateRebaseNeededInWrite(column: ColumnView): Boolean =
     isDateRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianDay)
 
-  def isTimeRebaseNeededInWrite(column: ColumnVector): Boolean =
+  def isTimeRebaseNeededInWrite(column: ColumnView): Boolean =
     isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianTs)
 
   def newRebaseExceptionInRead(format: String): Exception = {

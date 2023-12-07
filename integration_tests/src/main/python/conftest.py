@@ -77,6 +77,33 @@ def is_emr_runtime():
 def is_dataproc_runtime():
     return runtime_env() == "dataproc"
 
+def get_test_tz():
+    return os.environ.get('TZ', 'UTC')
+
+def is_utc():
+    return get_test_tz() == "UTC"
+
+def is_not_utc():
+    return not is_utc()
+
+# key is time zone, value is recorded boolean value
+_support_info_cache_for_time_zone = {}
+
+def is_supported_time_zone():
+    """
+    Is current TZ supported, forward to Java TimeZoneDB to check
+    """
+    tz = get_test_tz()
+    if tz in _support_info_cache_for_time_zone:
+        # already cached
+        return _support_info_cache_for_time_zone[tz]
+    else:
+        jvm = spark_jvm()
+        support = jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.isSupportedTimeZone(tz)
+        # cache support info
+        _support_info_cache_for_time_zone[tz] = support
+        return support
+
 _is_nightly_run = False
 _is_precommit_run = False
 
@@ -113,8 +140,16 @@ _limit = -1
 _inject_oom = None
 
 def should_inject_oom():
-    global _inject_oom
     return _inject_oom != None
+
+# For datagen: we expect a seed to be provided by the environment, or default to 0.
+# Note that tests can override their seed when calling into datagen by setting seed= in their tests.
+_test_datagen_random_seed = int(os.getenv("SPARK_RAPIDS_TEST_DATAGEN_SEED", 0))
+print(f"Starting with datagen test seed: {_test_datagen_random_seed}. " 
+      "Set env variable SPARK_RAPIDS_TEST_DATAGEN_SEED to override.")
+
+def get_datagen_seed():
+    return _test_datagen_random_seed
 
 def get_limit():
     return _limit
@@ -133,7 +168,19 @@ def pytest_runtest_setup(item):
     global _sort_on_spark
     global _sort_locally
     global _inject_oom
+    global _test_datagen_random_seed
     _inject_oom = item.get_closest_marker('inject_oom')
+    datagen_overrides = item.get_closest_marker('datagen_overrides')
+    if datagen_overrides:
+        try:
+            seed = datagen_overrides.kwargs["seed"]
+        except KeyError:
+            raise Exception("datagen_overrides requires an override seed value")
+
+        override_seed = datagen_overrides.kwargs.get('condition', True)
+        if override_seed:
+            _test_datagen_random_seed = seed
+
     order = item.get_closest_marker('ignore_order')
     if order:
         if order.kwargs.get('local', False):
@@ -260,6 +307,16 @@ def pytest_collection_modifyitems(config, items):
         # decide if OOMs should be injected, and when
         injection_mode = config.getoption('test_oom_injection_mode').lower()
         inject_choice = False
+        datagen_overrides = item.get_closest_marker('datagen_overrides')
+        if datagen_overrides:
+            test_datagen_random_seed_choice = datagen_overrides.kwargs.get('seed', _test_datagen_random_seed)
+            if test_datagen_random_seed_choice != _test_datagen_random_seed:
+                extras.append('DATAGEN_SEED_OVERRIDE=%s' % str(test_datagen_random_seed_choice))
+            else:
+                extras.append('DATAGEN_SEED=%s' % str(test_datagen_random_seed_choice))
+        else:
+            extras.append('DATAGEN_SEED=%s' % str(_test_datagen_random_seed))
+
         if injection_mode == 'random':
             inject_choice = r.randrange(0, 2) == 1
         elif injection_mode == 'always':

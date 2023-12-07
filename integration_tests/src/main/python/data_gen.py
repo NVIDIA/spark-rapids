@@ -21,19 +21,14 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc, is_before_spark_340, with_cpu_session
+from spark_session import is_before_spark_340, with_cpu_session
 import sre_yield
 import struct
-from conftest import skip_unless_precommit_tests
+from conftest import skip_unless_precommit_tests,get_datagen_seed, is_not_utc
 import time
 import os
 from functools import lru_cache
 import hashlib
-
-# set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
-# refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
-os.environ['TZ'] = 'UTC'
-time.tzset()
 
 class DataGen:
     """Base class for data generation"""
@@ -285,10 +280,13 @@ class DecimalGen(DataGen):
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
+_MISSING_ARG = object()
+
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = []):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
+    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX,
+                 special_cases = _MISSING_ARG):
+        _special_cases = [min_val, max_val, 0, 1, -1] if special_cases is _MISSING_ARG else special_cases
         super().__init__(LongType(), nullable=nullable, special_cases=_special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -578,18 +576,24 @@ class TimestampGen(DataGen):
             # Spark supports times starting at
             # "0001-01-01 00:00:00.000000"
             # but it has issues if you get really close to that because it tries to do things
-            # in a different format which causes roundoff, so we have to add a few days,
+            # in a different format which causes roundoff, so we have to add a few days, even a month,
             # just to be sure
-            start = datetime(1, 1, 3, tzinfo=tzinfo)
+            start = datetime(1, 2, 1, tzinfo=tzinfo)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
+        # Spark supports time through: "9999-12-31 23:59:59.999999"
+        # but in order to avoid out-of-range error in non-UTC time zone, here use 9999-12-30 instead of 12-31 as max end
+        # for details, refer to https://github.com/NVIDIA/spark-rapids/issues/7535
+        max_end = datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=tzinfo)
         if end is None:
-            # Spark supports time through
-            # "9999-12-31 23:59:59.999999"
-            end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=tzinfo)
+            end = max_end
         elif isinstance(end, timedelta):
-            end = start + end
+            max_timedelta = max_end - start
+            if ( end >= max_timedelta):
+                end = max_end
+            else:
+                end = start + end
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for end {}'.format(end))
 
@@ -675,7 +679,29 @@ class MapGen(DataGen):
         def make_dict():
             length = rand.randint(self._min_length, self._max_length)
             return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
-        self._start(rand, make_dict)
+        def make_dict_float():
+            # In Spark map, at most one key can be NaN. However, in Python dict, multiple NaN keys 
+            # are allowed because NaN != NaN. So we need to ensure that there is at most one NaN 
+            # key in the dict when generating map type data.
+            length = rand.randint(self._min_length, self._max_length)
+            count = 0
+            has_nan = False
+            result = {}
+            while count < length:
+                key = self._key_gen.gen()
+                if math.isnan(key):
+                    if has_nan:
+                        continue
+                    else:
+                        has_nan = True
+                result[key] = self._value_gen.gen()
+                count += 1
+            return result
+
+        if self._key_gen.data_type == FloatType() or self._key_gen.data_type == DoubleType():
+            self._start(rand, make_dict_float)
+        else:
+            self._start(rand, make_dict)
 
     def contains_ts(self):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()
@@ -749,21 +775,22 @@ class BinaryGen(DataGen):
             return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
 
-def skip_if_not_utc():
-    if (not is_tz_utc()):
-        skip_unless_precommit_tests('The java system time zone is not set to UTC')
-
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
 @lru_cache(maxsize=128, typed=True)
-def gen_df_help(data_gen, length, seed):
-    rand = random.Random(seed)
+def gen_df_help(data_gen, length, seed_value):
+    rand = random.Random(seed_value)
     data_gen.start(rand)
     data = [data_gen.gen() for index in range(0, length)]
     return data
 
-def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
+def gen_df(spark, data_gen, length=2048, seed=None, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
+    if seed is None:
+        seed_value = get_datagen_seed()
+    else:
+        seed_value = seed
+
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
     else:
@@ -771,11 +798,7 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
         # we cannot create a data frame from a nullable struct
         assert not data_gen.nullable
 
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
-
-    data = gen_df_help(src, length, seed)
+    data = gen_df_help(src, length, seed_value)
 
     # We use `numSlices` to create an RDD with the specific number of partitions,
     # which is then turned into a dataframe. If not specified, it is `None` (default spark value)
@@ -816,21 +839,22 @@ def _mark_as_lit(data, data_type):
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)
 
-def _gen_scalars_common(data_gen, count, seed=0):
+def _gen_scalars_common(data_gen, count, seed=None):
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
     else:
         src = data_gen
 
-    # Before we get too far we need to verify that we can run with timestamps
-    if src.contains_ts():
-        skip_if_not_utc()
+    if seed is None:
+        seed_value = get_datagen_seed()
+    else:
+        seed_value = seed
 
-    rand = random.Random(seed)
+    rand = random.Random(seed_value)
     src.start(rand)
     return src
 
-def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
+def gen_scalars(data_gen, count, seed=None, force_no_nulls=False):
     """Generate scalar values."""
     if force_no_nulls:
         assert(not isinstance(data_gen, NullGen))
@@ -838,17 +862,17 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     data_type = src.data_type
     return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
 
-def gen_scalar(data_gen, seed=0, force_no_nulls=False):
+def gen_scalar(data_gen, seed=None, force_no_nulls=False):
     """Generate a single scalar value."""
     v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
 
-def gen_scalar_values(data_gen, count, seed=0, force_no_nulls=False):
+def gen_scalar_values(data_gen, count, seed=None, force_no_nulls=False):
     """Generate scalar values."""
     src = _gen_scalars_common(data_gen, count, seed=seed)
     return (src.gen(force_no_nulls=force_no_nulls) for i in range(0, count))
 
-def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
+def gen_scalar_value(data_gen, seed=None, force_no_nulls=False):
     """Generate a single scalar value."""
     v = list(gen_scalar_values(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
@@ -890,18 +914,18 @@ def meta_idfn(meta):
         return meta + idfn(something)
     return tmp
 
-def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
+def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=None, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, num_slices=None):
+def two_col_df(spark, a_gen, b_gen, length=2048, seed=None, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def binary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+def binary_op_df(spark, gen, length=2048, seed=None, num_slices=None):
     return two_col_df(spark, gen, gen, length=length, seed=seed, num_slices=num_slices)
 
-def unary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+def unary_op_df(spark, gen, length=2048, seed=None, num_slices=None):
     return gen_df(spark, StructGen([('a', gen)], nullable=False),
         length=length, seed=seed, num_slices=num_slices)
 
@@ -974,7 +998,7 @@ def _convert_to_sql(spark_type, data):
     else:
         return 'CAST({} as {})'.format(d, to_cast_string(spark_type))
 
-def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
+def gen_scalars_for_sql(data_gen, count, seed=None, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
     src = _gen_scalars_common(data_gen, count, seed=seed)
     if isinstance(data_gen, NullGen):
@@ -1173,3 +1197,18 @@ def get_25_partitions_df(spark):
         StructField("c3", IntegerType())])
     data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
     return spark.createDataFrame(data, schema)
+
+
+# allow non gpu when time zone is non-UTC because of https://github.com/NVIDIA/spark-rapids/issues/9653'
+# This will be deprecated and replaced case specified non GPU allow list
+non_utc_allow = ['ProjectExec', 'FilterExec', 'FileSourceScanExec', 'BatchScanExec', 'CollectLimitExec',
+                 'DeserializeToObjectExec', 'DataWritingCommandExec', 'WriteFilesExec', 'ShuffleExchangeExec',
+                 'ExecutedCommandExec'] if is_not_utc() else []
+
+# date related regexps for generating date strings within python's range limits
+
+# regexp to generate date from 0001-02-01, format is yyyy-MM-dd
+date_start_1_2_1 = '(0{0,3}1-(0?[2-9]|[1-3][0-9]))|(([0-9]{0,3}[2-9]|[1-9][0-9]{0,2}[01])-[0-3]?[0-9])-[0-5]?[0-9]'
+
+# regexp to generate year from 0002, format is yyyy
+yyyy_start_0002 = '([0-9]{3}[2-9]|([1-9][0-9]{2}|0[1-9][0-9]|00[1-9])[0-1])'

@@ -113,38 +113,28 @@ object GpuParquetFileFormat {
     val schemaHasTimestamps = schema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
     }
-    if (schemaHasTimestamps) {
-      if(!isOutputTimestampTypeSupported(sqlConf.parquetOutputTimestampType)) {
-        meta.willNotWorkOnGpu(s"Output timestamp type " +
-          s"${sqlConf.parquetOutputTimestampType} is not supported")
+    if (schemaHasTimestamps &&
+      !isOutputTimestampTypeSupported(sqlConf.parquetOutputTimestampType)) {
+      meta.willNotWorkOnGpu(s"Output timestamp type " +
+        s"${sqlConf.parquetOutputTimestampType} is not supported")
+    }
+
+    val schemaHasDates = schema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
+    }
+    if (schemaHasDates || schemaHasTimestamps) {
+      val int96RebaseMode = DateTimeRebaseMode.fromName(
+        SparkShimImpl.int96ParquetRebaseWrite(sqlConf))
+      val dateTimeRebaseMode = DateTimeRebaseMode.fromName(
+        SparkShimImpl.parquetRebaseWrite(sqlConf))
+
+      if ((int96RebaseMode == DateTimeRebaseLegacy || dateTimeRebaseMode == DateTimeRebaseLegacy)
+        && !GpuOverrides.isUTCTimezone()) {
+        meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
+          " Set both of the timezones to UTC to enable LEGACY rebase support.")
       }
-    }
-
-    DateTimeRebaseMode.fromName(SparkShimImpl.int96ParquetRebaseWrite(sqlConf)) match {
-      case DateTimeRebaseException | DateTimeRebaseCorrected => // Good
-      case DateTimeRebaseLegacy =>
-        if (schemaHasTimestamps) {
-          meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
-        }
-      // This should never be reached out, since invalid mode is handled in
-      // `DateTimeRebaseMode.fromName`.
-      case other => meta.willNotWorkOnGpu(
-        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
-    }
-
-    DateTimeRebaseMode.fromName(SparkShimImpl.parquetRebaseWrite(sqlConf)) match {
-      case DateTimeRebaseException | DateTimeRebaseCorrected => // Good
-      case DateTimeRebaseLegacy =>
-        if (!TypeChecks.areTimestampsSupported()) {
-          meta.willNotWorkOnGpu("Only UTC timezone is supported in LEGACY rebase mode. " +
-            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
-            s"session: ${SQLConf.get.sessionLocalTimeZone}). " +
-            " Set both of the timezones to UTC to enable LEGACY rebase support.")
-        }
-      // This should never be reached out, since invalid mode is handled in
-      // `DateTimeRebaseMode.fromName`.
-      case other => meta.willNotWorkOnGpu(
-        DateTimeRebaseUtils.invalidRebaseModeMessage(other.getClass.getName))
     }
 
     if (meta.canThisBeReplaced) {

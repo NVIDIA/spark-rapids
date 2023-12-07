@@ -21,6 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.charset.StandardCharsets
+import java.time.ZoneId
 import java.util
 import java.util.concurrent.{Callable, TimeUnit}
 import java.util.regex.Pattern
@@ -37,7 +38,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.shims.{GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -148,6 +149,23 @@ object GpuOrcScan {
     if (!meta.conf.isOrcReadEnabled) {
       meta.willNotWorkOnGpu("ORC input has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_ORC_READ} to true")
+    }
+
+    if (ColumnDefaultValuesShims.hasExistenceDefaultValues(schema)) {
+      meta.willNotWorkOnGpu("GpuOrcScan does not support default values in schema")
+    }
+
+    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
+    // timezone offset is considered when getting [[java.sql.date]] from
+    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
+    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
+    val types = schema.map(_.dataType).toSet
+    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
+      if (!GpuOverrides.isUTCTimezone()) {
+        meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+      }
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)

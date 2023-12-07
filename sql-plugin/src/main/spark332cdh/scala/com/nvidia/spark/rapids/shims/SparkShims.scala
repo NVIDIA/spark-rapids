@@ -19,4 +19,4 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark33cdhShims with Spark331PlusShims {}
+object SparkShimImpl extends Spark33cdhShims with Spark331PlusNonDBShims {}

@@ -24,14 +24,15 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.SparkSession
 
-class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
+trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
-  protected var deviceStorage: RapidsDeviceMemoryStore = null
+  protected var deviceStorage: RapidsDeviceMemoryStore = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
+    RmmSpark.clearEventHandler()
     if (!Rmm.isInitialized) {
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
@@ -46,14 +47,14 @@ class RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
     RapidsBufferCatalog.setCatalog(catalog)
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
-    RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
+    RmmSpark.currentThreadIsDedicatedToTask(1)
   }
 
   override def afterEach(): Unit = {
     super.afterEach()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
-    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
+    RmmSpark.removeAllCurrentThreadAssociation()
     RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
     GpuSemaphore.shutdown()
