@@ -52,7 +52,7 @@ object CastCheckShims {
   def additionalTypesDateCanCastTo: TypeSig = if (SQLConf.get.ansiEnabled) {
     TypeSig.none
   } else {
-    TypeSig.BOOLEAN
+    TypeSig.BOOLEAN + TypeSig.integral + TypeSig.fp
   }
 
   def additionalTypesTimestampCanCastTo: TypeSig = if (SQLConf.get.ansiEnabled) {
